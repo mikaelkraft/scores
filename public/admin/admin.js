@@ -139,6 +139,27 @@ async function loadSettings() {
         document.getElementById('setting-booking-hook-enabled').checked = globalSettings.bookingSettings?.hookEnabled !== false;
         document.getElementById('setting-booking-referral').value = globalSettings.bookingSettings?.referralCode || 'NORRA_AI';
 
+        // Auth & Email
+        const auth = globalSettings.authSettings || {};
+        const smtp = globalSettings.smtpSettings || {};
+        const googleIdEl = document.getElementById('setting-google-client-id');
+        if (googleIdEl) googleIdEl.value = auth.googleClientId || '';
+        const reqVerifEl = document.getElementById('setting-require-verification');
+        if (reqVerifEl) reqVerifEl.checked = auth.requireEmailVerification !== false;
+
+        const smtpEnEl = document.getElementById('setting-smtp-enabled');
+        if (smtpEnEl) smtpEnEl.checked = Boolean(smtp.enabled);
+        const smtpHostEl = document.getElementById('setting-smtp-host');
+        if (smtpHostEl) smtpHostEl.value = smtp.host || '';
+        const smtpPortEl = document.getElementById('setting-smtp-port');
+        if (smtpPortEl) smtpPortEl.value = smtp.port || 587;
+        const smtpUserEl = document.getElementById('setting-smtp-user');
+        if (smtpUserEl) smtpUserEl.value = smtp.user || '';
+        const smtpPassEl = document.getElementById('setting-smtp-pass');
+        if (smtpPassEl) smtpPassEl.value = smtp.pass || '';
+        const smtpFromEl = document.getElementById('setting-smtp-from');
+        if (smtpFromEl) smtpFromEl.value = smtp.fromEmail || '';
+
         // Render Promos and Ads
         renderBookiePromos(globalSettings.bookiePromos || []);
         renderAdSlots(globalSettings.ads || {});
@@ -452,6 +473,41 @@ function openIssueKeyModal() {
         }
     })
     .catch(() => alert('Failed to issue key.'));
+}
+
+async function saveAuthAndEmailSettings() {
+    const authSettings = {
+        googleClientId: document.getElementById('setting-google-client-id').value.trim(),
+        requireEmailVerification: document.getElementById('setting-require-verification').checked
+    };
+
+    const smtpSettings = {
+        enabled: document.getElementById('setting-smtp-enabled').checked,
+        host: document.getElementById('setting-smtp-host').value.trim(),
+        port: parseInt(document.getElementById('setting-smtp-port').value) || 587,
+        user: document.getElementById('setting-smtp-user').value.trim(),
+        pass: document.getElementById('setting-smtp-pass').value,
+        fromEmail: document.getElementById('setting-smtp-from').value.trim() || 'Norra AI <support@mynorra.xyz>'
+    };
+
+    try {
+        const res = await fetch('/api/admin/settings', {
+            method: 'PUT',
+            headers: {
+                Authorization: `Bearer ${adminToken}`,
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ authSettings, smtpSettings })
+        });
+        const data = await res.json();
+        if (res.ok) {
+            alert('Authentication & Email settings saved successfully!');
+        } else {
+            alert(data.error || 'Failed to save settings.');
+        }
+    } catch (err) {
+        alert('Connection error saving settings.');
+    }
 }
 
 function toggleTheme() {

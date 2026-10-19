@@ -1,14 +1,38 @@
 const express = require('express');
 const router = express.Router();
 const jwt = require('jsonwebtoken');
+const crypto = require('crypto');
 const User = require('../models/user');
 const ApiKey = require('../models/apiKey');
 const Transaction = require('../models/transaction');
+const SiteSetting = require('../models/siteSetting');
+const emailService = require('../services/emailService');
+const googleAuthService = require('../services/googleAuthService');
 const { requireUser, JWT_SECRET } = require('../middleware/auth');
 const { config } = require('../config/env');
 
 /**
+ * GET /api/account/auth-config
+ * Exposes public client IDs for frontend initialization (e.g. Google Sign-In)
+ */
+router.get('/api/account/auth-config', async (req, res) => {
+    try {
+        const googleClientId = await googleAuthService.getClientId();
+        return res.json({
+            googleClientId,
+            googleAuthEnabled: Boolean(googleClientId)
+        });
+    } catch {
+        return res.json({
+            googleClientId: config.GOOGLE_CLIENT_ID || '',
+            googleAuthEnabled: Boolean(config.GOOGLE_CLIENT_ID)
+        });
+    }
+});
+
+/**
  * POST /api/account/register
+ * Normal signup with Name, Email, Password, and Email Confirmation Token
  */
 router.post('/api/account/register', async (req, res) => {
     try {
@@ -17,20 +41,28 @@ router.post('/api/account/register', async (req, res) => {
             return res.status(400).json({ error: 'Email and password are required.' });
         }
         if (password.length < 6) {
-            return res.status(400).json({ error: 'Password must be at least 6 characters.' });
+            return res.status(400).json({ error: 'Password must be at least 6 characters long.' });
         }
 
-        const existing = await User.findOne({ email: email.toLowerCase().trim() });
+        const normalizedEmail = email.toLowerCase().trim();
+        const existing = await User.findOne({ email: normalizedEmail });
         if (existing) {
             return res.status(400).json({ error: 'An account with this email already exists.' });
         }
 
         const passwordHash = await User.hashPassword(password);
+        const verificationToken = crypto.randomBytes(32).toString('hex');
+        const verificationExpires = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24 hours
+
         const user = await User.create({
-            email: email.toLowerCase().trim(),
+            email: normalizedEmail,
             passwordHash,
             fullName: fullName || '',
             companyName: companyName || '',
+            authProvider: 'local',
+            isEmailVerified: false,
+            emailVerificationToken: verificationToken,
+            emailVerificationExpires: verificationExpires,
             plan: 'free'
         });
 
@@ -46,6 +78,15 @@ router.post('/api/account/register', async (req, res) => {
             isAdFree: false
         });
 
+        // Dispatch verification email in background
+        const siteUrl = config.PUBLIC_SITE_URL || `${req.protocol}://${req.get('host')}`;
+        emailService.sendVerificationEmail({
+            email: user.email,
+            name: user.fullName,
+            token: verificationToken,
+            siteUrl
+        }).catch(err => console.error('Verification email dispatch failed:', err.message));
+
         const token = jwt.sign(
             { userId: user._id, email: user.email, role: user.role },
             JWT_SECRET,
@@ -54,18 +95,228 @@ router.post('/api/account/register', async (req, res) => {
 
         return res.status(201).json({
             status: 'success',
+            message: 'Account registered! A confirmation link has been sent to your email.',
             token,
             user: {
                 id: user._id,
                 email: user.email,
                 fullName: user.fullName,
-                plan: user.plan
+                plan: user.plan,
+                isEmailVerified: user.isEmailVerified,
+                authProvider: user.authProvider
             },
-            apiKey: apiKey.key
+            apiKey: apiKey.key,
+            requiresEmailVerification: true
         });
     } catch (err) {
         console.error('Account register error:', err.message);
         return res.status(500).json({ error: 'Registration failed. Please try again.' });
+    }
+});
+
+/**
+ * POST /api/account/verify-email
+ * Verifies email via token
+ */
+router.post('/api/account/verify-email', async (req, res) => {
+    try {
+        const { token } = req.body;
+        if (!token) {
+            return res.status(400).json({ error: 'Verification token is required.' });
+        }
+
+        const user = await User.findOne({
+            emailVerificationToken: token,
+            emailVerificationExpires: { $gt: new Date() }
+        });
+
+        if (!user) {
+            return res.status(400).json({ error: 'Verification token is invalid or has expired. Please request a new one.' });
+        }
+
+        user.isEmailVerified = true;
+        user.emailVerificationToken = null;
+        user.emailVerificationExpires = null;
+        await user.save();
+
+        return res.json({
+            status: 'success',
+            message: 'Email confirmed successfully! Your developer account is verified.'
+        });
+    } catch (err) {
+        console.error('Verify email error:', err.message);
+        return res.status(500).json({ error: 'Failed to verify email address.' });
+    }
+});
+
+/**
+ * GET /api/account/verify-email
+ * Route alias supporting GET with query param ?token=...
+ */
+router.get('/api/account/verify-email', async (req, res) => {
+    try {
+        const { token } = req.query;
+        if (!token) {
+            return res.status(400).json({ error: 'Verification token is required.' });
+        }
+
+        const user = await User.findOne({
+            emailVerificationToken: token,
+            emailVerificationExpires: { $gt: new Date() }
+        });
+
+        if (!user) {
+            return res.status(400).json({ error: 'Verification link is invalid or has expired.' });
+        }
+
+        user.isEmailVerified = true;
+        user.emailVerificationToken = null;
+        user.emailVerificationExpires = null;
+        await user.save();
+
+        return res.json({
+            status: 'success',
+            message: 'Email confirmed successfully!'
+        });
+    } catch (err) {
+        return res.status(500).json({ error: 'Failed to verify email.' });
+    }
+});
+
+/**
+ * POST /api/account/resend-verification
+ * Resends a fresh email confirmation link
+ */
+router.post('/api/account/resend-verification', async (req, res) => {
+    try {
+        let email = req.body.email;
+        const authHeader = req.headers.authorization;
+        if (authHeader && authHeader.startsWith('Bearer ')) {
+            try {
+                const decoded = jwt.verify(authHeader.substring(7).trim(), JWT_SECRET);
+                if (decoded && decoded.email) email = decoded.email;
+            } catch {}
+        }
+
+        if (!email) {
+            return res.status(400).json({ error: 'Email address is required.' });
+        }
+
+        const user = await User.findOne({ email: email.toLowerCase().trim() });
+        if (!user) {
+            return res.status(404).json({ error: 'Account not found with this email.' });
+        }
+
+        if (user.isEmailVerified) {
+            return res.json({ status: 'success', message: 'Your email address is already verified!' });
+        }
+
+        const verificationToken = crypto.randomBytes(32).toString('hex');
+        user.emailVerificationToken = verificationToken;
+        user.emailVerificationExpires = new Date(Date.now() + 24 * 60 * 60 * 1000);
+        await user.save();
+
+        const siteUrl = config.PUBLIC_SITE_URL || `${req.protocol}://${req.get('host')}`;
+        await emailService.sendVerificationEmail({
+            email: user.email,
+            name: user.fullName,
+            token: verificationToken,
+            siteUrl
+        });
+
+        return res.json({
+            status: 'success',
+            message: 'Verification link has been sent to your email address.'
+        });
+    } catch (err) {
+        console.error('Resend verification error:', err.message);
+        return res.status(500).json({ error: 'Failed to resend confirmation email.' });
+    }
+});
+
+/**
+ * POST /api/account/google
+ * Google Sign-In & Sign-Up endpoint
+ */
+router.post('/api/account/google', async (req, res) => {
+    try {
+        const { credential } = req.body;
+        if (!credential) {
+            return res.status(400).json({ error: 'Google authentication credential is required.' });
+        }
+
+        const googleProfile = await googleAuthService.verifyIdToken(credential);
+        const { googleId, email, name, avatarUrl } = googleProfile;
+
+        // Check if user exists by googleId or email
+        let user = await User.findOne({
+            $or: [{ googleId }, { email }]
+        });
+
+        let isNewUser = false;
+        if (user) {
+            // Existing user: Link Google ID and mark email verified
+            if (!user.googleId) user.googleId = googleId;
+            user.isEmailVerified = true;
+            if (!user.avatarUrl && avatarUrl) user.avatarUrl = avatarUrl;
+            if (!user.fullName && name) user.fullName = name;
+            await user.save();
+        } else {
+            // New user registration via Google
+            isNewUser = true;
+            user = await User.create({
+                email,
+                fullName: name || '',
+                googleId,
+                avatarUrl,
+                authProvider: 'google',
+                isEmailVerified: true, // Google already verified this email
+                plan: 'free'
+            });
+
+            // Automatically issue free API key
+            const keyString = ApiKey.generateKey();
+            await ApiKey.create({
+                key: keyString,
+                user: user._id,
+                name: `${user.fullName || 'Google'} Free Key`,
+                email: user.email,
+                plan: 'free',
+                rateLimitPerMinute: 120,
+                isAdFree: false
+            });
+        }
+
+        // Fetch user's active API key
+        const apiKey = await ApiKey.findOne({
+            $or: [{ user: user._id }, { email: user.email }],
+            active: true
+        }).lean();
+
+        const token = jwt.sign(
+            { userId: user._id, email: user.email, role: user.role },
+            JWT_SECRET,
+            { expiresIn: '30d' }
+        );
+
+        return res.json({
+            status: 'success',
+            message: isNewUser ? 'Account registered successfully with Google!' : 'Welcome back!',
+            token,
+            user: {
+                id: user._id,
+                email: user.email,
+                fullName: user.fullName,
+                avatarUrl: user.avatarUrl,
+                plan: user.plan,
+                isEmailVerified: user.isEmailVerified,
+                authProvider: user.authProvider
+            },
+            apiKey: apiKey ? apiKey.key : null
+        });
+    } catch (err) {
+        console.error('Google auth error:', err.message);
+        return res.status(400).json({ error: err.message || 'Google authentication failed.' });
     }
 });
 
@@ -82,6 +333,10 @@ router.post('/api/account/login', async (req, res) => {
         const user = await User.findOne({ email: email.toLowerCase().trim() });
         if (!user || !user.active) {
             return res.status(401).json({ error: 'Invalid email or password.' });
+        }
+
+        if (user.authProvider === 'google' && !user.passwordHash) {
+            return res.status(400).json({ error: 'This account was created with Google. Please use Google Sign-In.' });
         }
 
         const isValid = await user.verifyPassword(password);
@@ -103,8 +358,11 @@ router.post('/api/account/login', async (req, res) => {
                 email: user.email,
                 fullName: user.fullName,
                 companyName: user.companyName,
+                avatarUrl: user.avatarUrl,
                 plan: user.plan,
-                planExpiresAt: user.planExpiresAt
+                planExpiresAt: user.planExpiresAt,
+                isEmailVerified: user.isEmailVerified,
+                authProvider: user.authProvider
             }
         });
     } catch (err) {
@@ -124,8 +382,11 @@ router.get('/api/account/me', requireUser, async (req, res) => {
             email: user.email,
             fullName: user.fullName,
             companyName: user.companyName,
+            avatarUrl: user.avatarUrl,
             plan: user.plan,
             planExpiresAt: user.planExpiresAt,
+            isEmailVerified: user.isEmailVerified,
+            authProvider: user.authProvider,
             createdAt: user.created_at
         }
     });

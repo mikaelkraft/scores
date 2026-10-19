@@ -54,6 +54,17 @@ function loadEnvConfig() {
     PAYPAL_CLIENT_SECRET: process.env.PAYPAL_CLIENT_SECRET || '',
     PAYPAL_MODE: process.env.PAYPAL_MODE || 'sandbox', // 'sandbox' or 'live'
 
+    // Google Sign-In & Authentication
+    GOOGLE_CLIENT_ID: process.env.GOOGLE_CLIENT_ID || '',
+
+    // SMTP Email Services
+    SMTP_HOST: process.env.SMTP_HOST || '',
+    SMTP_PORT: parseInt(process.env.SMTP_PORT) || 587,
+    SMTP_USER: process.env.SMTP_USER || '',
+    SMTP_PASS: process.env.SMTP_PASS || '',
+    SMTP_FROM: process.env.SMTP_FROM || 'Norra AI <support@mynorra.xyz>',
+    SMTP_SECURE: process.env.SMTP_SECURE === 'true',
+
     // Rate Limiting
     RATE_LIMIT_WINDOW: parseInt(process.env.RATE_LIMIT_WINDOW || process.env.RATE_LIMIT_WINDOW_MS) || 60000,
     RATE_LIMIT_MAX: parseInt(process.env.RATE_LIMIT_MAX) || 500,

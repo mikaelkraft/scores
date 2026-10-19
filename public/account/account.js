@@ -1,9 +1,10 @@
-// account.js - Customer Account & Developer Portal
+// account.js - Customer Account & Developer Portal with Google Sign-In and Email Confirmation
 
 let userToken = localStorage.getItem('norra_user_token') || '';
 let currentUser = null;
 let currentKey = null;
 let isRegisterMode = false;
+let authConfig = { googleClientId: '', googleAuthEnabled: false };
 
 // Currency conversion rate estimates relative to 1 USD
 const CURRENCY_RATES = {
@@ -35,6 +36,7 @@ function toggleAuthMode() {
     const switchPrompt = document.getElementById('auth-switch-prompt');
     const switchLink = document.getElementById('auth-switch-link');
     const errorEl = document.getElementById('auth-error');
+    const googleBtnText = document.getElementById('google-btn-text');
 
     errorEl.style.display = 'none';
 
@@ -44,12 +46,14 @@ function toggleAuthMode() {
         submitBtn.textContent = 'Register & Get API Key';
         switchPrompt.textContent = 'Already have an account?';
         switchLink.textContent = 'Sign In';
+        if (googleBtnText) googleBtnText.textContent = 'Sign up with Google';
     } else {
         title.textContent = 'Sign In to Developer Portal';
         nameGroup.style.display = 'none';
         submitBtn.textContent = 'Sign In';
         switchPrompt.textContent = "Don't have an account?";
         switchLink.textContent = 'Create Free Account';
+        if (googleBtnText) googleBtnText.textContent = 'Continue with Google';
     }
 }
 
@@ -74,6 +78,9 @@ async function handleAuthSubmit(event) {
         if (res.ok && data.token) {
             userToken = data.token;
             localStorage.setItem('norra_user_token', userToken);
+            if (isRegisterMode && data.requiresEmailVerification) {
+                alert('Account registered! We sent a confirmation link to your email. Please verify your address.');
+            }
             loadPortalData();
         } else {
             errorEl.textContent = data.error || 'Authentication failed.';
@@ -82,6 +89,163 @@ async function handleAuthSubmit(event) {
     } catch (err) {
         errorEl.textContent = 'Connection error. Please try again.';
         errorEl.style.display = 'block';
+    }
+}
+
+// Google Sign-In Setup & Callback
+async function initGoogleAuth() {
+    try {
+        const res = await fetch('/api/account/auth-config');
+        authConfig = await res.json();
+
+        if (authConfig.googleAuthEnabled && authConfig.googleClientId) {
+            const checkGoogleReady = setInterval(() => {
+                if (window.google && window.google.accounts && window.google.accounts.id) {
+                    clearInterval(checkGoogleReady);
+                    try {
+                        google.accounts.id.initialize({
+                            client_id: authConfig.googleClientId,
+                            callback: handleGoogleCredentialResponse,
+                            auto_select: false
+                        });
+
+                        const btnContainer = document.getElementById('google-signin-btn');
+                        if (btnContainer) {
+                            google.accounts.id.renderButton(btnContainer, {
+                                theme: 'filled_black',
+                                size: 'large',
+                                width: '320',
+                                text: 'continue_with',
+                                shape: 'rectangular'
+                            });
+                            // Hide the fallback button if the official Google button rendered
+                            const fallbackBtn = document.getElementById('google-fallback-btn');
+                            if (fallbackBtn) fallbackBtn.style.display = 'none';
+                        }
+                    } catch (e) {
+                        console.warn('Google button render warning:', e);
+                    }
+                }
+            }, 100);
+
+            setTimeout(() => clearInterval(checkGoogleReady), 6000);
+        }
+    } catch (err) {
+        console.warn('Google auth config lookup failed:', err);
+    }
+}
+
+function triggerGoogleSignIn() {
+    if (!authConfig.googleAuthEnabled || !authConfig.googleClientId) {
+        alert('Google Sign-In is enabled on the backend!\nTo activate the client button, provide your Google OAuth Client ID in the Admin Console (/admin -> Authentication Settings).');
+        return;
+    }
+    if (window.google && window.google.accounts && window.google.accounts.id) {
+        google.accounts.id.prompt();
+    }
+}
+
+async function handleGoogleCredentialResponse(response) {
+    if (!response || !response.credential) return;
+    const errorEl = document.getElementById('auth-error');
+    errorEl.style.display = 'none';
+
+    try {
+        const res = await fetch('/api/account/google', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ credential: response.credential })
+        });
+        const data = await res.json();
+        if (res.ok && data.token) {
+            userToken = data.token;
+            localStorage.setItem('norra_user_token', userToken);
+            loadPortalData();
+        } else {
+            errorEl.textContent = data.error || 'Google Sign-In failed.';
+            errorEl.style.display = 'block';
+        }
+    } catch (err) {
+        errorEl.textContent = 'Failed to connect to Google Auth endpoint.';
+        errorEl.style.display = 'block';
+    }
+}
+
+// Email Verification Flow
+async function verifyEmailToken(token) {
+    try {
+        const res = await fetch('/api/account/verify-email', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ token })
+        });
+        const data = await res.json();
+
+        // Clean query param from URL without reload
+        const newUrl = window.location.pathname;
+        window.history.replaceState({}, document.title, newUrl);
+
+        if (res.ok) {
+            alert('🎉 ' + (data.message || 'Email verified successfully! Full access unlocked.'));
+            if (currentUser) {
+                currentUser.isEmailVerified = true;
+                updateEmailBanner();
+            }
+        } else {
+            alert('⚠️ ' + (data.error || 'Verification token is invalid or expired.'));
+        }
+    } catch (err) {
+        console.error('Email verification error:', err);
+    }
+}
+
+async function resendVerificationEmail() {
+    const btn = document.getElementById('resend-verification-btn');
+    if (btn) btn.disabled = true;
+
+    try {
+        const res = await fetch('/api/account/resend-verification', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                Authorization: `Bearer ${userToken}`
+            },
+            body: JSON.stringify({ email: currentUser?.email })
+        });
+        const data = await res.json();
+        if (res.ok) {
+            alert('✉️ ' + (data.message || 'Confirmation link sent to your email!'));
+            if (btn) btn.textContent = 'Sent! Check Inbox';
+        } else {
+            alert('⚠️ ' + (data.error || 'Failed to resend confirmation email.'));
+            if (btn) btn.disabled = false;
+        }
+    } catch (err) {
+        alert('Connection error resending verification email.');
+        if (btn) btn.disabled = false;
+    }
+}
+
+function updateEmailBanner() {
+    const banner = document.getElementById('email-verification-banner');
+    const verifiedAlert = document.getElementById('email-verified-alert');
+    const emailSpan = document.getElementById('user-unverified-email');
+
+    if (!currentUser) return;
+
+    if (!currentUser.isEmailVerified) {
+        if (banner) {
+            banner.style.display = 'flex';
+            if (emailSpan) emailSpan.textContent = currentUser.email;
+        }
+        if (verifiedAlert) verifiedAlert.style.display = 'none';
+    } else {
+        if (banner) banner.style.display = 'none';
+        if (verifiedAlert) verifiedAlert.style.display = 'flex';
+        // Auto-hide the verified badge after 6 seconds
+        setTimeout(() => {
+            if (verifiedAlert) verifiedAlert.style.display = 'none';
+        }, 6000);
     }
 }
 
@@ -122,6 +286,7 @@ async function loadPortalData() {
         document.getElementById('portal-view').style.display = 'block';
         document.getElementById('badge-user-plan').textContent = `${currentUser.plan} PLAN`;
 
+        updateEmailBanner();
         await loadKeys();
     } catch (err) {
         handleUserLogout();
@@ -161,111 +326,132 @@ async function regenerateApiKey() {
         const res = await fetch('/api/account/keys/regenerate', {
             method: 'POST',
             headers: {
-                Authorization: `Bearer ${userToken}`,
-                'Content-Type': 'application/json'
+                'Content-Type': 'application/json',
+                Authorization: `Bearer ${userToken}`
             },
             body: JSON.stringify({ keyId: currentKey._id })
         });
         const data = await res.json();
-        if (res.ok && data.key) {
+        if (data.key) {
+            currentKey = data.key;
+            document.getElementById('display-api-key').textContent = currentKey.key;
             alert('API key regenerated successfully!');
-            loadKeys();
-        } else {
-            alert(data.error || 'Failed to regenerate key.');
         }
     } catch (err) {
-        alert('Network error while regenerating key.');
+        alert('Failed to regenerate key.');
     }
 }
 
 async function loadUpgradePlans() {
+    const grid = document.getElementById('upgrade-plans-grid');
+    grid.innerHTML = '<div style="color:var(--text-muted);">Loading plans...</div>';
+
     try {
         const res = await fetch('/api/plans');
         const data = await res.json();
-        const grid = document.getElementById('upgrade-plans-grid');
-        const userCurrency = detectUserCurrency();
-        const curr = CURRENCY_RATES[userCurrency] || CURRENCY_RATES.USD;
+        const userCurr = detectUserCurrency();
+        const currInfo = CURRENCY_RATES[userCurr] || CURRENCY_RATES.USD;
 
-        grid.innerHTML = (data.plans || []).filter(p => p.id !== 'free').map(plan => {
-            const localAmount = (plan.priceUsd * curr.rate).toLocaleString(undefined, { maximumFractionDigits: 0 });
-            const localText = userCurrency !== 'USD' ? `≈ ${curr.symbol}${localAmount} ${userCurrency}/mo` : '';
+        grid.innerHTML = (data.plans || []).map(plan => {
+            const isCurrent = currentUser && currentUser.plan === plan.id;
+            const approxLocal = Math.round(plan.priceUsd * currInfo.rate);
 
             return `
-                <div class="plan-card">
+                <div class="plan-card" style="${isCurrent ? 'border-color: var(--color-primary); box-shadow: 0 0 12px var(--color-primary-subtle);' : ''}">
                     <div>
-                        <span style="font-size: 11px; text-transform: uppercase; font-weight: 700; color: var(--color-primary); letter-spacing: 0.5px;">${plan.name}</span>
-                        <div class="plan-price">$${plan.priceUsd} <small>/ month</small></div>
-                        <div class="local-price-estimate">${localText}</div>
-                        <ul class="plan-features">
-                            ${plan.features.map(f => `<li>${f}</li>`).join('')}
+                        <div style="display: flex; justify-content: space-between; align-items: baseline;">
+                            <h4 style="margin: 0; font-size: 16px;">${escapeHtml(plan.name)}</h4>
+                            ${isCurrent ? '<span style="font-size: 11px; color: var(--color-primary); font-weight: 700;">CURRENT</span>' : ''}
+                        </div>
+                        <div style="font-size: 26px; font-weight: 800; margin: 12px 0 4px;">
+                            $${plan.priceUsd} <span style="font-size: 13px; font-weight: 400; color: var(--text-muted);">/ month</span>
+                        </div>
+                        ${userCurr !== 'USD' && plan.priceUsd > 0 ? `
+                            <div style="font-size: 12px; color: var(--text-muted); margin-bottom: 12px;">
+                                ≈ ${currInfo.symbol}${approxLocal.toLocaleString()} ${userCurr} / mo
+                            </div>
+                        ` : ''}
+                        <ul style="padding-left: 18px; font-size: 13px; color: var(--text-muted); margin: 16px 0;">
+                            ${(plan.features || []).map(f => `<li style="margin-bottom: 6px;">${escapeHtml(f)}</li>`).join('')}
                         </ul>
                     </div>
-                    <div>
-                        <button class="btn-primary" style="width: 100%; margin-bottom: 8px;" onclick="checkoutWithFlutterwave('${plan.id}')">Pay with Flutterwave (Card/Bank)</button>
-                        <button class="btn-secondary" style="width: 100%;" onclick="checkoutWithPayPal('${plan.id}')">Pay with PayPal</button>
-                    </div>
+                    ${!isCurrent && plan.priceUsd > 0 ? `
+                        <div style="display: flex; gap: 8px; margin-top: 15px;">
+                            ${data.gateways?.flutterwave ? `
+                                <button onclick="checkoutFlutterwave('${plan.id}')" class="btn-primary" style="flex: 1; padding: 8px 10px; font-size: 12px;">Pay Flutterwave</button>
+                            ` : ''}
+                            ${data.gateways?.paypal ? `
+                                <button onclick="checkoutPayPal('${plan.id}')" class="btn-secondary" style="flex: 1; padding: 8px 10px; font-size: 12px;">PayPal</button>
+                            ` : ''}
+                        </div>
+                    ` : (isCurrent ? '<button class="btn-secondary" style="width: 100%; margin-top: 15px;" disabled>Active Plan</button>' : '')}
                 </div>
             `;
         }).join('');
     } catch (err) {
-        console.error('Failed to load plans:', err);
+        grid.innerHTML = '<div style="color:#ef4444;">Failed to load pricing plans.</div>';
     }
 }
 
-async function checkoutWithFlutterwave(planId) {
-    if (!currentUser) return;
+async function checkoutFlutterwave(planId) {
     try {
         const res = await fetch('/api/payments/flutterwave/initialize', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: {
+                'Content-Type': 'application/json',
+                Authorization: `Bearer ${userToken}`
+            },
             body: JSON.stringify({
                 plan: planId,
                 email: currentUser.email,
-                name: currentUser.fullName || currentUser.email,
-                currency: 'USD'
+                name: currentUser.fullName
             })
         });
         const data = await res.json();
-        if (res.ok && data.paymentUrl) {
+        if (data.paymentUrl) {
             window.location.href = data.paymentUrl;
         } else {
-            alert(data.error || 'Failed to start Flutterwave checkout.');
+            alert(data.error || 'Could not initialize Flutterwave checkout.');
         }
     } catch (err) {
-        alert('Network error initializing Flutterwave.');
+        alert('Checkout error.');
     }
 }
 
-async function checkoutWithPayPal(planId) {
-    if (!currentUser) return;
+async function checkoutPayPal(planId) {
     try {
         const res = await fetch('/api/payments/paypal/create-order', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: {
+                'Content-Type': 'application/json',
+                Authorization: `Bearer ${userToken}`
+            },
             body: JSON.stringify({
                 plan: planId,
                 email: currentUser.email,
-                name: currentUser.fullName || currentUser.email
+                name: currentUser.fullName
             })
         });
         const data = await res.json();
-        if (res.ok && data.orderId) {
-            // Capture order (or mock capture)
+        if (data.orderId) {
+            // In mock/sandbox mode, complete capture immediately
             const captureRes = await fetch('/api/payments/paypal/capture-order', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ orderId: data.orderId, tx_ref: data.tx_ref })
             });
             const capData = await captureRes.json();
-            if (captureRes.ok && capData.status === 'success') {
-                alert(`PayPal payment complete! Your ${planId.toUpperCase()} subscription is active.`);
+            if (capData.status === 'success') {
+                alert(`PayPal subscription activated! Your upgraded key: ${capData.apiKey}`);
                 loadPortalData();
             } else {
-                alert(capData.error || 'PayPal payment capture failed.');
+                alert(capData.error || 'PayPal capture failed.');
             }
+        } else {
+            alert(data.error || 'Could not create PayPal order.');
         }
     } catch (err) {
-        alert('Failed to initiate PayPal checkout.');
+        alert('PayPal checkout error.');
     }
 }
 
@@ -292,42 +478,45 @@ function copySnippet(elementId) {
 }
 
 async function loadInvoices() {
+    const tbody = document.getElementById('invoices-body');
     try {
         const res = await fetch('/api/account/invoices', {
             headers: { Authorization: `Bearer ${userToken}` }
         });
         const data = await res.json();
-        const body = document.getElementById('invoices-body');
         if (data.invoices && data.invoices.length) {
-            body.innerHTML = data.invoices.map(inv => `
+            tbody.innerHTML = data.invoices.map(inv => `
                 <tr style="border-bottom: 1px solid var(--border-subtle);">
                     <td style="padding: 10px;">${new Date(inv.createdAt).toLocaleDateString()}</td>
-                    <td style="padding: 10px;"><code>${inv.tx_ref}</code></td>
-                    <td style="padding: 10px; text-transform: capitalize;">${inv.plan}</td>
-                    <td style="padding: 10px;">$${inv.amount} ${inv.currency}</td>
-                    <td style="padding: 10px; text-transform: capitalize;">${inv.gateway}</td>
-                    <td style="padding: 10px; color: ${inv.status === 'successful' ? '#16a34a' : '#ea580c'}; font-weight: 600;">${inv.status}</td>
+                    <td style="padding: 10px; font-family: monospace;">${escapeHtml(inv.tx_ref)}</td>
+                    <td style="padding: 10px; text-transform: uppercase; font-weight: 600;">${escapeHtml(inv.plan)}</td>
+                    <td style="padding: 10px;">$${inv.amount} ${escapeHtml(inv.currency)}</td>
+                    <td style="padding: 10px; text-transform: capitalize;">${escapeHtml(inv.gateway)}</td>
+                    <td style="padding: 10px;">
+                        <span style="padding: 3px 8px; border-radius: 4px; font-size: 11px; font-weight: 700; ${inv.status === 'successful' ? 'background: rgba(16, 185, 129, 0.15); color: #10b981;' : 'background: rgba(239, 68, 68, 0.15); color: #ef4444;'}">
+                            ${escapeHtml(inv.status)}
+                        </span>
+                    </td>
                 </tr>
             `).join('');
         } else {
-            body.innerHTML = '<tr><td colspan="6" style="text-align: center; padding: 20px; color: var(--text-muted);">No payment invoices found.</td></tr>';
+            tbody.innerHTML = '<tr><td colspan="6" style="text-align: center; padding: 20px; color: var(--text-muted);">No payment invoices found.</td></tr>';
         }
     } catch (err) {
-        console.error('Failed to load invoices:', err);
+        tbody.innerHTML = '<tr><td colspan="6" style="text-align: center; padding: 20px; color: #ef4444;">Failed to load invoices.</td></tr>';
     }
 }
 
 function toggleTheme() {
-    const isDark = document.body.classList.contains('theme-dark');
-    if (isDark) {
-        document.body.classList.remove('theme-dark');
-        document.body.setAttribute('data-theme', 'light');
-        localStorage.setItem('norra_theme', 'light');
-    } else {
-        document.body.classList.add('theme-dark');
-        document.body.setAttribute('data-theme', 'dark');
-        localStorage.setItem('norra_theme', 'dark');
-    }
+    const current = document.body.getAttribute('data-theme') || 'dark';
+    const next = current === 'dark' ? 'light' : 'dark';
+    document.body.setAttribute('data-theme', next);
+    document.body.className = next === 'light' ? 'theme-light' : 'theme-dark';
+    localStorage.setItem('norra_theme', next);
+}
+
+function escapeHtml(str) {
+    return String(str || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
 
 // Initial boot
@@ -338,8 +527,17 @@ document.addEventListener('DOMContentLoaded', () => {
         document.body.setAttribute('data-theme', 'light');
     }
 
-    // Check payment callback
+    // Initialize Google Auth
+    initGoogleAuth();
+
+    // Check email verification token in URL
     const urlParams = new URLSearchParams(window.location.search);
+    const verifyToken = urlParams.get('verify_token');
+    if (verifyToken) {
+        verifyEmailToken(verifyToken);
+    }
+
+    // Check payment callback
     if (urlParams.get('payment_status') === 'flw_callback') {
         const tx_ref = urlParams.get('tx_ref');
         const transaction_id = urlParams.get('transaction_id');

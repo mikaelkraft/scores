@@ -221,6 +221,7 @@
             <button class="admin-tab-btn" onclick="switchAdminTab('keys')">🔑 API Keys & Customers</button>
             <button class="admin-tab-btn" onclick="switchAdminTab('gateways')">🏦 Payment Gateways</button>
             <button class="admin-tab-btn" onclick="switchAdminTab('booking')">🎯 Betting Hook</button>
+            <button class="admin-tab-btn" onclick="switchAdminTab('auth')">🔐 Auth &amp; Email</button>
         </nav>
 
         <!-- Tab 1: Overview -->
@@ -446,6 +447,57 @@
                     <input type="text" id="setting-booking-referral" placeholder="NORRA_AI">
                 </div>
                 <button class="btn-primary" style="margin-top: 15px;" onclick="saveBookingSettings()">Save Betting Hook Settings</button>
+            </div>
+        </section>
+
+        <!-- Tab 8: Auth & Email -->
+        <section id="tab-auth" class="admin-tab-content" style="display: none;">
+            <div class="admin-card">
+                <h3>Google Sign-In &amp; Registration</h3>
+                <p style="color: var(--text-muted); font-size: 13px;">Allow developers to register and sign in seamlessly with their Google account.</p>
+                <div class="form-group">
+                    <label>Google OAuth Client ID</label>
+                    <input type="text" id="setting-google-client-id" placeholder="e.g. 1234567890-abcdef.apps.googleusercontent.com">
+                    <small style="color: var(--text-faint); display: block; margin-top: 4px;">From Google Cloud Console &gt; APIs &amp; Services &gt; Credentials &gt; OAuth 2.0 Client IDs.</small>
+                </div>
+                <div class="form-group" style="margin-top: 15px;">
+                    <label class="toggle-switch">
+                        <input type="checkbox" id="setting-require-verification" checked>
+                        <span>Require Email Confirmation on Normal (Email/Password) Signups</span>
+                    </label>
+                </div>
+            </div>
+
+            <div class="admin-card">
+                <h3>SMTP Email Dispatch Settings</h3>
+                <p style="color: var(--text-muted); font-size: 13px;">Configure your SMTP server to deliver confirmation emails to developers. When disabled or unset, verification links are generated and logged (mock mode).</p>
+                <label class="toggle-switch" style="margin-bottom: 15px;">
+                    <input type="checkbox" id="setting-smtp-enabled">
+                    <span>Enable Live SMTP Email Sending</span>
+                </label>
+                <div class="form-grid" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 15px;">
+                    <div class="form-group">
+                        <label>SMTP Host</label>
+                        <input type="text" id="setting-smtp-host" placeholder="smtp.gmail.com or smtp.sendgrid.net">
+                    </div>
+                    <div class="form-group">
+                        <label>SMTP Port</label>
+                        <input type="number" id="setting-smtp-port" placeholder="587" value="587">
+                    </div>
+                    <div class="form-group">
+                        <label>SMTP Username / Email</label>
+                        <input type="text" id="setting-smtp-user" placeholder="apikey or your-email@gmail.com">
+                    </div>
+                    <div class="form-group">
+                        <label>SMTP Password / App Password</label>
+                        <input type="password" id="setting-smtp-pass" placeholder="••••••••">
+                    </div>
+                </div>
+                <div class="form-group" style="margin-top: 15px;">
+                    <label>Sender Address (From)</label>
+                    <input type="text" id="setting-smtp-from" placeholder="Norra AI &lt;support@mynorra.xyz&gt;">
+                </div>
+                <button class="btn-primary" style="margin-top: 20px;" onclick="saveAuthAndEmailSettings()">Save Auth &amp; Email Settings</button>
             </div>
         </section>
     </div>

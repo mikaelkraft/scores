@@ -12,7 +12,21 @@ const UserSchema = new mongoose.Schema({
     },
     passwordHash: {
         type: String,
-        required: true
+        required: false // Optional for Google Sign-In users
+    },
+    googleId: {
+        type: String,
+        sparse: true,
+        index: true
+    },
+    authProvider: {
+        type: String,
+        enum: ['local', 'google'],
+        default: 'local'
+    },
+    avatarUrl: {
+        type: String,
+        default: ''
     },
     fullName: {
         type: String,
@@ -23,6 +37,19 @@ const UserSchema = new mongoose.Schema({
         type: String,
         default: '',
         trim: true
+    },
+    isEmailVerified: {
+        type: Boolean,
+        default: false
+    },
+    emailVerificationToken: {
+        type: String,
+        default: null,
+        index: true
+    },
+    emailVerificationExpires: {
+        type: Date,
+        default: null
     },
     plan: {
         type: String,
@@ -48,6 +75,7 @@ const UserSchema = new mongoose.Schema({
 });
 
 UserSchema.methods.verifyPassword = async function(password) {
+    if (!this.passwordHash) return false;
     return bcrypt.compare(password, this.passwordHash);
 };
 

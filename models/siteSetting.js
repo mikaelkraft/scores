@@ -101,6 +101,19 @@ const SiteSettingSchema = new mongoose.Schema({
     bookingSettings: {
         hookEnabled: { type: Boolean, default: true },
         referralCode: { type: String, default: 'NORRA_AI' }
+    },
+    authSettings: {
+        googleClientId: { type: String, default: '' },
+        requireEmailVerification: { type: Boolean, default: true }
+    },
+    smtpSettings: {
+        enabled: { type: Boolean, default: false },
+        host: { type: String, default: '' },
+        port: { type: Number, default: 587 },
+        secure: { type: Boolean, default: false },
+        user: { type: String, default: '' },
+        pass: { type: String, default: '' },
+        fromEmail: { type: String, default: 'Norra AI <support@mynorra.xyz>' }
     }
 }, {
     collection: 'site_settings',

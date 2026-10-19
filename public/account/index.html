@@ -173,7 +173,7 @@
             color: var(--text-main);
             margin-top: 10px;
         }
-    </style>
+    <script src="https://accounts.google.com/gsi/client" async defer></script>
 </head>
 <body class="theme-dark" data-theme="dark">
 
@@ -181,6 +181,21 @@
         <h2 id="auth-title" style="margin-top: 0; margin-bottom: 6px;">Sign In to Developer Portal</h2>
         <p style="color: var(--text-muted); font-size: 13px; margin-bottom: 20px;">Manage your Norra Scores API keys, subscriptions, and whitelabel embeds.</p>
         
+        <!-- Google Sign-In Container -->
+        <div id="google-auth-wrapper" style="margin-bottom: 16px;">
+            <div id="google-signin-btn" style="display: flex; justify-content: center;"></div>
+            <button id="google-fallback-btn" type="button" class="btn-secondary" onclick="triggerGoogleSignIn()" style="width: 100%; display: flex; align-items: center; justify-content: center; gap: 10px; padding: 10px 16px; font-weight: 600;">
+                <svg width="18" height="18" viewBox="0 0 18 18"><path fill="#4285F4" d="M17.64 9.2c0-.637-.057-1.251-.164-1.84H9v3.481h4.844c-.209 1.125-.843 2.078-1.796 2.717v2.258h2.908c1.702-1.567 2.684-3.874 2.684-6.616z"/><path fill="#34A853" d="M9 18c2.43 0 4.467-.806 5.956-2.184l-2.908-2.258c-.806.54-1.837.86-3.048.86-2.344 0-4.328-1.584-5.036-3.711H.957v2.332C2.438 15.983 5.482 18 9 18z"/><path fill="#FBBC05" d="M3.964 10.707c-.18-.54-.282-1.117-.282-1.707s.102-1.167.282-1.707V4.961H.957C.347 6.175 0 7.55 0 9s.347 2.825.957 4.039l3.007-2.332z"/><path fill="#EA4335" d="M9 3.58c1.321 0 2.508.454 3.44 1.345l2.582-2.58C13.463.891 11.426 0 9 0 5.482 0 2.438 2.017.957 4.961l3.007 2.332C4.672 5.164 6.656 3.58 9 3.58z"/></svg>
+                <span id="google-btn-text">Continue with Google</span>
+            </button>
+        </div>
+
+        <div class="auth-divider" style="display: flex; align-items: center; margin: 16px 0; color: var(--text-faint); font-size: 11px; text-transform: uppercase; letter-spacing: 1px;">
+            <hr style="flex: 1; border: none; border-top: 1px solid var(--border-subtle); margin: 0;">
+            <span style="padding: 0 10px;">or continue with email</span>
+            <hr style="flex: 1; border: none; border-top: 1px solid var(--border-subtle); margin: 0;">
+        </div>
+
         <form id="auth-form" onsubmit="handleAuthSubmit(event)">
             <div id="name-group" class="form-group" style="display: none;">
                 <label>Company / Full Name</label>
@@ -216,6 +231,19 @@
                 <button onclick="handleUserLogout()" class="btn-secondary">Log Out</button>
             </div>
         </header>
+
+        <!-- Email Verification Banner -->
+        <div id="email-verification-banner" style="display: none; background: rgba(234, 179, 8, 0.1); border: 1px solid rgba(234, 179, 8, 0.35); border-radius: var(--card-radius); padding: 14px 20px; margin-bottom: 24px; font-size: 13px; color: #fde047; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px;">
+            <div style="display: flex; align-items: center; gap: 8px;">
+                <span style="font-size: 16px;">✉️</span>
+                <span><strong>Email confirmation required:</strong> We sent a verification link to <strong id="user-unverified-email" style="color: #ffffff;"></strong>. Please verify to enable full production API throughput.</span>
+            </div>
+            <button type="button" id="resend-verification-btn" onclick="resendVerificationEmail()" class="btn-secondary" style="border-color: rgba(234, 179, 8, 0.5); color: #ffffff; padding: 6px 14px; font-size: 12px;">Resend Email</button>
+        </div>
+        <div id="email-verified-alert" style="display: none; background: rgba(16, 185, 129, 0.1); border: 1px solid rgba(16, 185, 129, 0.35); border-radius: var(--card-radius); padding: 14px 20px; margin-bottom: 24px; font-size: 13px; color: #6ee7b7; align-items: center; gap: 8px;">
+            <span style="font-size: 16px;">✅</span>
+            <span>Your developer email has been verified! Full platform privileges are active.</span>
+        </div>
 
         <nav class="portal-nav">
             <button class="portal-tab-btn active" onclick="switchPortalTab('keys')">🔑 My API Keys</button>
