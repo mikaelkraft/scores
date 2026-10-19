@@ -160,6 +160,20 @@ app.use('/assets', express.static(path.join(__dirname, 'public'), {
     maxAge: config.isProd ? '7d' : 0
 }));
 
+app.use('/uploads', express.static(path.join(__dirname, 'public', 'uploads'), {
+    maxAge: config.isProd ? '30d' : 0
+}));
+
+// Customer Account Portal
+app.get('/account', (req, res) => {
+    return res.sendFile(path.join(__dirname, 'public', 'account', 'index.html'));
+});
+
+// Admin Dashboard
+app.get('/admin', (req, res) => {
+    return res.sendFile(path.join(__dirname, 'public', 'admin', 'index.html'));
+});
+
 // OpenAPI is a bounded discovery document for API clients and answer engines.
 if (specs) {
     app.get('/openapi.json', (req, res) => {
@@ -175,7 +189,7 @@ if (swaggerUi && specs) {
         next();
     }, swaggerUi.serve, swaggerUi.setup(null, {
         customCss: '.swagger-ui .topbar { display: none }',
-        customSiteTitle: 'Free Football Live Scores API Documentation',
+        customSiteTitle: 'Norra AI Live Football Scores API Documentation',
         swaggerOptions: {
             url: '/openapi.json',
             displayRequestDuration: true,
@@ -190,12 +204,12 @@ if (swaggerUi && specs) {
 app.get('/service-info.json', (req, res) => {
     res.set('Cache-Control', 'public, max-age=300');
     res.json({
-        name: 'Free Football Live Scores API',
+        name: 'Norra AI Live Football Scores & Commercial Sports API',
         version: require('./package.json').version,
-        canonicalSite: 'https://worldcup26.ir',
+        canonicalSite: config.PUBLIC_SITE_URL || 'https://scores.mynorra.xyz',
         dataSource: 'MongoDB',
         upstreamCalls: false,
-        access: { price: 'free', apiKeyRequired: false, rateLimited: true },
+        access: { price: 'freemium', apiKeyRequired: false, plans: '/api/plans', rateLimited: true },
         documentation: '/api-docs/',
         openapi: '/openapi.json',
         aiGuide: '/ai-data-guide.md',

@@ -8,12 +8,13 @@ const options = {
   definition: {
     openapi: '3.0.0',
     info: {
-      title: 'Free Football Live Scores API',
+      title: 'Norra AI Live Football Scores & Commercial Sports API',
       version: packageJson.version,
-      description: 'Open-source JSON football API for Premier League, LaLiga and expanding multi-country coverage. Read stored fixtures, live score snapshots, results, tables, clubs, match summaries, play-by-play and rosters from a database-backed REST service. Requests never call the upstream provider directly. Values are stored snapshots; use GET /get/soccer/meta to inspect current coverage and synchronization time. The repository source code is ISC licensed; no separate license for third-party football data is asserted.',
+      description: 'Production JSON football API for Premier League, LaLiga and expanding multi-country coverage. Read stored fixtures, stored snapshots, live scores, results, tables, clubs, match summaries, play-by-play and rosters from a database-backed REST service. Supported by Norra AI (scores.mynorra.xyz). Commercial API plans and white-label access available. Requests never call upstream providers directly.',
       contact: {
-        name: 'Free Football Live Scores',
-        url: 'https://github.com/rezarahiminia/livescoreFootball/issues'
+        name: 'Norra AI Support',
+        url: 'https://scores.mynorra.xyz',
+        email: 'support@mynorra.xyz'
       }
     },
     externalDocs: {

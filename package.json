@@ -1,7 +1,7 @@
 {
-  "name": "soccer-clubs-data-api",
-  "version": "2.0.0",
-  "description": "Free open-source football API for live scores, fixtures, results, standings and match events across the Premier League, LaLiga and more leagues.",
+  "name": "scores-mynorra",
+  "version": "2.1.0",
+  "description": "Norra AI Live Football Scores & Commercial Sports API Platform",
   "main": "index.js",
   "scripts": {
     "start": "node index.js",
@@ -47,28 +47,31 @@
     "football-api-github",
     "json-football-api"
   ],
-  "author": "jp2435",
+  "author": "Norra AI <support@mynorra.xyz>",
   "license": "ISC",
-  "homepage": "https://worldcup26.ir",
+  "homepage": "https://scores.mynorra.xyz",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/rezarahiminia/livescoreFootball.git"
+    "url": "git+https://github.com/mikaelkraft/scores.git"
   },
   "bugs": {
-    "url": "https://github.com/rezarahiminia/livescoreFootball/issues"
+    "url": "https://github.com/mikaelkraft/scores/issues"
   },
   "engines": {
     "node": ">=20"
   },
   "dependencies": {
+    "bcryptjs": "^3.0.3",
     "compression": "^1.8.1",
     "cors": "^2.8.6",
     "dotenv": "^16.0.0",
     "express": "^4.17.2",
     "express-rate-limit": "^8.2.1",
     "helmet": "^8.1.0",
+    "jsonwebtoken": "^9.0.3",
     "mongoose": "^6.2.5",
     "morgan": "^1.10.0",
+    "multer": "^2.4.0",
     "swagger-jsdoc": "^6.2.8",
     "swagger-ui-express": "^5.0.1"
   },

@@ -1,5 +1,5 @@
-const SITE_NAME = 'Free Football Live Scores';
-const GITHUB_URL = 'https://github.com/rezarahiminia/livescoreFootball';
+const SITE_NAME = 'Scores by Norra AI';
+const GITHUB_URL = 'https://github.com/mikaelkraft/scores';
 
 // Stored names are provider-shaped ("Italian Serie A"); these are the names
 // people actually search for. Extra entries stay inert until the listener
@@ -86,7 +86,7 @@ function safeImageUrl(value) {
     const raw = String(value || '').trim();
     if (!raw) return '';
     try {
-        const url = new URL(raw, 'https://worldcup26.ir');
+        const url = new URL(raw, 'https://scores.mynorra.xyz');
         return ['http:', 'https:'].includes(url.protocol) ? url.href : '';
     } catch {
         return '';

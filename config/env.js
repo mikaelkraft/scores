@@ -4,45 +4,55 @@ const dotenv = require('dotenv');
 let configLoaded = false;
 let config = null;
 
-// تابع بارگذاری تنظیمات محیطی
+// Load environment configuration
 function loadEnvConfig() {
   if (configLoaded) return config;
 
-  // تعیین محیط اجرا 
+  // Determine runtime environment
   const NODE_ENV = (process.env.NODE_ENV || 'development').trim();
 
-  // بارگذاری فایل env مناسب
+  // Load appropriate environment file
   const envFile = NODE_ENV === 'production' ? '.env.production' : '.env.development';
   const envPath = path.resolve(process.cwd(), envFile);
 
-  // بارگذاری متغیرهای محیطی
+  // Load environment variables
   const result = dotenv.config({ path: envPath });
 
   if (result.error) {
-    console.warn(`⚠️ فایل ${envFile} یافت نشد، استفاده از مقادیر پیش‌فرض`);
-    // بارگذاری .env پیش‌فرض
+    // Fallback to default .env if specific file is not found
     dotenv.config();
   }
 
-  console.log(`🌍 محیط: ${NODE_ENV}`);
-  console.log(`📁 فایل env: ${envFile}`);
-
-  // تنظیمات پیش‌فرض
+  // Base platform configuration
   config = {
-    // محیط
+    // Environment
     NODE_ENV,
     isDev: NODE_ENV === 'development',
     isProd: NODE_ENV === 'production',
     isDevelopment: NODE_ENV === 'development',
     isProduction: NODE_ENV === 'production',
 
-    // سرور
+    // Server & Domains
     PORT: parseInt(process.env.PORT) || 3050,
-    API_URL: process.env.API_URL || `http://localhost:${process.env.PORT || 3050}`,
-    FRONTEND_URL: process.env.FRONTEND_URL || `http://localhost:${process.env.PORT || 3050}`,
+    PUBLIC_SITE_URL: process.env.PUBLIC_SITE_URL || (NODE_ENV === 'production' ? 'https://scores.mynorra.xyz' : `http://localhost:${process.env.PORT || 3050}`),
+    API_URL: process.env.API_URL || process.env.PUBLIC_SITE_URL || `http://localhost:${process.env.PORT || 3050}`,
+    FRONTEND_URL: process.env.FRONTEND_URL || process.env.PUBLIC_SITE_URL || `http://localhost:${process.env.PORT || 3050}`,
 
-    // دیتابیس
+    // Database
     MONGODB_URL: process.env.MONGODB_URL || 'mongodb://localhost:27017/soccer',
+
+    // Admin & Auth
+    ADMIN_USERNAME: process.env.ADMIN_USERNAME || 'admin',
+    ADMIN_PASSWORD: process.env.ADMIN_PASSWORD || 'NorraScoresAdmin2026!',
+    ADMIN_JWT_SECRET: process.env.ADMIN_JWT_SECRET || process.env.JWT_SECRET || 'norra-scores-jwt-secret-key-2026',
+
+    // Payment Gateways
+    FLUTTERWAVE_PUBLIC_KEY: process.env.FLUTTERWAVE_PUBLIC_KEY || '',
+    FLUTTERWAVE_SECRET_KEY: process.env.FLUTTERWAVE_SECRET_KEY || '',
+    FLUTTERWAVE_ENCRYPTION_KEY: process.env.FLUTTERWAVE_ENCRYPTION_KEY || '',
+    PAYPAL_CLIENT_ID: process.env.PAYPAL_CLIENT_ID || '',
+    PAYPAL_CLIENT_SECRET: process.env.PAYPAL_CLIENT_SECRET || '',
+    PAYPAL_MODE: process.env.PAYPAL_MODE || 'sandbox', // 'sandbox' or 'live'
 
     // Rate Limiting
     RATE_LIMIT_WINDOW: parseInt(process.env.RATE_LIMIT_WINDOW || process.env.RATE_LIMIT_WINDOW_MS) || 60000,
@@ -59,7 +69,7 @@ function loadEnvConfig() {
     // Swagger
     ENABLE_SWAGGER: process.env.ENABLE_SWAGGER === 'true' || NODE_ENV === 'development',
 
-    // تابع برای دریافت CORS origins
+    // Helper to retrieve CORS origins array
     getCorsOrigins: function() {
       const origins = process.env.CORS_ORIGINS || process.env.CORS_ORIGIN || '*';
       if (origins === '*') return '*';

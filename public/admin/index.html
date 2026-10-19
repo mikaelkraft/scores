@@ -1,0 +1,455 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Admin Console | Scores by Norra AI</title>
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+    <link rel="stylesheet" href="/assets/styles.css">
+    <style>
+        .admin-layout {
+            max-width: 1200px;
+            margin: 40px auto;
+            padding: 0 20px;
+        }
+        .admin-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 1px solid var(--border-subtle);
+            padding-bottom: 20px;
+            margin-bottom: 30px;
+        }
+        .admin-nav {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+            margin-bottom: 25px;
+            border-bottom: 1px solid var(--border-subtle);
+            padding-bottom: 15px;
+        }
+        .admin-tab-btn {
+            background: transparent;
+            border: 1px solid var(--border-subtle);
+            color: var(--text-muted);
+            padding: 8px 16px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-weight: 500;
+            font-size: 14px;
+            transition: all 0.2s ease;
+        }
+        .admin-tab-btn.active, .admin-tab-btn:hover {
+            background: var(--color-primary-subtle);
+            border-color: var(--color-primary);
+            color: var(--color-primary);
+        }
+        .admin-card {
+            background: var(--bg-surface);
+            border: 1px solid var(--border-subtle);
+            border-radius: var(--card-radius);
+            padding: 24px;
+            margin-bottom: 24px;
+        }
+        .form-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            gap: 20px;
+            margin-top: 15px;
+        }
+        .form-group {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+        }
+        .form-group label {
+            font-size: 13px;
+            font-weight: 600;
+            color: var(--text-main);
+        }
+        .form-group input, .form-group textarea, .form-group select {
+            padding: 10px 14px;
+            border: 1px solid var(--border-subtle);
+            border-radius: 8px;
+            background: var(--bg-canvas);
+            color: var(--text-main);
+            font-size: 14px;
+            outline: none;
+            transition: border-color 0.2s;
+        }
+        .form-group input:focus, .form-group textarea:focus, .form-group select:focus {
+            border-color: var(--color-primary);
+        }
+        .btn-primary {
+            background: var(--color-primary);
+            color: #ffffff;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 8px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+        .btn-primary:hover {
+            background: var(--color-primary-hover);
+        }
+        .btn-secondary {
+            background: transparent;
+            border: 1px solid var(--border-subtle);
+            color: var(--text-main);
+            padding: 8px 16px;
+            border-radius: 8px;
+            cursor: pointer;
+        }
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 16px;
+            margin-bottom: 25px;
+        }
+        .stat-box {
+            background: var(--bg-surface);
+            border: 1px solid var(--border-subtle);
+            border-radius: 10px;
+            padding: 18px;
+            text-align: center;
+        }
+        .stat-value {
+            font-size: 28px;
+            font-weight: 700;
+            color: var(--color-primary);
+            margin-top: 6px;
+        }
+        .stat-label {
+            font-size: 12px;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        .table-responsive {
+            overflow-x: auto;
+        }
+        table.admin-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 13px;
+        }
+        table.admin-table th, table.admin-table td {
+            padding: 12px 14px;
+            border-bottom: 1px solid var(--border-subtle);
+            text-align: left;
+        }
+        table.admin-table th {
+            color: var(--text-muted);
+            font-weight: 600;
+            background: var(--bg-canvas);
+        }
+        .toggle-switch {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            cursor: pointer;
+        }
+        .preview-logo {
+            max-height: 48px;
+            max-width: 200px;
+            object-fit: contain;
+            background: rgba(0,0,0,0.05);
+            padding: 6px;
+            border-radius: 6px;
+            border: 1px dashed var(--border-subtle);
+            margin-top: 8px;
+        }
+        .auth-overlay {
+            position: fixed;
+            inset: 0;
+            background: rgba(0,0,0,0.7);
+            backdrop-filter: blur(8px);
+            display: grid;
+            place-items: center;
+            z-index: 1000;
+        }
+        .auth-card {
+            background: var(--bg-surface);
+            border: 1px solid var(--border-subtle);
+            padding: 36px;
+            border-radius: var(--card-radius);
+            width: min(420px, 90vw);
+            box-shadow: 0 20px 40px rgba(0,0,0,0.4);
+        }
+    </style>
+</head>
+<body class="theme-dark" data-theme="dark">
+
+    <div id="auth-overlay" class="auth-overlay">
+        <div class="auth-card">
+            <h2 style="margin-top: 0; margin-bottom: 8px;">🔐 Admin Login</h2>
+            <p style="color: var(--text-muted); font-size: 14px; margin-bottom: 24px;">Scores by Norra AI Central Dashboard</p>
+            <form id="admin-login-form" onsubmit="handleAdminLogin(event)">
+                <div class="form-group" style="margin-bottom: 16px;">
+                    <label>Username / Email</label>
+                    <input type="text" id="login-username" required placeholder="admin" value="admin">
+                </div>
+                <div class="form-group" style="margin-bottom: 24px;">
+                    <label>Password</label>
+                    <input type="password" id="login-password" required placeholder="••••••••">
+                </div>
+                <button type="submit" class="btn-primary" style="width: 100%;">Sign In to Console</button>
+                <div id="login-error" style="color: #ef4444; font-size: 13px; margin-top: 12px; display: none;"></div>
+            </form>
+        </div>
+    </div>
+
+    <div class="admin-layout">
+        <header class="admin-header">
+            <div>
+                <a href="/" style="font-size: 13px; color: var(--text-muted); text-decoration: none;">← Back to Livescores</a>
+                <h1 style="margin: 6px 0 2px; font-size: 24px;">⚙️ Norra Scores Admin Console</h1>
+                <span style="font-size: 13px; color: var(--text-muted);">Platform configuration, ads, API subscriptions, and branding</span>
+            </div>
+            <div style="display: flex; gap: 10px; align-items: center;">
+                <button onclick="toggleTheme()" class="btn-secondary" title="Toggle theme">🌓</button>
+                <button onclick="handleLogout()" class="btn-secondary">Log Out</button>
+            </div>
+        </header>
+
+        <nav class="admin-nav">
+            <button class="admin-tab-btn active" onclick="switchAdminTab('overview')">📊 Overview</button>
+            <button class="admin-tab-btn" onclick="switchAdminTab('branding')">🎨 Branding & Logos</button>
+            <button class="admin-tab-btn" onclick="switchAdminTab('ads')">📢 Ads & Bookie Promos</button>
+            <button class="admin-tab-btn" onclick="switchAdminTab('pricing')">💳 Plans & Pricing (USD)</button>
+            <button class="admin-tab-btn" onclick="switchAdminTab('keys')">🔑 API Keys & Customers</button>
+            <button class="admin-tab-btn" onclick="switchAdminTab('gateways')">🏦 Payment Gateways</button>
+            <button class="admin-tab-btn" onclick="switchAdminTab('booking')">🎯 Betting Hook</button>
+        </nav>
+
+        <!-- Tab 1: Overview -->
+        <section id="tab-overview" class="admin-tab-content">
+            <div class="stats-grid">
+                <div class="stat-box">
+                    <div class="stat-label">Active Leagues</div>
+                    <div class="stat-value" id="stat-leagues">—</div>
+                </div>
+                <div class="stat-box">
+                    <div class="stat-label">Stored Matches</div>
+                    <div class="stat-value" id="stat-matches">—</div>
+                </div>
+                <div class="stat-box">
+                    <div class="stat-label">Active API Keys</div>
+                    <div class="stat-value" id="stat-keys">—</div>
+                </div>
+                <div class="stat-box">
+                    <div class="stat-label">Registered Developers</div>
+                    <div class="stat-value" id="stat-users">—</div>
+                </div>
+            </div>
+
+            <div class="admin-card">
+                <h3>Recent Subscription Transactions</h3>
+                <div class="table-responsive">
+                    <table class="admin-table">
+                        <thead>
+                            <tr>
+                                <th>Date</th>
+                                <th>Ref</th>
+                                <th>Customer</th>
+                                <th>Plan</th>
+                                <th>Amount</th>
+                                <th>Gateway</th>
+                                <th>Status</th>
+                            </tr>
+                        </thead>
+                        <tbody id="recent-transactions-body">
+                            <tr><td colspan="7" style="text-align:center;">Loading transactions...</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </section>
+
+        <!-- Tab 2: Branding & Logos -->
+        <section id="tab-branding" class="admin-tab-content" style="display: none;">
+            <div class="admin-card">
+                <h3>Custom Logo Uploads</h3>
+                <p style="color: var(--text-muted); font-size: 13px;">Upload sized image logos for header navigation and footer. PNG, SVG, or WebP recommended.</p>
+                <div class="form-grid">
+                    <div class="form-group">
+                        <label>Header Logo (Optimal height: 36px–48px)</label>
+                        <input type="file" id="upload-header-logo-input" accept="image/*" onchange="uploadLogoFile('header', this)">
+                        <img id="preview-header-logo" class="preview-logo" src="/favicon.svg" alt="Header Logo Preview">
+                    </div>
+                    <div class="form-group">
+                        <label>Footer Logo (Optimal height: 32px–40px)</label>
+                        <input type="file" id="upload-footer-logo-input" accept="image/*" onchange="uploadLogoFile('footer', this)">
+                        <img id="preview-footer-logo" class="preview-logo" src="/favicon.svg" alt="Footer Logo Preview">
+                    </div>
+                </div>
+            </div>
+
+            <div class="admin-card">
+                <h3>Site Identity & Announcements</h3>
+                <div class="form-grid">
+                    <div class="form-group">
+                        <label>Site Title</label>
+                        <input type="text" id="setting-site-title" placeholder="Scores by Norra AI">
+                    </div>
+                    <div class="form-group">
+                        <label>Site Tagline</label>
+                        <input type="text" id="setting-tagline" placeholder="Real-Time Global Football Scores">
+                    </div>
+                </div>
+                <div class="form-group" style="margin-top: 15px;">
+                    <label class="toggle-switch">
+                        <input type="checkbox" id="setting-announcement-active">
+                        <span>Show Top Announcement Banner</span>
+                    </label>
+                    <textarea id="setting-announcement" rows="2" style="margin-top: 8px;" placeholder="Global announcement message displayed to visitors..."></textarea>
+                </div>
+                <button class="btn-primary" style="margin-top: 20px;" onclick="saveBrandingSettings()">Save Branding Settings</button>
+            </div>
+        </section>
+
+        <!-- Tab 3: Ads & Promos -->
+        <section id="tab-ads" class="admin-tab-content" style="display: none;">
+            <div class="admin-card">
+                <h3>Hero Section: 3-Box Bookmaker Sponsor Promos</h3>
+                <p style="color: var(--text-muted); font-size: 13px;">Configure up to 3 affiliate sponsor cards in the top hero area. Automatically hidden for paid API users.</p>
+                <div id="bookie-promos-container"></div>
+                <button class="btn-primary" style="margin-top: 15px;" onclick="saveBookiePromos()">Save Bookmaker Promos</button>
+            </div>
+
+            <div class="admin-card">
+                <h3>Banner Ad Slots</h3>
+                <p style="color: var(--text-muted); font-size: 13px;">Manage banner ads. Choose HTML code (e.g. Google AdSense / network tag) or Image with link.</p>
+                
+                <div id="ad-slots-container">
+                    <!-- Populated dynamically: Header, In-Feed, Drawer, Footer -->
+                </div>
+                <button class="btn-primary" style="margin-top: 15px;" onclick="saveAdSettings()">Save Ad Slots</button>
+            </div>
+        </section>
+
+        <!-- Tab 4: Pricing Plans -->
+        <section id="tab-pricing" class="admin-tab-content" style="display: none;">
+            <div class="admin-card">
+                <h3>Commercial API Plan Pricing (Base USD)</h3>
+                <p style="color: var(--text-muted); font-size: 13px;">Update plan prices and quotas. Visitors will see these prices and converted local estimates.</p>
+                
+                <div class="form-grid">
+                    <div class="form-group">
+                        <label>Starter Plan Price ($ USD / month)</label>
+                        <input type="number" id="plan-starter-price" min="0" step="1">
+                        <label style="margin-top: 8px;">Rate Limit (req/min)</label>
+                        <input type="number" id="plan-starter-limit" min="100">
+                    </div>
+                    <div class="form-group">
+                        <label>Pro Developer Price ($ USD / month)</label>
+                        <input type="number" id="plan-pro-price" min="0" step="1">
+                        <label style="margin-top: 8px;">Rate Limit (req/min)</label>
+                        <input type="number" id="plan-pro-limit" min="500">
+                    </div>
+                    <div class="form-group">
+                        <label>Whitelabel Enterprise Price ($ USD / month)</label>
+                        <input type="number" id="plan-whitelabel-price" min="0" step="1">
+                        <label style="margin-top: 8px;">Rate Limit (req/min)</label>
+                        <input type="number" id="plan-whitelabel-limit" min="1000">
+                    </div>
+                </div>
+                <button class="btn-primary" style="margin-top: 20px;" onclick="savePlanSettings()">Save Plan Pricing</button>
+            </div>
+        </section>
+
+        <!-- Tab 5: Keys & Customers -->
+        <section id="tab-keys" class="admin-tab-content" style="display: none;">
+            <div class="admin-card">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+                    <h3 style="margin: 0;">Issued API Keys</h3>
+                    <button class="btn-primary" onclick="openIssueKeyModal()">+ Issue Manual Key</button>
+                </div>
+                <div class="table-responsive">
+                    <table class="admin-table">
+                        <thead>
+                            <tr>
+                                <th>Key Prefix</th>
+                                <th>Name / Email</th>
+                                <th>Plan</th>
+                                <th>Quota (req/m)</th>
+                                <th>Ad-Free</th>
+                                <th>Total Req</th>
+                                <th>Expires</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody id="api-keys-body">
+                            <tr><td colspan="8" style="text-align:center;">Loading API keys...</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <div class="admin-card">
+                <h3>Registered Developer Accounts</h3>
+                <div class="table-responsive">
+                    <table class="admin-table">
+                        <thead>
+                            <tr>
+                                <th>Email</th>
+                                <th>Name / Company</th>
+                                <th>Plan</th>
+                                <th>Joined</th>
+                                <th>Role</th>
+                            </tr>
+                        </thead>
+                        <tbody id="users-body">
+                            <tr><td colspan="5" style="text-align:center;">Loading users...</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </section>
+
+        <!-- Tab 6: Payment Gateways -->
+        <section id="tab-gateways" class="admin-tab-content" style="display: none;">
+            <div class="admin-card">
+                <h3>Flutterwave Gateway Settings</h3>
+                <label class="toggle-switch" style="margin-bottom: 15px;">
+                    <input type="checkbox" id="setting-flw-enabled">
+                    <span>Enable Flutterwave Payments (Cards, Bank Transfer, Mobile Money)</span>
+                </label>
+                <p style="color: var(--text-muted); font-size: 13px;">Configure keys via <code>.env</code> (FLUTTERWAVE_PUBLIC_KEY, FLUTTERWAVE_SECRET_KEY) or enter them in environment deployment settings.</p>
+            </div>
+
+            <div class="admin-card">
+                <h3>PayPal Gateway Settings</h3>
+                <label class="toggle-switch" style="margin-bottom: 15px;">
+                    <input type="checkbox" id="setting-pp-enabled">
+                    <span>Enable PayPal Orders &amp; Card Checkout</span>
+                </label>
+                <p style="color: var(--text-muted); font-size: 13px;">Configure credentials via <code>.env</code> (PAYPAL_CLIENT_ID, PAYPAL_CLIENT_SECRET, PAYPAL_MODE=live|sandbox).</p>
+                <button class="btn-primary" style="margin-top: 15px;" onclick="saveGatewaySettings()">Save Gateway Settings</button>
+            </div>
+        </section>
+
+        <!-- Tab 7: Betting Hook -->
+        <section id="tab-booking" class="admin-tab-content" style="display: none;">
+            <div class="admin-card">
+                <h3>Betting Code Booking &amp; Converter Hook</h3>
+                <p style="color: var(--text-muted); font-size: 13px;">Configuration for future Norra AI booking engine &amp; cross-bookmaker converter connection.</p>
+                <div class="form-group">
+                    <label class="toggle-switch">
+                        <input type="checkbox" id="setting-booking-hook-enabled" checked>
+                        <span>Enable Betting Code Booking Hook Endpoint (/api/v1/booking/*)</span>
+                    </label>
+                </div>
+                <div class="form-group" style="margin-top: 15px;">
+                    <label>Default Affiliate Referral Tag</label>
+                    <input type="text" id="setting-booking-referral" placeholder="NORRA_AI">
+                </div>
+                <button class="btn-primary" style="margin-top: 15px;" onclick="saveBookingSettings()">Save Betting Hook Settings</button>
+            </div>
+        </section>
+    </div>
+
+    <script src="/assets/admin/admin.js"></script>
+</body>
+</html>

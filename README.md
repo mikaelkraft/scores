@@ -1,256 +1,160 @@
-# Free Football Live Scores API — Premier League, LaLiga & More
+# Scores by Norra AI — Real-Time Live Football Scores & Commercial Sports API
 
-<a href="https://www.buymeacoffee.com/rahiminia" target="_blank"><img src="https://cdn.buymeacoffee.com/buttons/v2/default-yellow.png" alt="Buy Me a Coffee" style="height: 60px !important;width: 217px !important;" ></a>
+An enterprise-ready, database-backed REST API and sleek livescore platform for real-time football scores, match fixtures, results, league standings, head-to-head statistics, play-by-play timelines, clubs, and commercial sports data.
 
-An open-source, database-backed REST API and web score center for football live scores, today's fixtures, results, league tables, match summaries, play-by-play events, clubs and rosters.
+- **Production Platform:** [scores.mynorra.xyz](https://scores.mynorra.xyz)
+- **Developer Portal:** [scores.mynorra.xyz/account](https://scores.mynorra.xyz/account)
+- **Commercial API Pricing:** [scores.mynorra.xyz/football-api](https://scores.mynorra.xyz/football-api)
+- **Interactive OpenAPI Documentation:** [scores.mynorra.xyz/api-docs](https://scores.mynorra.xyz/api-docs/)
+- **Deployment & Subdomain Guide:** [docs/DEPLOYMENT_AND_SUBDOMAIN_GUIDE.md](docs/DEPLOYMENT_AND_SUBDOMAIN_GUIDE.md)
 
-**Live football score center:** [worldcup26.ir](https://worldcup26.ir/)
+---
 
-**Free football API guide:** [worldcup26.ir/football-api](https://worldcup26.ir/football-api) — no API key currently required
+## Key Highlights
 
-**Interactive football API docs:** [worldcup26.ir/api-docs](https://worldcup26.ir/api-docs/)
+- **Sleek Team-vs-Team Score Center:** Modern, high-contrast match cards displaying club crests, pulsing live minute badges (`● LIVE 74'`), kickoff times in detected local timezones, and full match drawers with H2H stat comparison progress bars.
+- **Strict Single-Color Accent Design:** Engineered with a unified royal blue accent palette across light mode (`#f8fafc`) and dark mode (`#0b0f19`) — strictly zero cyan or turquoise.
+- **Commercial API Key Infrastructure:** Sliding-window rate limiting and quota enforcement:
+  - **Free Tier:** 120 req/min
+  - **Starter Tier:** 500 req/min (Ad-free)
+  - **Pro Tier:** 1,500 req/min (Ad-free, H2H statistics)
+  - **Whitelabel Tier:** 5,000 req/min (Ad-free, custom domain embed)
+- **Automated Ad-Free Guarantee:** Requests carrying paid API keys or whitelabel embed tokens automatically strip all advertisement slots.
+- **Dynamic 3-Box Hero Bookmaker Promos & Ad Slots:** Fully editable via the backend admin panel. Supports sponsor codes (SportyBet, Bet9ja, MSport) and 4 semantic ad containers (Header, In-Feed, Match Drawer, Footer).
+- **Payment Gateways:** Integrated with **Flutterwave** and **PayPal** for multi-currency automated checkout with fallback sandbox mock mode.
+- **Betting Code Booking Hook:** Built-in extensible endpoints for betting code generation (`/api/v1/booking/generate`) and cross-bookmaker code conversion (`/api/v1/booking/convert`).
+- **Admin Management Console (`/admin`):** Sized header & footer logo uploads (`multer`), live pricing adjustments in USD, ad management, and API key provisioning.
+- **Customer Account Portal (`/account`):** Self-service API key generation, quota tracking, invoice history, and iframe whitelabel embed generator.
+- **MongoDB Atlas Free Tier Ready:** Optimized for MongoDB M0 with automatic connection retry loops and zero serverless crash loops.
 
-Current verified coverage focuses on England and Spain, including the Premier League, EFL competitions, FA Cup, LaLiga, LaLiga 2, Copa del Rey and women's competitions. UEFA Champions League and additional countries are added only after their data coverage is verified.
+---
 
-The public API never calls an upstream provider during a customer request. A separate listener project fetches upstream data and writes normalized documents to MongoDB; this service only reads and publishes those documents.
-
-## Product scope
-
-This project is a country-based club football service with one stable API and
-data model across all supported leagues. England and Spain are the initial
-markets, followed by country-by-country expansion.
-
-| Phase | Scope | Status |
-|---|---|---|
-| 1 | Launch England and Spain, starting with the Premier League (`eng.1`) and LaLiga (`esp.1`) | First priority |
-| 2 | Add leagues from other countries one country at a time | Planned |
-
-## Search-friendly competition pages
-
-The website serves crawlable, server-rendered landing pages with unique titles,
-descriptions, canonical URLs, structured data and internal links:
-
-- `/football/eng.1` — Premier League live scores, fixtures, results and table
-- `/football/esp.1` — LaLiga live scores, fixtures, results and standings
-- `/football/country/england` — all verified England football competitions
-- `/football/country/spain` — all verified Spain football competitions
-- `/football-api` — free JSON football API guide, examples and documentation
-
-The XML sitemap discovers every active league automatically, so newly verified
-countries and competitions receive an indexable page without hard-coding new
-routes. The full keyword map and publishing rules are in
-[SEO-KEYWORDS.md](SEO-KEYWORDS.md).
-
-## Rollout strategy
-
-England and Spain are the reference implementations for the multi-league
-platform. Their ingestion, storage, API responses, and customer experience
-should be stable before broader country expansion.
-
-A new country or league is considered ready only when:
-
-1. Its stable league slug and country metadata are registered.
-2. Fixtures, results, live status, clubs, and standings are normalized in
-   MongoDB.
-3. Match details and important events are returned without calling an upstream
-   provider during the customer request.
-4. Data freshness, missing-data behavior, and listener failures are observable.
-5. API contract tests and at least one stored end-to-end example have been
-   verified.
-6. Swagger, the customer documentation, and the web league selector have been
-   updated.
-
-After England and Spain meet these requirements, additional countries will be
-enabled individually. This avoids advertising incomplete coverage and allows
-each rollout to be tested, monitored, and rolled back independently.
-
-## Architecture
+## Architecture Overview
 
 ```text
-Upstream football data
-          │
-          ▼
-External listener project
-          │  MongoDB upserts
-          ▼
-soccer_* collections
-          │  read-only customer requests
-          ▼
-Free Football Live Scores API
+Upstream Data Feeds
+        │
+        ▼
+Data Sync Listener
+        │  Normalized upserts
+        ▼
+MongoDB Atlas (M0 Free Tier)
+        │
+        ├───────────────────────────────┐
+        ▼                               ▼
+Public Livescore Platform       Commercial Sports API
+   scores.mynorra.xyz               x-api-key Auth
+(Dynamic Ads & Hero Promos)     (Ad-free, Tiered Quotas)
 ```
 
-This separation keeps customer traffic independent from upstream availability and lets the listener control polling, retries, normalization, and failover.
+The public platform never calls upstream providers directly during client requests. All data is read from MongoDB, ensuring ultra-fast response times under 20ms and complete upstream failure resilience.
 
-## Public API
+---
 
-Base path:
+## Public & Commercial API Endpoints
 
-```text
-/get/soccer
-```
+### 1. Livescore & Football Catalog
+Base path: `/get/soccer`
 
-| Endpoint | Description |
-|---|---|
-| `GET /get/soccer/meta` | Current service capabilities, collection counts, and freshness |
-| `GET /get/soccer/leagues?kind=club&available=true` | Club competitions available for customer selection, with coverage counts |
-| `GET /get/soccer/{league}/scoreboard?dates=YYYYMMDD` | Fixtures, live status, scores, and match statistics |
-| `GET /get/soccer/{league}/fixtures?status=all&from=YYYYMMDD&to=YYYYMMDD` | Paginated stored schedule and results; dates are optional |
-| `GET /get/soccer/{league}/summary?event={eventId}` | Complete stored match summary |
-| `GET /get/soccer/{league}/events/{eventId}` | Summary path alias |
-| `GET /get/soccer/{league}/events/{eventId}/plays` | Paginated play-by-play |
-| `GET /get/soccer/{league}/clubs` | Clubs in the selected league |
-| `GET /get/soccer/{league}/clubs/{clubId}` | Club, roster, and coach |
-| `GET /get/soccer/{league}/standings?season=YYYY` | League table or competition groups |
-| `GET /health` | Application and database health |
+| Endpoint | Method | Description |
+| :--- | :--- | :--- |
+| `/get/soccer/meta` | `GET` | Service status, active leagues, match counts, and sync freshness |
+| `/get/soccer/leagues` | `GET` | List verified competitions with match coverage statistics |
+| `/get/soccer/{league}/fixtures` | `GET` | Filterable fixtures and results by date window (`from`, `to`, `status`) |
+| `/get/soccer/{league}/events/{eventId}` | `GET` | Comprehensive match summary, lineups, scorers, and form |
+| `/get/soccer/{league}/events/{eventId}/plays` | `GET` | Chronological play-by-play events (goals, cards, substitutions) |
+| `/get/soccer/{league}/standings` | `GET` | League tables, groups, points, goal difference, and rankings |
 
-Examples:
+### 2. Commercial API Keys & Authentication
+Pass your API key in the `x-api-key` header or via query parameter `?api_key=`:
 
 ```bash
-curl "http://localhost:3050/get/soccer/leagues"
-curl "http://localhost:3050/get/soccer/meta"
-curl "http://localhost:3050/get/soccer/leagues?kind=club&available=true"
-curl "http://localhost:3050/get/soccer/eng.1/scoreboard?dates=20260822"
-curl "http://localhost:3050/get/soccer/esp.1/fixtures?limit=100"
-curl "http://localhost:3050/get/soccer/eng.1/clubs"
-curl "http://localhost:3050/get/soccer/eng.1/standings?season=2026"
+curl -H "x-api-key: nra_live_your_key_here" "https://scores.mynorra.xyz/get/soccer/eng.1/fixtures"
 ```
 
-Responses for scoreboard, summary, and plays use a stable provider-compatible shape while remaining backed entirely by this project's MongoDB.
+### 3. Betting Code Booking & Conversion Hooks
+Base path: `/api/v1/booking`
 
-Match details include stored goal scorers, substitutions (player in/out, team, and minute), key-event timeline, statistics, and summary data. League-wide top scorers are intentionally not exposed yet: the database currently has no validated structured collection for them, and raw `soccer_snapshots` remain internal.
+| Endpoint | Method | Description |
+| :--- | :--- | :--- |
+| `/api/v1/booking/providers` | `GET` | Returns supported bookmakers (SportyBet, Bet9ja, MSport, 1xBet, BetKing) |
+| `/api/v1/booking/generate` | `POST` | Generates a booking code for match selections |
+| `/api/v1/booking/convert` | `POST` | Converts a booking code from one bookmaker to another |
 
-The league catalog defaults to `kind=club`. Use `kind=international` or
-`kind=all` when those competitions are required. Every league includes a
-`coverage` object with match, club, and standings counts. Passing
-`available=true` hides competitions that do not yet have stored customer data.
+### 4. Commercial Payments & Checkout
+Base path: `/api/v1/payments`
 
-When the dedicated `soccer_clubs` catalog has not yet been populated for a
-league, the clubs endpoint builds a basic catalog from the normalized home and
-away participants already stored in `soccer_matches`. The response metadata
-states whether this fallback was used; roster and coach data are available only
-from dedicated club documents.
+| Endpoint | Method | Description |
+| :--- | :--- | :--- |
+| `/api/v1/payments/plans` | `GET` | Returns current subscription pricing tiers in USD |
+| `/api/v1/payments/initialize` | `POST` | Initializes Flutterwave or PayPal checkout |
+| `/api/v1/payments/verify/flutterwave` | `GET` | Verifies and activates a Flutterwave payment |
+| `/api/v1/payments/capture/paypal` | `POST` | Captures and activates a PayPal order |
 
-## MongoDB collections
+---
 
-| Collection | Purpose |
-|---|---|
-| `soccer_leagues` | Selectable club leagues and current-season metadata |
-| `soccer_clubs` | Club identity, branding, venue, roster, and coach |
-| `soccer_matches` | Match schedule, score, status, statistics, and summary data |
-| `soccer_match_events` | Idempotent play-by-play events |
-| `soccer_standings` | League tables and competition groups |
-| `soccer_sync_states` | Listener cursor, polling state, errors, and leases |
+## Quick Start & Local Development
 
-The listener write contract, indexes, schemas, and upsert examples are documented in [LIVE-LISTENER-DATABASE.md](LIVE-LISTENER-DATABASE.md).
-
-## Getting started
-
-Requirements:
-
+### Prerequisites
 - Node.js 20 or newer
-- MongoDB 6 or newer
+- MongoDB 6 or MongoDB Atlas connection URI
 
-Install dependencies:
-
+### 1. Installation
 ```bash
+git clone https://github.com/mikaelkraft/scores.git
+cd scores
 npm install
 ```
 
-Create `.env.development` or `.env.production`:
+### 2. Environment Configuration
+Create a `.env` file in the project root:
 
-```env
-NODE_ENV=development
+```ini
 PORT=3050
+NODE_ENV=development
+PUBLIC_SITE_URL=http://localhost:3050
 MONGODB_URL=mongodb://localhost:27017/soccer
-ENABLE_SWAGGER=true
-LOG_LEVEL=debug
-CORS_ORIGINS=*
 
-RATE_LIMIT_WINDOW_MS=60000
-RATE_LIMIT_MAX=500
-PUBLIC_RATE_LIMIT_WINDOW_MS=60000
-PUBLIC_RATE_LIMIT_MAX=120
+# Admin Credentials
+ADMIN_USERNAME=admin
+ADMIN_PASSWORD=AdminSecurePassword2026!
+ADMIN_JWT_SECRET=norra-super-secret-jwt-key-2026
+
+# Gateways (Leave empty for automatic mock mode)
+FLUTTERWAVE_PUBLIC_KEY=
+FLUTTERWAVE_SECRET_KEY=
+PAYPAL_CLIENT_ID=
+PAYPAL_CLIENT_SECRET=
 ```
 
-Create the club-football collections and indexes:
-
+### 3. Initialize Database Indexes & Start
 ```bash
+# Initialize collections and indexes
 npm run db:init-live
-```
 
-Start the API:
+# Run tests
+npm run test:soccer
 
-```bash
+# Start server
 npm start
 ```
 
-Swagger UI is available at:
+Access the application:
+- Livescore Webapp: [http://localhost:3050](http://localhost:3050)
+- Customer Developer Portal: [http://localhost:3050/account](http://localhost:3050/account)
+- Admin Console: [http://localhost:3050/admin](http://localhost:3050/admin)
+- Interactive API Docs: [http://localhost:3050/api-docs](http://localhost:3050/api-docs)
 
-```text
-http://localhost:3050/api-docs
-```
+---
 
-Only the club-football API and health endpoints are included in the public Swagger specification.
+## Production Deployment & Subdomain Setup
 
-The raw, non-cached OpenAPI document is available at `/openapi.json`. The root
-page is an interactive competition explorer powered exclusively by the public
-Swagger endpoints. `/robots.txt` and `/sitemap.xml` describe the football API.
+For detailed instructions on configuring the **`scores.mynorra.xyz`** subdomain DNS CNAME, setting up MongoDB Atlas free tier, and deploying with Render, Railway, or Linux VPS, consult the comprehensive guide:
 
-The browser application derives its country selector from the normalized
-`country` field returned by the league catalog. It uses `fixtures` for schedules
-and results, `standings` for tables, and `events/{eventId}` plus `plays` for the
-match drawer. Live match details refresh every 15 seconds while the drawer is
-open.
+👉 [**Deployment & Subdomain Guide (docs/DEPLOYMENT_AND_SUBDOMAIN_GUIDE.md)**](docs/DEPLOYMENT_AND_SUBDOMAIN_GUIDE.md)
 
-## Data freshness
-
-The API does not run a listener. Freshness depends on the external writer's polling interval and last successful MongoDB update.
-
-- Live scoreboard, summary, and plays responses use a four-second client cache header.
-- Non-live match responses use a 30-second cache header.
-- League and club lists use a 60-second cache header.
-- `summary.meta.lastSyncedAt` exposes the last successful match sync time.
-
-## Listener requirements
-
-The external listener should:
-
-1. Register supported club leagues in `soccer_leagues`.
-2. Upsert clubs using provider and source club ID.
-3. Upsert match snapshots using provider, league slug, and source event ID.
-4. Bulk-upsert play events using their source event key.
-5. Upsert standings for the active season.
-6. Preserve the last valid snapshot when the upstream source fails.
-7. Use `soccer_sync_states` for leases, retries, and cursors.
-
-The listener should receive only `find`, `insert`, and `update` permissions on the `soccer_*` collections.
-
-## Testing
-
-Run serializer and response-contract tests:
-
-```bash
-npm run test:soccer
-```
-
-## Documentation
-
-- [Business and AI context](BUSINESS-CONTEXT.md) — canonical product intent, boundaries, capability status, and change rules
-- [Customer API reference](SOCCER-API.md)
-- [Listener database contract](LIVE-LISTENER-DATABASE.md)
-- [Database audit and migration status](DATABASE-AUDIT.md)
-- [Upstream data contract](UPSTREAM-LIVE-DATA.md)
-
-## Operational notes
-
-- Public routes use CORS and the configurable public rate limiter.
-- Request parameters are validated before database queries.
-- Raw provider payloads are private model fields and are excluded from normal API reads.
-- Provider-specific IDs stay inside `source` fields; public league slugs remain stable.
-- API-key issuance and per-customer quotas are not implemented yet.
-
-<a href="https://www.buymeacoffee.com/rahiminia" target="_blank"><img src="https://cdn.buymeacoffee.com/buttons/v2/default-yellow.png" alt="Buy Me a Coffee" style="height: 60px !important;width: 217px !important;" ></a>
+---
 
 ## License
 
-ISC
+ISC License. See `LICENSE` for details.

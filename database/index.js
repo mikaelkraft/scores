@@ -26,13 +26,26 @@ const MONGODB_CONFIG = isProd ? {
 
 console.log(`🔌 Connecting to MongoDB (${isProd ? 'Production' : 'Development'})...`);
 
-mongoose.connect(MONGODB_CONFIG.url, MONGODB_CONFIG.options)
-.then(() => {
-    console.log("✅ Successful connection with MongoDB");
-}).catch((err) => {
-    console.log('❌ Error: Connection to MongoDB not successful', err.message);
-    process.exit(1);
-});
+const connectWithRetry = () => {
+    mongoose.connect(MONGODB_CONFIG.url, MONGODB_CONFIG.options)
+    .then(() => {
+        console.log("✅ Successful connection with MongoDB");
+    }).catch((err) => {
+        console.warn('⚠️ Warning: MongoDB connection attempt failed:', err.message);
+        if (isProd && process.env.STRICT_DB === 'true') {
+            console.error('❌ Exiting due to strict DB requirement in production.');
+            process.exit(1);
+        } else {
+            console.log('🔄 Will retry MongoDB connection in 5 seconds...');
+            const retryTimer = setTimeout(connectWithRetry, 5000);
+            if (retryTimer && typeof retryTimer.unref === 'function') {
+                retryTimer.unref();
+            }
+        }
+    });
+};
+
+connectWithRetry();
 
 mongoose.Promise = global.Promise;
 

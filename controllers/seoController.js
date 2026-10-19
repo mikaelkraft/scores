@@ -34,7 +34,7 @@ function siteUrl(req) {
             if (['http:', 'https:'].includes(url.protocol)) return url.origin;
         } catch {}
     }
-    if (process.env.NODE_ENV === 'production') return 'https://worldcup26.ir';
+    if (process.env.NODE_ENV === 'production') return 'https://scores.mynorra.xyz';
     return `${req.protocol}://${req.get('host')}`.replace(/\/$/, '');
 }
 
@@ -623,7 +623,7 @@ module.exports = app => {
                 '## Licence and attribution',
                 '',
                 'Source code is ISC licensed and published at',
-                'https://github.com/rezarahiminia/livescoreFootball',
+                'https://github.com/mikaelkraft/scores',
                 `When citing scores or tables, please link to the relevant page on ${baseUrl}.`,
                 ''
             ].join('\n'));
