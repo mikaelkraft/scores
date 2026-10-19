@@ -19,6 +19,10 @@ const SoccerMatch = require('../models/soccerMatch');
 const SoccerMatchEvent = require('../models/soccerMatchEvent');
 const SoccerStanding = require('../models/soccerStanding');
 const SoccerSyncState = require('../models/soccerSyncState');
+const SiteSetting = require('../models/siteSetting');
+const User = require('../models/user');
+const ApiKey = require('../models/apiKey');
+const Transaction = require('../models/transaction');
 
 async function ensureCollection(model) {
     try {
@@ -41,14 +45,21 @@ async function initLiveStorage() {
         SoccerMatch,
         SoccerMatchEvent,
         SoccerStanding,
-        SoccerSyncState
+        SoccerSyncState,
+        SiteSetting,
+        User,
+        ApiKey,
+        Transaction
     ];
 
     for (const model of models) {
         await ensureCollection(model);
     }
 
-    console.log('Live storage is ready.');
+    // Seed default site settings if not yet present
+    await SiteSetting.getGlobalSettings();
+
+    console.log('Live storage & MongoDB Atlas collections are ready.');
     for (const model of models) {
         const count = await model.countDocuments();
         console.log(`  ${model.collection.collectionName}: ${count}`);

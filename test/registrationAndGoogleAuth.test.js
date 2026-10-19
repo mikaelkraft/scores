@@ -142,3 +142,8 @@ test('Google auth endpoint rejects empty credentials', async () => {
         await new Promise(resolve => server.close(resolve));
     }
 });
+
+test.after(async () => {
+    const mongoose = require('../database');
+    await mongoose.disconnect();
+});
