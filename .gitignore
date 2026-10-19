@@ -10,6 +10,8 @@ build/
 .env
 .env.*
 !.env.example
+atlas*
+*credentials*
 
 # MongoDB user creation script (contains passwords)
 create-mongodb-user.js
