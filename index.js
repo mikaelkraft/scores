@@ -174,6 +174,15 @@ app.get('/admin', (req, res) => {
     return res.sendFile(path.join(__dirname, 'public', 'admin', 'index.html'));
 });
 
+// Legal Pages (Terms & Privacy)
+app.get('/terms', (req, res) => {
+    return res.sendFile(path.join(__dirname, 'public', 'terms.html'));
+});
+
+app.get('/privacy', (req, res) => {
+    return res.sendFile(path.join(__dirname, 'public', 'privacy.html'));
+});
+
 // OpenAPI is a bounded discovery document for API clients and answer engines.
 if (specs) {
     app.get('/openapi.json', (req, res) => {
