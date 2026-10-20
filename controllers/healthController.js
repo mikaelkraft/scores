@@ -56,7 +56,7 @@ module.exports = (app) => {
             const isHealthy = dbStatus === 1;
 
             const healthData = {
-                status: isHealthy ? 'healthy' : 'unhealthy',
+                status: isHealthy ? 'healthy' : 'degraded',
                 timestamp: new Date().toISOString(),
                 uptime: process.uptime(),
                 version: packageJson.version,
@@ -71,13 +71,14 @@ module.exports = (app) => {
                 }
             };
 
-            // Return 503 if unhealthy, 200 if healthy
-            const statusCode = isHealthy ? 200 : 503;
+            // Return 200 for cloud container liveness checks (Render/FastCron) so temporary DB retries don't abort deploys.
+            // Support ?strict=true for deep readiness probes.
+            const statusCode = (req.query.strict === 'true' && !isHealthy) ? 503 : 200;
             
             return res.status(statusCode).json(healthData);
         } catch (error) {
-            return res.status(503).json({
-                status: 'unhealthy',
+            return res.status(req.query.strict === 'true' ? 503 : 200).json({
+                status: 'degraded',
                 timestamp: new Date().toISOString(),
                 error: error.message
             });
