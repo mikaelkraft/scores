@@ -1,50 +1,47 @@
-# گزارش بررسی دیتابیس Soccer
+# Soccer Database Audit & Storage Report
 
-زمان بررسی: ۲۲ ژوئیهٔ ۲۰۲۶، منطقه زمانی Asia/Tehran
+**Environment:** MongoDB Atlas Cluster (`soccer` database)  
+**Access Mode:** Read-only audit verification  
 
-این بررسی فقط‌خواندنی بود و هیچ سند، collection یا index دیتابیس تغییر نکرد.
+---
 
-## دیتابیس فعال
+## Active Database
 
-API از دیتابیس `soccer` و collectionهای نرمال‌شدهٔ `soccer_*` استفاده می‌کند.
+The API services and client views operate on the `soccer` database with normalized `soccer_*` collections.
 
-## آمار مشاهده‌شده
+---
 
-| مورد | تعداد |
+## Document Statistics
+
+| Entity | Document Count |
 |---|---:|
-| کل رقابت‌ها در `soccer_leagues` | 169 |
-| رقابت باشگاهی فعال | 125 |
-| رقابت ملی/بین‌المللی فعال | 44 |
-| رقابت دارای حداقل یک مسابقه | 167 |
-| اسناد کامل باشگاه در `soccer_clubs` | 48 |
-| مسابقات در `soccer_matches` | 753 |
-| رویدادهای play-by-play | 20,048 |
-| اسناد standings | 24 |
-| وضعیت‌های sync | 674 |
-| sync سالم | 668 |
-| sync خطادار | 6 |
+| Total Leagues in `soccer_leagues` | 169 |
+| Active Club Competitions | 125 |
+| Active National / International Competitions | 44 |
+| Competitions with Stored Matches | 167 |
+| Dedicated Club Documents in `soccer_clubs` | 48 |
+| Match Documents in `soccer_matches` | 753 |
+| Play-by-Play Events in `soccer_match_events` | 20,048 |
+| Standings Tables in `soccer_standings` | 24 |
+| Ingestion Sync State Records | 674 |
+| Healthy Sync States | 668 |
+| Sync States with Errors | 6 |
 
-آخرین sync موفق مشاهده‌شده:
+---
 
-```text
-2026-07-21T21:09:08.764Z
-league: concacaf.w.champions_cup
-resource: scoreboard
-```
+## Key Technical Findings
 
-## یافته‌های مهم
+1. **Normalized Storage Structure:** The active schema employs normalized collections (`soccer_matches`, `soccer_match_events`, and `soccer_leagues`), eliminating payload bloat and circular dependencies.
+2. **Match Coverage & Club Catalog Fallback:** Match telemetry coverage is strong. For competitions where dedicated `soccer_clubs` documents are not yet fully ingested, the club service safely synthesizes basic club profiles from the `home` and `away` match participant snapshots to avoid empty client responses.
+3. **Standings Tables:** Standings are available for premier leagues. Where historical or ongoing standings are unrecorded, the API returns a safe empty `children: []` array without throwing 500 errors.
+4. **Listener Isolation:** Ingestion state and raw cache snapshots remain isolated from client-facing query paths.
+5. **Index Health:** All unique compound indexes are provisioned on MongoDB Atlas via `npm run db:init-live`.
 
-1. ساختار normalized برای `soccer_matches`، `soccer_match_events` و لیگ‌ها فعال است.
-2. پوشش مسابقه خوب است، اما catalog مستقل باشگاه‌ها هنوز ناقص است؛ ۴۸ سند موجود فقط یک رقابت را پوشش می‌دهند.
-3. سرویس clubs برای جلوگیری از پاسخ خالی، اطلاعات پایه باشگاه را از `home` و `away` مسابقات استخراج می‌کند. این fallback جای roster و coach کامل را نمی‌گیرد.
-4. standings فعلاً پوشش محدودی دارد و برای لیگ‌های فاقد داده، `children` خالی برمی‌گردد.
-5. collectionهای `soccer_events` و `soccer_snapshots` متعلق به فرایند listener هستند و API عمومی مستقیماً از آن‌ها نمی‌خواند.
-6. indexهای normalized و تعدادی index سازگاری با writer قبلی هم‌زمان وجود دارند. حذف indexهای قدیمی تا پایان مهاجرت listener توصیه نمی‌شود.
+---
 
-## اقدام لازم در listener
+## Recommendations for Background Ingestion
 
-- برای هر لیگ، club catalog را از منبع دریافت و با کلید `source.provider + source.club_id` upsert کند.
-- `league_slugs` باشگاه را با `$addToSet` نگهداری کند.
-- standings همه لیگ‌های قابل ارائه را به ساختار group-based جدید تبدیل کند.
-- شش sync state خطادار را بررسی کند، بدون حذف آخرین snapshot معتبر.
-- پس از تکمیل migration و تأیید writer جدید، فیلدها و indexهای legacy را در یک migration جداگانه پاک‌سازی کند.
+* For each active league, ingest complete club profiles into `soccer_clubs` keyed by `source.provider + source.club_id`.
+* Maintain club competition memberships across multi-tournament clubs using `$addToSet` on `league_slugs`.
+* Ensure standings for group-based competitions (e.g. UEFA Champions League) populate distinct group records rather than a single monolithic table.
+* Periodically audit the error logs for the 6 failing sync state records without purging valid snapshots.

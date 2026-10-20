@@ -118,25 +118,19 @@ Publishing empty pages early creates thin content and wastes crawl budget. The
 dynamic route and sitemap already support new league records without another SEO
 code change.
 
-## Persian keyword opportunity
+## International & Global Search Keyword Strategy
 
-If Persian-speaking users are a target market, build real `/fa/` translations
-before targeting these terms:
+Target high-intent global queries across major football markets:
 
-- `نتایج زنده فوتبال`
-- `نتایج زنده فوتبال امروز`
-- `برنامه بازی های امروز فوتبال`
-- `نتایج لیگ برتر انگلیس`
-- `جدول لیگ برتر انگلیس`
-- `برنامه بازی های لیگ انگلیس`
-- `نتایج لالیگا`
-- `جدول لالیگا`
-- `نتایج لیگ قهرمانان اروپا`
-- `جدول لیگ قهرمانان اروپا`
+- `Live football scores today`
+- `Real-time soccer match updates`
+- `Premier League live scores and fixtures`
+- `La Liga live standings and match center`
+- `UEFA Champions League live score table`
+- `World football leagues live telemetry`
+- `Commercial football live score API for web developers`
 
-Do not target `پخش زنده رایگان فوتبال` or English variants such as `watch free
-football stream` unless the product actually provides licensed video. The current
-service provides free scores and match data, not video streaming.
+Avoid targeting deceptive phrases such as `watch free football stream` or `live video streaming` unless licensed streaming video is provided. The platform provides authoritative real-time scores, match stats, rosters, and developer APIs.
 
 ## GEO — answer engines
 

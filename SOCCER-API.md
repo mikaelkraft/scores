@@ -1,32 +1,38 @@
-# API عمومی لیگ‌ها و باشگاه‌های فوتبال
+# Public Football Leagues & Clubs API Specification
 
-این API دادهٔ ذخیره‌شده در MongoDB را به مشتری ارائه می‌دهد. هیچ‌کدام از endpointهای زیر سرویس خارجی را مستقیم فراخوانی نمی‌کنند.
+This API provides access to real-time and scheduled soccer telemetry stored in MongoDB Atlas. None of the endpoints below execute synchronous third-party upstream network calls during client requests.
 
-برای هدف محصول، مرز مسئولیت API و listener، وضعیت قابلیت‌ها و قواعدی که توسعه‌دهنده یا AI باید رعایت کند، سند مرجع [BUSINESS-CONTEXT.md](BUSINESS-CONTEXT.md) را بخوانید.
+For platform architecture, service boundaries between the consumer API and background listeners, feature flags, and developer guidelines, refer to [BUSINESS-CONTEXT.md](BUSINESS-CONTEXT.md).
 
-Base path:
-
+**Base Path:**
 ```text
 /get/soccer
 ```
 
-## معرفی و پوشش سرویس
+---
+
+## 1. Service Metadata & Data Coverage
 
 ```http
 GET /get/soccer/meta
 ```
 
-این مسیر نسخه سرویس، قابلیت‌ها، تعداد اسناد اصلی، تعداد رقابت‌های دارای مسابقه و زمان آخرین sync موفق را برمی‌گرداند. اعداد از MongoDB خوانده می‌شوند و مقدار ثابت داخل کد نیستند.
+Returns the running service version, capabilities, total document counts across core collections, number of active competitions with stored matches, and the timestamp of the latest successful sync. All metrics are computed dynamically from MongoDB.
 
-## انتخاب لیگ
+---
+
+## 2. League Catalog & Selection
 
 ```http
 GET /get/soccer/leagues?kind=club&available=true
 ```
 
-فقط لیگ‌های دارای `active: true` برگردانده می‌شوند. مقدار پیش‌فرض `kind=club` است. مقادیر مجاز `club`، `international` و `all` هستند. با `available=true` فقط رقابت‌هایی نمایش داده می‌شوند که حداقل مسابقه، باشگاه یا standings ذخیره‌شده دارند.
+Returns registered competitions marked `active: true`.
+* **Query Parameters:**
+  * `kind`: `club` (default), `international`, or `all`.
+  * `available`: When `true`, filters to competitions that have at least one match, club, or standing stored in the database.
 
-هر لیگ یک فیلد `coverage` دارد:
+Each league object exposes a `coverage` summary:
 
 ```json
 {
@@ -38,84 +44,75 @@ GET /get/soccer/leagues?kind=club&available=true
 }
 ```
 
-`clubs` می‌تواند از شرکت‌کنندگان snapshot مسابقات محاسبه شود، اما `dedicatedClubs` فقط تعداد اسناد کامل collection باشگاه‌هاست. مشتری مقدار `slug` مانند `eng.1` یا `esp.1` را برای درخواست‌های بعدی استفاده می‌کند.
+* `clubs`: Inferred participants from match snapshots.
+* `dedicatedClubs`: Count of complete documents in the dedicated `soccer_clubs` collection.
+* Clients use the `slug` (e.g. `eng.1`, `esp.1`, `uefa.champions`) for subsequent league requests.
 
-## Scoreboard
+---
+
+## 3. Scoreboard
 
 ```http
 GET /get/soccer/{league}/scoreboard?dates=YYYYMMDD
 ```
 
-مثال:
-
+**Example:**
 ```http
 GET /get/soccer/eng.1/scoreboard?dates=20260822
 ```
 
-پاسخ ساختاری پایدار و مستقل از تأمین‌کننده دارد و شامل `leagues[]` و `events[]` می‌شود. هر event نتیجه، وضعیت، دقیقه، میزبان/مهمان، آمار، ورزشگاه، پخش و داده‌های اختیاری مسابقه را دارد.
+Returns an upstream-independent data structure containing `leagues[]` and `events[]`. Each event includes match status, clock/period, scoreline, home/away competitors, boxscore stats, venue details, broadcast info, and match metadata.
 
-اگر `dates` ارسال نشود، تاریخ جاری UTC استفاده می‌شود. فرمت دیگری غیر از هشت رقم پذیرفته نمی‌شود.
+* If `dates` is omitted, the current UTC calendar date is used.
+* Format must strictly be 8 digits (`YYYYMMDD`).
 
-## برنامه و نتایج لیگ
+---
+
+## 4. League Fixtures & Results
 
 ```http
 GET /get/soccer/{league}/fixtures
 ```
 
-این endpoint برای نمایش UI برنامه مسابقات است و برخلاف scoreboard به یک تاریخ محدود نیست. پارامترها:
+Designed for schedule calendars and results listings spanning multiple dates.
 
-| پارامتر | مقدار |
-|---|---|
-| `from` | تاریخ شروع اختیاری با فرمت `YYYYMMDD` |
-| `to` | تاریخ پایان اختیاری با فرمت `YYYYMMDD` |
-| `status` | `all`، `scheduled`، `live` یا `finished` |
-| `page` | شماره صفحه، پیش‌فرض ۱ |
-| `limit` | تعداد رکورد، پیش‌فرض ۱۰۰ و حداکثر ۲۰۰ |
+| Parameter | Type | Description |
+|---|---|---|
+| `from` | string | Optional start date in `YYYYMMDD` format |
+| `to` | string | Optional end date in `YYYYMMDD` format |
+| `status` | string | `all` (default), `scheduled`, `live`, or `finished` |
+| `page` | number | Page number (default: 1) |
+| `limit` | number | Records per page (default: 100, max: 200) |
 
-مثال:
-
+**Example:**
 ```http
 GET /get/soccer/esp.1/fixtures?status=all&limit=100
 ```
 
-هر عضو `events[]` همان ساختار پایدار scoreboard را دارد و برای باز کردن جزئیات باید `event.id` به summary یا plays داده شود.
+---
 
-## Summary مسابقه
+## 5. Match Summary & Key Events
 
 ```http
 GET /get/soccer/{league}/summary?event={eventId}
-```
-
-مسیر معادل:
-
-```http
 GET /get/soccer/{league}/events/{eventId}
 ```
 
-پاسخ شامل `header`، `boxscore`، `keyEvents`، `rosters`، `gameInfo`، `commentary`، `broadcasts`، `odds`، `leaders`، `news` و `videos` است. بخش‌هایی که listener ذخیره نکرده باشد آرایهٔ خالی یا `null` برمی‌گردند.
+Returns `header`, `boxscore`, `keyEvents`, `rosters`, `gameInfo`, `commentary`, `broadcasts`, `odds`, `leaders`, `news`, and `videos`. Unpopulated attributes resolve to empty arrays or `null`.
 
-گل‌زنان هر مسابقه از رویدادهای دارای `scoringPlay: true` در `keyEvents` قابل استخراج‌اند. در صورت وجود، `athletesInvolved[]` نام بازیکن، شناسه، شماره پیراهن و تیم را ارائه می‌کند. وضعیت قابلیت‌های ذخیره‌شده نیز در `meta.dataAvailability` اعلام می‌شود:
+* Goal scorers are available via `keyEvents` where `scoringPlay: true`.
+* When present, `athletesInvolved[]` contains athlete name, identifier, shirt number, and team.
+* Data availability flags are indicated in `meta.dataAvailability`.
 
-| داده | وضعیت | منبع دیتابیس |
-|---|---|---|
-| timeline مسابقه | موجود | `soccer_match_events` |
-| گل‌های مسابقه | موجود | timeline و `soccer_matches.key_events` |
-| آمار و summary | موجود | `soccer_matches` |
-| جدول گل‌زنان برتر لیگ | فعلاً ناموجود | فقط پاسخ خام ممکن است در `soccer_snapshots` باشد و به مشتری ارائه نمی‌شود |
+---
 
-فیلد زیر زمان آخرین sync را مشخص می‌کند:
-
-```text
-meta.lastSyncedAt
-```
-
-## Play-by-play
+## 6. Play-by-Play & Match Timeline
 
 ```http
 GET /get/soccer/{league}/events/{eventId}/plays?page=1&limit=100
 ```
 
-`limit` حداکثر ۳۰۰ است. پاسخ:
+Returns granular timeline items (kickoff, cards, substitutions, goals, VAR checks, penalties):
 
 ```json
 {
@@ -127,71 +124,61 @@ GET /get/soccer/{league}/events/{eventId}/plays?page=1&limit=100
 }
 ```
 
-هر item می‌تواند نوع اتفاق، متن، زمان، نتیجه، نیمه و فلگ‌های گل، کارت، پنالتی، گل‌به‌خودی و تعویض را داشته باشد.
+* **Important Filter:** To receive a condensed timeline containing only scoring plays, cards, and substitutions without hundreds of passing actions:
+  ```http
+  GET /get/soccer/{league}/events/{eventId}/plays?important=true&limit=300
+  ```
 
-برای گل‌ها فیلد `scoringPlay` برابر `true` است. فیلدهای `team` و `athletesInvolved` در صورتی برگردانده می‌شوند که listener آن‌ها را ذخیره کرده باشد. API هر دو شکل ذخیره‌سازی timeline را پشتیبانی می‌کند: شناسه مسابقه در `event_id` (ساختار normalized) یا در `match_id` (ساختار listener جدید). اگر هر دو شکل وجود داشته باشند، نسخه normalized انتخاب می‌شود تا رویداد تکراری به مشتری برنگردد.
+---
 
-در رویدادهای `type.type: "substitution"`، آرایهٔ `participants` بازیکنان درگیر در تعویض را برمی‌گرداند. برای تشخیص قطعی بازیکن واردشده و خارج‌شده، داده با `rosters[].roster[].subbedIn`، `subbedOut`، `subbedInFor` و `subbedOutFor` تطبیق داده می‌شود. رابط کاربری نام هر دو بازیکن، تیم و دقیقه تعویض را نمایش می‌دهد.
-
-برای دریافت timeline فشرده شامل گل، کارت و تعویض بدون واکشی صدها پاس و حرکت عادی:
-
-```http
-GET /get/soccer/{league}/events/{eventId}/plays?important=true&limit=300
-```
-
-رابط کاربری همین پاسخ را با `keyEvents` ادغام می‌کند؛ بنابراین تعویض‌هایی که فقط در `soccer_match_events` باشند نیز نمایش داده می‌شوند.
-
-endpoint مستقلی برای جدول گل‌زنان لیگ منتشر نشده است، چون این داده هنوز collection ساختاریافته و قابل اتکایی ندارد. `soccer_snapshots` یک مخزن داخلی/raw است و بخشی از API مشتری نیست.
-
-## باشگاه‌های لیگ
+## 7. Club Profiles & Rosters
 
 ```http
 GET /get/soccer/{league}/clubs
 GET /get/soccer/{league}/clubs/{clubId}
 ```
 
-در فهرست باشگاه‌ها roster حذف می‌شود تا پاسخ سبک بماند. endpoint تک‌باشگاه، `roster` و `coach` ذخیره‌شده را نیز برمی‌گرداند.
+* The clubs list endpoint excludes detailed rosters to preserve bandwidth.
+* The single club endpoint returns the club profile, stadium, coach, and active roster.
+* Fallback: If `soccer_clubs` lacks a dedicated document for a league, basic club info is synthesized from match home/away snapshots (`meta.matchSnapshotFallback: true`).
 
-اگر listener هنوز `soccer_clubs` را برای لیگ انتخابی پر نکرده باشد، سرویس اطلاعات پایه باشگاه را از `home` و `away` مسابقات همان لیگ استخراج می‌کند. پاسخ list در این حالت `meta.matchSnapshotFallback: true` دارد. در endpoint تک‌باشگاه نیز `meta.catalogSource` برابر `match-snapshot` خواهد بود و roster خالی است.
+---
 
-## جدول
+## 8. League Standings & Tables
 
 ```http
 GET /get/soccer/{league}/standings
 GET /get/soccer/{league}/standings?season=2026
 ```
 
-برای رقابت‌های گروهی، هر عضو `children[]` یک گروه است. برای لیگ عادی یک گروه با شناسهٔ `overall` برگردانده می‌شود.
+* Standard leagues return a single group labeled `overall`.
+* Multi-group tournaments (such as UEFA Champions League or World Cup) return distinct group objects in `children[]`.
 
-## Status codeها
+---
 
-| کد | معنی |
+## 9. HTTP Status Codes
+
+| Code | Meaning |
 |---|---|
-| `200` | پاسخ موفق؛ ممکن است events خالی باشد |
-| `400` | slug، event، date یا pagination نامعتبر |
-| `404` | لیگ، باشگاه یا مسابقه در دیتابیس ثبت نشده |
-| `429` | عبور از rate limit عمومی پروژه |
-| `500` | خطای خواندن دیتابیس |
+| `200` | Successful request (events array may be empty if no fixtures exist) |
+| `400` | Invalid query parameter, slug format, date, or pagination index |
+| `404` | League, club, or match not found in storage |
+| `429` | Rate limit threshold exceeded |
+| `500` | Internal database read failure |
 
-## مستندات ماشین‌خوان
+---
 
-| مسیر | کاربرد |
+## 10. Machine-Readable Documentation & Discovery
+
+| Endpoint | Purpose |
 |---|---|
-| `/api-docs/` | Swagger UI بدون cache بلندمدت |
-| `/openapi.json` | قرارداد OpenAPI 3 خام |
-| `/service-info.json` | معرفی کوتاه سرویس و مسیرهای اصلی |
+| `/api-docs/` | Interactive Swagger UI (OpenAPI specification) |
+| `/openapi.json` | Raw OpenAPI 3.0 specification |
+| `/service-info.json` | High-level platform telemetry, licensing, and endpoint manifest |
+| `/ai-data-guide.md` | LLM and crawler grounding guide for attribution and freshness rules |
 
-## جریان رابط کاربری
+---
 
-صفحه اصلی فقط همین endpointهای مستندشده را استفاده می‌کند:
+## 11. Caching & Data Freshness
 
-1. `leagues?kind=club&available=true` برای ساخت انتخاب کشور و لیگ؛
-2. `fixtures` برای برنامه، بازی‌های زنده و نتایج؛
-3. `standings` برای جدول؛
-4. `events/{eventId}` برای جزئیات بازی انتخاب‌شده؛
-5. `events/{eventId}/plays` برای timeline بازی؛
-6. `meta` برای نمایش وضعیت و آمار پوشش سرویس.
-
-## تازگی داده
-
-هنگام بازی پاسخ‌ها cache داخلی طولانی ندارند و هدر `Cache-Control` حداکثر چهار ثانیه است. تازگی واقعی همچنان به فاصلهٔ polling و موفقیت پروژهٔ listener وابسته است.
+During live matches, internal response caching is kept minimal (4-second `Cache-Control` header). True freshness depends on listener synchronization frequency and upstream provider telemetry availability.
