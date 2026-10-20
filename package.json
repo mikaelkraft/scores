@@ -10,6 +10,7 @@
     "start:dev": "cross-env NODE_ENV=development nodemon index.js",
     "start:prod": "cross-env NODE_ENV=production node index.js",
     "db:init-live": "node scripts/init-live-storage.js",
+    "deploy:render": "node scripts/deploy-render.js",
     "test:soccer": "node --test test/*.test.js"
   },
   "keywords": [
