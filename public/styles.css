@@ -177,54 +177,46 @@ body.theme-light .site-header {
 }
 
 .nav {
-    min-height: 52px;
-    height: 52px;
+    min-height: 48px;
+    height: 48px;
     display: flex;
     justify-content: space-between;
     align-items: center;
-    gap: 16px;
+    gap: 12px;
 }
 
 .brand {
     display: inline-flex;
     align-items: center;
-    gap: 10px;
+    gap: 8px;
     flex-shrink: 0;
     text-decoration: none;
 }
 .brand-logo-img {
-    max-height: 32px;
-    max-width: 160px;
+    max-height: 28px;
+    max-width: 150px;
     object-fit: contain;
 }
 .brand-icon {
-    width: 32px;
-    height: 32px;
+    width: 28px;
+    height: 28px;
     display: grid;
     place-items: center;
-    border-radius: 8px;
+    border-radius: 7px;
     background: linear-gradient(135deg, var(--color-primary), #1d4ed8);
     color: #ffffff;
-    font-size: 15px;
+    font-size: 14px;
     box-shadow: 0 4px 12px var(--color-primary-glow);
 }
 .brand-text {
     display: flex;
-    flex-direction: column;
-    line-height: 1.15;
+    align-items: center;
 }
 .brand-text strong {
-    font-size: 15px;
+    font-size: 14.5px;
     font-weight: 800;
     color: var(--text-main);
     letter-spacing: -0.2px;
-}
-.brand-text small {
-    font-size: 8px;
-    font-weight: 700;
-    letter-spacing: 0.8px;
-    color: var(--color-primary);
-    text-transform: uppercase;
 }
 
 .nav-status {
@@ -561,36 +553,38 @@ body.theme-light .site-header {
 
 /* Filter Controls Toolbar */
 .toolbar {
-    background: var(--bg-surface);
-    border: 1px solid var(--border-subtle);
-    border-radius: var(--card-radius);
-    padding: 14px 18px;
+    margin-bottom: 12px;
     display: flex;
-    flex-wrap: wrap;
-    justify-content: space-between;
-    align-items: center;
-    gap: 14px;
-    margin-bottom: 24px;
+    justify-content: flex-start;
     width: 100%;
 }
 .toolbar-tabs {
-    display: flex;
-    gap: 8px;
+    display: inline-flex;
+    gap: 3px;
+    background: var(--bg-surface-elevated);
+    padding: 3px;
+    border-radius: 8px;
+    border: 1px solid var(--border-subtle);
 }
 .tab-btn {
     background: transparent;
-    border: 1px solid var(--border-subtle);
+    border: none;
     color: var(--text-muted);
-    font-size: 13px;
-    font-weight: 600;
-    padding: 8px 16px;
-    border-radius: 8px;
+    font-size: 11.5px;
+    font-weight: 700;
+    padding: 5px 12px;
+    border-radius: 6px;
+    cursor: pointer;
     transition: var(--transition-smooth);
+    letter-spacing: 0.3px;
 }
-.tab-btn.active, .tab-btn:hover {
-    background: var(--color-primary-subtle);
-    border-color: var(--color-primary);
-    color: var(--color-primary);
+.tab-btn.active {
+    background: var(--color-primary);
+    color: #ffffff;
+    box-shadow: 0 2px 8px var(--color-primary-glow);
+}
+.tab-btn:hover:not(.active) {
+    color: var(--text-main);
 }
 
 .toolbar-filters {
@@ -719,8 +713,8 @@ body.theme-light .site-header {
 .fs-league-section {
     background: var(--bg-surface);
     border: 1px solid var(--border-subtle);
-    border-radius: var(--card-radius);
-    margin-bottom: 20px;
+    border-radius: 8px;
+    margin-bottom: 10px;
     overflow: hidden;
     box-shadow: var(--shadow-sm);
     transition: var(--transition-smooth);
@@ -731,26 +725,27 @@ body.theme-light .site-header {
 }
 .fs-league-header {
     background: var(--bg-surface-elevated);
-    padding: 10px 16px;
+    padding: 6px 12px;
     display: flex;
     justify-content: space-between;
     align-items: center;
     border-bottom: 1px solid var(--border-subtle);
+    min-height: 32px;
 }
 .fs-league-title {
     display: flex;
     align-items: center;
-    gap: 8px;
-    font-size: 13px;
+    gap: 7px;
+    font-size: 12px;
     font-weight: 700;
     color: var(--text-main);
 }
 .fs-league-flag {
-    font-size: 16px;
+    font-size: 14px;
 }
 .fs-league-country {
-    font-size: 11px;
-    font-weight: 500;
+    font-size: 10px;
+    font-weight: 600;
     color: var(--text-muted);
     text-transform: uppercase;
     letter-spacing: 0.5px;
@@ -759,10 +754,10 @@ body.theme-light .site-header {
     background: transparent;
     border: none;
     color: var(--color-primary);
-    font-size: 12px;
+    font-size: 11px;
     font-weight: 600;
     cursor: pointer;
-    padding: 4px 8px;
+    padding: 2px 6px;
     border-radius: 4px;
     transition: var(--transition-smooth);
 }
@@ -776,11 +771,12 @@ body.theme-light .site-header {
 .fs-match-row {
     display: flex;
     align-items: center;
-    padding: 10px 16px;
+    padding: 5px 12px;
+    min-height: 38px;
     border-bottom: 1px solid var(--border-subtle);
     cursor: pointer;
-    transition: background 0.15s ease;
-    gap: 12px;
+    transition: background 0.12s ease;
+    gap: 8px;
     user-select: none;
 }
 .fs-match-row:last-child {
@@ -790,15 +786,15 @@ body.theme-light .site-header {
     background: var(--bg-surface-elevated);
 }
 .fs-match-row.is-live-row {
-    background: rgba(220, 38, 38, 0.04);
+    background: rgba(220, 38, 38, 0.05);
 }
 .fs-match-row.is-live-row:hover {
-    background: rgba(220, 38, 38, 0.08);
+    background: rgba(220, 38, 38, 0.09);
 }
 .fs-col-status {
-    width: 65px;
-    min-width: 65px;
-    font-size: 12px;
+    width: 52px;
+    min-width: 52px;
+    font-size: 11px;
     font-weight: 700;
     display: flex;
     align-items: center;
@@ -807,14 +803,17 @@ body.theme-light .site-header {
 .fs-status-live {
     color: var(--status-live);
     font-size: 11px;
+    font-weight: 700;
 }
 .fs-status-ft {
     color: var(--text-muted);
-    font-size: 11px;
+    font-size: 10.5px;
+    font-weight: 700;
 }
 .fs-status-time {
     color: var(--text-muted);
-    font-size: 12px;
+    font-size: 11.5px;
+    font-weight: 600;
     font-variant-numeric: tabular-nums;
 }
 .fs-col-teams {
@@ -822,51 +821,56 @@ body.theme-light .site-header {
     min-width: 0;
     display: flex;
     flex-direction: column;
-    gap: 6px;
+    gap: 3px;
+    justify-content: center;
 }
 .fs-team-line {
     display: flex;
     align-items: center;
-    gap: 8px;
+    gap: 6px;
     min-width: 0;
+    height: 18px;
 }
 .fs-team-line.team-winner .fs-team-name {
-    font-weight: 800;
+    font-weight: 700;
     color: var(--text-main);
 }
 .fs-team-name {
-    font-size: 13px;
-    font-weight: 600;
+    font-size: 12.5px;
+    font-weight: 500;
     color: var(--text-main);
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
+    line-height: 1.2;
 }
 .fs-col-scores {
-    width: 36px;
-    min-width: 36px;
+    width: 28px;
+    min-width: 28px;
     display: flex;
     flex-direction: column;
     align-items: center;
-    gap: 6px;
-    font-size: 14px;
-    font-weight: 800;
+    gap: 3px;
+    font-size: 13px;
+    font-weight: 700;
     font-variant-numeric: tabular-nums;
 }
 .fs-score-digit {
     color: var(--text-main);
-    line-height: 1.3;
+    line-height: 18px;
+    height: 18px;
 }
 .fs-score-digit.score-live {
     color: var(--status-live);
+    font-weight: 800;
 }
 .fs-col-action {
     color: var(--text-faint);
-    font-size: 18px;
-    padding-left: 4px;
+    font-size: 15px;
+    padding-left: 2px;
     display: flex;
     align-items: center;
-    gap: 6px;
+    gap: 4px;
 }
 .fs-match-row:hover .fs-col-action {
     color: var(--color-primary);
@@ -875,9 +879,9 @@ body.theme-light .site-header {
     background: transparent;
     border: none;
     color: var(--text-faint);
-    font-size: 14px;
+    font-size: 13px;
     cursor: pointer;
-    padding: 2px 4px;
+    padding: 2px;
     border-radius: 4px;
     transition: var(--transition-smooth);
 }
@@ -1303,19 +1307,18 @@ body.theme-light .site-header {
     flex: 1;
 }
 .team-crest {
-    width: 26px;
-    height: 26px;
-    min-width: 26px;
-    min-height: 26px;
-    max-width: 26px;
-    max-height: 26px;
+    width: 18px;
+    height: 18px;
+    min-width: 18px;
+    min-height: 18px;
+    max-width: 18px;
+    max-height: 18px;
     display: inline-flex;
     align-items: center;
     justify-content: center;
     flex-shrink: 0;
     border-radius: 50%;
-    background: var(--bg-surface-elevated);
-    padding: 2px;
+    background: transparent;
     overflow: hidden;
 }
 .team-crest img {

@@ -317,25 +317,36 @@ app.listen(PORT, () => {
     }, 2000);
 
     // Auto-sync live scores and world leagues in background
-    const { syncAllLeagues } = require('./services/soccerSyncService');
+    const { syncAllLeagues, syncLiveScoreboards, TARGET_LEAGUES } = require('./services/soccerSyncService');
     const SoccerLeague = require('./models/soccerLeague');
 
     setTimeout(async () => {
         try {
+            // Immediate live scoreboard tick on boot
+            await syncLiveScoreboards();
+            
             const count = await SoccerLeague.countDocuments({ active: true });
-            if (count < 5) {
-                console.log('⚡ [LiveSync] Stored leagues count low. Starting initial background sync...');
+            if (count < TARGET_LEAGUES.length) {
+                console.log(`⚡ [LiveSync] Stored leagues (${count}) fewer than target (${TARGET_LEAGUES.length}). Starting comprehensive league sync...`);
                 await syncAllLeagues();
             }
         } catch (e) {
             console.warn('Initial live sync notice:', e.message);
         }
-    }, 4000);
+    }, 3000);
 
-    // Refresh telemetry every 20 minutes (unrefed timer)
+    // Fast in-play scoreboard refresh every 45 seconds
+    const liveScoreInterval = setInterval(() => {
+        syncLiveScoreboards().catch(e => console.warn('Live scoreboard sync notice:', e.message));
+    }, 45 * 1000);
+    if (liveScoreInterval && typeof liveScoreInterval.unref === 'function') {
+        liveScoreInterval.unref();
+    }
+
+    // Comprehensive schedule and table refresh every 15 minutes
     const syncInterval = setInterval(() => {
         syncAllLeagues().catch(e => console.warn('Interval sync notice:', e.message));
-    }, 20 * 60 * 1000);
+    }, 15 * 60 * 1000);
     if (syncInterval && typeof syncInterval.unref === 'function') {
         syncInterval.unref();
     }

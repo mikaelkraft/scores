@@ -127,8 +127,9 @@ router.get(['/live', '/livescores'], async (req, res) => {
             };
         });
 
-        // Fast cache control: 3 seconds during in-play polling
-        res.set('Cache-Control', 'public, max-age=3, stale-while-revalidate=5');
+        // Zero-latency live cache headers: prevent edge/proxy caching during in-play matches
+        res.set('Cache-Control', 'no-cache, no-store, must-revalidate');
+        res.set('Pragma', 'no-cache');
         return res.json({
             status: 'success',
             meta: {
@@ -257,7 +258,12 @@ router.get('/fixtures', async (req, res) => {
         });
 
         const hasLive = formattedMatches.some(m => m.status.isLive);
-        res.set('Cache-Control', `public, max-age=${hasLive ? 5 : 30}`);
+        if (hasLive || status === 'live') {
+            res.set('Cache-Control', 'no-cache, no-store, must-revalidate');
+            res.set('Pragma', 'no-cache');
+        } else {
+            res.set('Cache-Control', 'public, max-age=30');
+        }
 
         return res.json({
             status: 'success',

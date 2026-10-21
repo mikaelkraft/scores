@@ -9,7 +9,7 @@
     <meta name="robots" content="{{SEO_ROBOTS}}">
     <meta name="theme-color" content="#0b0f19">
     <link rel="canonical" href="{{SEO_CANONICAL}}">
-    <link rel="stylesheet" href="/assets/styles.css?v=norra-7">
+    <link rel="stylesheet" href="/assets/styles.css?v=norra-8">
     <link rel="icon" href="/favicon.ico" sizes="any">
     <link rel="icon" href="/favicon.svg" type="image/svg+xml">
     <link rel="apple-touch-icon" href="/apple-touch-icon.png">
@@ -51,14 +51,11 @@
                 <img id="header-logo-img" class="brand-logo-img" src="" alt="Norra AI" hidden>
                 <div id="header-brand-fallback" class="brand-text">
                     <span class="brand-icon" aria-hidden="true">⚽</span>
-                    <div>
-                        <strong>Norra Scores</strong>
-                        <small>LIVESCORE CENTER</small>
-                    </div>
+                    <strong>Norra Scores</strong>
                 </div>
             </a>
 
-            <!-- Service status kept hidden for telemetry compatibility -->
+            <!-- Service status kept hidden for compatibility -->
             <div class="nav-status" id="service-status" style="display:none;" aria-hidden="true">
                 <span class="status-dot"></span>
                 <span>Connecting to service</span>
@@ -67,8 +64,8 @@
             <div class="nav-actions">
                 <a class="nav-link active" href="/" id="nav-scores-link">Scores</a>
                 <button class="nav-link nav-btn-live" type="button" id="header-live-btn"><span class="live-pulse-dot" aria-hidden="true"></span>Live</button>
-                <a class="nav-link nav-link-norra" href="https://mynorra.xyz" target="_blank" rel="noopener">🔮 AI Predictions <span class="ext-icon" aria-hidden="true">↗</span></a>
-                <a class="nav-link" href="/football-api">API Pricing</a>
+                <a class="nav-link nav-link-norra" href="https://mynorra.xyz" target="_blank" rel="noopener">Predictions <span class="ext-icon" aria-hidden="true">↗</span></a>
+                <a class="nav-link" href="/football-api">Pricing</a>
                 <a class="nav-link" href="/account" id="nav-account-link">Account</a>
                 <a class="nav-link docs-link" href="/api-docs/">Docs <span aria-hidden="true">↗</span></a>
                 <button class="btn-icon-toggle" id="theme-toggle" type="button" aria-label="Toggle light/dark theme" title="Toggle theme">🌓</button>
@@ -124,13 +121,13 @@
                 </div>
             </div>
 
-            <div class="toolbar">
+            <div class="toolbar" id="league-view-toolbar" style="display:none;">
                 <div class="toolbar-tabs" role="tablist" aria-label="League information">
                     <button class="tab-btn active" id="fixtures-tab" type="button" role="tab" aria-selected="true" aria-controls="fixtures-view" data-view="fixtures">
-                        Fixtures &amp; Scores <span id="fixture-count">0</span>
+                        Scores &amp; Fixtures <span id="fixture-count">0</span>
                     </button>
                     <button class="tab-btn" id="standings-tab" type="button" role="tab" aria-selected="false" aria-controls="standings-view" data-view="standings">
-                        Standings / Tables
+                        Standings / Table
                     </button>
                 </div>
 
@@ -223,6 +220,11 @@
                 <h1 id="page-title" style="font-size:15px; margin-bottom:8px; color:var(--text-main);">{{SEO_HEADING}}</h1>
                 <p id="page-lede" style="margin-bottom:16px; color:var(--text-muted);">{{SEO_LEDE}}</p>
                 {{SEO_CONTENT}}
+                <div style="display:none;" aria-hidden="true">
+                    <a href="/ai-data-guide.md">AI Data Guide</a>
+                    <a href="/openapi.json">OpenAPI Spec</a>
+                    <a href="/service-info.json">Service Information</a>
+                </div>
             </div>
         </details>
 
@@ -258,7 +260,7 @@
                         <span>Scores by Norra AI</span>
                     </div>
                     <p class="footer-brand-desc">
-                        Real-time global football scores, fixtures, live tables, match event telemetry, and high-throughput commercial sports APIs. Powered by the Norra AI analytics engine.
+                        Real-time global football scores, fixtures, live tables, and high-throughput commercial sports APIs. Powered by the Norra AI analytics engine.
                     </p>
                     <a href="https://mynorra.xyz" target="_blank" rel="noopener" class="footer-norra-badge">
                         <span>Visit Norra AI &rarr;</span>
@@ -266,35 +268,35 @@
                 </div>
 
                 <div class="footer-col">
-                    <h4>Scores &amp; Stats</h4>
+                    <h4>Scores &amp; Live</h4>
                     <ul class="footer-col-links">
-                        <li><a href="/#today">Today's Live Scores</a></li>
-                        <li><a href="/#fixtures">League Fixtures</a></li>
-                        <li><a href="/#standings">League Standings</a></li>
+                        <li><a href="/" id="footer-link-today">Today's Live Scores</a></li>
+                        <li><a href="/" id="footer-link-fixtures">League Fixtures</a></li>
+                        <li><a href="/" id="footer-link-standings">League Standings</a></li>
                         <li><a href="/football-api">API Pricing Plans</a></li>
                         <li><a href="/account">Booking Converter</a></li>
                     </ul>
                 </div>
 
                 <div class="footer-col">
-                    <h4>Developers &amp; API</h4>
+                    <h4>Top Competitions</h4>
                     <ul class="footer-col-links">
-                        <li><a href="/api-docs/">API Documentation</a></li>
-                        <li><a href="/openapi.json">OpenAPI Spec</a></li>
-                        <li><a href="/account">Developer Portal &amp; Keys</a></li>
-                        <li><a href="/ai-data-guide.md">AI Data Guide</a></li>
-                        <li><a href="/service-info.json">Service Telemetry</a></li>
+                        <li><a href="/soccer/english-premier-league">Premier League</a></li>
+                        <li><a href="/soccer/spanish-la-liga">La Liga</a></li>
+                        <li><a href="/soccer/uefa-champions-league">Champions League</a></li>
+                        <li><a href="/soccer/italian-serie-a">Serie A</a></li>
+                        <li><a href="/soccer/german-bundesliga">Bundesliga</a></li>
                     </ul>
                 </div>
 
                 <div class="footer-col">
-                    <h4>Legal &amp; Platform</h4>
+                    <h4>Platform &amp; Legal</h4>
                     <ul class="footer-col-links">
+                        <li><a href="/api-docs/">API Documentation</a></li>
+                        <li><a href="/account">Developer Portal &amp; Keys</a></li>
                         <li><a href="/terms">Terms of Service</a></li>
                         <li><a href="/privacy">Privacy Policy</a></li>
                         <li><a href="https://mynorra.xyz" target="_blank" rel="noopener">Norra AI Main</a></li>
-                        <li><a href="/admin">Admin Console</a></li>
-                        <li><a href="mailto:support@mynorra.xyz">Support Email</a></li>
                     </ul>
                 </div>
             </div>
@@ -315,6 +317,6 @@
         </div>
     </footer>
 
-    <script src="/assets/app.js?v=norra-7" defer></script>
+    <script src="/assets/app.js?v=norra-8" defer></script>
 </body>
 </html>

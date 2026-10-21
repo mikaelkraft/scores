@@ -30,6 +30,41 @@
         offsides: 'Offsides', saves: 'Saves'
     };
 
+    const LEAGUE_FLAGS = {
+        'eng.1': '🏴󠁧󠁢󠁥󠁮󠁧󠁿',
+        'esp.1': '🇪🇸',
+        'uefa.champions': '🏆',
+        'ita.1': '🇮🇹',
+        'ger.1': '🇩🇪',
+        'fra.1': '🇫🇷',
+        'uefa.europa': '🇪🇺',
+        'uefa.europa.conf': '🇪🇺',
+        'ned.1': '🇳🇱',
+        'por.1': '🇵🇹',
+        'eng.2': '🏴󠁧󠁢󠁥󠁮󠁧󠁿',
+        'esp.2': '🇪🇸',
+        'ita.2': '🇮🇹',
+        'ger.2': '🇩🇪',
+        'fra.2': '🇫🇷',
+        'bel.1': '🇧🇪',
+        'tur.1': '🇹🇷',
+        'sco.1': '🏴󠁧󠁢󠁳󠁣󠁴󠁿',
+        'usa.1': '🇺🇸',
+        'ksa.1': '🇸🇦',
+        'bra.1': '🇧🇷',
+        'arg.1': '🇦🇷',
+        'mex.1': '🇲🇽',
+        'conmebol.libertadores': '🏆',
+        'conmebol.sudamericana': '🏆',
+        'uefa.nations': '🇪🇺',
+        'eng.fa': '🏴󠁧󠁢󠁥󠁮󠁧󠁿',
+        'eng.league_cup': '🏴󠁧󠁢󠁥󠁮󠁧󠁿',
+        'esp.copa_del_rey': '🇪🇸',
+        'ita.coppa_italia': '🇮🇹',
+        'ger.dfb_pokal': '🇩🇪',
+        'fra.coupe_de_france': '🇫🇷'
+    };
+
     let currentTimezone = localStorage.getItem('norra_timezone') || Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
 
     const elements = Object.fromEntries([
@@ -202,16 +237,6 @@
         const container = document.getElementById('quick-leagues-list');
         if (!container || !state.leagues.length) return;
 
-        const leagueFlags = {
-            'eng.1': '🏴󠁧󠁢󠁥󠁮󠁧󠁿',
-            'esp.1': '🇪🇸',
-            'uefa.champions': '🏆',
-            'ita.1': '🇮🇹',
-            'ger.1': '🇩🇪',
-            'fra.1': '🇫🇷',
-            'uefa.europa': '🇪🇺'
-        };
-
         const isAll = !activeSlug || activeSlug === 'all';
         const isLive = activeSlug === 'live';
 
@@ -231,7 +256,7 @@
         `;
 
         const leaguePills = state.leagues.map(l => {
-            const flag = leagueFlags[l.slug] || '⚽';
+            const flag = LEAGUE_FLAGS[l.slug] || '⚽';
             const isActive = l.slug === activeSlug;
             return `
                 <button class="quick-league-btn ${isActive ? 'active' : ''}" type="button" data-slug="${escapeHtml(l.slug)}">
@@ -267,6 +292,10 @@
         state.league = null;
         renderQuickLeaguePills('live');
         window.clearInterval(state.matchTimer);
+
+        const leagueToolbar = document.getElementById('league-view-toolbar');
+        if (leagueToolbar) leagueToolbar.style.display = 'none';
+        switchView('fixtures');
 
         if (elements['league-card']) elements['league-card'].hidden = true;
         if (elements['welcome-state']) elements['welcome-state'].hidden = true;
@@ -429,6 +458,10 @@
         if (elements['dashboard-country']) elements['dashboard-country'].textContent = 'World Football';
         if (elements['dashboard-title']) elements['dashboard-title'].textContent = 'All Live Matches & Fixtures';
 
+        const leagueToolbar = document.getElementById('league-view-toolbar');
+        if (leagueToolbar) leagueToolbar.style.display = 'none';
+        switchView('fixtures');
+
         await loadAllLeagueFixtures();
     }
 
@@ -482,15 +515,6 @@
         if (!elements['fixtures-list']) return;
 
         let totalCount = 0;
-        const leagueFlags = {
-            'eng.1': '🏴󠁧󠁢󠁥󠁮󠁧󠁿',
-            'esp.1': '🇪🇸',
-            'uefa.champions': '🏆',
-            'ita.1': '🇮🇹',
-            'ger.1': '🇩🇪',
-            'fra.1': '🇫🇷',
-            'uefa.europa': '🇪🇺'
-        };
 
         // Pinned Matches Section at the top
         const pinnedEvents = [];
@@ -523,7 +547,7 @@
         const html = groupedData.map(({ league, events }) => {
             if (!events || !events.length) return '';
             totalCount += events.length;
-            const flag = leagueFlags[league.slug] || '⚽';
+            const flag = LEAGUE_FLAGS[league.slug] || '⚽';
             return `
                 <div class="fs-league-section">
                     <div class="fs-league-header">
@@ -581,6 +605,9 @@
         if (elements['dashboard-country']) elements['dashboard-country'].textContent = localCountryName(league.country);
         if (elements['dashboard-title']) elements['dashboard-title'].textContent = league.name;
 
+        const leagueToolbar = document.getElementById('league-view-toolbar');
+        if (leagueToolbar) leagueToolbar.style.display = 'flex';
+
         await Promise.allSettled([loadFixtures(), loadStandings()]);
     }
 
@@ -633,16 +660,7 @@
         }
         if (!fixtures.length) return;
 
-        const leagueFlags = {
-            'eng.1': '🏴󠁧󠁢󠁥󠁮󠁧󠁿',
-            'esp.1': '🇪🇸',
-            'uefa.champions': '🏆',
-            'ita.1': '🇮🇹',
-            'ger.1': '🇩🇪',
-            'fra.1': '🇫🇷',
-            'uefa.europa': '🇪🇺'
-        };
-        const flag = leagueFlags[state.league?.slug] || '⚽';
+        const flag = LEAGUE_FLAGS[state.league?.slug] || '⚽';
 
         elements['fixtures-list'].innerHTML = `
             <div class="fs-league-section">
@@ -1441,6 +1459,30 @@
                 selectLiveMatches();
             });
         }
+
+        const navScoresLink = document.getElementById('nav-scores-link');
+        if (navScoresLink) {
+            navScoresLink.addEventListener('click', (e) => {
+                if (window.location.pathname === '/' || window.location.pathname === '') {
+                    e.preventDefault();
+                    selectAllLeagues();
+                    window.scrollTo({ top: 0, behavior: 'smooth' });
+                }
+            });
+        }
+
+        ['footer-link-today', 'footer-link-fixtures'].forEach(id => {
+            const el = document.getElementById(id);
+            if (el) {
+                el.addEventListener('click', (e) => {
+                    if (window.location.pathname === '/' || window.location.pathname === '') {
+                        e.preventDefault();
+                        selectAllLeagues();
+                        window.scrollTo({ top: 0, behavior: 'smooth' });
+                    }
+                });
+            }
+        });
     }
 
     function togglePinMatch(eventId) {
@@ -1623,9 +1665,9 @@
             }
         }
 
-        // Background poll every 20 seconds
+        // Background poll every 8 seconds for rapid in-play score changes
         window.clearInterval(state.liveSyncTimer);
-        state.liveSyncTimer = window.setInterval(syncLiveScores, 20000);
+        state.liveSyncTimer = window.setInterval(syncLiveScores, 8000);
         // Initial quick check
         setTimeout(syncLiveScores, 1500);
     }

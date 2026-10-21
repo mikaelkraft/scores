@@ -301,7 +301,12 @@ router.get('/:league/scoreboard', validateLeague, async(req, res) => {
         }).sort({ date: 1 }).lean();
 
         const live = matches.some(match => match.status?.state === 'in');
-        res.set('Cache-Control', `public, max-age=${live ? 4 : 30}`);
+        if (live) {
+            res.set('Cache-Control', 'no-cache, no-store, must-revalidate');
+            res.set('Pragma', 'no-cache');
+        } else {
+            res.set('Cache-Control', 'public, max-age=30');
+        }
         return res.json({
             leagues: [serializeLeague(league)],
             events: matches.map(serializeScoreboardEvent)
@@ -400,7 +405,12 @@ router.get('/:league/fixtures', validateLeague, async(req, res) => {
         ]);
         const live = matches.some(match => match.status?.state === 'in');
 
-        res.set('Cache-Control', `public, max-age=${live ? 4 : 30}`);
+        if (live || status === 'live') {
+            res.set('Cache-Control', 'no-cache, no-store, must-revalidate');
+            res.set('Pragma', 'no-cache');
+        } else {
+            res.set('Cache-Control', 'public, max-age=30');
+        }
         return res.json({
             league: serializeLeague(league),
             count,
