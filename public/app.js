@@ -212,8 +212,9 @@
                 const slug = btn.dataset.slug;
                 const league = state.leagues.find(item => item.slug === slug);
                 if (league) {
-                    elements['country-select'].value = league.country || 'Other';
+                    if (elements['country-select']) elements['country-select'].value = league.country || 'Other';
                     populateLeagues(slug);
+                    selectLeague(slug);
                 }
             });
         });

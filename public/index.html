@@ -9,7 +9,7 @@
     <meta name="robots" content="{{SEO_ROBOTS}}">
     <meta name="theme-color" content="#0b0f19">
     <link rel="canonical" href="{{SEO_CANONICAL}}">
-    <link rel="stylesheet" href="/assets/styles.css?v=norra-3">
+    <link rel="stylesheet" href="/assets/styles.css?v=norra-4">
     <link rel="icon" href="/favicon.ico" sizes="any">
     <link rel="icon" href="/favicon.svg" type="image/svg+xml">
     <link rel="apple-touch-icon" href="/apple-touch-icon.png">
@@ -80,27 +80,27 @@
     <aside id="ad-slot-header" class="ad-slot-container shell" hidden></aside>
 
     <main id="main-content">
-        <section class="hero shell" aria-labelledby="page-title">
-            <div class="hero-header-row">
-                <div class="hero-copy">
-                    <p class="overline">{{SEO_OVERLINE}}</p>
-                    <h1 id="page-title">{{SEO_HEADING}}</h1>
-                    <p id="page-lede">{{SEO_LEDE}}</p>
+        <!-- LiveScore Command Header (Clean, Compact, Score-First) -->
+        <section class="livescore-header shell" aria-labelledby="page-title">
+            <div class="livescore-header-row">
+                <div class="livescore-title-group">
+                    <div class="livescore-live-indicator">
+                        <span class="live-pulse-dot" aria-hidden="true"></span>
+                        <span class="livescore-badge-text">LIVE SCORE CENTER</span>
+                    </div>
+                    <h1 id="page-title" class="livescore-heading">{{SEO_HEADING}}</h1>
+                    <p id="page-lede" class="livescore-lede">{{SEO_LEDE}}</p>
                 </div>
                 <div class="hero-stats-bar" aria-label="Service coverage statistics">
-                    <div class="hero-stat-pill"><strong class="hero-stat-val" id="stat-competitions">—</strong><span class="hero-stat-lbl">Active Leagues</span></div>
-                    <div class="hero-stat-pill"><strong class="hero-stat-val" id="stat-matches">—</strong><span class="hero-stat-lbl">Matches</span></div>
-                    <div class="hero-stat-pill"><strong class="hero-stat-val" id="stat-events">—</strong><span class="hero-stat-lbl">Match Events</span></div>
+                    <div class="hero-stat-pill"><strong class="hero-stat-val" id="stat-competitions">7</strong><span class="hero-stat-lbl">Top Leagues</span></div>
+                    <div class="hero-stat-pill"><strong class="hero-stat-val" id="stat-matches">115+</strong><span class="hero-stat-lbl">Matches</span></div>
+                    <div class="hero-stat-pill"><strong class="hero-stat-val" id="stat-events">Live</strong><span class="hero-stat-lbl">Telemetry</span></div>
                 </div>
             </div>
-
-            <!-- 3-Box Hero Bookmaker Promos Grid -->
-            <div class="hero-promos-grid" id="hero-promos-container" aria-label="Featured sports bookmakers"></div>
         </section>
 
-        {{SEO_CONTENT}}
-
-        <section class="explorer shell" aria-label="Choose a league and explore its matches">
+        <!-- Primary Interactive LiveScore Explorer -->
+        <section class="explorer shell" aria-label="Live football scores, matches and standings">
             <!-- Quick League Selector Bar -->
             <div class="quick-leagues-wrapper" id="quick-leagues-bar" aria-label="Popular world competitions">
                 <div class="quick-leagues-list" id="quick-leagues-list"></div>
@@ -109,10 +109,10 @@
             <div class="toolbar">
                 <div class="toolbar-tabs" role="tablist" aria-label="League information">
                     <button class="tab-btn active" id="fixtures-tab" type="button" role="tab" aria-selected="true" aria-controls="fixtures-view" data-view="fixtures">
-                        Fixtures &amp; results <span id="fixture-count">0</span>
+                        Fixtures &amp; Scores <span id="fixture-count">0</span>
                     </button>
                     <button class="tab-btn" id="standings-tab" type="button" role="tab" aria-selected="false" aria-controls="standings-view" data-view="standings">
-                        Standings
+                        Standings / Tables
                     </button>
                 </div>
 
@@ -127,15 +127,15 @@
 
                     <select id="fixture-status" class="filter-select" aria-label="Match status">
                         <option value="all">All matches</option>
-                        <option value="live">Live in-play</option>
+                        <option value="live">🔴 Live in-play</option>
                         <option value="scheduled">Scheduled</option>
                         <option value="finished">Finished</option>
                     </select>
 
-                    <label style="font-size:12px; color:var(--text-muted); display:inline-flex; align-items:center; gap:4px;">
+                    <label class="date-filter-label">
                         From <input id="date-from" class="filter-select" type="date">
                     </label>
-                    <label style="font-size:12px; color:var(--text-muted); display:inline-flex; align-items:center; gap:4px;">
+                    <label class="date-filter-label">
                         To <input id="date-to" class="filter-select" type="date">
                     </label>
 
@@ -145,7 +145,7 @@
             </div>
 
             <div class="league-card" id="league-card" hidden>
-                <div class="league-logo" id="league-logo">SC</div>
+                <div class="league-logo" id="league-logo">⚽</div>
                 <div class="league-identity">
                     <strong id="league-name">—</strong>
                     <span id="league-season">—</span>
@@ -160,13 +160,13 @@
             <aside id="ad-slot-infeed" class="ad-slot-container" hidden></aside>
 
             <section class="data-panel" aria-live="polite">
-                <div class="empty-welcome" id="welcome-state">
+                <div class="empty-welcome" id="welcome-state" hidden>
                     <div class="pitch" aria-hidden="true"><span></span><i></i></div>
-                    <h2>Choose a competition</h2>
-                    <p>Live fixtures, team-vs-team scores, stats and league standings appear here.</p>
+                    <h2>Loading Scores</h2>
+                    <p>Connecting to Norra AI live match feed...</p>
                 </div>
 
-                <div id="league-dashboard" hidden>
+                <div id="league-dashboard">
                     <div class="dashboard-header" style="margin-bottom:16px;">
                         <div>
                             <p class="overline" id="dashboard-country" style="margin:0; font-size:12px; text-transform:uppercase; color:var(--color-primary); font-weight:700;">—</p>
@@ -190,18 +190,15 @@
             </section>
         </section>
 
-        <noscript><p class="shell noscript-note">JavaScript is required for interactive live updates. League guides, fixtures and SEO content remain available below.</p></noscript>
+        <!-- Featured Promos Grid -->
+        <div class="hero-promos-grid shell" id="hero-promos-container" aria-label="Featured sports bookmakers" style="margin-top:24px;"></div>
 
-        <section class="service-intro shell" aria-labelledby="service-title" style="margin-top:40px; padding:24px; background:var(--bg-surface); border:1px solid var(--border-subtle); border-radius:var(--card-radius);">
-            <div>
-                <p class="overline" style="font-size:11px; text-transform:uppercase; color:var(--color-primary); font-weight:700;">Powered by Norra AI Infrastructure</p>
-                <h2 id="service-title" style="margin:6px 0; font-size:20px; font-weight:800;">From league discovery to the final whistle</h2>
-                <p style="margin:0; font-size:13px; color:var(--text-muted);">Leagues, fixtures, standings, summaries and play-by-play events are read from MongoDB. The browser never calls an upstream provider directly.</p>
-            </div>
-            <div class="service-flow" aria-label="Data request flow" style="margin-top:16px; font-size:12px; font-weight:600; color:var(--text-faint);">
-                <span>League Catalog</span> <i>→</i> <span>MongoDB Engine</span> <i>→</i> <span>High-Speed API</span>
-            </div>
+        <!-- SEO Knowledge Base, League Catalog & Directories (Cleanly positioned below LiveScore center) -->
+        <section class="seo-knowledge-shell shell" aria-label="Football competitions and knowledge base">
+            {{SEO_CONTENT}}
         </section>
+
+        <noscript><p class="shell noscript-note">JavaScript is required for interactive live updates. League guides, fixtures and SEO content remain available below.</p></noscript>
 
         <aside id="ad-slot-footer" class="ad-slot-container shell" hidden></aside>
     </main>
@@ -290,6 +287,6 @@
         </div>
     </footer>
 
-    <script src="/assets/app.js?v=norra-3" defer></script>
+    <script src="/assets/app.js?v=norra-4" defer></script>
 </body>
 </html>
