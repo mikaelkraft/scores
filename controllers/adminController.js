@@ -175,10 +175,40 @@ router.get('/api/admin/users', requireAdmin, async (req, res) => {
 router.get('/api/admin/keys', requireAdmin, async (req, res) => {
     try {
         const keys = await ApiKey.find().sort({ createdAt: -1 }).lean();
-        return res.json({ keys });
+        const masterKey = config.NORRA_INTERNAL_API_KEY || 'norra_live_master_internal_access_2026';
+        return res.json({ keys, norraMasterKey: masterKey });
     } catch (err) {
         return res.status(500).json({ error: 'Failed to load API keys.' });
     }
+});
+
+/**
+ * GET /api/admin/norra-integration
+ * Supplies the dedicated Norra AI prediction engine credentials and decoupled sync snippets.
+ */
+router.get('/api/admin/norra-integration', requireAdmin, async (req, res) => {
+    const masterKey = config.NORRA_INTERNAL_API_KEY || 'norra_live_master_internal_access_2026';
+    const siteUrl = config.PUBLIC_SITE_URL || 'https://scores.mynorra.xyz';
+    return res.json({
+        status: 'active',
+        masterKey,
+        tier: 'Admin Master (Free Internal Norra Engine)',
+        rateLimit: 'Unlimited',
+        isAdFree: true,
+        endpoints: {
+            liveScores: `${siteUrl}/api/v1/football/live`,
+            fixtures: `${siteUrl}/api/v1/football/fixtures?date=today`,
+            predictionContext: `${siteUrl}/api/v1/football/predictions-context/{eventId}`,
+            h2h: `${siteUrl}/api/v1/football/h2h/{team1Id}/{team2Id}`,
+            leagues: `${siteUrl}/api/v1/football/leagues`,
+            standings: `${siteUrl}/api/v1/football/standings`
+        },
+        snippets: {
+            curl: `curl -H "x-api-key: ${masterKey}" ${siteUrl}/api/v1/football/live`,
+            node: `const res = await fetch("${siteUrl}/api/v1/football/live", { headers: { "x-api-key": "${masterKey}" } });\nconst data = await res.json();`,
+            python: `import requests\nheaders = {"x-api-key": "${masterKey}"}\nres = requests.get("${siteUrl}/api/v1/football/live", headers=headers).json()`
+        }
+    });
 });
 
 /**

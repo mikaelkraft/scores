@@ -9,8 +9,14 @@
         fixturePageCount: 1,
         standings: [],
         matchTimer: null,
+        liveSyncTimer: null,
         currentEventId: null,
-        drawerActiveTab: 'timeline'
+        drawerActiveTab: 'timeline',
+        selectedLeagueSlug: 'all',
+        selectedDayOffset: 0,
+        pinnedMatches: JSON.parse(localStorage.getItem('norra_pinned_matches') || '[]'),
+        searchQuery: '',
+        liveMatchCount: 0
     };
 
     const statLabels = {
@@ -196,10 +202,21 @@
             'uefa.europa': '🇪🇺'
         };
 
+        const isAll = !activeSlug || activeSlug === 'all';
+        const isLive = activeSlug === 'live';
+
         const allPill = `
-            <button class="quick-league-btn ${(!activeSlug || activeSlug === 'all') ? 'active' : ''}" type="button" data-slug="all">
+            <button class="quick-league-btn ${isAll ? 'active' : ''}" type="button" data-slug="all">
                 <span class="quick-league-flag">🌐</span>
                 <span>All</span>
+            </button>
+        `;
+
+        const liveBadgeDisplay = state.liveMatchCount > 0 ? `display:inline-block;` : `display:none;`;
+        const livePill = `
+            <button class="quick-league-btn ${isLive ? 'active' : ''}" type="button" data-slug="live">
+                <span class="quick-league-flag ${state.liveMatchCount > 0 ? 'live-pulse-mini' : ''}">🔴</span>
+                <span>Live <span id="live-count-badge" class="pill-badge" style="${liveBadgeDisplay}">${state.liveMatchCount}</span></span>
             </button>
         `;
 
@@ -214,13 +231,15 @@
             `;
         }).join('');
 
-        container.innerHTML = allPill + leaguePills;
+        container.innerHTML = allPill + livePill + leaguePills;
 
         container.querySelectorAll('.quick-league-btn').forEach(btn => {
             btn.addEventListener('click', () => {
                 const slug = btn.dataset.slug;
                 if (slug === 'all') {
                     selectAllLeagues();
+                } else if (slug === 'live') {
+                    selectLiveMatches();
                 } else {
                     const league = state.leagues.find(item => item.slug === slug);
                     if (league) {
@@ -231,6 +250,91 @@
                 }
             });
         });
+    }
+
+    async function selectLiveMatches() {
+        state.selectedLeagueSlug = 'live';
+        state.league = null;
+        renderQuickLeaguePills('live');
+        window.clearInterval(state.matchTimer);
+
+        if (elements['league-card']) elements['league-card'].hidden = true;
+        if (elements['welcome-state']) elements['welcome-state'].hidden = true;
+        if (elements['league-dashboard']) elements['league-dashboard'].hidden = false;
+        if (elements['dashboard-country']) elements['dashboard-country'].textContent = 'In-Play Live';
+        if (elements['dashboard-title']) elements['dashboard-title'].textContent = '🔴 Matches Currently Live';
+        if (elements['fixture-status']) elements['fixture-status'].value = 'live';
+
+        await loadLiveMatches();
+    }
+
+    async function loadLiveMatches() {
+        setLoading('fixtures', true);
+        if (elements['fixtures-list']) elements['fixtures-list'].replaceChildren();
+
+        try {
+            const data = await fetchJson('/api/v1/football/live');
+            const liveMatches = data.live || [];
+            state.liveMatchCount = liveMatches.length;
+
+            const badge = document.getElementById('live-count-badge');
+            if (badge) {
+                badge.textContent = liveMatches.length;
+                badge.style.display = liveMatches.length > 0 ? 'inline-block' : 'none';
+            }
+
+            if (!liveMatches.length) {
+                if (elements['fixtures-empty']) {
+                    elements['fixtures-empty'].hidden = false;
+                    elements['fixtures-empty'].innerHTML = '<span class="empty-icon">⚽</span><p>No matches are currently in progress right now.<br><small style="color:var(--text-faint);">Check Scheduled fixtures or tap "All" to browse today’s match schedule.</small></p>';
+                }
+                if (elements['fixture-count']) elements['fixture-count'].textContent = '0';
+                return;
+            }
+
+            // Group live matches by league
+            const groupsMap = new Map();
+            for (const m of liveMatches) {
+                const slug = m.league?.slug || 'other';
+                if (!groupsMap.has(slug)) {
+                    groupsMap.set(slug, {
+                        league: m.league,
+                        events: []
+                    });
+                }
+                // Adapt to format expected by renderFlashscoreMatchRow
+                groupsMap.get(slug).events.push({
+                    id: m.id,
+                    date: m.date,
+                    name: `${m.home.displayName} vs ${m.away.displayName}`,
+                    status: {
+                        type: {
+                            state: 'in',
+                            name: m.status.name,
+                            description: m.status.description,
+                            detail: m.status.clock
+                        },
+                        displayClock: m.status.clock,
+                        period: m.status.period
+                    },
+                    competitions: [{
+                        id: m.id,
+                        date: m.date,
+                        competitors: [
+                            { homeAway: 'home', score: m.home.score, winner: m.home.winner, team: m.home },
+                            { homeAway: 'away', score: m.away.score, winner: m.away.winner, team: m.away }
+                        ]
+                    }],
+                    league_slug: slug
+                });
+            }
+
+            renderAllLeaguesGrouped([...groupsMap.values()]);
+        } catch (error) {
+            showToast('Unable to load live matches: ' + error.message);
+        } finally {
+            setLoading('fixtures', false);
+        }
     }
 
     function populateCountries() {
@@ -351,6 +455,34 @@
             'uefa.europa': '🇪🇺'
         };
 
+        // Pinned Matches Section at the top
+        const pinnedEvents = [];
+        for (const grp of groupedData) {
+            for (const ev of (grp.events || [])) {
+                if (state.pinnedMatches.includes(String(ev.id))) {
+                    pinnedEvents.push({ event: ev, league: grp.league });
+                }
+            }
+        }
+
+        let pinnedHtml = '';
+        if (pinnedEvents.length > 0) {
+            pinnedHtml = `
+                <div class="fs-league-section fs-pinned-section" style="border: 1px solid rgba(245, 158, 11, 0.4); margin-bottom: 20px;">
+                    <div class="fs-league-header" style="background: rgba(245, 158, 11, 0.08);">
+                        <div class="fs-league-title">
+                            <span class="fs-league-flag" style="color:#f59e0b;">⭐</span>
+                            <strong>Pinned Matches</strong>
+                            <small class="fs-league-country" style="color:#f59e0b;">Quick Access</small>
+                        </div>
+                    </div>
+                    <div class="fs-league-matches">
+                        ${pinnedEvents.map(({ event, league }) => renderFlashscoreMatchRow(event, league)).join('')}
+                    </div>
+                </div>
+            `;
+        }
+
         const html = groupedData.map(({ league, events }) => {
             if (!events || !events.length) return '';
             totalCount += events.length;
@@ -380,7 +512,7 @@
             elements['fixtures-list'].innerHTML = '';
         } else {
             if (elements['fixtures-empty']) elements['fixtures-empty'].hidden = true;
-            elements['fixtures-list'].innerHTML = html;
+            elements['fixtures-list'].innerHTML = pinnedHtml + html;
 
             elements['fixtures-list'].querySelectorAll('.fs-league-view-btn').forEach(btn => {
                 btn.addEventListener('click', (e) => {
@@ -389,6 +521,10 @@
                     selectLeague(slug).then(() => switchView('standings'));
                 });
             });
+
+            if (state.searchQuery) {
+                applyLiveSearch(state.searchQuery);
+            }
         }
     }
 
@@ -498,6 +634,7 @@
         const awayScore = hasScore ? escapeHtml(away.score ?? 0) : '-';
         const kickoffTime = formatTime(event.date);
         const leagueSlug = league?.slug || state.league?.slug || event.league_slug || '';
+        const isPinned = state.pinnedMatches.includes(String(event.id));
 
         const timeOrStatus = isLive
             ? `<span class="live-pulse-dot"></span><span class="fs-status-live">${escapeHtml(status.label)}</span>`
@@ -506,7 +643,7 @@
             : `<span class="fs-status-time">${kickoffTime}</span>`;
 
         return `
-            <div class="fs-match-row ${isLive ? 'is-live-row' : ''}" data-event-id="${escapeHtml(event.id)}" data-league-slug="${escapeHtml(leagueSlug)}" role="button" tabindex="0" aria-label="${homeName} versus ${awayName}">
+            <div class="fs-match-row ${isLive ? 'is-live-row' : ''}" data-event-id="${escapeHtml(event.id)}" data-league-slug="${escapeHtml(leagueSlug)}" data-search="${escapeHtml(homeName.toLowerCase())} ${escapeHtml(awayName.toLowerCase())} ${escapeHtml(leagueSlug.toLowerCase())}" role="button" tabindex="0" aria-label="${homeName} versus ${awayName}">
                 <div class="fs-col-status">
                     ${timeOrStatus}
                 </div>
@@ -525,6 +662,7 @@
                     <div class="fs-score-digit ${isLive ? 'score-live' : ''}">${awayScore}</div>
                 </div>
                 <div class="fs-col-action" aria-hidden="true">
+                    <button class="fs-pin-btn ${isPinned ? 'is-pinned' : ''}" type="button" data-pin-id="${escapeHtml(event.id)}" title="${isPinned ? 'Unpin match' : 'Pin match to top'}">★</button>
                     <span class="fs-chevron">&rsaquo;</span>
                 </div>
             </div>
@@ -634,6 +772,9 @@
     }
 
     async function loadMatchDetails(eventId, silent) {
+        if (!state.league && state.leagues.length) {
+            state.league = state.leagues[0];
+        }
         if (!state.league || state.currentEventId !== eventId) return;
         if (!silent && elements['dialog-content']) {
             if (elements['dialog-status']) {
@@ -645,9 +786,10 @@
         }
 
         const base = `/get/soccer/${encodeURIComponent(state.league.slug)}/events/${encodeURIComponent(eventId)}`;
-        const [summaryResult, playsResult] = await Promise.allSettled([
+        const [summaryResult, playsResult, predResult] = await Promise.allSettled([
             fetchJson(base),
-            fetchJson(`${base}/plays?important=true&limit=300`)
+            fetchJson(`${base}/plays?important=true&limit=300`),
+            fetchJson(`/api/v1/football/predictions-context/${encodeURIComponent(eventId)}`)
         ]);
 
         if (summaryResult.status === 'rejected') {
@@ -659,7 +801,8 @@
 
         const summary = summaryResult.value;
         const plays = playsResult.status === 'fulfilled' ? playsResult.value.items || [] : [];
-        renderMatchDetails(summary, plays);
+        const predictions = predResult.status === 'fulfilled' ? predResult.value : null;
+        renderMatchDetails(summary, plays, predictions);
 
         const competition = summary.header?.competitions?.[0] || {};
         const status = competition.status?.type?.state;
@@ -764,7 +907,7 @@
         return badges[kind] || badges.event;
     }
 
-    function renderMatchDetails(summary, plays) {
+    function renderMatchDetails(summary, plays, predictions = null) {
         const competition = summary.header?.competitions?.[0] || {};
         const event = { date: competition.date, competitions: [competition], status: competition.status };
         const { home, away } = competitorsFromEvent(event);
@@ -857,6 +1000,8 @@
             </div>
         `).join('');
 
+        const predHints = predictions?.norraAiPredictionHints || {};
+
         if (elements['dialog-content']) {
             elements['dialog-content'].innerHTML = `
                 <section class="drawer-header-card">
@@ -885,6 +1030,7 @@
                     <button class="drawer-tab" data-drawer-tab="stats" type="button">H2H Statistics</button>
                     <button class="drawer-tab" data-drawer-tab="lineups" type="button">Substitutions &amp; Lineups</button>
                     <button class="drawer-tab" data-drawer-tab="info" type="button">Match Info</button>
+                    <button class="drawer-tab" data-drawer-tab="predictions" type="button" style="color:var(--color-primary); font-weight:700;">🔮 AI Predictions</button>
                 </div>
 
                 <div id="drawer-tab-timeline" class="drawer-tab-content">
@@ -913,6 +1059,49 @@
                         <p style="margin:6px 0;"><strong>Attendance:</strong> ${escapeHtml(competition.attendance || '—')}</p>
                         <p style="margin:6px 0;"><strong>Home Form:</strong> ${escapeHtml(home.form || '—')}</p>
                         <p style="margin:6px 0;"><strong>Away Form:</strong> ${escapeHtml(away.form || '—')}</p>
+                    </div>
+                </div>
+
+                <div id="drawer-tab-predictions" class="drawer-tab-content" hidden>
+                    <div class="prediction-card">
+                        <div style="display:flex; justify-content:space-between; align-items:center;">
+                            <h4 style="margin:0; font-size:14px; color:var(--text-main);">🔮 Norra AI Outcome Probability</h4>
+                            <span style="font-size:11px; background:var(--color-primary-subtle); color:var(--color-primary); padding:3px 8px; border-radius:4px; font-weight:700;">LIVE MODEL</span>
+                        </div>
+                        <p style="color:var(--text-muted); font-size:12px; margin:6px 0 16px;">Inferred from historical H2H meetings, recent 6-game form, and standings differential.</p>
+
+                        <div class="prediction-probs-grid">
+                            <div class="prob-box">
+                                <div class="prob-pct">${predHints.homeWinProb ?? 50}%</div>
+                                <div class="prob-label">${escapeHtml(home.team?.displayName || 'Home')} Win</div>
+                            </div>
+                            <div class="prob-box">
+                                <div class="prob-pct">${predHints.drawProb ?? 26}%</div>
+                                <div class="prob-label">Draw</div>
+                            </div>
+                            <div class="prob-box">
+                                <div class="prob-pct">${predHints.awayWinProb ?? 24}%</div>
+                                <div class="prob-label">${escapeHtml(away.team?.displayName || 'Away')} Win</div>
+                            </div>
+                        </div>
+
+                        <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-top:14px; font-size:12px;">
+                            <div style="background:var(--bg-canvas); padding:10px 14px; border-radius:6px; border:1px solid var(--border-subtle);">
+                                <span style="color:var(--text-muted); display:block;">Expected Total Goals</span>
+                                <strong style="font-size:16px; color:var(--text-main);">${predHints.expectedGoals ?? 2.5}</strong>
+                            </div>
+                            <div style="background:var(--bg-canvas); padding:10px 14px; border-radius:6px; border:1px solid var(--border-subtle);">
+                                <span style="color:var(--text-muted); display:block;">Both Teams To Score (BTTS)</span>
+                                <strong style="font-size:16px; color:${predHints.bttsRecommendation === 'Yes' ? '#10b981' : 'var(--text-main)'};">${predHints.bttsRecommendation ?? 'Likely'}</strong>
+                            </div>
+                        </div>
+
+                        <div style="text-align:center; margin-top:20px;">
+                            <a href="https://mynorra.xyz" target="_blank" rel="noopener" class="btn-primary" style="display:inline-block; padding:10px 20px; text-decoration:none; border-radius:8px; font-weight:700; font-size:13px;">
+                                🔮 Deep-Dive Predictions on Norra AI &rarr;
+                            </a>
+                            <p style="font-size:11px; color:var(--text-faint); margin:8px 0 0;">Decoupled sync powered by the Norra AI Master API key.</p>
+                        </div>
                     </div>
                 </div>
             `;
@@ -1139,6 +1328,14 @@
         if (elements['standings-tab']) elements['standings-tab'].addEventListener('click', () => switchView('standings'));
         if (elements['fixtures-list']) {
             elements['fixtures-list'].addEventListener('click', event => {
+                const pinBtn = event.target.closest('.fs-pin-btn');
+                if (pinBtn) {
+                    event.stopPropagation();
+                    const eventId = pinBtn.dataset.pinId;
+                    togglePinMatch(eventId);
+                    return;
+                }
+
                 const card = event.target.closest('[data-event-id]');
                 if (card) {
                     const eventId = card.dataset.eventId;
@@ -1168,6 +1365,188 @@
                 closeMatchDialog();
             });
         }
+
+        initDateRibbon();
+        initSearch();
+        initLiveSync();
+    }
+
+    function togglePinMatch(eventId) {
+        if (!eventId) return;
+        const idStr = String(eventId);
+        const idx = state.pinnedMatches.indexOf(idStr);
+        if (idx === -1) {
+            state.pinnedMatches.push(idStr);
+            showToast('⭐ Match pinned to top of live scores');
+        } else {
+            state.pinnedMatches.splice(idx, 1);
+            showToast('Match unpinned');
+        }
+        try {
+            localStorage.setItem('norra_pinned_matches', JSON.stringify(state.pinnedMatches));
+        } catch {}
+
+        // Re-render fixtures list to reflect pinning
+        if (state.selectedLeagueSlug === 'all') {
+            loadAllLeagueFixtures();
+        } else if (state.selectedLeagueSlug === 'live') {
+            loadLiveMatches();
+        } else if (state.league) {
+            renderFixtures(state.fixtures);
+        }
+    }
+
+    function initDateRibbon() {
+        const pillsList = document.getElementById('date-pills-list');
+        const prevBtn = document.getElementById('date-prev-btn');
+        const nextBtn = document.getElementById('date-next-btn');
+        const picker = document.getElementById('matchday-picker');
+
+        function setMatchdayDate(dateObj) {
+            const iso = isoDateInput(dateObj);
+            if (elements['date-from']) elements['date-from'].value = iso;
+            if (elements['date-to']) elements['date-to'].value = iso;
+            if (picker) picker.value = iso;
+
+            if (state.selectedLeagueSlug === 'all') {
+                loadAllLeagueFixtures();
+            } else if (state.league) {
+                loadFixtures();
+            }
+        }
+
+        if (pillsList) {
+            pillsList.querySelectorAll('.date-pill-btn').forEach(btn => {
+                btn.addEventListener('click', () => {
+                    pillsList.querySelectorAll('.date-pill-btn').forEach(b => b.classList.remove('active'));
+                    btn.classList.add('active');
+                    const day = btn.dataset.day;
+                    const d = new Date();
+                    if (day === 'yesterday') {
+                        d.setDate(d.getDate() - 1);
+                        state.selectedDayOffset = -1;
+                    } else if (day === 'tomorrow') {
+                        d.setDate(d.getDate() + 1);
+                        state.selectedDayOffset = 1;
+                    } else {
+                        state.selectedDayOffset = 0;
+                    }
+                    setMatchdayDate(d);
+                });
+            });
+        }
+
+        if (prevBtn) {
+            prevBtn.addEventListener('click', () => {
+                state.selectedDayOffset -= 1;
+                const d = new Date();
+                d.setDate(d.getDate() + state.selectedDayOffset);
+                if (pillsList) pillsList.querySelectorAll('.date-pill-btn').forEach(b => b.classList.remove('active'));
+                setMatchdayDate(d);
+            });
+        }
+
+        if (nextBtn) {
+            nextBtn.addEventListener('click', () => {
+                state.selectedDayOffset += 1;
+                const d = new Date();
+                d.setDate(d.getDate() + state.selectedDayOffset);
+                if (pillsList) pillsList.querySelectorAll('.date-pill-btn').forEach(b => b.classList.remove('active'));
+                setMatchdayDate(d);
+            });
+        }
+
+        if (picker) {
+            picker.value = isoDateInput(new Date());
+            picker.addEventListener('change', (e) => {
+                if (e.target.value) {
+                    const picked = new Date(e.target.value);
+                    if (!isNaN(picked.getTime())) {
+                        if (pillsList) pillsList.querySelectorAll('.date-pill-btn').forEach(b => b.classList.remove('active'));
+                        setMatchdayDate(picked);
+                    }
+                }
+            });
+        }
+    }
+
+    function initSearch() {
+        const searchInput = document.getElementById('livescore-search-input');
+        const clearBtn = document.getElementById('clear-search-btn');
+        if (!searchInput) return;
+
+        searchInput.addEventListener('input', (e) => {
+            const q = e.target.value.trim().toLowerCase();
+            state.searchQuery = q;
+            if (clearBtn) clearBtn.hidden = !q;
+            applyLiveSearch(q);
+        });
+
+        if (clearBtn) {
+            clearBtn.addEventListener('click', () => {
+                searchInput.value = '';
+                state.searchQuery = '';
+                clearBtn.hidden = true;
+                applyLiveSearch('');
+            });
+        }
+    }
+
+    function applyLiveSearch(query) {
+        if (!elements['fixtures-list']) return;
+        const rows = elements['fixtures-list'].querySelectorAll('.fs-match-row');
+        if (!query) {
+            rows.forEach(r => r.style.display = 'flex');
+            elements['fixtures-list'].querySelectorAll('.fs-league-section').forEach(s => s.style.display = 'block');
+            return;
+        }
+
+        elements['fixtures-list'].querySelectorAll('.fs-league-section').forEach(sec => {
+            let sectionHasMatch = false;
+            sec.querySelectorAll('.fs-match-row').forEach(row => {
+                const searchData = (row.dataset.search || row.textContent).toLowerCase();
+                const matched = searchData.includes(query);
+                row.style.display = matched ? 'flex' : 'none';
+                if (matched) sectionHasMatch = true;
+            });
+            sec.style.display = sectionHasMatch ? 'block' : 'none';
+        });
+    }
+
+    function initLiveSync() {
+        const refreshBtn = document.getElementById('quick-refresh-btn');
+        if (refreshBtn) {
+            refreshBtn.addEventListener('click', () => {
+                syncLiveScores();
+            });
+        }
+
+        async function syncLiveScores() {
+            try {
+                const res = await fetchJson('/api/v1/football/live');
+                const liveMatches = res.live || [];
+                state.liveMatchCount = liveMatches.length;
+
+                const badge = document.getElementById('live-count-badge');
+                if (badge) {
+                    badge.textContent = liveMatches.length;
+                    badge.style.display = liveMatches.length > 0 ? 'inline-block' : 'none';
+                }
+
+                // If currently viewing live view or matches are live, update smoothly
+                if (state.selectedLeagueSlug === 'live') {
+                    loadLiveMatches();
+                }
+            } catch (e) {
+                // background poll notice
+            }
+        }
+
+        // Background poll every 20 seconds
+        window.clearInterval(state.liveSyncTimer);
+        state.liveSyncTimer = window.setInterval(syncLiveScores, 20000);
+        // Initial quick check
+        setTimeout(syncLiveScores, 1500);
     }
 
     async function initialize() {

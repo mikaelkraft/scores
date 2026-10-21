@@ -306,6 +306,11 @@ async function loadKeys() {
             document.getElementById('stat-ad-free').textContent = currentKey.isAdFree ? '100% Ad-Free' : 'Ad-Supported';
             document.getElementById('stat-total-calls').textContent = currentKey.totalRequests || 0;
         }
+
+        if (data.norraMasterKey) {
+            const masterKeyEl = document.getElementById('display-norra-master-key');
+            if (masterKeyEl) masterKeyEl.textContent = data.norraMasterKey;
+        }
     } catch (err) {
         console.error('Failed to load keys:', err);
     }
@@ -315,6 +320,14 @@ function copyApiKey() {
     if (!currentKey) return;
     navigator.clipboard.writeText(currentKey.key).then(() => {
         alert('API Key copied to clipboard!');
+    });
+}
+
+function copyMasterApiKey() {
+    const masterKeyEl = document.getElementById('display-norra-master-key');
+    const key = masterKeyEl ? masterKeyEl.textContent.trim() : 'norra_live_master_internal_access_2026';
+    navigator.clipboard.writeText(key).then(() => {
+        alert('Norra AI Master API Key copied to clipboard!');
     });
 }
 

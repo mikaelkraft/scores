@@ -224,10 +224,19 @@ const options = {
             }
           }
         }
+      },
+      securitySchemes: {
+        ApiKeyAuth: {
+          type: 'apiKey',
+          in: 'header',
+          name: 'x-api-key',
+          description: 'Norra AI Master API key or commercial client key'
+        }
       }
     }
   },
   apis: [
+    './controllers/footballApiController.js',
     './controllers/soccerController.js',
     './controllers/healthController.js'
   ]

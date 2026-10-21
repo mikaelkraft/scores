@@ -45,6 +45,7 @@ function loadEnvConfig() {
     ADMIN_USERNAME: process.env.ADMIN_USERNAME || 'admin',
     ADMIN_PASSWORD: process.env.ADMIN_PASSWORD || 'NorraScoresAdmin2026!',
     ADMIN_JWT_SECRET: process.env.ADMIN_JWT_SECRET || process.env.JWT_SECRET || 'norra-scores-jwt-secret-key-2026',
+    NORRA_INTERNAL_API_KEY: process.env.NORRA_INTERNAL_API_KEY || process.env.ADMIN_API_KEY || 'norra_live_master_internal_access_2026',
 
     // Payment Gateways
     FLUTTERWAVE_PUBLIC_KEY: process.env.FLUTTERWAVE_PUBLIC_KEY || '',

@@ -301,6 +301,53 @@
 
                 <button class="btn-secondary" style="margin-top: 20px; color: #ef4444;" onclick="regenerateApiKey()">Regenerate Key</button>
             </div>
+
+            <!-- Norra AI Internal Engine Master Key Card -->
+            <div class="portal-card" id="norra-integration-card" style="border: 1px solid var(--border-strong); background: rgba(59, 130, 246, 0.05); margin-top: 24px;">
+                <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 15px; flex-wrap: wrap;">
+                    <div>
+                        <div style="display: inline-flex; align-items: center; gap: 6px; background: rgba(59, 130, 246, 0.15); color: #60a5fa; font-size: 11px; font-weight: 700; padding: 3px 8px; border-radius: 4px; text-transform: uppercase; margin-bottom: 8px;">
+                            <span>🔮 Admin Integration</span>
+                        </div>
+                        <h3 style="margin: 0;">Norra AI Platform Master Key (Free Internal Access)</h3>
+                        <p style="color: var(--text-muted); font-size: 13px; margin: 6px 0 0;">
+                            Decouple livescore polling from Norra AI. This master API key bypasses all rate limits, allows high-throughput polling of live scores, and provides direct AI prediction context datasets.
+                        </p>
+                    </div>
+                    <span style="padding: 4px 10px; border-radius: 12px; background: rgba(16, 185, 129, 0.15); color: #34d399; font-size: 12px; font-weight: 700;">UNLIMITED ACCESS</span>
+                </div>
+
+                <div class="key-box" style="margin-top: 18px;">
+                    <span id="display-norra-master-key">norra_live_master_internal_access_2026</span>
+                    <button class="btn-secondary" onclick="copyMasterApiKey()">Copy Master Key</button>
+                </div>
+
+                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; margin-top: 16px; font-size: 12px;">
+                    <div style="background: var(--bg-surface); padding: 10px 14px; border-radius: 6px; border: 1px solid var(--border-subtle);">
+                        <strong style="color: var(--text-main); display: block;">⚡ Global Live Match Polling</strong>
+                        <code style="color: var(--color-primary); font-size: 11px;">GET /api/v1/football/live</code>
+                    </div>
+                    <div style="background: var(--bg-surface); padding: 10px 14px; border-radius: 6px; border: 1px solid var(--border-subtle);">
+                        <strong style="color: var(--text-main); display: block;">📅 Multi-League Fixtures</strong>
+                        <code style="color: var(--color-primary); font-size: 11px;">GET /api/v1/football/fixtures?date=today</code>
+                    </div>
+                    <div style="background: var(--bg-surface); padding: 10px 14px; border-radius: 6px; border: 1px solid var(--border-subtle);">
+                        <strong style="color: var(--text-main); display: block;">🔮 Prediction Data Bundle</strong>
+                        <code style="color: var(--color-primary); font-size: 11px;">GET /api/v1/football/predictions-context/{id}</code>
+                    </div>
+                </div>
+
+                <div style="margin-top: 20px;">
+                    <h4 style="margin: 0 0 8px; font-size: 13px;">Quick Norra AI Client Integration Snippet</h4>
+                    <div class="snippet-box" id="norra-integration-snippet" style="font-family: monospace; font-size: 12px; padding: 12px; background: var(--bg-canvas); border-radius: 6px; border: 1px solid var(--border-subtle); overflow-x: auto;">// Norra AI Livescore Decoupled Sync Service
+const response = await fetch('https://scores.mynorra.xyz/api/v1/football/live', {
+  headers: { 'x-api-key': 'norra_live_master_internal_access_2026' }
+});
+const { live } = await response.json();
+console.log(`Synced ${live.length} live matches into Norra prediction engine.`);</div>
+                    <button class="btn-secondary" style="margin-top: 8px; font-size: 12px;" onclick="copySnippet('norra-integration-snippet')">Copy Node.js Snippet</button>
+                </div>
+            </div>
         </section>
 
         <!-- Tab 2: Upgrade Plans -->

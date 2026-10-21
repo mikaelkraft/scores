@@ -9,7 +9,7 @@
     <meta name="robots" content="{{SEO_ROBOTS}}">
     <meta name="theme-color" content="#0b0f19">
     <link rel="canonical" href="{{SEO_CANONICAL}}">
-    <link rel="stylesheet" href="/assets/styles.css?v=norra-5">
+    <link rel="stylesheet" href="/assets/styles.css?v=norra-6">
     <link rel="icon" href="/favicon.ico" sizes="any">
     <link rel="icon" href="/favicon.svg" type="image/svg+xml">
     <link rel="apple-touch-icon" href="/apple-touch-icon.png">
@@ -102,6 +102,36 @@
             <!-- Quick League Selector Bar -->
             <div class="quick-leagues-wrapper" id="quick-leagues-bar" aria-label="Popular world competitions">
                 <div class="quick-leagues-list" id="quick-leagues-list"></div>
+            </div>
+
+            <!-- Flashscore Matchday Date Ribbon & Live Sync Bar -->
+            <div class="date-ribbon-bar" aria-label="Matchday date navigation">
+                <div class="date-ribbon-nav">
+                    <button class="date-nav-arrow" id="date-prev-btn" type="button" title="Previous day">‹</button>
+                    <div class="date-pills-list" id="date-pills-list">
+                        <button class="date-pill-btn" type="button" data-day="yesterday">Yesterday</button>
+                        <button class="date-pill-btn active" type="button" data-day="today">Today</button>
+                        <button class="date-pill-btn" type="button" data-day="tomorrow">Tomorrow</button>
+                    </div>
+                    <button class="date-nav-arrow" id="date-next-btn" type="button" title="Next day">›</button>
+                    <div class="date-picker-wrap">
+                        <input type="date" id="matchday-picker" class="matchday-picker-input" title="Choose specific date" aria-label="Select matchday date">
+                    </div>
+                </div>
+                <div class="date-ribbon-actions">
+                    <div class="live-sync-indicator" title="Auto-refreshing live scores every 20s">
+                        <span class="live-sync-pulse" aria-hidden="true"></span>
+                        <span id="live-sync-text">Live Sync: ON</span>
+                    </div>
+                    <button id="quick-refresh-btn" class="quick-refresh-icon-btn" type="button" title="Refresh live scores">↻</button>
+                </div>
+            </div>
+
+            <!-- Instant Match Search Bar -->
+            <div class="livescore-search-bar" aria-label="Search fixtures">
+                <span class="search-icon" aria-hidden="true">🔍</span>
+                <input type="search" id="livescore-search-input" placeholder="Search clubs, matches, or leagues (e.g. Arsenal, Real Madrid, Milan)..." aria-label="Search fixtures">
+                <button type="button" id="clear-search-btn" class="search-clear-btn" hidden aria-label="Clear search">✕</button>
             </div>
 
             <div class="toolbar">
@@ -292,6 +322,6 @@
         </div>
     </footer>
 
-    <script src="/assets/app.js?v=norra-5" defer></script>
+    <script src="/assets/app.js?v=norra-6" defer></script>
 </body>
 </html>

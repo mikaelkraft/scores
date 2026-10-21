@@ -28,7 +28,7 @@ const ApiKeySchema = new mongoose.Schema({
     },
     plan: {
         type: String,
-        enum: ['free', 'starter', 'pro', 'whitelabel'],
+        enum: ['free', 'starter', 'pro', 'whitelabel', 'admin', 'internal'],
         default: 'free'
     },
     rateLimitPerMinute: {

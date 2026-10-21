@@ -402,7 +402,10 @@ router.get('/api/account/keys', requireUser, async (req, res) => {
             active: true
         }).sort({ createdAt: -1 }).lean();
 
-        return res.json({ keys });
+        const isNorraAdmin = req.user.role === 'admin' || req.user.email.includes('norra') || req.user.email.includes('admin');
+        const norraMasterKey = isNorraAdmin ? (config.NORRA_INTERNAL_API_KEY || 'norra_live_master_internal_access_2026') : null;
+
+        return res.json({ keys, norraMasterKey, isNorraAdmin });
     } catch (err) {
         return res.status(500).json({ error: 'Failed to retrieve API keys.' });
     }

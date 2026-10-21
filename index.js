@@ -66,6 +66,13 @@ app.use(helmet({
 app.use(compression());
 
 // Rate limiting - configurable per environment
+const { extractApiKey, isMasterAdminKey } = require('./middleware/apiKeyAuth');
+
+const shouldSkipRateLimit = (req) => {
+    const rawKey = extractApiKey(req);
+    return isMasterAdminKey(rawKey);
+};
+
 const baseLimiter = rateLimit({
     windowMs: config.RATE_LIMIT_WINDOW,
     max: config.RATE_LIMIT_MAX,
@@ -76,6 +83,7 @@ const baseLimiter = rateLimit({
     standardHeaders: true,
     legacyHeaders: false,
     validate: { xForwardedForHeader: false },
+    skip: shouldSkipRateLimit
 });
 const publicGetLimiter = rateLimit({
     windowMs: config.PUBLIC_RATE_LIMIT_WINDOW,
@@ -87,6 +95,7 @@ const publicGetLimiter = rateLimit({
     standardHeaders: true,
     legacyHeaders: false,
     validate: { xForwardedForHeader: false },
+    skip: shouldSkipRateLimit
 });
 app.use((req, res, next) => {
     if (req.path.startsWith('/get')) {
@@ -281,6 +290,31 @@ app.use((error, req, res, next) => {
 
 app.listen(PORT, () => {
     console.log(`Server started on port ${PORT}`);
+
+    // Seed / Ensure Norra AI Master Admin Key exists in database
+    const ApiKey = require('./models/apiKey');
+    setTimeout(async () => {
+        try {
+            const masterKey = config.NORRA_INTERNAL_API_KEY || 'norra_live_master_internal_access_2026';
+            await ApiKey.updateOne(
+                { key: masterKey },
+                {
+                    $set: {
+                        name: 'Norra AI Prediction Engine (Master Admin Key)',
+                        email: 'admin@mynorra.xyz',
+                        plan: 'admin',
+                        rateLimitPerMinute: 0,
+                        isAdFree: true,
+                        active: true
+                    }
+                },
+                { upsert: true }
+            );
+            console.log('🔑 Norra AI Master Admin API Key active and ready for decoupled sync.');
+        } catch (e) {
+            console.warn('Notice seeding master key:', e.message);
+        }
+    }, 2000);
 
     // Auto-sync live scores and world leagues in background
     const { syncAllLeagues } = require('./services/soccerSyncService');

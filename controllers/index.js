@@ -6,5 +6,6 @@ module.exports = app => {
     require('./accountController')(app);
     require('./adminController')(app);
     require('./bookingController')(app);
+    require('./footballApiController')(app);
     require('./seoController')(app); // SEO catch-all routes should stay last
 };
