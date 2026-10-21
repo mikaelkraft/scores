@@ -251,7 +251,7 @@ function renderMatchList(title, matches, options = {}) {
             : '';
         const teams = `<strong>${escapeHtml(home)}</strong> vs <strong>${escapeHtml(away)}</strong>`;
         return `<li>
-                <span>${options.showLeague && match.league ? `<a class="match-competition" href="${escapeHtml(leagueUrl(options.baseUrl, match.league))}">${escapeHtml(leagueName(match.league))}</a>` : ''}${href ? `<a class="match-link" href="${escapeHtml(href)}">${teams}</a>` : teams}</span>
+                <span>${options.showLeague && match.league ? `<a class="match-competition" href="${escapeHtml(leagueUrl(options.baseUrl, match.league))}">${escapeHtml(leagueName(match.league))}</a> <span class="match-sep" aria-hidden="true">·</span> ` : ''}${href ? `<a class="match-link" href="${escapeHtml(href)}">${teams}</a>` : teams}</span>
                 <time${dateTime ? ` datetime="${dateTime}"` : ''}>${escapeHtml(formatMatchDate(match.date))}</time>
                 <b>${escapeHtml(matchStatus(match))}</b>
             </li>`;
@@ -586,29 +586,92 @@ function leagueContent(context) {
 
 function apiContent(context) {
     return `<section class="seo-directory shell api-guide" id="free-football-api" aria-labelledby="api-guide-title">
-        <nav class="breadcrumbs" aria-label="Breadcrumb"><a href="/">Home</a><span>›</span><span>Free football API</span></nav>
+        <nav class="breadcrumbs" aria-label="Breadcrumb"><a href="/">Home</a><span>›</span><span>Commercial &amp; Free Football API</span></nav>
         <div class="seo-section-heading">
-            <p class="overline">Open-source JSON REST API</p>
-            <h2 id="api-guide-title">Free football API for live scores, fixtures and standings</h2>
-            <p>Build football apps with a free, database-backed API covering ${escapeHtml(context.leagues.length)} verified competitions. No API key is currently required for public read endpoints.</p>
+            <p class="overline">High-Speed Commercial Sports API &amp; Webhook Engine</p>
+            <h2 id="api-guide-title">Free Football API for Live Scores, Fixtures &amp; Standings</h2>
+            <p>Build sports websites, mobile apps, and betting bots with documented JSON endpoints. No API key is required for public sandbox evaluation, while commercial production tiers offer high-throughput rate limits, sub-second telemetry, and white-label embeds.</p>
         </div>
-        <dl class="seo-facts api-facts">
-            <div><dt>Price</dt><dd>Free</dd></div>
-            <div><dt>Authentication</dt><dd>No API key</dd></div>
-            <div><dt>Format</dt><dd>JSON REST</dd></div>
-            <div><dt>Source code license</dt><dd>ISC</dd></div>
-        </dl>
+
+        <div class="pricing-plans-grid" style="display:grid; grid-template-columns:repeat(auto-fit, minmax(min(100%, 250px), 1fr)); gap:20px; margin:28px 0;">
+            <div class="plan-card" style="background:var(--bg-surface); border:1px solid var(--border-subtle); border-radius:var(--card-radius); padding:24px; display:flex; flex-direction:column; justify-content:space-between;">
+                <div>
+                    <span style="font-size:11px; font-weight:700; color:var(--text-muted); text-transform:uppercase;">Evaluation</span>
+                    <h3 style="font-size:18px; margin:6px 0; color:var(--text-main);">Developer Sandbox</h3>
+                    <div style="font-size:28px; font-weight:800; margin:12px 0; color:var(--text-main);">$0 <small style="font-size:13px; font-weight:400; color:var(--text-muted);">/ free</small></div>
+                    <p style="font-size:12px; color:var(--text-muted); margin-bottom:16px;">Test API responses and build prototypes with stored league telemetry.</p>
+                    <ul style="list-style:none; padding:0; margin:0 0 20px; font-size:13px; color:var(--text-muted); line-height:1.8;">
+                        <li>✓ 100 requests / day</li>
+                        <li>✓ Public Sandbox Access</li>
+                        <li>✓ No API key required for testing</li>
+                        <li>✓ Community Documentation</li>
+                    </ul>
+                </div>
+                <a href="/api-docs/" class="tab-btn" style="display:block; text-align:center; padding:10px 16px;">Test in Swagger</a>
+            </div>
+
+            <div class="plan-card" style="background:var(--bg-surface); border:1px solid var(--border-subtle); border-radius:var(--card-radius); padding:24px; display:flex; flex-direction:column; justify-content:space-between;">
+                <div>
+                    <span style="font-size:11px; font-weight:700; color:var(--color-primary); text-transform:uppercase;">Starter Tier</span>
+                    <h3 style="font-size:18px; margin:6px 0; color:var(--text-main);">Starter Sports</h3>
+                    <div style="font-size:28px; font-weight:800; margin:12px 0; color:var(--text-main);">$19 <small style="font-size:13px; font-weight:400; color:var(--text-muted);">/ month</small></div>
+                    <p style="font-size:12px; color:var(--text-muted); margin-bottom:16px;">For indie apps, fan blogs, and sports community widgets.</p>
+                    <ul style="list-style:none; padding:0; margin:0 0 20px; font-size:13px; color:var(--text-muted); line-height:1.8;">
+                        <li>✓ 60 requests / minute</li>
+                        <li>✓ 100,000 monthly calls</li>
+                        <li>✓ Dedicated API Key Authentication</li>
+                        <li>✓ Full Fixtures &amp; Tables</li>
+                        <li>✓ Zero Website Ads</li>
+                    </ul>
+                </div>
+                <a href="/account" class="tab-btn" style="display:block; text-align:center; padding:10px 16px; background:var(--color-primary-subtle); border-color:var(--color-primary); color:var(--color-primary);">Get Starter Key</a>
+            </div>
+
+            <div class="plan-card" style="background:var(--bg-surface); border:2px solid var(--color-primary); border-radius:var(--card-radius); padding:24px; display:flex; flex-direction:column; justify-content:space-between; position:relative;">
+                <span style="position:absolute; top:-10px; right:16px; background:var(--color-primary); color:#ffffff; font-size:10px; font-weight:800; padding:2px 8px; border-radius:10px; text-transform:uppercase;">Most Popular</span>
+                <div>
+                    <span style="font-size:11px; font-weight:700; color:var(--color-primary); text-transform:uppercase;">Commercial</span>
+                    <h3 style="font-size:18px; margin:6px 0; color:var(--text-main);">Pro Telemetry</h3>
+                    <div style="font-size:28px; font-weight:800; margin:12px 0; color:var(--text-main);">$49 <small style="font-size:13px; font-weight:400; color:var(--text-muted);">/ month</small></div>
+                    <p style="font-size:12px; color:var(--text-muted); margin-bottom:16px;">High-frequency live score updates for commercial publishing.</p>
+                    <ul style="list-style:none; padding:0; margin:0 0 20px; font-size:13px; color:var(--text-muted); line-height:1.8;">
+                        <li>✓ 300 requests / minute</li>
+                        <li>✓ 1,000,000 monthly calls</li>
+                        <li>✓ In-Play Match Telemetry</li>
+                        <li>✓ Live Goals &amp; Card Events</li>
+                        <li>✓ Fast PayPal &amp; Flutterwave Billing</li>
+                    </ul>
+                </div>
+                <a href="/account" class="tab-btn" style="display:block; text-align:center; padding:10px 16px; background:var(--color-primary); color:#ffffff;">Subscribe to Pro</a>
+            </div>
+
+            <div class="plan-card" style="background:var(--bg-surface); border:1px solid var(--border-subtle); border-radius:var(--card-radius); padding:24px; display:flex; flex-direction:column; justify-content:space-between;">
+                <div>
+                    <span style="font-size:11px; font-weight:700; color:var(--text-muted); text-transform:uppercase;">Enterprise</span>
+                    <h3 style="font-size:18px; margin:6px 0; color:var(--text-main);">Whitelabel Hub</h3>
+                    <div style="font-size:28px; font-weight:800; margin:12px 0; color:var(--text-main);">$149 <small style="font-size:13px; font-weight:400; color:var(--text-muted);">/ month</small></div>
+                    <p style="font-size:12px; color:var(--text-muted); margin-bottom:16px;">Turnkey white-label embeds and booking code converters.</p>
+                    <ul style="list-style:none; padding:0; margin:0 0 20px; font-size:13px; color:var(--text-muted); line-height:1.8;">
+                        <li>✓ 1,200 requests / minute</li>
+                        <li>✓ Unlimited monthly calls</li>
+                        <li>✓ Whitelabel LiveScore Embeds</li>
+                        <li>✓ Betting Booking Code Hook</li>
+                        <li>✓ 99.9% High Availability SLA</li>
+                    </ul>
+                </div>
+                <a href="/account" class="tab-btn" style="display:block; text-align:center; padding:10px 16px;">Contact Enterprise</a>
+            </div>
+        </div>
+
         <div class="api-example-grid">
             <article><h2>Football fixtures API</h2><p>Browse a stored league schedule, filter by date or status, and paginate results.</p><code>GET /get/soccer/eng.1/fixtures?status=all</code></article>
             <article><h2>Live score API</h2><p>Read fixtures, in-progress match status, scores and available statistics for a date.</p><code>GET /get/soccer/eng.1/scoreboard?dates=20260822</code></article>
             <article><h2>Football standings API</h2><p>Retrieve the latest verified table or competition groups for a league and season.</p><code>GET /get/soccer/esp.1/standings?season=2026</code></article>
             <article><h2>Match events API</h2><p>Read stored match summaries and paginated play-by-play, including goals, cards and substitutions when available.</p><code>GET /get/soccer/esp.1/events/{eventId}/plays</code></article>
         </div>
-        <div class="api-actions"><a class="seo-primary-link" href="/api-docs/">Open interactive API documentation</a><a class="seo-home-link" href="${GITHUB_URL}">View source code on GitHub</a></div>
-        <div class="seo-topics">
-            <article><h2>Stable stored data</h2><p>Public requests read MongoDB and never call an upstream football provider during the customer request.</p></article>
-            <article><h2>Live data freshness</h2><p>A separate listener refreshes scores and match events. API metadata exposes collection coverage and the latest successful synchronization.</p></article>
-            <article><h2>Fair-use limits</h2><p>Public endpoints use configurable rate limits to keep the free service available. Clients should cache responses and avoid unnecessary polling.</p></article>
+        <div class="api-actions" style="margin-top:24px; display:flex; gap:12px; flex-wrap:wrap;">
+            <a class="seo-primary-link" href="/account" style="background:var(--color-primary); color:#ffffff; padding:10px 18px; border-radius:8px; font-weight:600;">Open Developer Portal</a>
+            <a class="seo-home-link" href="/api-docs/" style="border:1px solid var(--border-subtle); padding:10px 18px; border-radius:8px;">Interactive API Docs ↗</a>
         </div>
     </section>`;
 }

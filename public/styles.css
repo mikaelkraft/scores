@@ -254,20 +254,27 @@ body.theme-light .site-header {
 .nav-actions {
     display: flex;
     align-items: center;
-    gap: 12px;
+    gap: 8px;
+    flex-wrap: wrap;
 }
 .nav-link {
     font-size: 13px;
     font-weight: 600;
     color: var(--text-muted);
-    transition: color 0.2s ease;
-    padding: 6px 8px;
+    transition: all 0.2s ease;
+    padding: 8px 12px;
+    border-radius: 8px;
+    text-decoration: none;
+    display: inline-flex;
+    align-items: center;
 }
-.nav-link:hover {
+.nav-link:hover, .nav-link.active {
     color: var(--text-main);
+    background: var(--bg-surface-elevated);
 }
 .nav-link.docs-link {
     color: var(--color-primary);
+    font-weight: 700;
 }
 .btn-icon-toggle {
     background: var(--bg-surface);
@@ -676,11 +683,165 @@ body.theme-light .site-header {
     margin: 0;
 }
 
+/* Flashscore-Style League Sections & Match Rows */
+.fs-league-section {
+    background: var(--bg-surface);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--card-radius);
+    margin-bottom: 20px;
+    overflow: hidden;
+    box-shadow: var(--shadow-sm);
+    transition: var(--transition-smooth);
+    width: 100%;
+}
+.fs-league-section:hover {
+    border-color: var(--border-strong);
+}
+.fs-league-header {
+    background: var(--bg-surface-elevated);
+    padding: 10px 16px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    border-bottom: 1px solid var(--border-subtle);
+}
+.fs-league-title {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 13px;
+    font-weight: 700;
+    color: var(--text-main);
+}
+.fs-league-flag {
+    font-size: 16px;
+}
+.fs-league-country {
+    font-size: 11px;
+    font-weight: 500;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+.fs-league-view-btn {
+    background: transparent;
+    border: none;
+    color: var(--color-primary);
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    padding: 4px 8px;
+    border-radius: 4px;
+    transition: var(--transition-smooth);
+}
+.fs-league-view-btn:hover {
+    background: var(--color-primary-subtle);
+}
+.fs-league-matches {
+    display: flex;
+    flex-direction: column;
+}
+.fs-match-row {
+    display: flex;
+    align-items: center;
+    padding: 10px 16px;
+    border-bottom: 1px solid var(--border-subtle);
+    cursor: pointer;
+    transition: background 0.15s ease;
+    gap: 12px;
+    user-select: none;
+}
+.fs-match-row:last-child {
+    border-bottom: none;
+}
+.fs-match-row:hover {
+    background: var(--bg-surface-elevated);
+}
+.fs-match-row.is-live-row {
+    background: rgba(220, 38, 38, 0.04);
+}
+.fs-match-row.is-live-row:hover {
+    background: rgba(220, 38, 38, 0.08);
+}
+.fs-col-status {
+    width: 65px;
+    min-width: 65px;
+    font-size: 12px;
+    font-weight: 700;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+}
+.fs-status-live {
+    color: var(--status-live);
+    font-size: 11px;
+}
+.fs-status-ft {
+    color: var(--text-muted);
+    font-size: 11px;
+}
+.fs-status-time {
+    color: var(--text-muted);
+    font-size: 12px;
+    font-variant-numeric: tabular-nums;
+}
+.fs-col-teams {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+.fs-team-line {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+}
+.fs-team-line.team-winner .fs-team-name {
+    font-weight: 800;
+    color: var(--text-main);
+}
+.fs-team-name {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text-main);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.fs-col-scores {
+    width: 36px;
+    min-width: 36px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 6px;
+    font-size: 14px;
+    font-weight: 800;
+    font-variant-numeric: tabular-nums;
+}
+.fs-score-digit {
+    color: var(--text-main);
+    line-height: 1.3;
+}
+.fs-score-digit.score-live {
+    color: var(--status-live);
+}
+.fs-col-action {
+    color: var(--text-faint);
+    font-size: 18px;
+    padding-left: 4px;
+}
+.fs-match-row:hover .fs-col-action {
+    color: var(--color-primary);
+}
+
 /* Match Center Grid & Modern Cards */
 .matches-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(min(100%, 340px), 1fr));
-    gap: 14px;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
     margin-bottom: 30px;
     width: 100%;
 }

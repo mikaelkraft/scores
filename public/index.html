@@ -9,7 +9,7 @@
     <meta name="robots" content="{{SEO_ROBOTS}}">
     <meta name="theme-color" content="#0b0f19">
     <link rel="canonical" href="{{SEO_CANONICAL}}">
-    <link rel="stylesheet" href="/assets/styles.css?v=norra-4">
+    <link rel="stylesheet" href="/assets/styles.css?v=norra-5">
     <link rel="icon" href="/favicon.ico" sizes="any">
     <link rel="icon" href="/favicon.svg" type="image/svg+xml">
     <link rel="apple-touch-icon" href="/apple-touch-icon.png">
@@ -66,13 +66,11 @@
             </div>
 
             <div class="nav-actions">
-                <select id="timezone-select" class="filter-select" aria-label="Display Timezone" title="Select display timezone">
-                    <option value="auto">Detecting timezone...</option>
-                </select>
-                <button class="btn-icon-toggle" id="theme-toggle" type="button" aria-label="Toggle light/dark theme" title="Toggle theme">🌓</button>
+                <a class="nav-link" href="/">Live Scores</a>
                 <a class="nav-link" href="/football-api">API Pricing</a>
                 <a class="nav-link" href="/account">Developer Portal</a>
                 <a class="nav-link docs-link" href="/api-docs/">API Docs <span aria-hidden="true">↗</span></a>
+                <button class="btn-icon-toggle" id="theme-toggle" type="button" aria-label="Toggle light/dark theme" title="Toggle theme">🌓</button>
             </div>
         </nav>
     </header>
@@ -130,6 +128,10 @@
                         <option value="live">🔴 Live in-play</option>
                         <option value="scheduled">Scheduled</option>
                         <option value="finished">Finished</option>
+                    </select>
+
+                    <select id="timezone-select" class="filter-select" aria-label="Display Timezone" title="Select display timezone">
+                        <option value="auto">Timezone: Auto</option>
                     </select>
 
                     <label class="date-filter-label">
@@ -193,10 +195,13 @@
         <!-- Featured Promos Grid -->
         <div class="hero-promos-grid shell" id="hero-promos-container" aria-label="Featured sports bookmakers" style="margin-top:24px;"></div>
 
-        <!-- SEO Knowledge Base, League Catalog & Directories (Cleanly positioned below LiveScore center) -->
-        <section class="seo-knowledge-shell shell" aria-label="Football competitions and knowledge base">
-            {{SEO_CONTENT}}
-        </section>
+        <!-- SEO Knowledge Base & Search Engine Directory (Cleanly Collapsed for Clutter-Free Live Scores) -->
+        <details class="seo-crawler-details shell" style="margin:40px auto 20px; border-top:1px solid var(--border-subtle); padding:20px 16px 0; font-size:12px; color:var(--text-muted);">
+            <summary style="cursor:pointer; font-weight:700; color:var(--text-muted); padding:8px 0; user-select:none;">Football Leagues &amp; SEO Directory Index (Click to expand)</summary>
+            <div style="padding-top:16px;">
+                {{SEO_CONTENT}}
+            </div>
+        </details>
 
         <noscript><p class="shell noscript-note">JavaScript is required for interactive live updates. League guides, fixtures and SEO content remain available below.</p></noscript>
 
@@ -287,6 +292,6 @@
         </div>
     </footer>
 
-    <script src="/assets/app.js?v=norra-4" defer></script>
+    <script src="/assets/app.js?v=norra-5" defer></script>
 </body>
 </html>

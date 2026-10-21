@@ -182,7 +182,7 @@
         populateCountries();
     }
 
-    function renderQuickLeaguePills(activeSlug = '') {
+    function renderQuickLeaguePills(activeSlug = 'all') {
         const container = document.getElementById('quick-leagues-list');
         if (!container || !state.leagues.length) return;
 
@@ -196,7 +196,14 @@
             'uefa.europa': '🇪🇺'
         };
 
-        container.innerHTML = state.leagues.map(l => {
+        const allPill = `
+            <button class="quick-league-btn ${(!activeSlug || activeSlug === 'all') ? 'active' : ''}" type="button" data-slug="all">
+                <span class="quick-league-flag">🌐</span>
+                <span>All</span>
+            </button>
+        `;
+
+        const leaguePills = state.leagues.map(l => {
             const flag = leagueFlags[l.slug] || '⚽';
             const isActive = l.slug === activeSlug;
             return `
@@ -207,14 +214,20 @@
             `;
         }).join('');
 
+        container.innerHTML = allPill + leaguePills;
+
         container.querySelectorAll('.quick-league-btn').forEach(btn => {
             btn.addEventListener('click', () => {
                 const slug = btn.dataset.slug;
-                const league = state.leagues.find(item => item.slug === slug);
-                if (league) {
-                    if (elements['country-select']) elements['country-select'].value = league.country || 'Other';
-                    populateLeagues(slug);
-                    selectLeague(slug);
+                if (slug === 'all') {
+                    selectAllLeagues();
+                } else {
+                    const league = state.leagues.find(item => item.slug === slug);
+                    if (league) {
+                        if (elements['country-select']) elements['country-select'].value = league.country || 'Other';
+                        populateLeagues(slug);
+                        selectLeague(slug);
+                    }
                 }
             });
         });
@@ -232,18 +245,13 @@
 
         const requestedSlug = document.body.dataset.leagueSlug
             || new URLSearchParams(location.search).get('league');
-        const requestedCountry = document.body.dataset.country;
-        const preferredLeague = state.leagues.find(item => item.slug === requestedSlug)
-            || state.leagues.find(item => requestedCountry && item.country === requestedCountry)
-            || state.leagues.find(item => item.slug === 'eng.1')
-            || state.leagues.find(item => item.slug === 'esp.1')
-            || state.leagues[0];
 
-        renderQuickLeaguePills(preferredLeague ? preferredLeague.slug : '');
-
-        if (preferredLeague) {
-            elements['country-select'].value = preferredLeague.country || 'Other';
-            populateLeagues(preferredLeague.slug);
+        if (requestedSlug && state.leagues.some(l => l.slug === requestedSlug)) {
+            renderQuickLeaguePills(requestedSlug);
+            selectLeague(requestedSlug);
+        } else {
+            renderQuickLeaguePills('all');
+            selectAllLeagues();
         }
     }
 
@@ -288,10 +296,109 @@
             : escapeHtml(league.abbreviation?.slice(0, 3) || 'SC');
     }
 
-    async function selectLeague(slug) {
-        const league = state.leagues.find(item => item.slug === slug);
-        if (!league) return clearDashboard();
+    async function selectAllLeagues() {
+        state.selectedLeagueSlug = 'all';
+        state.league = null;
+        renderQuickLeaguePills('all');
+        window.clearInterval(state.matchTimer);
 
+        if (elements['league-card']) elements['league-card'].hidden = true;
+        if (elements['welcome-state']) elements['welcome-state'].hidden = true;
+        if (elements['league-dashboard']) elements['league-dashboard'].hidden = false;
+        if (elements['dashboard-country']) elements['dashboard-country'].textContent = 'World Football';
+        if (elements['dashboard-title']) elements['dashboard-title'].textContent = 'All Live Matches & Fixtures';
+
+        await loadAllLeagueFixtures();
+    }
+
+    async function loadAllLeagueFixtures() {
+        setLoading('fixtures', true);
+        if (elements['fixtures-list']) elements['fixtures-list'].replaceChildren();
+
+        try {
+            const query = fixtureQuery(1).toString();
+            const results = await Promise.allSettled(
+                state.leagues.map(async (league) => {
+                    const data = await fetchJson(`/get/soccer/${encodeURIComponent(league.slug)}/fixtures?${query}`);
+                    return { league, events: data.events || [] };
+                })
+            );
+
+            const groupedData = results
+                .filter(r => r.status === 'fulfilled' && r.value.events && r.value.events.length > 0)
+                .map(r => r.value);
+
+            renderAllLeaguesGrouped(groupedData);
+        } catch (error) {
+            if (elements['fixtures-empty']) elements['fixtures-empty'].hidden = false;
+            showToast(`Unable to load all fixtures: ${error.message}`);
+        } finally {
+            setLoading('fixtures', false);
+        }
+    }
+
+    function renderAllLeaguesGrouped(groupedData) {
+        if (!elements['fixtures-list']) return;
+
+        let totalCount = 0;
+        const leagueFlags = {
+            'eng.1': '🏴󠁧󠁢󠁥󠁮󠁧󠁿',
+            'esp.1': '🇪🇸',
+            'uefa.champions': '🏆',
+            'ita.1': '🇮🇹',
+            'ger.1': '🇩🇪',
+            'fra.1': '🇫🇷',
+            'uefa.europa': '🇪🇺'
+        };
+
+        const html = groupedData.map(({ league, events }) => {
+            if (!events || !events.length) return '';
+            totalCount += events.length;
+            const flag = leagueFlags[league.slug] || '⚽';
+            return `
+                <div class="fs-league-section">
+                    <div class="fs-league-header">
+                        <div class="fs-league-title">
+                            <span class="fs-league-flag">${flag}</span>
+                            <strong>${escapeHtml(league.name)}</strong>
+                            <small class="fs-league-country">${escapeHtml(league.country || '')}</small>
+                        </div>
+                        <button class="fs-league-view-btn" type="button" data-slug="${escapeHtml(league.slug)}">Table &rsaquo;</button>
+                    </div>
+                    <div class="fs-league-matches">
+                        ${events.map(ev => renderFlashscoreMatchRow(ev, league)).join('')}
+                    </div>
+                </div>
+            `;
+        }).join('');
+
+        if (elements['fixture-count']) elements['fixture-count'].textContent = formatNumber(totalCount);
+        if (elements['fixtures-load-more']) elements['fixtures-load-more'].hidden = true;
+
+        if (!totalCount) {
+            if (elements['fixtures-empty']) elements['fixtures-empty'].hidden = false;
+            elements['fixtures-list'].innerHTML = '';
+        } else {
+            if (elements['fixtures-empty']) elements['fixtures-empty'].hidden = true;
+            elements['fixtures-list'].innerHTML = html;
+
+            elements['fixtures-list'].querySelectorAll('.fs-league-view-btn').forEach(btn => {
+                btn.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    const slug = btn.dataset.slug;
+                    selectLeague(slug).then(() => switchView('standings'));
+                });
+            });
+        }
+    }
+
+    async function selectLeague(slug) {
+        if (slug === 'all') return selectAllLeagues();
+
+        const league = state.leagues.find(item => item.slug === slug);
+        if (!league) return selectAllLeagues();
+
+        state.selectedLeagueSlug = slug;
         state.league = league;
         renderQuickLeaguePills(slug);
         window.clearInterval(state.matchTimer);
@@ -353,54 +460,72 @@
         }
         if (!fixtures.length) return;
 
-        elements['fixtures-list'].innerHTML = fixtures.map(renderMatchCard).join('');
+        const leagueFlags = {
+            'eng.1': '🏴󠁧󠁢󠁥󠁮󠁧󠁿',
+            'esp.1': '🇪🇸',
+            'uefa.champions': '🏆',
+            'ita.1': '🇮🇹',
+            'ger.1': '🇩🇪',
+            'fra.1': '🇫🇷',
+            'uefa.europa': '🇪🇺'
+        };
+        const flag = leagueFlags[state.league?.slug] || '⚽';
+
+        elements['fixtures-list'].innerHTML = `
+            <div class="fs-league-section">
+                <div class="fs-league-header">
+                    <div class="fs-league-title">
+                        <span class="fs-league-flag">${flag}</span>
+                        <strong>${escapeHtml(state.league?.name || 'League')}</strong>
+                        <small class="fs-league-country">${escapeHtml(state.league?.country || '')}</small>
+                    </div>
+                </div>
+                <div class="fs-league-matches">
+                    ${fixtures.map(ev => renderFlashscoreMatchRow(ev, state.league)).join('')}
+                </div>
+            </div>
+        `;
     }
 
-    function renderMatchCard(event) {
+    function renderFlashscoreMatchRow(event, league = null) {
         const { home, away } = competitorsFromEvent(event);
         const status = statusInfo(event);
         const hasScore = status.state !== 'scheduled';
         const homeName = escapeHtml(home.team?.displayName || home.team?.name || 'Home');
         const awayName = escapeHtml(away.team?.displayName || away.team?.name || 'Away');
-        const matchDateStr = formatDate(event.date, { weekday: false, year: false });
-        const kickoffTime = formatTime(event.date);
         const isLive = status.state === 'live';
+        const homeScore = hasScore ? escapeHtml(home.score ?? 0) : '-';
+        const awayScore = hasScore ? escapeHtml(away.score ?? 0) : '-';
+        const kickoffTime = formatTime(event.date);
+        const leagueSlug = league?.slug || state.league?.slug || event.league_slug || '';
+
+        const timeOrStatus = isLive
+            ? `<span class="live-pulse-dot"></span><span class="fs-status-live">${escapeHtml(status.label)}</span>`
+            : status.state === 'finished'
+            ? `<span class="fs-status-ft">FT</span>`
+            : `<span class="fs-status-time">${kickoffTime}</span>`;
 
         return `
-            <div class="match-card ${isLive ? 'is-live-card' : ''}" data-event-id="${escapeHtml(event.id)}" role="button" tabindex="0" aria-label="Match details for ${homeName} versus ${awayName}">
-                <div class="match-card-header">
-                    <span class="league-tag">
-                        ${state.league?.logo ? `<img src="${safeUrl(state.league.logo)}" alt="" class="league-tag-logo">` : '⚽'}
-                        <span>${escapeHtml(state.league?.name || 'Football')}</span>
-                    </span>
-                    <span class="minute-pill ${status.pillClass}">
-                        ${isLive ? '<span class="live-pulse-dot"></span>LIVE ' + escapeHtml(status.label) : escapeHtml(status.label)}
-                    </span>
+            <div class="fs-match-row ${isLive ? 'is-live-row' : ''}" data-event-id="${escapeHtml(event.id)}" data-league-slug="${escapeHtml(leagueSlug)}" role="button" tabindex="0" aria-label="${homeName} versus ${awayName}">
+                <div class="fs-col-status">
+                    ${timeOrStatus}
                 </div>
-
-                <div class="match-teams-table">
-                    <div class="match-team-row ${home.winner ? 'team-winner' : ''}">
-                        <div class="team-meta">
-                            ${teamLogo(home.team, 'team-crest')}
-                            <span class="team-name" title="${homeName}">${homeName}</span>
-                        </div>
-                        <div class="team-score ${isLive ? 'score-live' : ''}">${hasScore ? escapeHtml(home.score ?? 0) : ''}</div>
+                <div class="fs-col-teams">
+                    <div class="fs-team-line ${home.winner ? 'team-winner' : ''}">
+                        ${teamLogo(home.team, 'team-crest')}
+                        <span class="fs-team-name" title="${homeName}">${homeName}</span>
                     </div>
-
-                    <div class="match-team-row ${away.winner ? 'team-winner' : ''}">
-                        <div class="team-meta">
-                            ${teamLogo(away.team, 'team-crest')}
-                            <span class="team-name" title="${awayName}">${awayName}</span>
-                        </div>
-                        <div class="team-score ${isLive ? 'score-live' : ''}">${hasScore ? escapeHtml(away.score ?? 0) : ''}</div>
+                    <div class="fs-team-line ${away.winner ? 'team-winner' : ''}">
+                        ${teamLogo(away.team, 'team-crest')}
+                        <span class="fs-team-name" title="${awayName}">${awayName}</span>
                     </div>
                 </div>
-
-                <div class="match-card-footer">
-                    <span class="match-timing-info">
-                        ${hasScore ? (isLive ? '🔴 In-Play' : 'FT') : `${kickoffTime} &bull; ${matchDateStr}`}
-                    </span>
-                    <span class="match-action-btn">Match Center &rarr;</span>
+                <div class="fs-col-scores">
+                    <div class="fs-score-digit ${isLive ? 'score-live' : ''}">${homeScore}</div>
+                    <div class="fs-score-digit ${isLive ? 'score-live' : ''}">${awayScore}</div>
+                </div>
+                <div class="fs-col-action" aria-hidden="true">
+                    <span class="fs-chevron">&rsaquo;</span>
                 </div>
             </div>
         `;
@@ -495,8 +620,12 @@
         }
     }
 
-    async function openMatch(eventId) {
+    async function openMatch(eventId, leagueSlug = '') {
         state.currentEventId = eventId;
+        if (leagueSlug) {
+            const found = state.leagues.find(item => item.slug === leagueSlug);
+            if (found) state.league = found;
+        }
         window.clearInterval(state.matchTimer);
         if (elements['match-dialog'] && !elements['match-dialog'].open) {
             elements['match-dialog'].showModal();
@@ -977,10 +1106,31 @@
             });
         }
         if (elements['refresh-button']) {
-            elements['refresh-button'].addEventListener('click', () => Promise.allSettled([loadFixtures(), loadStandings(), loadMeta(), loadAdsAndPromos()]));
+            elements['refresh-button'].addEventListener('click', () => {
+                if (state.selectedLeagueSlug === 'all') {
+                    loadAllLeagueFixtures();
+                } else {
+                    Promise.allSettled([loadFixtures(), loadStandings(), loadMeta(), loadAdsAndPromos()]);
+                }
+            });
         }
         if (elements['apply-fixture-filter']) {
-            elements['apply-fixture-filter'].addEventListener('click', () => loadFixtures());
+            elements['apply-fixture-filter'].addEventListener('click', () => {
+                if (state.selectedLeagueSlug === 'all') {
+                    loadAllLeagueFixtures();
+                } else {
+                    loadFixtures();
+                }
+            });
+        }
+        if (elements['fixture-status']) {
+            elements['fixture-status'].addEventListener('change', () => {
+                if (state.selectedLeagueSlug === 'all') {
+                    loadAllLeagueFixtures();
+                } else {
+                    loadFixtures();
+                }
+            });
         }
         if (elements['fixtures-load-more']) {
             elements['fixtures-load-more'].addEventListener('click', () => loadFixtures({ append: true }));
@@ -990,14 +1140,20 @@
         if (elements['fixtures-list']) {
             elements['fixtures-list'].addEventListener('click', event => {
                 const card = event.target.closest('[data-event-id]');
-                if (card) openMatch(card.dataset.eventId);
+                if (card) {
+                    const eventId = card.dataset.eventId;
+                    const leagueSlug = card.dataset.leagueSlug || state.league?.slug;
+                    openMatch(eventId, leagueSlug);
+                }
             });
             elements['fixtures-list'].addEventListener('keydown', event => {
                 if (event.key === 'Enter' || event.key === ' ') {
                     const card = event.target.closest('[data-event-id]');
                     if (card) {
                         event.preventDefault();
-                        openMatch(card.dataset.eventId);
+                        const eventId = card.dataset.eventId;
+                        const leagueSlug = card.dataset.leagueSlug || state.league?.slug;
+                        openMatch(eventId, leagueSlug);
                     }
                 }
             });
