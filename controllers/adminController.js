@@ -264,6 +264,20 @@ router.get('/api/admin/stats', requireAdmin, async (req, res) => {
     }
 });
 
+/**
+ * POST /api/admin/sync
+ * Manually triggers an upstream sync of leagues, live scores & standings.
+ */
+router.post('/api/admin/sync', requireAdmin, async (req, res) => {
+    try {
+        const { syncAllLeagues } = require('../services/soccerSyncService');
+        const results = await syncAllLeagues();
+        return res.json({ success: true, message: 'Sync complete', results });
+    } catch (err) {
+        return res.status(500).json({ error: 'Sync failed: ' + err.message });
+    }
+});
+
 module.exports = app => {
     app.use(router);
 };

@@ -182,6 +182,43 @@
         populateCountries();
     }
 
+    function renderQuickLeaguePills(activeSlug = '') {
+        const container = document.getElementById('quick-leagues-list');
+        if (!container || !state.leagues.length) return;
+
+        const leagueFlags = {
+            'eng.1': '🏴󠁧󠁢󠁥󠁮󠁧󠁿',
+            'esp.1': '🇪🇸',
+            'uefa.champions': '🏆',
+            'ita.1': '🇮🇹',
+            'ger.1': '🇩🇪',
+            'fra.1': '🇫🇷',
+            'uefa.europa': '🇪🇺'
+        };
+
+        container.innerHTML = state.leagues.map(l => {
+            const flag = leagueFlags[l.slug] || '⚽';
+            const isActive = l.slug === activeSlug;
+            return `
+                <button class="quick-league-btn ${isActive ? 'active' : ''}" type="button" data-slug="${escapeHtml(l.slug)}">
+                    <span class="quick-league-flag">${flag}</span>
+                    <span>${escapeHtml(l.abbreviation || l.name)}</span>
+                </button>
+            `;
+        }).join('');
+
+        container.querySelectorAll('.quick-league-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                const slug = btn.dataset.slug;
+                const league = state.leagues.find(item => item.slug === slug);
+                if (league) {
+                    elements['country-select'].value = league.country || 'Other';
+                    populateLeagues(slug);
+                }
+            });
+        });
+    }
+
     function populateCountries() {
         const countries = [...new Set(state.leagues.map(league => league.country || 'Other'))]
             .sort((a, b) => localCountryName(a).localeCompare(localCountryName(b), 'en'));
@@ -197,8 +234,11 @@
         const requestedCountry = document.body.dataset.country;
         const preferredLeague = state.leagues.find(item => item.slug === requestedSlug)
             || state.leagues.find(item => requestedCountry && item.country === requestedCountry)
+            || state.leagues.find(item => item.slug === 'eng.1')
             || state.leagues.find(item => item.slug === 'esp.1')
             || state.leagues[0];
+
+        renderQuickLeaguePills(preferredLeague ? preferredLeague.slug : '');
 
         if (preferredLeague) {
             elements['country-select'].value = preferredLeague.country || 'Other';
@@ -252,6 +292,7 @@
         if (!league) return clearDashboard();
 
         state.league = league;
+        renderQuickLeaguePills(slug);
         window.clearInterval(state.matchTimer);
         updateLeagueCard(league);
         if (elements['welcome-state']) elements['welcome-state'].hidden = true;
@@ -322,42 +363,43 @@
         const awayName = escapeHtml(away.team?.displayName || away.team?.name || 'Away');
         const matchDateStr = formatDate(event.date, { weekday: false, year: false });
         const kickoffTime = formatTime(event.date);
+        const isLive = status.state === 'live';
 
         return `
-            <div class="match-card" data-event-id="${escapeHtml(event.id)}" role="button" tabindex="0" aria-label="Match details for ${homeName} versus ${awayName}">
+            <div class="match-card ${isLive ? 'is-live-card' : ''}" data-event-id="${escapeHtml(event.id)}" role="button" tabindex="0" aria-label="Match details for ${homeName} versus ${awayName}">
                 <div class="match-card-header">
                     <span class="league-tag">
-                        <span>⚽</span> ${escapeHtml(state.league?.name || 'Football')}
+                        ${state.league?.logo ? `<img src="${safeUrl(state.league.logo)}" alt="" class="league-tag-logo">` : '⚽'}
+                        <span>${escapeHtml(state.league?.name || 'Football')}</span>
                     </span>
                     <span class="minute-pill ${status.pillClass}">
-                        ${status.state === 'live' ? '● LIVE ' + escapeHtml(status.label) : escapeHtml(status.label)}
+                        ${isLive ? '<span class="live-pulse-dot"></span>LIVE ' + escapeHtml(status.label) : escapeHtml(status.label)}
                     </span>
                 </div>
 
-                <div class="team-vs-team-row">
-                    <div class="team-side">
-                        ${teamLogo(home.team, 'team-crest')}
-                        <span class="team-name" title="${homeName}">${homeName}</span>
+                <div class="match-teams-table">
+                    <div class="match-team-row ${home.winner ? 'team-winner' : ''}">
+                        <div class="team-meta">
+                            ${teamLogo(home.team, 'team-crest')}
+                            <span class="team-name" title="${homeName}">${homeName}</span>
+                        </div>
+                        <div class="team-score ${isLive ? 'score-live' : ''}">${hasScore ? escapeHtml(home.score ?? 0) : ''}</div>
                     </div>
 
-                    <div class="score-center-col">
-                        <div class="score-digits">
-                            ${hasScore ? `${escapeHtml(home.score ?? 0)} - ${escapeHtml(away.score ?? 0)}` : kickoffTime}
+                    <div class="match-team-row ${away.winner ? 'team-winner' : ''}">
+                        <div class="team-meta">
+                            ${teamLogo(away.team, 'team-crest')}
+                            <span class="team-name" title="${awayName}">${awayName}</span>
                         </div>
-                        <div class="score-subtext">
-                            ${hasScore ? escapeHtml(status.label) : matchDateStr}
-                        </div>
-                    </div>
-
-                    <div class="team-side">
-                        ${teamLogo(away.team, 'team-crest')}
-                        <span class="team-name" title="${awayName}">${awayName}</span>
+                        <div class="team-score ${isLive ? 'score-live' : ''}">${hasScore ? escapeHtml(away.score ?? 0) : ''}</div>
                     </div>
                 </div>
 
                 <div class="match-card-footer">
-                    <span>${kickoffTime} (${currentTimezone.split('/').pop().replace('_', ' ')})</span>
-                    <span style="color:var(--color-primary); font-weight:600;">Match Details →</span>
+                    <span class="match-timing-info">
+                        ${hasScore ? (isLive ? '🔴 In-Play' : 'FT') : `${kickoffTime} &bull; ${matchDateStr}`}
+                    </span>
+                    <span class="match-action-btn">Match Center &rarr;</span>
                 </div>
             </div>
         `;

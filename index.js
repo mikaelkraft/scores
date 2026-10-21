@@ -281,4 +281,28 @@ app.use((error, req, res, next) => {
 
 app.listen(PORT, () => {
     console.log(`Server started on port ${PORT}`);
+
+    // Auto-sync live scores and world leagues in background
+    const { syncAllLeagues } = require('./services/soccerSyncService');
+    const SoccerLeague = require('./models/soccerLeague');
+
+    setTimeout(async () => {
+        try {
+            const count = await SoccerLeague.countDocuments({ active: true });
+            if (count < 5) {
+                console.log('⚡ [LiveSync] Stored leagues count low. Starting initial background sync...');
+                await syncAllLeagues();
+            }
+        } catch (e) {
+            console.warn('Initial live sync notice:', e.message);
+        }
+    }, 4000);
+
+    // Refresh telemetry every 20 minutes (unrefed timer)
+    const syncInterval = setInterval(() => {
+        syncAllLeagues().catch(e => console.warn('Interval sync notice:', e.message));
+    }, 20 * 60 * 1000);
+    if (syncInterval && typeof syncInterval.unref === 'function') {
+        syncInterval.unref();
+    }
 });
