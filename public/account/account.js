@@ -137,7 +137,14 @@ async function initGoogleAuth() {
 
 function triggerGoogleSignIn() {
     if (!authConfig.googleAuthEnabled || !authConfig.googleClientId) {
-        alert('Google Sign-In is enabled on the backend!\nTo activate the client button, provide your Google OAuth Client ID in the Admin Console (/admin -> Authentication Settings).');
+        const errorEl = document.getElementById('auth-error');
+        if (errorEl) {
+            errorEl.style.color = '#38bdf8';
+            errorEl.textContent = 'Google Sign-In is ready for client activation in Admin Console. You can sign in or register with your email below:';
+            errorEl.style.display = 'block';
+        }
+        const emailInput = document.getElementById('auth-email');
+        if (emailInput) emailInput.focus();
         return;
     }
     if (window.google && window.google.accounts && window.google.accounts.id) {

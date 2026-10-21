@@ -174,12 +174,12 @@ app.use('/uploads', express.static(path.join(__dirname, 'public', 'uploads'), {
 }));
 
 // Customer Account Portal
-app.get('/account', (req, res) => {
+app.get(['/account', '/account/'], (req, res) => {
     return res.sendFile(path.join(__dirname, 'public', 'account', 'index.html'));
 });
 
 // Admin Dashboard
-app.get('/admin', (req, res) => {
+app.get(['/admin', '/admin/'], (req, res) => {
     return res.sendFile(path.join(__dirname, 'public', 'admin', 'index.html'));
 });
 

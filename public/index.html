@@ -9,7 +9,7 @@
     <meta name="robots" content="{{SEO_ROBOTS}}">
     <meta name="theme-color" content="#0b0f19">
     <link rel="canonical" href="{{SEO_CANONICAL}}">
-    <link rel="stylesheet" href="/assets/styles.css?v=norra-6">
+    <link rel="stylesheet" href="/assets/styles.css?v=norra-7">
     <link rel="icon" href="/favicon.ico" sizes="any">
     <link rel="icon" href="/favicon.svg" type="image/svg+xml">
     <link rel="apple-touch-icon" href="/apple-touch-icon.png">
@@ -43,9 +43,7 @@
 <body data-page-kind="{{PAGE_KIND}}" data-league-slug="{{LEAGUE_SLUG}}" data-country="{{COUNTRY_NAME}}">
     <a class="skip-link" href="#main-content">Skip to football scores</a>
 
-    <div class="announcement-bar" id="announcement-bar">
-        <strong>Norra AI:</strong> Real-time football livescores, in-play statistics &amp; high-speed commercial sports API.
-    </div>
+    <div class="announcement-bar" id="announcement-bar" style="display:none;"></div>
 
     <header class="site-header">
         <nav class="nav shell" aria-label="Main navigation">
@@ -55,21 +53,24 @@
                     <span class="brand-icon" aria-hidden="true">⚽</span>
                     <div>
                         <strong>Norra Scores</strong>
-                        <small>SPORTS API &amp; LIVESCORE</small>
+                        <small>LIVESCORE CENTER</small>
                     </div>
                 </div>
             </a>
 
-            <div class="nav-status" id="service-status">
+            <!-- Service status kept hidden for telemetry compatibility -->
+            <div class="nav-status" id="service-status" style="display:none;" aria-hidden="true">
                 <span class="status-dot"></span>
                 <span>Connecting to service</span>
             </div>
 
             <div class="nav-actions">
-                <a class="nav-link" href="/">Live Scores</a>
+                <a class="nav-link active" href="/" id="nav-scores-link">Scores</a>
+                <button class="nav-link nav-btn-live" type="button" id="header-live-btn"><span class="live-pulse-dot" aria-hidden="true"></span>Live</button>
+                <a class="nav-link nav-link-norra" href="https://mynorra.xyz" target="_blank" rel="noopener">🔮 AI Predictions <span class="ext-icon" aria-hidden="true">↗</span></a>
                 <a class="nav-link" href="/football-api">API Pricing</a>
-                <a class="nav-link" href="/account">Developer Portal</a>
-                <a class="nav-link docs-link" href="/api-docs/">API Docs <span aria-hidden="true">↗</span></a>
+                <a class="nav-link" href="/account" id="nav-account-link">Account</a>
+                <a class="nav-link docs-link" href="/api-docs/">Docs <span aria-hidden="true">↗</span></a>
                 <button class="btn-icon-toggle" id="theme-toggle" type="button" aria-label="Toggle light/dark theme" title="Toggle theme">🌓</button>
             </div>
         </nav>
@@ -78,35 +79,25 @@
     <aside id="ad-slot-header" class="ad-slot-container shell" hidden></aside>
 
     <main id="main-content">
-        <!-- LiveScore Command Header (Clean, Compact, Score-First) -->
-        <section class="livescore-header shell" aria-labelledby="page-title">
-            <div class="livescore-header-row">
-                <div class="livescore-title-group">
-                    <div class="livescore-live-indicator">
-                        <span class="live-pulse-dot" aria-hidden="true"></span>
-                        <span class="livescore-badge-text">LIVE SCORE CENTER</span>
-                    </div>
-                    <h1 id="page-title" class="livescore-heading">{{SEO_HEADING}}</h1>
-                    <p id="page-lede" class="livescore-lede">{{SEO_LEDE}}</p>
-                </div>
-                <div class="hero-stats-bar" aria-label="Service coverage statistics">
-                    <div class="hero-stat-pill"><strong class="hero-stat-val" id="stat-competitions">7</strong><span class="hero-stat-lbl">Top Leagues</span></div>
-                    <div class="hero-stat-pill"><strong class="hero-stat-val" id="stat-matches">115+</strong><span class="hero-stat-lbl">Matches</span></div>
-                    <div class="hero-stat-pill"><strong class="hero-stat-val" id="stat-events">Live</strong><span class="hero-stat-lbl">Telemetry</span></div>
-                </div>
-            </div>
-        </section>
-
-        <!-- Primary Interactive LiveScore Explorer -->
+        <!-- Primary Interactive LiveScore Explorer (Score-First, Zero Clutter) -->
         <section class="explorer shell" aria-label="Live football scores, matches and standings">
-            <!-- Quick League Selector Bar -->
+            <!-- Horizontal Top League Ribbon (All, Live, Leagues) -->
             <div class="quick-leagues-wrapper" id="quick-leagues-bar" aria-label="Popular world competitions">
                 <div class="quick-leagues-list" id="quick-leagues-list"></div>
             </div>
 
-            <!-- Flashscore Matchday Date Ribbon & Live Sync Bar -->
-            <div class="date-ribbon-bar" aria-label="Matchday date navigation">
-                <div class="date-ribbon-nav">
+            <!-- Flashscore Scoreboard Control Strip (Status Tabs, Date Ribbon, Search, Live Sync) -->
+            <div class="fs-control-strip" aria-label="LiveScore controls and status filters">
+                <div class="fs-status-pills" role="tablist" aria-label="Match status">
+                    <button class="fs-status-pill active" id="fs-tab-all" type="button" role="tab" aria-selected="true" data-status="all">ALL</button>
+                    <button class="fs-status-pill" id="fs-tab-live" type="button" role="tab" aria-selected="false" data-status="live">
+                        <span class="live-pulse-mini" aria-hidden="true"></span>LIVE <span class="fs-live-badge" id="fs-status-live-badge" style="display:none;">0</span>
+                    </button>
+                    <button class="fs-status-pill" id="fs-tab-finished" type="button" role="tab" aria-selected="false" data-status="finished">FINISHED</button>
+                    <button class="fs-status-pill" id="fs-tab-scheduled" type="button" role="tab" aria-selected="false" data-status="scheduled">SCHEDULED</button>
+                </div>
+
+                <div class="fs-date-ribbon" aria-label="Matchday date navigation">
                     <button class="date-nav-arrow" id="date-prev-btn" type="button" title="Previous day">‹</button>
                     <div class="date-pills-list" id="date-pills-list">
                         <button class="date-pill-btn" type="button" data-day="yesterday">Yesterday</button>
@@ -118,20 +109,19 @@
                         <input type="date" id="matchday-picker" class="matchday-picker-input" title="Choose specific date" aria-label="Select matchday date">
                     </div>
                 </div>
-                <div class="date-ribbon-actions">
+
+                <div class="fs-actions-strip">
+                    <div class="livescore-search-bar" aria-label="Search fixtures">
+                        <span class="search-icon" aria-hidden="true">🔍</span>
+                        <input type="search" id="livescore-search-input" placeholder="Search team or match..." aria-label="Search fixtures">
+                        <button type="button" id="clear-search-btn" class="search-clear-btn" hidden aria-label="Clear search">✕</button>
+                    </div>
                     <div class="live-sync-indicator" title="Auto-refreshing live scores every 20s">
                         <span class="live-sync-pulse" aria-hidden="true"></span>
-                        <span id="live-sync-text">Live Sync: ON</span>
+                        <span id="live-sync-text">Live</span>
                     </div>
                     <button id="quick-refresh-btn" class="quick-refresh-icon-btn" type="button" title="Refresh live scores">↻</button>
                 </div>
-            </div>
-
-            <!-- Instant Match Search Bar -->
-            <div class="livescore-search-bar" aria-label="Search fixtures">
-                <span class="search-icon" aria-hidden="true">🔍</span>
-                <input type="search" id="livescore-search-input" placeholder="Search clubs, matches, or leagues (e.g. Arsenal, Real Madrid, Milan)..." aria-label="Search fixtures">
-                <button type="button" id="clear-search-btn" class="search-clear-btn" hidden aria-label="Clear search">✕</button>
             </div>
 
             <div class="toolbar">
@@ -144,7 +134,8 @@
                     </button>
                 </div>
 
-                <div class="toolbar-filters">
+                <!-- Hidden legacy filters to prevent JS null reference errors -->
+                <div class="legacy-toolbar-filters" style="display:none;" aria-hidden="true">
                     <select id="country-select" class="filter-select" aria-label="Country select" disabled>
                         <option value="">Loading countries…</option>
                     </select>
@@ -154,7 +145,7 @@
                     </select>
 
                     <select id="fixture-status" class="filter-select" aria-label="Match status">
-                        <option value="all">All matches</option>
+                        <option value="all" selected>All matches</option>
                         <option value="live">🔴 Live in-play</option>
                         <option value="scheduled">Scheduled</option>
                         <option value="finished">Finished</option>
@@ -229,6 +220,8 @@
         <details class="seo-crawler-details shell" style="margin:40px auto 20px; border-top:1px solid var(--border-subtle); padding:20px 16px 0; font-size:12px; color:var(--text-muted);">
             <summary style="cursor:pointer; font-weight:700; color:var(--text-muted); padding:8px 0; user-select:none;">Football Leagues &amp; SEO Directory Index (Click to expand)</summary>
             <div style="padding-top:16px;">
+                <h1 id="page-title" style="font-size:15px; margin-bottom:8px; color:var(--text-main);">{{SEO_HEADING}}</h1>
+                <p id="page-lede" style="margin-bottom:16px; color:var(--text-muted);">{{SEO_LEDE}}</p>
                 {{SEO_CONTENT}}
             </div>
         </details>
@@ -322,6 +315,6 @@
         </div>
     </footer>
 
-    <script src="/assets/app.js?v=norra-6" defer></script>
+    <script src="/assets/app.js?v=norra-7" defer></script>
 </body>
 </html>

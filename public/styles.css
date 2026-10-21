@@ -168,16 +168,17 @@ a {
     top: 0;
     z-index: 50;
     border-bottom: 1px solid var(--border-subtle);
-    background: rgba(14, 20, 34, 0.88);
+    background: rgba(11, 15, 25, 0.94);
     backdrop-filter: blur(16px);
     -webkit-backdrop-filter: blur(16px);
 }
 body.theme-light .site-header {
-    background: rgba(255, 255, 255, 0.92);
+    background: rgba(255, 255, 255, 0.94);
 }
 
 .nav {
-    min-height: 68px;
+    min-height: 52px;
+    height: 52px;
     display: flex;
     justify-content: space-between;
     align-items: center;
@@ -187,23 +188,24 @@ body.theme-light .site-header {
 .brand {
     display: inline-flex;
     align-items: center;
-    gap: 12px;
+    gap: 10px;
     flex-shrink: 0;
+    text-decoration: none;
 }
 .brand-logo-img {
-    max-height: 36px;
-    max-width: 180px;
+    max-height: 32px;
+    max-width: 160px;
     object-fit: contain;
 }
 .brand-icon {
-    width: 36px;
-    height: 36px;
+    width: 32px;
+    height: 32px;
     display: grid;
     place-items: center;
-    border-radius: 10px;
+    border-radius: 8px;
     background: linear-gradient(135deg, var(--color-primary), #1d4ed8);
     color: #ffffff;
-    font-size: 17px;
+    font-size: 15px;
     box-shadow: 0 4px 12px var(--color-primary-glow);
 }
 .brand-text {
@@ -212,14 +214,15 @@ body.theme-light .site-header {
     line-height: 1.15;
 }
 .brand-text strong {
-    font-size: 16px;
+    font-size: 15px;
     font-weight: 800;
     color: var(--text-main);
+    letter-spacing: -0.2px;
 }
 .brand-text small {
-    font-size: 9px;
+    font-size: 8px;
     font-weight: 700;
-    letter-spacing: 1px;
+    letter-spacing: 0.8px;
     color: var(--color-primary);
     text-transform: uppercase;
 }
@@ -254,23 +257,49 @@ body.theme-light .site-header {
 .nav-actions {
     display: flex;
     align-items: center;
-    gap: 8px;
-    flex-wrap: wrap;
+    gap: 6px;
+    flex-wrap: nowrap;
 }
 .nav-link {
     font-size: 13px;
     font-weight: 600;
     color: var(--text-muted);
-    transition: all 0.2s ease;
-    padding: 8px 12px;
-    border-radius: 8px;
+    transition: all 0.18s ease;
+    padding: 6px 11px;
+    border-radius: 6px;
     text-decoration: none;
     display: inline-flex;
     align-items: center;
+    white-space: nowrap;
+    background: transparent;
+    border: none;
+    cursor: pointer;
+    font-family: inherit;
 }
 .nav-link:hover, .nav-link.active {
-    color: var(--text-main);
+    color: #ffffff;
     background: var(--bg-surface-elevated);
+}
+.nav-btn-live {
+    color: #ef4444;
+    font-weight: 700;
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+}
+.nav-btn-live .live-pulse-dot {
+    width: 7px;
+    height: 7px;
+    background-color: #ef4444;
+    border-radius: 50%;
+    animation: livePulse 1.5s infinite;
+}
+.nav-link-norra {
+    color: #93c5fd;
+    font-weight: 600;
+}
+.nav-link-norra:hover {
+    color: #bfdbfe;
 }
 .nav-link.docs-link {
     color: var(--color-primary);
@@ -279,16 +308,19 @@ body.theme-light .site-header {
 .btn-icon-toggle {
     background: var(--bg-surface);
     border: 1px solid var(--border-subtle);
-    border-radius: 10px;
-    width: 36px;
-    height: 36px;
+    border-radius: 8px;
+    width: 32px;
+    height: 32px;
     display: grid;
     place-items: center;
-    font-size: 15px;
+    font-size: 14px;
+    cursor: pointer;
+    color: var(--text-muted);
     transition: var(--transition-smooth);
 }
 .btn-icon-toggle:hover {
     border-color: var(--border-strong);
+    color: var(--text-main);
     background: var(--bg-surface-elevated);
 }
 
@@ -857,32 +889,80 @@ body.theme-light .site-header {
     text-shadow: 0 0 6px rgba(245, 158, 11, 0.4);
 }
 
-/* Date Ribbon Navigation Bar */
-.date-ribbon-bar {
+/* Flashscore Scoreboard Control Strip (Status Tabs, Date Ribbon, Search & Live Sync) */
+.fs-control-strip {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    gap: 16px;
+    gap: 12px;
     background: var(--bg-surface);
     border: 1px solid var(--border-subtle);
     border-radius: var(--card-radius);
-    padding: 8px 14px;
+    padding: 8px 12px;
     margin-bottom: 14px;
     flex-wrap: wrap;
 }
-.date-ribbon-nav {
+
+.fs-status-pills {
     display: flex;
     align-items: center;
-    gap: 8px;
-    flex-wrap: wrap;
+    gap: 3px;
+    background: var(--bg-surface-elevated);
+    padding: 3px;
+    border-radius: 8px;
+    border: 1px solid var(--border-subtle);
 }
+
+.fs-status-pill {
+    background: transparent;
+    border: none;
+    color: var(--text-muted);
+    font-size: 11px;
+    font-weight: 700;
+    padding: 6px 12px;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: var(--transition-smooth);
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    letter-spacing: 0.5px;
+    text-transform: uppercase;
+}
+
+.fs-status-pill:hover {
+    color: var(--text-main);
+}
+
+.fs-status-pill.active {
+    background: var(--color-primary);
+    color: #ffffff;
+    box-shadow: 0 2px 8px var(--color-primary-glow);
+}
+
+.fs-live-badge {
+    background: #ef4444;
+    color: #ffffff;
+    font-size: 10px;
+    font-weight: 800;
+    padding: 1px 6px;
+    border-radius: 10px;
+    line-height: 1.2;
+}
+
+.fs-date-ribbon {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
 .date-nav-arrow {
     background: transparent;
     border: 1px solid var(--border-subtle);
     color: var(--text-muted);
-    font-size: 16px;
-    width: 30px;
-    height: 30px;
+    font-size: 15px;
+    width: 28px;
+    height: 28px;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -897,7 +977,7 @@ body.theme-light .site-header {
 }
 .date-pills-list {
     display: flex;
-    gap: 6px;
+    gap: 4px;
 }
 .date-pill-btn {
     background: transparent;
@@ -905,7 +985,7 @@ body.theme-light .site-header {
     color: var(--text-muted);
     font-size: 12px;
     font-weight: 600;
-    padding: 6px 12px;
+    padding: 5px 10px;
     border-radius: 6px;
     cursor: pointer;
     transition: var(--transition-smooth);
@@ -915,9 +995,10 @@ body.theme-light .site-header {
     color: var(--text-main);
 }
 .date-pill-btn.active {
-    background: var(--color-primary);
-    color: #ffffff;
+    background: var(--bg-surface-elevated);
+    color: var(--color-primary);
     border-color: var(--color-primary);
+    font-weight: 700;
 }
 .date-picker-wrap {
     display: flex;
@@ -927,8 +1008,8 @@ body.theme-light .site-header {
     background: var(--bg-surface-elevated);
     border: 1px solid var(--border-subtle);
     color: var(--text-muted);
-    font-size: 12px;
-    padding: 5px 8px;
+    font-size: 11px;
+    padding: 4px 6px;
     border-radius: 6px;
     outline: none;
     cursor: pointer;
@@ -937,56 +1018,22 @@ body.theme-light .site-header {
     border-color: var(--color-primary);
     color: var(--text-main);
 }
-.date-ribbon-actions {
+
+.fs-actions-strip {
     display: flex;
     align-items: center;
-    gap: 12px;
-}
-.live-sync-indicator {
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-    font-size: 12px;
-    font-weight: 600;
-    color: var(--text-muted);
-}
-.live-sync-pulse {
-    width: 8px;
-    height: 8px;
-    border-radius: 50%;
-    background: #10b981;
-    box-shadow: 0 0 8px rgba(16, 185, 129, 0.6);
-    animation: livePulse 2s infinite ease-in-out;
-}
-.quick-refresh-icon-btn {
-    background: transparent;
-    border: 1px solid var(--border-subtle);
-    color: var(--text-muted);
-    width: 28px;
-    height: 28px;
-    border-radius: 6px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-size: 13px;
-    cursor: pointer;
-    transition: var(--transition-smooth);
-}
-.quick-refresh-icon-btn:hover {
-    color: var(--color-primary);
-    border-color: var(--color-primary);
+    gap: 10px;
 }
 
-/* Instant Match Search Bar */
 .livescore-search-bar {
     position: relative;
     display: flex;
     align-items: center;
-    background: var(--bg-surface);
+    background: var(--bg-surface-elevated);
     border: 1px solid var(--border-subtle);
-    border-radius: var(--card-radius);
-    padding: 8px 14px;
-    margin-bottom: 20px;
+    border-radius: 6px;
+    padding: 4px 8px;
+    min-width: 200px;
     transition: border-color 0.2s ease;
 }
 .livescore-search-bar:focus-within {
@@ -994,17 +1041,18 @@ body.theme-light .site-header {
     box-shadow: 0 0 0 2px var(--color-primary-subtle);
 }
 .search-icon {
-    font-size: 14px;
+    font-size: 12px;
     color: var(--text-faint);
-    margin-right: 10px;
+    margin-right: 6px;
 }
 #livescore-search-input {
     flex: 1;
     background: transparent;
     border: none;
     color: var(--text-main);
-    font-size: 13px;
+    font-size: 12px;
     outline: none;
+    width: 100%;
 }
 #livescore-search-input::placeholder {
     color: var(--text-faint);
@@ -1014,12 +1062,46 @@ body.theme-light .site-header {
     border: none;
     color: var(--text-faint);
     cursor: pointer;
-    font-size: 14px;
-    padding: 2px 6px;
-    border-radius: 4px;
+    font-size: 12px;
+    padding: 2px 4px;
 }
 .search-clear-btn:hover {
     color: var(--text-main);
+}
+
+.live-sync-indicator {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--text-muted);
+}
+.live-sync-pulse {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: #10b981;
+    box-shadow: 0 0 8px rgba(16, 185, 129, 0.6);
+    animation: livePulse 2s infinite ease-in-out;
+}
+.quick-refresh-icon-btn {
+    background: transparent;
+    border: 1px solid var(--border-subtle);
+    color: var(--text-muted);
+    width: 26px;
+    height: 26px;
+    border-radius: 6px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 12px;
+    cursor: pointer;
+    transition: var(--transition-smooth);
+}
+.quick-refresh-icon-btn:hover {
+    color: var(--color-primary);
+    border-color: var(--color-primary);
 }
 
 /* Dynamic Live Count Badge on Pill */
@@ -1776,26 +1858,69 @@ dialog.match-dialog::backdrop {
 }
 
 @media (max-width: 768px) {
-    .hero-header-row {
-        flex-direction: column;
-        align-items: flex-start;
-        gap: 16px;
-    }
     .nav {
-        flex-wrap: wrap;
-        min-height: auto;
-        padding: 12px 0;
+        min-height: 50px;
+        height: 50px;
+        gap: 8px;
+        padding: 0;
+        flex-wrap: nowrap;
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+        scrollbar-width: none;
+    }
+    .nav::-webkit-scrollbar {
+        display: none;
+    }
+    .brand-text small {
+        display: none;
+    }
+    .brand-icon {
+        width: 30px;
+        height: 30px;
+        font-size: 14px;
+    }
+    .brand-text strong {
+        font-size: 14px;
+    }
+    .nav-actions {
+        gap: 4px;
+        flex-wrap: nowrap;
+        flex-shrink: 0;
+    }
+    .nav-link {
+        font-size: 12px;
+        padding: 5px 8px;
+    }
+    .fs-control-strip {
+        flex-direction: column;
+        align-items: stretch;
+        gap: 10px;
+    }
+    .fs-status-pills {
+        justify-content: space-between;
+        width: 100%;
+    }
+    .fs-status-pill {
+        flex: 1;
+        justify-content: center;
+        padding: 6px 4px;
+        font-size: 11px;
+    }
+    .fs-date-ribbon {
+        justify-content: space-between;
+        width: 100%;
+    }
+    .fs-actions-strip {
+        width: 100%;
+        justify-content: space-between;
+    }
+    .livescore-search-bar {
+        max-width: none;
+        flex: 1;
     }
     .toolbar {
         flex-direction: column;
         align-items: stretch;
-    }
-    .toolbar-filters {
-        flex-direction: column;
-        align-items: stretch;
-    }
-    .toolbar-filters select, .toolbar-filters input {
-        width: 100%;
     }
     .matches-grid {
         grid-template-columns: 1fr;
@@ -1814,7 +1939,12 @@ dialog.match-dialog::backdrop {
         flex-direction: column;
         align-items: flex-start;
     }
-    .hero-copy h1 {
-        font-size: 24px;
+    .fs-status-pill {
+        font-size: 10px;
+        padding: 5px 2px;
+    }
+    .date-pill-btn {
+        padding: 4px 6px;
+        font-size: 11px;
     }
 }

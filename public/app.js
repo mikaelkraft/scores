@@ -14,6 +14,8 @@
         drawerActiveTab: 'timeline',
         selectedLeagueSlug: 'all',
         selectedDayOffset: 0,
+        selectedDateStr: '',
+        currentStatus: 'all',
         pinnedMatches: JSON.parse(localStorage.getItem('norra_pinned_matches') || '[]'),
         searchQuery: '',
         liveMatchCount: 0
@@ -95,12 +97,14 @@
     }
 
     function setInitialFixtureWindow() {
-        const from = new Date();
-        const to = new Date();
-        from.setDate(from.getDate() - 2);
-        to.setDate(to.getDate() + 14);
-        if (elements['date-from']) elements['date-from'].value = isoDateInput(from);
-        if (elements['date-to']) elements['date-to'].value = isoDateInput(to);
+        state.selectedDayOffset = 0;
+        const today = new Date();
+        const iso = isoDateInput(today);
+        state.selectedDateStr = iso;
+        if (elements['date-from']) elements['date-from'].value = iso;
+        if (elements['date-to']) elements['date-to'].value = iso;
+        const picker = document.getElementById('matchday-picker');
+        if (picker) picker.value = iso;
     }
 
     async function fetchJson(path) {
@@ -144,6 +148,12 @@
     }
 
     function competitorsFromEvent(event) {
+        if (event?.home && event?.away) {
+            return {
+                home: { team: event.home, score: event.home.score, winner: event.home.winner },
+                away: { team: event.away, score: event.away.score, winner: event.away.winner }
+            };
+        }
         const competitors = competitionFromEvent(event).competitors || [];
         return {
             home: competitors.find(item => item.homeAway === 'home') || competitors[0] || {},
@@ -154,15 +164,15 @@
     function statusInfo(event) {
         const status = event?.status || competitionFromEvent(event).status || {};
         const type = status.type || {};
-        const stateName = type.state || 'unknown';
-        if (stateName === 'in') {
-            const clock = status.displayClock || type.shortDetail || 'Live';
+        const stateName = status.state || type.state || 'unknown';
+        if (stateName === 'in' || status.isLive) {
+            const clock = status.clock || status.displayClock || type.shortDetail || 'Live';
             return { state: 'live', label: clock, pillClass: 'in-play' };
         }
-        if (stateName === 'post' || type.completed) {
-            return { state: 'finished', label: type.shortDetail || 'Full Time', pillClass: 'post' };
+        if (stateName === 'post' || status.completed || type.completed) {
+            return { state: 'finished', label: status.detail || type.shortDetail || 'FT', pillClass: 'post' };
         }
-        return { state: 'scheduled', label: type.shortDetail || 'Upcoming', pillClass: 'pre' };
+        return { state: 'scheduled', label: status.detail || type.shortDetail || 'Upcoming', pillClass: 'pre' };
     }
 
     function setLoading(kind, loading) {
@@ -406,6 +416,13 @@
         renderQuickLeaguePills('all');
         window.clearInterval(state.matchTimer);
 
+        // Sync status pills
+        document.querySelectorAll('.fs-status-pill').forEach(p => {
+            const isMatch = p.dataset.status === (state.currentStatus || 'all');
+            p.classList.toggle('active', isMatch);
+            p.setAttribute('aria-selected', isMatch ? 'true' : 'false');
+        });
+
         if (elements['league-card']) elements['league-card'].hidden = true;
         if (elements['welcome-state']) elements['welcome-state'].hidden = true;
         if (elements['league-dashboard']) elements['league-dashboard'].hidden = false;
@@ -420,19 +437,39 @@
         if (elements['fixtures-list']) elements['fixtures-list'].replaceChildren();
 
         try {
-            const query = fixtureQuery(1).toString();
-            const results = await Promise.allSettled(
-                state.leagues.map(async (league) => {
-                    const data = await fetchJson(`/get/soccer/${encodeURIComponent(league.slug)}/fixtures?${query}`);
-                    return { league, events: data.events || [] };
-                })
-            );
+            // Determine date param
+            let dateParam = 'today';
+            if (state.selectedDayOffset === -1) dateParam = 'yesterday';
+            else if (state.selectedDayOffset === 1) dateParam = 'tomorrow';
+            else if (state.selectedDateStr) dateParam = state.selectedDateStr;
 
-            const groupedData = results
-                .filter(r => r.status === 'fulfilled' && r.value.events && r.value.events.length > 0)
-                .map(r => r.value);
+            const statusParam = state.currentStatus || 'all';
+            let url = `/api/v1/football/fixtures?date=${encodeURIComponent(dateParam)}`;
+            if (statusParam && statusParam !== 'all') {
+                url += `&status=${encodeURIComponent(statusParam)}`;
+            }
 
-            renderAllLeaguesGrouped(groupedData);
+            const data = await fetchJson(url);
+            const matches = data.matches || [];
+
+            if (!matches.length) {
+                renderAllLeaguesGrouped([]);
+                return;
+            }
+
+            const groupsMap = new Map();
+            for (const m of matches) {
+                const slug = m.league?.slug || 'other';
+                if (!groupsMap.has(slug)) {
+                    groupsMap.set(slug, {
+                        league: m.league || { slug, name: 'Competition', country: '' },
+                        events: []
+                    });
+                }
+                groupsMap.get(slug).events.push(m);
+            }
+
+            renderAllLeaguesGrouped([...groupsMap.values()]);
         } catch (error) {
             if (elements['fixtures-empty']) elements['fixtures-empty'].hidden = false;
             showToast(`Unable to load all fixtures: ${error.message}`);
@@ -1366,9 +1403,44 @@
             });
         }
 
+        initStatusPills();
         initDateRibbon();
         initSearch();
         initLiveSync();
+    }
+
+    function initStatusPills() {
+        const pills = document.querySelectorAll('.fs-status-pill');
+        pills.forEach(pill => {
+            pill.addEventListener('click', () => {
+                pills.forEach(p => {
+                    p.classList.remove('active');
+                    p.setAttribute('aria-selected', 'false');
+                });
+                pill.classList.add('active');
+                pill.setAttribute('aria-selected', 'true');
+
+                const status = pill.dataset.status || 'all';
+                state.currentStatus = status;
+                if (elements['fixture-status']) elements['fixture-status'].value = status;
+
+                if (status === 'live') {
+                    selectLiveMatches();
+                } else if (state.selectedLeagueSlug === 'all') {
+                    loadAllLeagueFixtures();
+                } else if (state.league) {
+                    loadFixtures();
+                }
+            });
+        });
+
+        const headerLiveBtn = document.getElementById('header-live-btn');
+        if (headerLiveBtn) {
+            headerLiveBtn.addEventListener('click', (e) => {
+                e.preventDefault();
+                selectLiveMatches();
+            });
+        }
     }
 
     function togglePinMatch(eventId) {
@@ -1404,6 +1476,7 @@
 
         function setMatchdayDate(dateObj) {
             const iso = isoDateInput(dateObj);
+            state.selectedDateStr = iso;
             if (elements['date-from']) elements['date-from'].value = iso;
             if (elements['date-to']) elements['date-to'].value = iso;
             if (picker) picker.value = iso;
@@ -1462,6 +1535,7 @@
                 if (e.target.value) {
                     const picked = new Date(e.target.value);
                     if (!isNaN(picked.getTime())) {
+                        state.selectedDayOffset = 999;
                         if (pillsList) pillsList.querySelectorAll('.date-pill-btn').forEach(b => b.classList.remove('active'));
                         setMatchdayDate(picked);
                     }
@@ -1532,10 +1606,17 @@
                     badge.textContent = liveMatches.length;
                     badge.style.display = liveMatches.length > 0 ? 'inline-block' : 'none';
                 }
+                const fsBadge = document.getElementById('fs-status-live-badge');
+                if (fsBadge) {
+                    fsBadge.textContent = liveMatches.length;
+                    fsBadge.style.display = liveMatches.length > 0 ? 'inline-block' : 'none';
+                }
 
                 // If currently viewing live view or matches are live, update smoothly
-                if (state.selectedLeagueSlug === 'live') {
+                if (state.selectedLeagueSlug === 'live' || state.currentStatus === 'live') {
                     loadLiveMatches();
+                } else if (state.selectedLeagueSlug === 'all' && (!state.selectedDayOffset || state.selectedDayOffset === 0)) {
+                    loadAllLeagueFixtures();
                 }
             } catch (e) {
                 // background poll notice
