@@ -166,7 +166,7 @@ for (const [route, file] of Object.entries(ROOT_ASSETS)) {
 
 app.use('/assets', express.static(path.join(__dirname, 'public'), {
     index: false,
-    maxAge: config.isProd ? '7d' : 0
+    maxAge: config.isProd ? '60s' : 0
 }));
 
 app.use('/uploads', express.static(path.join(__dirname, 'public', 'uploads'), {

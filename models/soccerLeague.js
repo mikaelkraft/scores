@@ -25,7 +25,7 @@ const SoccerLeagueSchema = new mongoose.Schema({
     },
     kind: {
         type: String,
-        enum: ['club', 'international'],
+        enum: ['club', 'international', 'cup'],
         default: 'club',
         index: true
     },
