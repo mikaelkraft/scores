@@ -18,7 +18,8 @@
         currentStatus: 'all',
         pinnedMatches: JSON.parse(localStorage.getItem('norra_pinned_matches') || '[]'),
         searchQuery: '',
-        liveMatchCount: 0
+        liveMatchCount: 0,
+        collapsedLeagues: new Set()
     };
 
     const statLabels = {
@@ -127,7 +128,8 @@
         'qat.1': '🇶🇦',
         'irq.1': '🇮🇶',
         'jor.1': '🇯🇴',
-        'bhr.1': '🇧🇭'
+        'bhr.1': '🇧🇭',
+        'isl.1': '🇮🇸'
     };
 
     let currentTimezone = localStorage.getItem('norra_timezone') || Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
@@ -238,9 +240,12 @@
     }
 
     function teamLogo(team, className = 'team-crest') {
-        const logo = safeUrl(team?.logo || team?.logos?.[0]?.href);
+        let logo = safeUrl(team?.logo || team?.logos?.[0]?.href);
+        if (logo.includes('static.livescore.com/')) {
+            logo = logo.replace('static.livescore.com/', 'storage.livescore.com/images/team/medium/');
+        }
         const abbreviation = escapeHtml(team?.abbreviation || 'FC');
-        return `<span class="${className}">${logo ? `<img src="${logo}" alt="${escapeHtml(team?.displayName || abbreviation)}" loading="lazy">` : abbreviation}</span>`;
+        return `<span class="${className}">${logo ? `<img src="${logo}" alt="${escapeHtml(team?.displayName || abbreviation)}" loading="lazy" onerror="this.onerror=null;this.style.display='none';this.parentElement.textContent='${abbreviation}';">` : abbreviation}</span>`;
     }
 
     function competitionFromEvent(event) {
@@ -619,17 +624,20 @@
             if (!events || !events.length) return '';
             totalCount += events.length;
             const flag = LEAGUE_FLAGS[league.slug] || '⚽';
+            const isCollapsed = state.collapsedLeagues.has(league.slug);
             return `
-                <div class="fs-league-section">
-                    <div class="fs-league-header">
+                <div class="fs-league-section ${isCollapsed ? 'is-collapsed' : ''}" data-league-slug="${escapeHtml(league.slug)}">
+                    <div class="fs-league-header" role="button" tabindex="0" data-toggle-slug="${escapeHtml(league.slug)}" aria-expanded="${!isCollapsed}" title="Click to ${isCollapsed ? 'expand' : 'collapse'} ${escapeHtml(league.name)}">
                         <div class="fs-league-title">
+                            <span class="fs-collapse-chevron ${isCollapsed ? 'is-collapsed' : ''}" aria-hidden="true">▼</span>
                             <span class="fs-league-flag">${flag}</span>
                             <strong>${escapeHtml(league.name)}</strong>
                             <small class="fs-league-country">${escapeHtml(league.country || '')}</small>
+                            <span class="fs-league-match-count" title="${events.length} games">${events.length}</span>
                         </div>
                         <button class="fs-league-view-btn" type="button" data-slug="${escapeHtml(league.slug)}">Table &rsaquo;</button>
                     </div>
-                    <div class="fs-league-matches">
+                    <div class="fs-league-matches" style="${isCollapsed ? 'display:none;' : ''}">
                         ${events.map(ev => renderFlashscoreMatchRow(ev, league)).join('')}
                     </div>
                 </div>
@@ -661,6 +669,31 @@
                     e.stopPropagation();
                     const slug = btn.dataset.slug;
                     selectLeague(slug).then(() => switchView('standings'));
+                });
+            });
+
+            elements['fixtures-list'].querySelectorAll('.fs-league-header').forEach(header => {
+                header.addEventListener('click', (e) => {
+                    if (e.target.closest('.fs-league-view-btn')) return;
+                    const slug = header.dataset.toggleSlug;
+                    if (!slug) return;
+                    const section = header.closest('.fs-league-section');
+                    const matchesContainer = section?.querySelector('.fs-league-matches');
+                    const chevron = header.querySelector('.fs-collapse-chevron');
+
+                    if (state.collapsedLeagues.has(slug)) {
+                        state.collapsedLeagues.delete(slug);
+                        if (matchesContainer) matchesContainer.style.display = 'block';
+                        if (section) section.classList.remove('is-collapsed');
+                        if (chevron) chevron.classList.remove('is-collapsed');
+                        header.setAttribute('aria-expanded', 'true');
+                    } else {
+                        state.collapsedLeagues.add(slug);
+                        if (matchesContainer) matchesContainer.style.display = 'none';
+                        if (section) section.classList.add('is-collapsed');
+                        if (chevron) chevron.classList.add('is-collapsed');
+                        header.setAttribute('aria-expanded', 'false');
+                    }
                 });
             });
 
@@ -1323,16 +1356,40 @@
                     </div>
                 </section>
 
+                const activeTab = state.drawerActiveTab || 'timeline';
+
+                elements['dialog-content'].innerHTML = `
+                <section class="drawer-header-card">
+                    <div class="team-vs-team-row">
+                        <div class="team-side">
+                            ${teamLogo(home.team, 'team-crest')}
+                            <span class="team-name" style="font-size:15px;">${escapeHtml(home.team?.displayName || 'Home')}</span>
+                        </div>
+                        <div class="score-center-col">
+                            <div class="score-digits" style="font-size:32px;">${escapeHtml(home.score ?? '—')} - ${escapeHtml(away.score ?? '—')}</div>
+                            <div class="minute-pill ${status.pillClass}" style="margin-top:6px;">${escapeHtml(competition.status?.displayClock || status.label)}</div>
+                        </div>
+                        <div class="team-side">
+                            ${teamLogo(away.team, 'team-crest')}
+                            <span class="team-name" style="font-size:15px;">${escapeHtml(away.team?.displayName || 'Away')}</span>
+                        </div>
+                    </div>
+                    <div style="margin-top:14px; font-size:12px; color:var(--text-muted);">
+                        ${venue?.fullName ? `Stadium: ${escapeHtml(venue.fullName)} · ` : ''}
+                        ${venue?.address?.city ? `${escapeHtml(venue.address.city)}` : ''}
+                    </div>
+                </section>
+
                 <div class="drawer-tabs">
-                    <button class="drawer-tab active" data-drawer-tab="timeline" type="button">Timeline &amp; Events</button>
-                    <button class="drawer-tab" data-drawer-tab="stats" type="button">Match Stats</button>
-                    <button class="drawer-tab" data-drawer-tab="h2h" type="button">Head-to-Head</button>
-                    <button class="drawer-tab" data-drawer-tab="lineups" type="button">Lineups &amp; Rosters</button>
-                    <button class="drawer-tab" data-drawer-tab="info" type="button">Match Info</button>
-                    <button class="drawer-tab" data-drawer-tab="predictions" type="button" style="color:var(--color-primary); font-weight:700;">🔮 AI Predictions</button>
+                    <button class="drawer-tab ${activeTab === 'timeline' ? 'active' : ''}" data-drawer-tab="timeline" type="button">Timeline &amp; Events</button>
+                    <button class="drawer-tab ${activeTab === 'stats' ? 'active' : ''}" data-drawer-tab="stats" type="button">Match Stats</button>
+                    <button class="drawer-tab ${activeTab === 'h2h' ? 'active' : ''}" data-drawer-tab="h2h" type="button">Head-to-Head</button>
+                    <button class="drawer-tab ${activeTab === 'lineups' ? 'active' : ''}" data-drawer-tab="lineups" type="button">Lineups &amp; Rosters</button>
+                    <button class="drawer-tab ${activeTab === 'info' ? 'active' : ''}" data-drawer-tab="info" type="button">Match Info</button>
+                    <button class="drawer-tab ${activeTab === 'predictions' ? 'active' : ''}" data-drawer-tab="predictions" type="button" style="color:var(--color-primary); font-weight:700;">🔮 AI Predictions</button>
                 </div>
 
-                <div id="drawer-tab-timeline" class="drawer-tab-content">
+                <div id="drawer-tab-timeline" class="drawer-tab-content" ${activeTab === 'timeline' ? '' : 'hidden'}>
                     <h4 style="margin:0 0 12px; font-size:14px; color:var(--text-main);">Goals &amp; Scorers</h4>
                     <div>${scorerRows || '<p style="color:var(--text-muted); font-size:13px;">No goals recorded for this match.</p>'}</div>
 
@@ -1340,7 +1397,7 @@
                     <div>${timelineRows || '<p style="color:var(--text-muted); font-size:13px;">No play-by-play events recorded.</p>'}</div>
                 </div>
 
-                <div id="drawer-tab-stats" class="drawer-tab-content" hidden>
+                <div id="drawer-tab-stats" class="drawer-tab-content" ${activeTab === 'stats' ? '' : 'hidden'}>
                     <h4 style="margin:0 0 14px; font-size:14px; color:var(--text-main);">In-Play Match Statistics (${escapeHtml(home.team?.displayName || 'Home')} vs ${escapeHtml(away.team?.displayName || 'Away')})</h4>
                     <div>${statRows || `
                         <div style="text-align:center; padding:24px 16px; background:var(--bg-canvas); border:1px solid var(--border-subtle); border-radius:8px;">
@@ -1351,7 +1408,7 @@
                     `}</div>
                 </div>
 
-                <div id="drawer-tab-h2h" class="drawer-tab-content" hidden>
+                <div id="drawer-tab-h2h" class="drawer-tab-content" ${activeTab === 'h2h' ? '' : 'hidden'}>
                     <h4 style="margin:0 0 14px; font-size:14px; color:var(--text-main);">Head-to-Head Past Encounters</h4>
                     ${h2h.seriesSummary || h2h.seriesScore ? `
                         <div style="background:var(--color-primary-subtle); border:1px solid var(--border-subtle); border-radius:8px; padding:10px 14px; font-size:13px; font-weight:600; color:var(--color-primary); margin-bottom:16px; text-align:center;">
@@ -1468,7 +1525,7 @@
                     `}
                 </div>
 
-                <div id="drawer-tab-lineups" class="drawer-tab-content" hidden>
+                <div id="drawer-tab-lineups" class="drawer-tab-content" ${activeTab === 'lineups' ? '' : 'hidden'}>
                     <h4 style="margin:0 0 14px; font-size:14px; color:var(--text-main);">Official Team Lineups</h4>
                     <div style="display:flex; gap:20px; flex-wrap:wrap; margin-bottom:24px;">
                         ${renderRosterList(homeRoster, home.team?.displayName || 'Home Team')}
@@ -1481,7 +1538,7 @@
                     ` : ''}
                 </div>
 
-                <div id="drawer-tab-info" class="drawer-tab-content" hidden>
+                <div id="drawer-tab-info" class="drawer-tab-content" ${activeTab === 'info' ? '' : 'hidden'}>
                     <h4 style="margin:0 0 12px; font-size:14px; color:var(--text-main);">Match Information</h4>
                     <div style="background:var(--bg-canvas); border:1px solid var(--border-subtle); border-radius:8px; padding:16px; font-size:13px;">
                         <p style="margin:6px 0;"><strong>Competition:</strong> ${escapeHtml(competition.league?.name || state.league?.name || 'Football Competition')}</p>
@@ -1508,7 +1565,7 @@
                     ` : ''}
                 </div>
 
-                <div id="drawer-tab-predictions" class="drawer-tab-content" hidden>
+                <div id="drawer-tab-predictions" class="drawer-tab-content" ${activeTab === 'predictions' ? '' : 'hidden'}>
                     <div class="prediction-card">
                         <div style="display:flex; justify-content:space-between; align-items:center;">
                             <h4 style="margin:0; font-size:14px; color:var(--text-main);">🔮 Norra AI Outcome Probability</h4>
@@ -1556,6 +1613,7 @@
             elements['dialog-content'].querySelectorAll('.drawer-tab').forEach(tabBtn => {
                 tabBtn.addEventListener('click', () => {
                     const target = tabBtn.dataset.drawerTab;
+                    state.drawerActiveTab = target;
                     elements['dialog-content'].querySelectorAll('.drawer-tab').forEach(b => b.classList.toggle('active', b === tabBtn));
                     elements['dialog-content'].querySelectorAll('.drawer-tab-content').forEach(c => {
                         c.hidden = c.id !== `drawer-tab-${target}`;
@@ -1569,6 +1627,7 @@
         window.clearInterval(state.matchTimer);
         state.matchTimer = null;
         state.currentEventId = null;
+        state.drawerActiveTab = 'timeline';
         if (elements['match-dialog']) elements['match-dialog'].close();
     }
 

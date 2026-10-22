@@ -362,32 +362,52 @@ router.get('/predictions-context/:eventId', async (req, res) => {
         const awayId = String(match.away?.source_id || '');
         const leagueSlug = match.league_slug;
 
+        const hName = (match.home?.name || match.home?.display_name || '').trim();
+        const aName = (match.away?.name || match.away?.display_name || '').trim();
+        const hNameEscaped = hName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        const aNameEscaped = aName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+        const h2hOrClauses = [];
+        if (homeId && awayId) {
+            h2hOrClauses.push(
+                { 'home.source_id': homeId, 'away.source_id': awayId },
+                { 'home.source_id': awayId, 'away.source_id': homeId }
+            );
+        }
+        if (hName && aName) {
+            h2hOrClauses.push(
+                { 'home.name': new RegExp(`^${hNameEscaped}$`, 'i'), 'away.name': new RegExp(`^${aNameEscaped}$`, 'i') },
+                { 'home.name': new RegExp(`^${aNameEscaped}$`, 'i'), 'away.name': new RegExp(`^${hNameEscaped}$`, 'i') },
+                { 'home.display_name': new RegExp(`^${hNameEscaped}$`, 'i'), 'away.display_name': new RegExp(`^${aNameEscaped}$`, 'i') },
+                { 'home.display_name': new RegExp(`^${aNameEscaped}$`, 'i'), 'away.display_name': new RegExp(`^${hNameEscaped}$`, 'i') }
+            );
+        }
+
+        const homeRecentOrClauses = [];
+        if (homeId) homeRecentOrClauses.push({ 'home.source_id': homeId }, { 'away.source_id': homeId });
+        if (hName) homeRecentOrClauses.push({ 'home.name': new RegExp(`^${hNameEscaped}$`, 'i') }, { 'away.name': new RegExp(`^${hNameEscaped}$`, 'i') });
+
+        const awayRecentOrClauses = [];
+        if (awayId) awayRecentOrClauses.push({ 'home.source_id': awayId }, { 'away.source_id': awayId });
+        if (aName) awayRecentOrClauses.push({ 'home.name': new RegExp(`^${aNameEscaped}$`, 'i') }, { 'away.name': new RegExp(`^${aNameEscaped}$`, 'i') });
+
         // Run parallel queries: H2H, Home Recent Form, Away Recent Form, Standings
         const [h2hMatches, homeRecentMatches, awayRecentMatches, standingsGroup, leagueDoc] = await Promise.all([
             // H2H past meetings - fetch complete lifetime encounters without artificial cap
-            homeId && awayId ? SoccerMatch.find({
-                $or: [
-                    { 'home.source_id': homeId, 'away.source_id': awayId },
-                    { 'home.source_id': awayId, 'away.source_id': homeId }
-                ],
+            h2hOrClauses.length ? SoccerMatch.find({
+                $or: h2hOrClauses,
                 'status.state': 'post'
             }).sort({ date: -1 }).limit(200).lean() : Promise.resolve([]),
 
             // Home team last 6 matches
-            homeId ? SoccerMatch.find({
-                $or: [
-                    { 'home.source_id': homeId },
-                    { 'away.source_id': homeId }
-                ],
+            homeRecentOrClauses.length ? SoccerMatch.find({
+                $or: homeRecentOrClauses,
                 'status.state': 'post'
             }).sort({ date: -1 }).limit(6).lean() : Promise.resolve([]),
 
             // Away team last 6 matches
-            awayId ? SoccerMatch.find({
-                $or: [
-                    { 'home.source_id': awayId },
-                    { 'away.source_id': awayId }
-                ],
+            awayRecentOrClauses.length ? SoccerMatch.find({
+                $or: awayRecentOrClauses,
                 'status.state': 'post'
             }).sort({ date: -1 }).limit(6).lean() : Promise.resolve([]),
 
@@ -972,6 +992,20 @@ router.get('/matches/:eventId', async (req, res) => {
                 if (espnData.lastFiveGames) summary.lastFiveGames = espnData.lastFiveGames;
                 if (espnData.predictor) summary.predictor = espnData.predictor;
                 if (espnData.pickcenter) summary.pickcenter = espnData.pickcenter;
+            }
+
+            // If ESPN provided no boxscore or for LiveScore matches, enrich with LiveScore telemetry
+            if (!summary.boxscore?.teams?.length) {
+                try {
+                    const { fetchLiveScoreMatchDetails } = require('../services/soccerSyncService');
+                    const lsData = await fetchLiveScoreMatchDetails(match.source?.event_id || eventId);
+                    if (lsData) {
+                        if (lsData.boxscore && !summary.boxscore?.teams?.length) summary.boxscore = lsData.boxscore;
+                        if (lsData.keyEvents && !summary.keyEvents?.length) summary.keyEvents = lsData.keyEvents;
+                        if (lsData.rosters && !summary.rosters?.length) summary.rosters = lsData.rosters;
+                        if (lsData.gameInfo && !summary.gameInfo) summary.gameInfo = lsData.gameInfo;
+                    }
+                } catch {}
             }
         } catch {}
 

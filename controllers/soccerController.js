@@ -522,6 +522,20 @@ async function sendSummary(req, res) {
                     if (espnData.header.season) summary.header.season = espnData.header.season;
                 }
             }
+
+            // If ESPN provided no boxscore/events or for LiveScore ingested matches, enrich with LiveScore telemetry
+            if (!summary.boxscore?.teams?.length) {
+                try {
+                    const { fetchLiveScoreMatchDetails } = require('../services/soccerSyncService');
+                    const lsData = await fetchLiveScoreMatchDetails(match.source?.event_id || req.eventId);
+                    if (lsData) {
+                        if (lsData.boxscore && !summary.boxscore?.teams?.length) summary.boxscore = lsData.boxscore;
+                        if (lsData.keyEvents && !summary.keyEvents?.length) summary.keyEvents = lsData.keyEvents;
+                        if (lsData.rosters && !summary.rosters?.length) summary.rosters = lsData.rosters;
+                        if (lsData.gameInfo && !summary.gameInfo) summary.gameInfo = lsData.gameInfo;
+                    }
+                } catch {}
+            }
         } catch (e) {
             // Live fetch non-blocking fallback
         }

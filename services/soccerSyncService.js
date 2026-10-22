@@ -109,7 +109,8 @@ const TARGET_LEAGUES = [
     { slug: 'qat.1', name: 'Qatar Stars League', abbreviation: 'Stars League', country: 'Qatar', kind: 'club', sort_order: 93 },
     { slug: 'irq.1', name: 'Iraq Stars League', abbreviation: 'Stars League', country: 'Iraq', kind: 'club', sort_order: 94 },
     { slug: 'jor.1', name: 'Jordanian Pro League', abbreviation: 'Pro League', country: 'Jordan', kind: 'club', sort_order: 95 },
-    { slug: 'bhr.1', name: 'Bahraini Premier League', abbreviation: 'Premier League', country: 'Bahrain', kind: 'club', sort_order: 96 }
+    { slug: 'bhr.1', name: 'Bahraini Premier League', abbreviation: 'Premier League', country: 'Bahrain', kind: 'club', sort_order: 96 },
+    { slug: 'isl.1', name: 'Icelandic Besta deild', abbreviation: 'Besta deild', country: 'Iceland', kind: 'club', sort_order: 97 }
 ];
 
 function fetchJson(url) {
@@ -614,6 +615,7 @@ function resolveLeagueSlug(altGameNote = '', compDesc = '', uid = '') {
     if (text.includes('a-league') || text.includes('aus.1')) return 'aus.1';
     if (text.includes('chinese') || text.includes('csl') || text.includes('chn.1')) return 'chn.1';
     if (text.includes('veikkausliiga') || text.includes('fin.1')) return 'fin.1';
+    if (text.includes('iceland') || text.includes('besta deild') || text.includes('isl.1')) return 'isl.1';
 
     // Universal clean fallback: derive from altGameNote or compDesc so NO live matches are ever dropped
     const cleanTitle = (altGameNote || compDesc || '').split(',')[0].trim();
@@ -622,6 +624,148 @@ function resolveLeagueSlug(altGameNote = '', compDesc = '', uid = '') {
         if (slugified.length >= 3) return slugified;
     }
     return null;
+}
+
+function formatLiveScoreLogo(img) {
+    if (!img) return '';
+    if (img.startsWith('http')) {
+        return img.replace('https://static.livescore.com/', 'https://storage.livescore.com/images/team/medium/');
+    }
+    const clean = img.replace(/^\/+/, '');
+    return `https://storage.livescore.com/images/team/medium/${clean}`;
+}
+
+async function fetchLiveScoreMatchDetails(eventId) {
+    if (!eventId) return null;
+    const eid = String(eventId).trim();
+
+    try {
+        const [statsData, incsData, lineupsData, infoData] = await Promise.all([
+            fetchJson(`https://prod-public-api.livescore.com/v1/api/app/statistics/soccer/${eid}`).catch(() => null),
+            fetchJson(`https://prod-public-api.livescore.com/v1/api/app/incidents/soccer/${eid}`).catch(() => null),
+            fetchJson(`https://prod-public-api.livescore.com/v1/api/app/lineups/soccer/${eid}`).catch(() => null),
+            fetchJson(`https://prod-public-api.livescore.com/v1/api/app/info/soccer/${eid}`).catch(() => null)
+        ]);
+
+        const result = {};
+
+        // 1. In-play boxscore statistics
+        if (statsData?.Stat?.length) {
+            const hStat = statsData.Stat.find(s => s.Tnb === 1) || statsData.Stat[0] || {};
+            const aStat = statsData.Stat.find(s => s.Tnb === 2) || statsData.Stat[1] || {};
+
+            const mapStats = (s) => [
+                { name: 'possessionPct', displayName: 'Possession', displayValue: `${s.Pss ?? 50}%`, value: s.Pss ?? 50 },
+                { name: 'shotsOnTarget', displayName: 'Shots on Target', displayValue: `${s.Shon ?? 0}`, value: s.Shon ?? 0 },
+                { name: 'shotsOffTarget', displayName: 'Shots off Target', displayValue: `${s.Shof ?? 0}`, value: s.Shof ?? 0 },
+                { name: 'totalShots', displayName: 'Total Shots', displayValue: `${(s.Shon || 0) + (s.Shof || 0) + (s.Shbl || 0)}`, value: (s.Shon || 0) + (s.Shof || 0) + (s.Shbl || 0) },
+                { name: 'wonCorners', displayName: 'Corner Kicks', displayValue: `${s.Cos ?? 0}`, value: s.Cos ?? 0 },
+                { name: 'foulsCommited', displayName: 'Fouls', displayValue: `${s.Fls ?? 0}`, value: s.Fls ?? 0 },
+                { name: 'offsides', displayName: 'Offsides', displayValue: `${s.Ofs ?? 0}`, value: s.Ofs ?? 0 },
+                { name: 'yellowCards', displayName: 'Yellow Cards', displayValue: `${s.Ycs ?? 0}`, value: s.Ycs ?? 0 },
+                { name: 'redCards', displayName: 'Red Cards', displayValue: `${s.Rcs ?? 0}`, value: s.Rcs ?? 0 },
+                { name: 'saves', displayName: 'Goalkeeper Saves', displayValue: `${s.Gks ?? 0}`, value: s.Gks ?? 0 }
+            ];
+
+            result.boxscore = {
+                teams: [
+                    { id: 'home', homeAway: 'home', statistics: mapStats(hStat) },
+                    { id: 'away', homeAway: 'away', statistics: mapStats(aStat) }
+                ]
+            };
+        }
+
+        // 2. Key events / match timeline (goals, cards, substitutions)
+        if (incsData?.Incs) {
+            const keyEvents = [];
+            const periods = Object.keys(incsData.Incs);
+            for (const p of periods) {
+                for (const inc of (incsData.Incs[p] || [])) {
+                    const min = inc.Min || 0;
+                    const isHome = inc.Nm === 1;
+                    let type = 'event';
+                    let text = inc.Pn || inc.Fn ? `${inc.Fn || ''} ${inc.Ln || inc.Pn || ''}`.trim() : 'Event';
+                    let scoringPlay = false;
+                    let yellowCard = false;
+                    let redCard = false;
+                    let substitution = false;
+
+                    if (inc.IT === 36 || inc.IT === 37) {
+                        type = 'Goal';
+                        scoringPlay = true;
+                        text = `Goal! ${text}`;
+                        if (inc.Sc) text += ` (${inc.Sc[0]}-${inc.Sc[1]})`;
+                    } else if (inc.IT === 43) {
+                        type = 'Yellow Card';
+                        yellowCard = true;
+                        text = `Yellow Card: ${text}`;
+                    } else if (inc.IT === 44 || inc.IT === 45) {
+                        type = 'Red Card';
+                        redCard = true;
+                        text = `Red Card: ${text}`;
+                    } else if (inc.IT === 46 || inc.IT === 47) {
+                        type = 'Substitution';
+                        substitution = true;
+                        text = `Substitution: ${text}`;
+                    }
+
+                    keyEvents.push({
+                        id: `ls-${min}-${inc.IT || 0}-${inc.ID || Math.random()}`,
+                        clock: `${min}'`,
+                        clockValue: min,
+                        scoringPlay,
+                        yellowCard,
+                        redCard,
+                        substitution,
+                        text,
+                        type: { text: type, type },
+                        team: { side: isHome ? 'home' : 'away' },
+                        athletesInvolved: inc.Pn ? [{ displayName: inc.Pn, shortName: inc.Ln || inc.Pn }] : []
+                    });
+                }
+            }
+            if (keyEvents.length) result.keyEvents = keyEvents;
+        }
+
+        // 3. Lineups and rosters
+        if (lineupsData?.Lu?.length) {
+            const rosters = [];
+            for (const lu of lineupsData.Lu) {
+                const isHome = lu.Tnb === 1;
+                const roster = (lu.Ps || []).map(p => ({
+                    jersey: String(p.Snu || ''),
+                    starter: true,
+                    athlete: {
+                        displayName: `${p.Fn || ''} ${p.Ln || ''}`.trim() || p.Pn || 'Player',
+                        position: { abbreviation: p.Pon ? p.Pon.slice(0, 3).toUpperCase() : 'POS' }
+                    },
+                    position: { abbreviation: p.Pon ? p.Pon.slice(0, 3).toUpperCase() : 'POS' }
+                }));
+                rosters.push({
+                    team: { side: isHome ? 'home' : 'away' },
+                    roster
+                });
+            }
+            if (rosters.length) result.rosters = rosters;
+        }
+
+        // 4. Stadium / venue info
+        if (infoData?.Vnm) {
+            result.gameInfo = {
+                venue: {
+                    fullName: infoData.Vnm,
+                    address: {
+                        city: infoData.Vcy || '',
+                        country: infoData.VCnm || ''
+                    }
+                }
+            };
+        }
+
+        return Object.keys(result).length > 0 ? result : null;
+    } catch {
+        return null;
+    }
 }
 
 async function syncLiveScoreInPlay() {
@@ -695,6 +839,7 @@ async function syncLiveScoreInPlay() {
             else if (cLower.includes('costa rica')) targetSlug = 'crc.1';
             else if (cLower.includes('honduras')) targetSlug = 'hon.1';
             else if (cLower.includes('guatemala')) targetSlug = 'gua.1';
+            else if (cLower.includes('iceland')) targetSlug = 'isl.1';
             else {
                 const cSlug = (stage.Ccd || country).toLowerCase().replace(/[^a-z0-9]+/g, '').slice(0, 3);
                 const sSlug = (stage.Scd || leagueName).toLowerCase().replace(/[^a-z0-9]+/g, '.').slice(0, 16);
@@ -754,8 +899,23 @@ async function syncLiveScoreInPlay() {
                 }
 
                 const scoreboardDate = formatDateToScoreboard(matchDate);
-                const homeCrest = h.Img ? (h.Img.startsWith('http') ? h.Img : `https://static.livescore.com/${h.Img}`) : '';
-                const awayCrest = a.Img ? (a.Img.startsWith('http') ? a.Img : `https://static.livescore.com/${a.Img}`) : '';
+                const homeCrest = formatLiveScoreLogo(h.Img);
+                const awayCrest = formatLiveScoreLogo(a.Img);
+
+                const existingMatch = await SoccerMatch.findOne({
+                    $or: [
+                        { 'source.event_id': eid },
+                        {
+                            league_slug: targetSlug,
+                            scoreboard_date: scoreboardDate,
+                            'home.name': homeName,
+                            'away.name': awayName
+                        }
+                    ]
+                }).select('home.logo away.logo').lean();
+
+                const finalHomeLogo = homeCrest || existingMatch?.home?.logo || '';
+                const finalAwayLogo = awayCrest || existingMatch?.away?.logo || '';
 
                 const matchDoc = {
                     source: {
@@ -793,7 +953,7 @@ async function syncLiveScoreInPlay() {
                         name: homeName,
                         display_name: homeName,
                         abbreviation: h.Abr || homeName.slice(0, 3).toUpperCase(),
-                        logo: homeCrest,
+                        logo: finalHomeLogo,
                         score: isNaN(homeScore) ? 0 : homeScore,
                         winner: isFinished && homeScore > awayScore,
                         form: ''
@@ -803,7 +963,7 @@ async function syncLiveScoreInPlay() {
                         name: awayName,
                         display_name: awayName,
                         abbreviation: a.Abr || awayName.slice(0, 3).toUpperCase(),
-                        logo: awayCrest,
+                        logo: finalAwayLogo,
                         score: isNaN(awayScore) ? 0 : awayScore,
                         winner: isFinished && awayScore > homeScore,
                         form: ''
@@ -840,18 +1000,20 @@ async function syncLiveScoreInPlay() {
                     { upsert: true }
                 );
 
+                const homeClubSet = {
+                    name: homeName,
+                    display_name: homeName,
+                    abbreviation: h.Abr || homeName.slice(0, 3).toUpperCase(),
+                    country,
+                    active: true,
+                    last_synced_at: now
+                };
+                if (finalHomeLogo) homeClubSet.logo = finalHomeLogo;
+
                 await SoccerClub.updateOne(
                     { source_id: String(h.ID || homeName.toLowerCase().replace(/[^a-z0-9]+/g, '-')) },
                     {
-                        $set: {
-                            name: homeName,
-                            display_name: homeName,
-                            abbreviation: h.Abr || homeName.slice(0, 3).toUpperCase(),
-                            country,
-                            logo: homeCrest,
-                            active: true,
-                            last_synced_at: now
-                        },
+                        $set: homeClubSet,
                         $addToSet: { league_slugs: targetSlug },
                         $setOnInsert: {
                             slug: homeName.toLowerCase().replace(/[^a-z0-9]+/g, '-'),
@@ -861,18 +1023,20 @@ async function syncLiveScoreInPlay() {
                     { upsert: true }
                 ).catch(() => {});
 
+                const awayClubSet = {
+                    name: awayName,
+                    display_name: awayName,
+                    abbreviation: a.Abr || awayName.slice(0, 3).toUpperCase(),
+                    country,
+                    active: true,
+                    last_synced_at: now
+                };
+                if (finalAwayLogo) awayClubSet.logo = finalAwayLogo;
+
                 await SoccerClub.updateOne(
                     { source_id: String(a.ID || awayName.toLowerCase().replace(/[^a-z0-9]+/g, '-')) },
                     {
-                        $set: {
-                            name: awayName,
-                            display_name: awayName,
-                            abbreviation: a.Abr || awayName.slice(0, 3).toUpperCase(),
-                            country,
-                            logo: awayCrest,
-                            active: true,
-                            last_synced_at: now
-                        },
+                        $set: awayClubSet,
                         $addToSet: { league_slugs: targetSlug },
                         $setOnInsert: {
                             slug: awayName.toLowerCase().replace(/[^a-z0-9]+/g, '-'),
@@ -1042,6 +1206,8 @@ module.exports = {
     syncAllLeagues,
     syncLiveScoreboards,
     syncLiveScoreInPlay,
+    fetchLiveScoreMatchDetails,
+    formatLiveScoreLogo,
     resolveLeagueSlug,
     TARGET_LEAGUES
 };
