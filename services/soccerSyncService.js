@@ -99,7 +99,17 @@ const TARGET_LEAGUES = [
     { slug: 'uru.1', name: 'Liga AUF Uruguaya', abbreviation: 'Primera Uruguay', country: 'Uruguay', kind: 'club', sort_order: 83 },
     { slug: 'crc.1', name: 'Costa Rican Primera División', abbreviation: 'Primera Costa Rica', country: 'Costa Rica', kind: 'club', sort_order: 84 },
     { slug: 'hon.1', name: 'Honduran Liga Nacional', abbreviation: 'Liga Betcris', country: 'Honduras', kind: 'club', sort_order: 85 },
-    { slug: 'gua.1', name: 'Guatemalan Liga Nacional', abbreviation: 'Liga Mayor', country: 'Guatemala', kind: 'club', sort_order: 86 }
+    { slug: 'gua.1', name: 'Guatemalan Liga Nacional', abbreviation: 'Liga Mayor', country: 'Guatemala', kind: 'club', sort_order: 86 },
+    { slug: 'vie.1', name: 'Vietnamese V.League 1', abbreviation: 'V.League 1', country: 'Vietnam', kind: 'club', sort_order: 87 },
+    { slug: 'irn.1', name: 'Persian Gulf Pro League', abbreviation: 'Pro League', country: 'Iran', kind: 'club', sort_order: 88 },
+    { slug: 'uae.1', name: 'UAE President\'s Cup', abbreviation: 'President\'s Cup', country: 'United Arab Emirates', kind: 'cup', sort_order: 89 },
+    { slug: 'uzb.1', name: 'Uzbekistan Super League', abbreviation: 'Superliga', country: 'Uzbekistan', kind: 'club', sort_order: 90 },
+    { slug: 'rou.2', name: 'Romanian Liga II', abbreviation: 'Liga II', country: 'Romania', kind: 'club', sort_order: 91 },
+    { slug: 'mne.1', name: 'Montenegrin First League', abbreviation: '1. CFL', country: 'Montenegro', kind: 'club', sort_order: 92 },
+    { slug: 'qat.1', name: 'Qatar Stars League', abbreviation: 'Stars League', country: 'Qatar', kind: 'club', sort_order: 93 },
+    { slug: 'irq.1', name: 'Iraq Stars League', abbreviation: 'Stars League', country: 'Iraq', kind: 'club', sort_order: 94 },
+    { slug: 'jor.1', name: 'Jordanian Pro League', abbreviation: 'Pro League', country: 'Jordan', kind: 'club', sort_order: 95 },
+    { slug: 'bhr.1', name: 'Bahraini Premier League', abbreviation: 'Premier League', country: 'Bahrain', kind: 'club', sort_order: 96 }
 ];
 
 function fetchJson(url) {
@@ -582,6 +592,18 @@ function resolveLeagueSlug(altGameNote = '', compDesc = '', uid = '') {
     if (text.includes('honduras') || text.includes('hon.1')) return 'hon.1';
     if (text.includes('guatemala') || text.includes('gua.1')) return 'gua.1';
 
+    // Asian & Regional Additions
+    if (text.includes('vietnam') || text.includes('vie.1')) return 'vie.1';
+    if (text.includes('iran') || text.includes('irn.1')) return 'irn.1';
+    if (text.includes('emirates') || text.includes('uae.1')) return 'uae.1';
+    if (text.includes('uzbekistan') || text.includes('uzb.1')) return 'uzb.1';
+    if (text.includes('romania') || text.includes('rou.2')) return 'rou.2';
+    if (text.includes('montenegro') || text.includes('mne.1')) return 'mne.1';
+    if (text.includes('qatar') || text.includes('qat.1')) return 'qat.1';
+    if (text.includes('iraq') || text.includes('irq.1')) return 'irq.1';
+    if (text.includes('jordan') || text.includes('jor.1')) return 'jor.1';
+    if (text.includes('bahrain') || text.includes('bhr.1')) return 'bhr.1';
+
     if (text.includes('austrian') || text.includes('aut.1')) return 'aut.1';
     if (text.includes('swiss') || text.includes('sui.1')) return 'sui.1';
     if (text.includes('danish') || text.includes('den.1')) return 'den.1';
@@ -600,6 +622,295 @@ function resolveLeagueSlug(altGameNote = '', compDesc = '', uid = '') {
         if (slugified.length >= 3) return slugified;
     }
     return null;
+}
+
+async function syncLiveScoreInPlay() {
+    const now = new Date();
+    let updatedCount = 0;
+    try {
+        const todayStr = formatDateToScoreboard(now);
+        const [liveData, dateData] = await Promise.all([
+            fetchJson('https://prod-public-api.livescore.com/v1/api/app/live/soccer/0').catch(() => null),
+            fetchJson(`https://prod-public-api.livescore.com/v1/api/app/date/soccer/${todayStr}/0`).catch(() => null)
+        ]);
+
+        const stages = [];
+        if (dateData && Array.isArray(dateData.Stages)) stages.push(...dateData.Stages);
+        if (liveData && Array.isArray(liveData.Stages)) stages.push(...liveData.Stages);
+
+        if (stages.length === 0) return 0;
+
+        const activeLiveEventIds = new Set();
+        if (liveData && Array.isArray(liveData.Stages)) {
+            for (const stage of liveData.Stages) {
+                for (const ev of (stage.Events || [])) {
+                    if (ev.Eid) activeLiveEventIds.add(String(ev.Eid));
+                }
+            }
+        }
+
+        for (const stage of stages) {
+            const country = stage.Cnm || stage.Sdn || 'International';
+            const leagueName = stage.Snm || 'Football Competition';
+            const cLower = country.toLowerCase();
+
+            let targetSlug = 'int.misc';
+            if (cLower.includes('indonesia')) targetSlug = 'idn.1';
+            else if (cLower.includes('vietnam')) targetSlug = 'vie.1';
+            else if (cLower.includes('thailand')) targetSlug = 'tha.1';
+            else if (cLower.includes('malaysia')) targetSlug = 'mys.1';
+            else if (cLower.includes('singapore')) targetSlug = 'sgp.1';
+            else if (cLower.includes('kenya')) targetSlug = 'ken.1';
+            else if (cLower.includes('ghana')) targetSlug = 'gha.1';
+            else if (cLower.includes('uganda')) targetSlug = 'uga.1';
+            else if (cLower.includes('india')) targetSlug = 'ind.1';
+            else if (cLower.includes('iran')) targetSlug = 'irn.1';
+            else if (cLower.includes('emirates') || cLower.includes('uae')) targetSlug = 'uae.1';
+            else if (cLower.includes('uzbekistan')) targetSlug = 'uzb.1';
+            else if (cLower.includes('romania')) targetSlug = 'rou.2';
+            else if (cLower.includes('montenegro')) targetSlug = 'mne.1';
+            else if (cLower.includes('qatar')) targetSlug = 'qat.1';
+            else if (cLower.includes('iraq')) targetSlug = 'irq.1';
+            else if (cLower.includes('jordan')) targetSlug = 'jor.1';
+            else if (cLower.includes('bahrain')) targetSlug = 'bhr.1';
+            else if (cLower.includes('egypt')) targetSlug = 'egy.1';
+            else if (cLower.includes('saudi')) targetSlug = 'ksa.1';
+            else if (cLower.includes('colombia')) targetSlug = 'col.1';
+            else if (cLower.includes('morocco')) targetSlug = 'mar.1';
+            else if (cLower.includes('nigeria')) targetSlug = 'nga.1';
+            else if (cLower.includes('south africa')) targetSlug = 'rsa.1';
+            else if (cLower.includes('brazil')) targetSlug = 'bra.1';
+            else if (cLower.includes('argentina')) targetSlug = 'arg.1';
+            else if (cLower.includes('england')) targetSlug = 'eng.1';
+            else if (cLower.includes('spain')) targetSlug = 'esp.1';
+            else if (cLower.includes('italy')) targetSlug = 'ita.1';
+            else if (cLower.includes('germany')) targetSlug = 'ger.1';
+            else if (cLower.includes('france')) targetSlug = 'fra.1';
+            else if (cLower.includes('peru')) targetSlug = 'per.1';
+            else if (cLower.includes('bolivia')) targetSlug = 'bol.1';
+            else if (cLower.includes('ecuador')) targetSlug = 'ecu.1';
+            else if (cLower.includes('paraguay')) targetSlug = 'par.1';
+            else if (cLower.includes('venezuela')) targetSlug = 'ven.1';
+            else if (cLower.includes('uruguay')) targetSlug = 'uru.1';
+            else if (cLower.includes('costa rica')) targetSlug = 'crc.1';
+            else if (cLower.includes('honduras')) targetSlug = 'hon.1';
+            else if (cLower.includes('guatemala')) targetSlug = 'gua.1';
+            else {
+                const cSlug = (stage.Ccd || country).toLowerCase().replace(/[^a-z0-9]+/g, '').slice(0, 3);
+                const sSlug = (stage.Scd || leagueName).toLowerCase().replace(/[^a-z0-9]+/g, '.').slice(0, 16);
+                targetSlug = `${cSlug}.${sSlug}`.replace(/^\.+|\.+$/g, '');
+            }
+
+            const leagueDef = TARGET_LEAGUES.find(l => l.slug === targetSlug) || {
+                slug: targetSlug,
+                name: `${country} ${leagueName}`,
+                abbreviation: leagueName.slice(0, 16),
+                country,
+                kind: 'club'
+            };
+
+            await SoccerLeague.updateOne(
+                { slug: targetSlug },
+                {
+                    $setOnInsert: {
+                        slug: targetSlug,
+                        name: leagueDef.name,
+                        abbreviation: leagueDef.abbreviation || leagueName.slice(0, 16),
+                        country: leagueDef.country || country,
+                        kind: 'club',
+                        active: true,
+                        sort_order: 90
+                    }
+                },
+                { upsert: true }
+            ).catch(() => {});
+
+            for (const ev of (stage.Events || [])) {
+                const eid = String(ev.Eid);
+                const h = ev.T1?.[0] || {};
+                const a = ev.T2?.[0] || {};
+                const homeName = h.Nm || 'Home Club';
+                const awayName = a.Nm || 'Away Club';
+                const homeScore = parseInt(ev.Tr1 || 0, 10);
+                const awayScore = parseInt(ev.Tr2 || 0, 10);
+                const rawClock = String(ev.Eps || ev.Epr || 'NS');
+
+                const isNotStarted = rawClock === 'NS' || rawClock === 'Upcoming' || rawClock.includes(':');
+                const isFinished = rawClock === 'FT' || rawClock === 'AET' || rawClock === 'AP';
+                const isPostponed = rawClock.includes('Postp') || rawClock.includes('Canc');
+                const isInPlay = !isNotStarted && !isFinished && !isPostponed && (rawClock.includes("'") || rawClock === 'HT' || rawClock === 'Live' || (!isNaN(parseInt(rawClock, 10)) && rawClock !== 'FT'));
+                const state = isInPlay ? 'in' : (isFinished || isPostponed) ? 'post' : 'pre';
+                const displayClock = isFinished ? 'FT' : isPostponed ? 'Postp.' : (isInPlay ? rawClock : 'NS');
+
+                let matchDate = now;
+                if (ev.Esd && String(ev.Esd).length >= 12) {
+                    const s = String(ev.Esd);
+                    const yr = parseInt(s.slice(0, 4), 10);
+                    const mo = parseInt(s.slice(4, 6), 10) - 1;
+                    const da = parseInt(s.slice(6, 8), 10);
+                    const hr = parseInt(s.slice(8, 10), 10);
+                    const mi = parseInt(s.slice(10, 12), 10);
+                    matchDate = new Date(Date.UTC(yr, mo, da, hr, mi));
+                }
+
+                const scoreboardDate = formatDateToScoreboard(matchDate);
+                const homeCrest = h.Img ? (h.Img.startsWith('http') ? h.Img : `https://static.livescore.com/${h.Img}`) : '';
+                const awayCrest = a.Img ? (a.Img.startsWith('http') ? a.Img : `https://static.livescore.com/${a.Img}`) : '';
+
+                const matchDoc = {
+                    source: {
+                        provider: 'livescore',
+                        event_id: eid,
+                        competition_id: String(stage.CompId || stage.Sid || targetSlug),
+                        uid: `ls:${eid}`,
+                        modified_at: now
+                    },
+                    league_slug: targetSlug,
+                    scoreboard_date: scoreboardDate,
+                    date: matchDate,
+                    name: `${homeName} vs ${awayName}`,
+                    short_name: `${h.Abr || homeName.slice(0, 3)} vs ${a.Abr || awayName.slice(0, 3)}`,
+                    season: {
+                        year: matchDate.getUTCFullYear(),
+                        type_id: '1',
+                        slug: 'regular-season',
+                        name: `${leagueDef.name} ${matchDate.getUTCFullYear()}`
+                    },
+                    status: {
+                        state,
+                        name: state === 'in' ? 'STATUS_IN_PROGRESS' : state === 'post' ? 'STATUS_FINAL' : 'STATUS_SCHEDULED',
+                        description: state === 'in' ? 'In Progress' : state === 'post' ? (isPostponed ? 'Postponed' : 'Full Time') : 'Scheduled',
+                        detail: displayClock,
+                        short_detail: displayClock,
+                        clock: displayClock,
+                        clock_seconds: parseInt(displayClock, 10) ? parseInt(displayClock, 10) * 60 : (displayClock === 'HT' ? 2700 : 0),
+                        period: ev.Epr || (displayClock === 'HT' ? 1 : 2),
+                        completed: isFinished,
+                        suspended: isPostponed
+                    },
+                    home: {
+                        source_id: String(h.ID || homeName.toLowerCase().replace(/[^a-z0-9]+/g, '-')),
+                        name: homeName,
+                        display_name: homeName,
+                        abbreviation: h.Abr || homeName.slice(0, 3).toUpperCase(),
+                        logo: homeCrest,
+                        score: isNaN(homeScore) ? 0 : homeScore,
+                        winner: isFinished && homeScore > awayScore,
+                        form: ''
+                    },
+                    away: {
+                        source_id: String(a.ID || awayName.toLowerCase().replace(/[^a-z0-9]+/g, '-')),
+                        name: awayName,
+                        display_name: awayName,
+                        abbreviation: a.Abr || awayName.slice(0, 3).toUpperCase(),
+                        logo: awayCrest,
+                        score: isNaN(awayScore) ? 0 : awayScore,
+                        winner: isFinished && awayScore > homeScore,
+                        form: ''
+                    },
+                    venue: {
+                        name: 'Stadium',
+                        city: country,
+                        country
+                    },
+                    attendance: 0,
+                    note: leagueDef.name,
+                    play_by_play_available: true,
+                    broadcasts: [],
+                    key_events: [],
+                    last_synced_at: now
+                };
+
+                await SoccerMatch.updateOne(
+                    {
+                        $or: [
+                            { 'source.event_id': eid },
+                            {
+                                league_slug: targetSlug,
+                                scoreboard_date: scoreboardDate,
+                                'home.name': homeName,
+                                'away.name': awayName
+                            }
+                        ]
+                    },
+                    {
+                        $set: matchDoc,
+                        $setOnInsert: { created_at: now }
+                    },
+                    { upsert: true }
+                );
+
+                await SoccerClub.updateOne(
+                    { source_id: String(h.ID || homeName.toLowerCase().replace(/[^a-z0-9]+/g, '-')) },
+                    {
+                        $set: {
+                            name: homeName,
+                            display_name: homeName,
+                            abbreviation: h.Abr || homeName.slice(0, 3).toUpperCase(),
+                            country,
+                            logo: homeCrest,
+                            active: true,
+                            last_synced_at: now
+                        },
+                        $addToSet: { league_slugs: targetSlug },
+                        $setOnInsert: {
+                            slug: homeName.toLowerCase().replace(/[^a-z0-9]+/g, '-'),
+                            created_at: now
+                        }
+                    },
+                    { upsert: true }
+                ).catch(() => {});
+
+                await SoccerClub.updateOne(
+                    { source_id: String(a.ID || awayName.toLowerCase().replace(/[^a-z0-9]+/g, '-')) },
+                    {
+                        $set: {
+                            name: awayName,
+                            display_name: awayName,
+                            abbreviation: a.Abr || awayName.slice(0, 3).toUpperCase(),
+                            country,
+                            logo: awayCrest,
+                            active: true,
+                            last_synced_at: now
+                        },
+                        $addToSet: { league_slugs: targetSlug },
+                        $setOnInsert: {
+                            slug: awayName.toLowerCase().replace(/[^a-z0-9]+/g, '-'),
+                            created_at: now
+                        }
+                    },
+                    { upsert: true }
+                ).catch(() => {});
+
+                updatedCount++;
+            }
+        }
+
+        // Clean up any stale livescore in-play matches that have concluded (started > 130 minutes ago) and are no longer in the active live feed
+        const twoHoursTenMinsAgo = new Date(Date.now() - 130 * 60 * 1000);
+        await SoccerMatch.updateMany(
+            {
+                'source.provider': 'livescore',
+                'status.state': 'in',
+                date: { $lt: twoHoursTenMinsAgo },
+                'source.event_id': { $nin: [...activeLiveEventIds] }
+            },
+            {
+                $set: {
+                    'status.state': 'post',
+                    'status.name': 'STATUS_FINAL',
+                    'status.description': 'Full Time',
+                    'status.detail': 'FT',
+                    'status.short_detail': 'FT',
+                    'status.clock': 'FT',
+                    'status.completed': true
+                }
+            }
+        );
+    } catch (err) {
+        console.warn('[LiveSync] LiveScore in-play ingest notice:', err.message);
+    }
+    return updatedCount;
 }
 
 const REGIONAL_SCOREBOARD_FEEDS = [
@@ -716,6 +1027,10 @@ async function syncLiveScoreboards() {
             }
             updatedCount++;
         }
+
+        // Ingest real-time in-play matches across Asian, African, and European regional leagues
+        const liveInPlayCount = await syncLiveScoreInPlay();
+        updatedCount += liveInPlayCount;
     } catch (err) {
         console.warn('[LiveSync] Real-time scoreboard tick warning:', err.message);
     }
@@ -726,6 +1041,7 @@ module.exports = {
     syncLeague,
     syncAllLeagues,
     syncLiveScoreboards,
+    syncLiveScoreInPlay,
     resolveLeagueSlug,
     TARGET_LEAGUES
 };

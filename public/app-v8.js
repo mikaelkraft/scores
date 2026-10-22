@@ -117,7 +117,17 @@
         'uru.1': '🇺🇾',
         'crc.1': '🇨🇷',
         'hon.1': '🇭🇳',
-        'gua.1': '🇬🇹'
+        'gua.1': '🇬🇹',
+        'vie.1': '🇻🇳',
+        'irn.1': '🇮🇷',
+        'uae.1': '🇦🇪',
+        'uzb.1': '🇺🇿',
+        'rou.2': '🇷🇴',
+        'mne.1': '🇲🇪',
+        'qat.1': '🇶🇦',
+        'irq.1': '🇮🇶',
+        'jor.1': '🇯🇴',
+        'bhr.1': '🇧🇭'
     };
 
     let currentTimezone = localStorage.getItem('norra_timezone') || Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
@@ -407,12 +417,13 @@
                     status: {
                         type: {
                             state: 'in',
-                            name: m.status.name,
-                            description: m.status.description,
-                            detail: m.status.clock
+                            name: m.status?.name,
+                            description: m.status?.description,
+                            detail: m.status?.clock
                         },
-                        displayClock: m.status.clock,
-                        period: m.status.period
+                        clock: m.status?.clock,
+                        displayClock: m.status?.clock,
+                        period: m.status?.period
                     },
                     competitions: [{
                         id: m.id,
@@ -2103,7 +2114,8 @@
         // Background poll every 8 seconds for rapid in-play score changes
         window.clearInterval(state.liveSyncTimer);
         state.liveSyncTimer = window.setInterval(syncLiveScores, 8000);
-        // Initial quick check
+        // Immediate check and subsequent check
+        syncLiveScores();
         setTimeout(syncLiveScores, 1500);
     }
 

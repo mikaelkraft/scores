@@ -106,10 +106,15 @@ router.get(['/live', '/livescores'], async (req, res) => {
             liveFilter.league_slug = String(league).toLowerCase();
         }
 
-        const [liveMatches, storedLeagues] = await Promise.all([
-            SoccerMatch.find(liveFilter).sort({ date: 1 }).lean(),
-            SoccerLeague.find({ active: true }).lean()
-        ]);
+        let liveMatches = await SoccerMatch.find(liveFilter).sort({ date: 1 }).lean();
+        if (liveMatches.length === 0) {
+            try {
+                const { syncLiveScoreInPlay } = require('../services/soccerSyncService');
+                await syncLiveScoreInPlay();
+                liveMatches = await SoccerMatch.find(liveFilter).sort({ date: 1 }).lean();
+            } catch {}
+        }
+        const storedLeagues = await SoccerLeague.find({ active: true }).lean();
 
         const leagueMap = new Map(storedLeagues.map(l => [l.slug, l]));
 
@@ -222,6 +227,7 @@ router.get('/fixtures', async (req, res) => {
         // Status filtering
         if (status === 'live') {
             filter['status.state'] = 'in';
+            delete filter.scoreboard_date;
         } else if (status === 'scheduled') {
             filter['status.state'] = 'pre';
         } else if (status === 'finished') {
