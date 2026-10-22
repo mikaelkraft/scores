@@ -690,6 +690,8 @@ module.exports = app => {
             return sendSitemap(res, [
                 { loc: `${baseUrl}/`, lastmod: fallbackDate },
                 { loc: `${baseUrl}/football-api`, lastmod: fallbackDate },
+                { loc: `${baseUrl}/pricing`, lastmod: fallbackDate },
+                { loc: `${baseUrl}/docs`, lastmod: fallbackDate },
                 ...countries.map(country => ({
                     loc: `${baseUrl}/football/country/${slugifyCountry(country)}`,
                     lastmod: fallbackDate

@@ -173,6 +173,16 @@ app.use('/uploads', express.static(path.join(__dirname, 'public', 'uploads'), {
     maxAge: config.isProd ? '30d' : 0
 }));
 
+// Commercial Pricing Page
+app.get(['/pricing', '/pricing/'], (req, res) => {
+    return res.sendFile(path.join(__dirname, 'public', 'pricing', 'index.html'));
+});
+
+// Developer Documentation Portal
+app.get(['/docs', '/docs/'], (req, res) => {
+    return res.sendFile(path.join(__dirname, 'public', 'docs', 'index.html'));
+});
+
 // Customer Account Portal
 app.get(['/account', '/account/'], (req, res) => {
     return res.sendFile(path.join(__dirname, 'public', 'account', 'index.html'));

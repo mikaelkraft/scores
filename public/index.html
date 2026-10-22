@@ -65,9 +65,9 @@
                 <a class="nav-link active" href="/" id="nav-scores-link">Scores</a>
                 <button class="nav-link nav-btn-live" type="button" id="header-live-btn"><span class="live-pulse-dot" aria-hidden="true"></span>Live</button>
                 <a class="nav-link nav-link-norra" href="https://mynorra.xyz" target="_blank" rel="noopener">Predictions <span class="ext-icon" aria-hidden="true">↗</span></a>
-                <a class="nav-link" href="/football-api">Pricing</a>
+                <a class="nav-link" href="/pricing">Pricing</a>
+                <a class="nav-link docs-link" href="/docs">Docs</a>
                 <a class="nav-link" href="/account" id="nav-account-link">Account</a>
-                <a class="nav-link docs-link" href="/api-docs/">Docs <span aria-hidden="true">↗</span></a>
                 <button class="btn-icon-toggle" id="theme-toggle" type="button" aria-label="Toggle light/dark theme" title="Toggle theme">🌓</button>
             </div>
         </nav>
@@ -213,20 +213,127 @@
         <!-- Featured Promos Grid -->
         <div class="hero-promos-grid shell" id="hero-promos-container" aria-label="Featured sports bookmakers" style="margin-top:24px;"></div>
 
-        <!-- SEO Knowledge Base & Search Engine Directory (Cleanly Collapsed for Clutter-Free Live Scores) -->
-        <details class="seo-crawler-details shell" style="margin:40px auto 20px; border-top:1px solid var(--border-subtle); padding:20px 16px 0; font-size:12px; color:var(--text-muted);">
-            <summary style="cursor:pointer; font-weight:700; color:var(--text-muted); padding:8px 0; user-select:none;">Football Leagues &amp; SEO Directory Index (Click to expand)</summary>
-            <div style="padding-top:16px;">
-                <h1 id="page-title" style="font-size:15px; margin-bottom:8px; color:var(--text-main);">{{SEO_HEADING}}</h1>
-                <p id="page-lede" style="margin-bottom:16px; color:var(--text-muted);">{{SEO_LEDE}}</p>
-                {{SEO_CONTENT}}
+        <!-- Commercial Sports API & Live Data Pricing (Expanded) -->
+        <section class="pricing-page-section shell" id="pricing-page-section" aria-label="Commercial Sports API Plans" style="margin: 36px auto 20px;">
+            <div class="pricing-hero">
+                <span class="pricing-badge">Commercial Sports Data API</span>
+                <h2 class="pricing-title">Flexible Plans for Every Developer &amp; Brand</h2>
+                <p class="pricing-subtitle">
+                    Power your sports apps, prediction algorithms, and fantasy platforms with sub-second livescores, global fixtures, standings, and universal booking code conversion across 50+ world leagues.
+                </p>
+            </div>
+
+            <div class="pricing-grid-4">
+                <!-- Free Developer -->
+                <div class="pricing-card">
+                    <div>
+                        <h3 class="pricing-tier-name">Free Developer</h3>
+                        <p class="pricing-tier-desc">Ideal for testing, hackathons, and hobby applications.</p>
+                        <div class="pricing-tier-price">
+                            <span class="currency">$</span>
+                            <span class="amount">0</span>
+                            <span class="interval">/month</span>
+                        </div>
+                        <div class="pricing-local-estimate">Always Free &bull; No credit card required</div>
+                        <ul class="pricing-feature-list">
+                            <li>120 requests / minute</li>
+                            <li>50+ world leagues &amp; cups</li>
+                            <li>Live scoreboards &amp; minute tickers</li>
+                            <li>Full fixture dates &amp; historical results</li>
+                            <li>League tables &amp; standings</li>
+                            <li>Community developer support</li>
+                        </ul>
+                    </div>
+                    <a href="/account" class="pricing-cta-btn secondary">Get Free API Key</a>
+                </div>
+
+                <!-- Starter Plan -->
+                <div class="pricing-card">
+                    <div>
+                        <h3 class="pricing-tier-name">Starter Plan</h3>
+                        <p class="pricing-tier-desc">For growing sports blogs, livescore sites, and tipster bots.</p>
+                        <div class="pricing-tier-price">
+                            <span class="currency">$</span>
+                            <span class="amount">19</span>
+                            <span class="interval">/month</span>
+                        </div>
+                        <div class="pricing-local-estimate">~₦30,000 /mo &bull; Billed monthly</div>
+                        <ul class="pricing-feature-list">
+                            <li>500 requests / minute</li>
+                            <li>All 50+ world competitions</li>
+                            <li>Universal Bet Booking Code Converter</li>
+                            <li>Ad-free clean JSON payloads</li>
+                            <li>Team H2H head-to-head records</li>
+                            <li>Standard email support</li>
+                        </ul>
+                    </div>
+                    <a href="/account?plan=starter" class="pricing-cta-btn secondary">Subscribe Starter</a>
+                </div>
+
+                <!-- Pro Developer (Popular) -->
+                <div class="pricing-card is-popular">
+                    <span class="popular-ribbon">Most Popular</span>
+                    <div>
+                        <h3 class="pricing-tier-name">Pro Developer</h3>
+                        <p class="pricing-tier-desc">For serious commercial apps, betting syndicates, and media portals.</p>
+                        <div class="pricing-tier-price">
+                            <span class="currency">$</span>
+                            <span class="amount">49</span>
+                            <span class="interval">/month</span>
+                        </div>
+                        <div class="pricing-local-estimate">~₦78,000 /mo &bull; Billed monthly</div>
+                        <ul class="pricing-feature-list">
+                            <li>1,500 requests / minute</li>
+                            <li>Sub-second real-time score updates</li>
+                            <li>Full timeline plays, goals &amp; cards</li>
+                            <li>Universal Booking Code API hook</li>
+                            <li>Priority webhook delivery</li>
+                            <li>Priority 24/7 technical SLA</li>
+                        </ul>
+                    </div>
+                    <a href="/account?plan=pro" class="pricing-cta-btn primary">Subscribe Pro</a>
+                </div>
+
+                <!-- Enterprise Whitelabel -->
+                <div class="pricing-card">
+                    <div>
+                        <h3 class="pricing-tier-name">Enterprise Whitelabel</h3>
+                        <p class="pricing-tier-desc">Complete whitelabel sports data engine &amp; predictions integration.</p>
+                        <div class="pricing-tier-price">
+                            <span class="currency">$</span>
+                            <span class="amount">99</span>
+                            <span class="interval">/month</span>
+                        </div>
+                        <div class="pricing-local-estimate">~₦158,000 /mo &bull; Billed monthly</div>
+                        <ul class="pricing-feature-list">
+                            <li>5,000 requests / minute (High Throughput)</li>
+                            <li>Custom whitelabel branded match centers</li>
+                            <li>Direct Norra AI Prediction Engine access</li>
+                            <li>Multi-bookmaker odds &amp; slip conversion</li>
+                            <li>Dedicated account manager &amp; Slack channel</li>
+                            <li>Custom contract &amp; 99.9% uptime SLA</li>
+                        </ul>
+                    </div>
+                    <a href="/account?plan=whitelabel" class="pricing-cta-btn secondary">Upgrade to Whitelabel</a>
+                </div>
+            </div>
+        </section>
+
+        <!-- SEO Knowledge Base & Competition Directory (Permanently Expanded Clean Section) -->
+        <section class="seo-crawler-details seo-knowledge-section shell" id="seo-knowledge-section">
+            <div class="seo-knowledge-inner">
+                <h1 id="page-title" class="seo-page-title" style="font-size:16px; margin:0 0 8px; color:var(--text-main);">{{SEO_HEADING}}</h1>
+                <p id="page-lede" class="seo-page-lede" style="margin:0 0 16px; color:var(--text-muted); line-height:1.6;">{{SEO_LEDE}}</p>
+                <div class="seo-page-body">
+                    {{SEO_CONTENT}}
+                </div>
                 <div style="display:none;" aria-hidden="true">
                     <a href="/ai-data-guide.md">AI Data Guide</a>
                     <a href="/openapi.json">OpenAPI Spec</a>
                     <a href="/service-info.json">Service Information</a>
                 </div>
             </div>
-        </details>
+        </section>
 
         <noscript><p class="shell noscript-note">JavaScript is required for interactive live updates. League guides, fixtures and SEO content remain available below.</p></noscript>
 
@@ -273,7 +380,7 @@
                         <li><a href="/" id="footer-link-today">Today's Live Scores</a></li>
                         <li><a href="/" id="footer-link-fixtures">League Fixtures</a></li>
                         <li><a href="/" id="footer-link-standings">League Standings</a></li>
-                        <li><a href="/football-api">API Pricing Plans</a></li>
+                        <li><a href="/pricing">API Pricing Plans</a></li>
                         <li><a href="/account">Booking Converter</a></li>
                     </ul>
                 </div>
@@ -292,11 +399,11 @@
                 <div class="footer-col">
                     <h4>Platform &amp; Legal</h4>
                     <ul class="footer-col-links">
-                        <li><a href="/api-docs/">API Documentation</a></li>
+                        <li><a href="/docs">API Documentation</a></li>
+                        <li><a href="/api-docs/" target="_blank" rel="noopener">Swagger Console ↗</a></li>
                         <li><a href="/account">Developer Portal &amp; Keys</a></li>
                         <li><a href="/terms">Terms of Service</a></li>
                         <li><a href="/privacy">Privacy Policy</a></li>
-                        <li><a href="https://mynorra.xyz" target="_blank" rel="noopener">Norra AI Main</a></li>
                     </ul>
                 </div>
             </div>
@@ -310,12 +417,19 @@
                 <div class="footer-bottom-links">
                     <a href="/terms">Terms</a>
                     <a href="/privacy">Privacy</a>
-                    <a href="/api-docs/">API Docs</a>
+                    <a href="/pricing">Pricing</a>
+                    <a href="/docs">Docs</a>
                     <a href="https://mynorra.xyz" target="_blank" rel="noopener">Norra AI</a>
                 </div>
             </div>
         </div>
     </footer>
+
+    <!-- Floating Sticky Action Dock (Back to Top + Theme Switcher) -->
+    <aside class="sticky-action-dock" id="sticky-action-dock" aria-label="Quick page actions">
+        <button id="sticky-back-to-top" class="sticky-action-btn sticky-back-to-top" type="button" aria-label="Back to top" title="Scroll to top of page">↑</button>
+        <button id="sticky-theme-toggle" class="sticky-action-btn" type="button" aria-label="Toggle dark/light theme" title="Toggle theme">🌓</button>
+    </aside>
 
     <script src="/assets/app-v8.js" defer></script>
 </body>

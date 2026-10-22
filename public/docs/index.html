@@ -1,0 +1,577 @@
+<!doctype html>
+<html lang="en" dir="ltr" data-theme="dark">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Developer Documentation &amp; API Reference | Scores by Norra AI</title>
+    <meta name="description" content="Comprehensive REST API documentation for real-time live football scores, fixtures, standings, H2H, and booking code conversion across 50+ world leagues.">
+    <link rel="canonical" href="https://scores.mynorra.xyz/docs">
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+    <link rel="stylesheet" href="/assets/styles-v8.css">
+    <style>
+        .docs-layout {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 30px 20px 80px;
+            display: grid;
+            grid-template-columns: 240px 1fr;
+            gap: 36px;
+        }
+        @media (max-width: 860px) {
+            .docs-layout {
+                grid-template-columns: 1fr;
+            }
+            .docs-sidebar {
+                display: none;
+            }
+        }
+        .docs-sidebar {
+            position: sticky;
+            top: 70px;
+            height: calc(100vh - 90px);
+            overflow-y: auto;
+            padding-right: 12px;
+            border-right: 1px solid var(--border-subtle);
+        }
+        .docs-nav-group {
+            margin-bottom: 24px;
+        }
+        .docs-nav-title {
+            font-size: 11px;
+            font-weight: 800;
+            text-transform: uppercase;
+            letter-spacing: 0.8px;
+            color: var(--text-faint);
+            margin: 0 0 10px;
+        }
+        .docs-nav-links {
+            list-style: none;
+            padding: 0;
+            margin: 0;
+        }
+        .docs-nav-links li {
+            margin-bottom: 4px;
+        }
+        .docs-nav-links a {
+            display: block;
+            padding: 6px 10px;
+            border-radius: 6px;
+            font-size: 13px;
+            color: var(--text-muted);
+            text-decoration: none;
+            transition: var(--transition-smooth);
+        }
+        .docs-nav-links a:hover, .docs-nav-links a.active {
+            color: var(--color-primary);
+            background: var(--color-primary-subtle);
+            font-weight: 600;
+        }
+        .docs-content {
+            min-width: 0;
+        }
+        .docs-hero {
+            margin-bottom: 36px;
+            border-bottom: 1px solid var(--border-subtle);
+            padding-bottom: 24px;
+        }
+        .docs-hero h1 {
+            font-size: 32px;
+            font-weight: 800;
+            color: var(--text-main);
+            margin: 0 0 12px;
+            letter-spacing: -0.5px;
+        }
+        .docs-hero p {
+            font-size: 15px;
+            line-height: 1.6;
+            color: var(--text-muted);
+            margin: 0 0 18px;
+        }
+        .swagger-callout {
+            background: linear-gradient(135deg, rgba(37, 99, 235, 0.12), rgba(16, 185, 129, 0.08));
+            border: 1px solid var(--color-primary);
+            border-radius: 10px;
+            padding: 16px 20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 12px;
+            margin-top: 16px;
+        }
+        .swagger-callout strong {
+            color: var(--text-main);
+            font-size: 14px;
+            display: block;
+            margin-bottom: 2px;
+        }
+        .swagger-callout span {
+            color: var(--text-muted);
+            font-size: 13px;
+        }
+        .swagger-btn {
+            background: var(--color-primary);
+            color: #ffffff;
+            padding: 8px 16px;
+            border-radius: 6px;
+            font-size: 13px;
+            font-weight: 700;
+            text-decoration: none;
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            transition: var(--transition-smooth);
+        }
+        .swagger-btn:hover {
+            background: var(--color-primary-hover);
+        }
+        .endpoint-card {
+            background: var(--bg-surface);
+            border: 1px solid var(--border-subtle);
+            border-radius: 12px;
+            padding: 24px;
+            margin-bottom: 28px;
+            scroll-margin-top: 80px;
+        }
+        .endpoint-header {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            margin-bottom: 12px;
+            flex-wrap: wrap;
+        }
+        .http-method {
+            font-size: 12px;
+            font-weight: 800;
+            padding: 3px 8px;
+            border-radius: 4px;
+            text-transform: uppercase;
+        }
+        .http-method.get {
+            background: rgba(16, 185, 129, 0.15);
+            color: #10b981;
+            border: 1px solid rgba(16, 185, 129, 0.3);
+        }
+        .http-method.post {
+            background: rgba(37, 99, 235, 0.15);
+            color: var(--color-primary);
+            border: 1px solid rgba(37, 99, 235, 0.3);
+        }
+        .endpoint-path {
+            font-family: monospace;
+            font-size: 15px;
+            font-weight: 700;
+            color: var(--text-main);
+        }
+        .endpoint-desc {
+            font-size: 14px;
+            line-height: 1.6;
+            color: var(--text-muted);
+            margin: 0 0 16px;
+        }
+        .params-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 13px;
+            margin-bottom: 18px;
+        }
+        .params-table th, .params-table td {
+            padding: 8px 12px;
+            border-bottom: 1px solid var(--border-subtle);
+            text-align: left;
+        }
+        .params-table th {
+            color: var(--text-muted);
+            font-weight: 600;
+            background: var(--bg-surface-elevated);
+        }
+        .params-table code {
+            color: var(--color-primary);
+            font-size: 12px;
+        }
+        .code-snippet-box {
+            background: #080c14;
+            border: 1px solid var(--border-subtle);
+            border-radius: 8px;
+            overflow: hidden;
+            margin-top: 14px;
+        }
+        .code-snippet-header {
+            background: #0d131f;
+            padding: 8px 14px;
+            font-size: 12px;
+            font-weight: 700;
+            color: var(--text-muted);
+            border-bottom: 1px solid var(--border-subtle);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .code-snippet-box pre {
+            margin: 0;
+            padding: 14px;
+            font-family: monospace;
+            font-size: 12.5px;
+            line-height: 1.5;
+            color: #d1d5db;
+            overflow-x: auto;
+        }
+    </style>
+</head>
+<body>
+    <header class="site-header">
+        <nav class="nav shell" aria-label="Main navigation">
+            <a class="brand" href="/" aria-label="Scores by Norra AI home">
+                <div class="brand-text">
+                    <span class="brand-icon" aria-hidden="true">⚽</span>
+                    <strong>Norra Scores</strong>
+                </div>
+            </a>
+            <div class="nav-actions">
+                <a class="nav-link" href="/">Scores</a>
+                <a class="nav-link" href="/#live">Live</a>
+                <a class="nav-link nav-link-norra" href="https://mynorra.xyz" target="_blank" rel="noopener">Predictions <span class="ext-icon" aria-hidden="true">↗</span></a>
+                <a class="nav-link" href="/pricing">Pricing</a>
+                <a class="nav-link active" href="/docs">Docs</a>
+                <a class="nav-link" href="/account">Account</a>
+                <button class="btn-icon-toggle" id="theme-toggle" type="button" aria-label="Toggle theme">🌓</button>
+            </div>
+        </nav>
+    </header>
+
+    <div class="docs-layout">
+        <!-- Sidebar Navigation -->
+        <aside class="docs-sidebar">
+            <div class="docs-nav-group">
+                <div class="docs-nav-title">Overview</div>
+                <ul class="docs-nav-links">
+                    <li><a href="#overview">Getting Started</a></li>
+                    <li><a href="#authentication">Authentication</a></li>
+                    <li><a href="#rate-limits">Rate Limits &amp; SLA</a></li>
+                </ul>
+            </div>
+            <div class="docs-nav-group">
+                <div class="docs-nav-title">Football Endpoints</div>
+                <ul class="docs-nav-links">
+                    <li><a href="#ep-live">Live In-Play Scores</a></li>
+                    <li><a href="#ep-fixtures">Fixtures &amp; Schedules</a></li>
+                    <li><a href="#ep-leagues">League Catalog</a></li>
+                    <li><a href="#ep-standings">Standings Tables</a></li>
+                    <li><a href="#ep-match">Match Summary &amp; Plays</a></li>
+                    <li><a href="#ep-h2h">Head-to-Head (H2H)</a></li>
+                    <li><a href="#ep-teams">Team Profiles</a></li>
+                </ul>
+            </div>
+            <div class="docs-nav-group">
+                <div class="docs-nav-title">Betting Tools</div>
+                <ul class="docs-nav-links">
+                    <li><a href="#ep-booking">Booking Code Converter</a></li>
+                </ul>
+            </div>
+            <div class="docs-nav-group">
+                <div class="docs-nav-title">Interactive Consoles</div>
+                <ul class="docs-nav-links">
+                    <li><a href="/api-docs/" target="_blank" rel="noopener">Swagger UI Console ↗</a></li>
+                    <li><a href="/openapi.json" target="_blank" rel="noopener">OpenAPI Specification ↗</a></li>
+                    <li><a href="/service-info.json" target="_blank" rel="noopener">Service Info JSON ↗</a></li>
+                </ul>
+            </div>
+        </aside>
+
+        <!-- Main Documentation Content -->
+        <main class="docs-content">
+            <section class="docs-hero" id="overview">
+                <h1>Norra AI Football API Reference</h1>
+                <p>
+                    A developer-first, high-throughput commercial sports data platform providing sub-second live scores, comprehensive fixture histories, standings, and universal betting code conversions across 50+ world leagues.
+                </p>
+
+                <div class="swagger-callout">
+                    <div>
+                        <strong>Interactive OpenAPI 3.0 Console</strong>
+                        <span>Test live requests in your browser with real parameters and curl generation.</span>
+                    </div>
+                    <a href="/api-docs/" class="swagger-btn" target="_blank" rel="noopener">Open Swagger UI &rarr;</a>
+                </div>
+            </section>
+
+            <!-- Authentication -->
+            <section class="endpoint-card" id="authentication">
+                <div class="endpoint-header">
+                    <h2 style="font-size:18px; margin:0; color:var(--text-main);">Authentication &amp; API Keys</h2>
+                </div>
+                <p class="endpoint-desc">
+                    Most public discovery endpoints are open to all visitors. For commercial throughput (up to 5,000 req/min) and advanced tools like the Bet Booking Converter, pass your API key using one of the following methods:
+                </p>
+                <div class="code-snippet-box">
+                    <div class="code-snippet-header">
+                        <span>Authentication Headers</span>
+                        <span>HTTP</span>
+                    </div>
+                    <pre><code># 1. Custom Header (Recommended)
+x-api-key: your_api_key_here
+
+# 2. Bearer Token Authorization
+Authorization: Bearer your_api_key_here
+
+# 3. Query Parameter (Development only)
+https://scores.mynorra.xyz/api/v1/football/live?api_key=your_api_key_here</code></pre>
+                </div>
+                <p style="margin-top:14px; font-size:13px; color:var(--text-muted);">
+                    Get your key instantly in the <a href="/account" style="color:var(--color-primary); font-weight:600;">Developer Portal</a>.
+                </p>
+            </section>
+
+            <!-- Live Matches -->
+            <section class="endpoint-card" id="ep-live">
+                <div class="endpoint-header">
+                    <span class="http-method get">GET</span>
+                    <span class="endpoint-path">/api/v1/football/live</span>
+                </div>
+                <p class="endpoint-desc">
+                    Returns global in-play matches across all 50+ supported competitions in a single, high-speed call. Features live minute clocks, current scores, and recent event summaries.
+                </p>
+                <table class="params-table">
+                    <thead>
+                        <tr>
+                            <th>Parameter</th>
+                            <th>Type</th>
+                            <th>Description</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td><code>league</code></td>
+                            <td>query string</td>
+                            <td>Optional competition slug (e.g., <code>eng.1</code>, <code>esp.1</code>, <code>uefa.champions</code>) to filter by. Defaults to <code>all</code>.</td>
+                        </tr>
+                    </tbody>
+                </table>
+                <div class="code-snippet-box">
+                    <div class="code-snippet-header">
+                        <span>Example Request &bull; cURL</span>
+                        <span>Terminal</span>
+                    </div>
+                    <pre><code>curl -s "https://scores.mynorra.xyz/api/v1/football/live" \
+  -H "x-api-key: YOUR_KEY"</code></pre>
+                </div>
+                <div class="code-snippet-box">
+                    <div class="code-snippet-header">
+                        <span>Example Response</span>
+                        <span>JSON</span>
+                    </div>
+                    <pre><code>{
+  "status": "success",
+  "count": 2,
+  "live": [
+    {
+      "id": "700123",
+      "league": { "slug": "eng.1", "name": "Premier League", "country": "England" },
+      "status": { "state": "in", "clock": "64'", "period": 2, "isLive": true },
+      "home": { "displayName": "Arsenal", "score": 2 },
+      "away": { "displayName": "Chelsea", "score": 1 }
+    }
+  ]
+}</code></pre>
+                </div>
+            </section>
+
+            <!-- Fixtures -->
+            <section class="endpoint-card" id="ep-fixtures">
+                <div class="endpoint-header">
+                    <span class="http-method get">GET</span>
+                    <span class="endpoint-path">/api/v1/football/fixtures</span>
+                </div>
+                <p class="endpoint-desc">
+                    Query matches by date and status across all competitions. Accepts natural aliases (<code>today</code>, <code>yesterday</code>, <code>tomorrow</code>) or ISO dates (<code>YYYY-MM-DD</code>).
+                </p>
+                <table class="params-table">
+                    <thead>
+                        <tr>
+                            <th>Parameter</th>
+                            <th>Type</th>
+                            <th>Description</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td><code>date</code></td>
+                            <td>query string</td>
+                            <td><code>today</code>, <code>yesterday</code>, <code>tomorrow</code>, or <code>2026-10-22</code></td>
+                        </tr>
+                        <tr>
+                            <td><code>status</code></td>
+                            <td>query string</td>
+                            <td><code>all</code>, <code>live</code>, <code>scheduled</code>, or <code>finished</code></td>
+                        </tr>
+                        <tr>
+                            <td><code>league</code></td>
+                            <td>query string</td>
+                            <td>Specific competition slug (e.g. <code>ger.1</code>)</td>
+                        </tr>
+                    </tbody>
+                </table>
+                <div class="code-snippet-box">
+                    <div class="code-snippet-header">
+                        <span>Fetch Fixtures &bull; JavaScript</span>
+                        <span>Node.js / Browser</span>
+                    </div>
+                    <pre><code>const response = await fetch("https://scores.mynorra.xyz/api/v1/football/fixtures?date=today&status=all");
+const data = await response.json();
+console.log(`Loaded ${data.count} matches today.`);</code></pre>
+                </div>
+            </section>
+
+            <!-- League Catalog -->
+            <section class="endpoint-card" id="ep-leagues">
+                <div class="endpoint-header">
+                    <span class="http-method get">GET</span>
+                    <span class="endpoint-path">/api/v1/football/leagues</span>
+                </div>
+                <p class="endpoint-desc">
+                    Retrieves the complete catalog of all 50+ actively synchronized competitions, their official country, season details, and stored match counts.
+                </p>
+                <div class="code-snippet-box">
+                    <div class="code-snippet-header">
+                        <span>Example Request &bull; Python</span>
+                        <span>Python 3</span>
+                    </div>
+                    <pre><code>import requests
+
+res = requests.get("https://scores.mynorra.xyz/api/v1/football/leagues")
+leagues = res.json()["leagues"]
+for lg in leagues:
+    print(f"{lg['name']} ({lg['country']}) - Slug: {lg['slug']}")</code></pre>
+                </div>
+            </section>
+
+            <!-- Standings -->
+            <section class="endpoint-card" id="ep-standings">
+                <div class="endpoint-header">
+                    <span class="http-method get">GET</span>
+                    <span class="endpoint-path">/api/v1/football/standings/:league</span>
+                </div>
+                <p class="endpoint-desc">
+                    Full league table standings with points, games played, goal differences, wins, draws, and losses.
+                </p>
+                <div class="code-snippet-box">
+                    <div class="code-snippet-header">
+                        <span>Example Request</span>
+                        <span>cURL</span>
+                    </div>
+                    <pre><code>curl -s "https://scores.mynorra.xyz/api/v1/football/standings/eng.1"</code></pre>
+                </div>
+            </section>
+
+            <!-- Booking Code Converter -->
+            <section class="endpoint-card" id="ep-booking">
+                <div class="endpoint-header">
+                    <span class="http-method post">POST</span>
+                    <span class="endpoint-path">/api/booking/convert</span>
+                </div>
+                <p class="endpoint-desc">
+                    Universal betting slip converter. Takes a booking code from a source bookmaker (e.g. <code>SportyBet</code>) and reconstructs the slip selections for a target bookmaker (e.g. <code>Bet9ja</code>, <code>1xBet</code>, <code>Betway</code>).
+                </p>
+                <table class="params-table">
+                    <thead>
+                        <tr>
+                            <th>Field</th>
+                            <th>Type</th>
+                            <th>Description</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td><code>code</code></td>
+                            <td>string (required)</td>
+                            <td>The booking code to translate (e.g. <code>BC12345</code>)</td>
+                        </tr>
+                        <tr>
+                            <td><code>fromProvider</code></td>
+                            <td>string (required)</td>
+                            <td>Source bookmaker (e.g. <code>sportybet</code>, <code>bet9ja</code>)</td>
+                        </tr>
+                        <tr>
+                            <td><code>toProvider</code></td>
+                            <td>string (required)</td>
+                            <td>Target bookmaker (e.g. <code>bet9ja</code>, <code>1xbet</code>, <code>betway</code>)</td>
+                        </tr>
+                    </tbody>
+                </table>
+                <div class="code-snippet-box">
+                    <div class="code-snippet-header">
+                        <span>Convert Code &bull; cURL</span>
+                        <span>Terminal</span>
+                    </div>
+                    <pre><code>curl -X POST "https://scores.mynorra.xyz/api/booking/convert" \
+  -H "Content-Type: application/json" \
+  -H "x-api-key: YOUR_KEY" \
+  -d '{
+    "code": "BC789XYZ",
+    "fromProvider": "sportybet",
+    "toProvider": "bet9ja"
+  }'</code></pre>
+                </div>
+            </section>
+        </main>
+    </div>
+
+    <footer class="site-footer">
+        <div class="shell">
+            <div class="footer-bottom">
+                <div>&copy; 2026 Norra AI (scores.mynorra.xyz). All rights reserved.</div>
+                <div class="footer-bottom-links">
+                    <a href="/">Scores</a>
+                    <a href="/pricing">Pricing</a>
+                    <a href="/docs">Docs</a>
+                    <a href="/account">Account</a>
+                    <a href="/terms">Terms</a>
+                    <a href="/privacy">Privacy</a>
+                </div>
+            </div>
+        </div>
+    </footer>
+
+    <!-- Floating Sticky Action Dock (Back to Top + Theme Switcher) -->
+    <aside class="sticky-action-dock" id="sticky-action-dock" aria-label="Quick page actions">
+        <button id="sticky-back-to-top" class="sticky-action-btn sticky-back-to-top" type="button" aria-label="Back to top" title="Scroll to top of page">↑</button>
+        <button id="sticky-theme-toggle" class="sticky-action-btn" type="button" aria-label="Toggle dark/light theme" title="Toggle theme">🌓</button>
+    </aside>
+
+    <script>
+        // Theme toggle logic
+        function applyTheme(theme) {
+            document.documentElement.setAttribute('data-theme', theme);
+            document.body.className = theme === 'light' ? 'theme-light' : '';
+            const t1 = document.getElementById('theme-toggle');
+            const t2 = document.getElementById('sticky-theme-toggle');
+            const icon = theme === 'light' ? '🌙' : '☀️';
+            if (t1) t1.textContent = icon;
+            if (t2) t2.textContent = icon;
+        }
+        const savedTheme = localStorage.getItem('norra_theme') || 'dark';
+        applyTheme(savedTheme);
+
+        [document.getElementById('theme-toggle'), document.getElementById('sticky-theme-toggle')].forEach(btn => {
+            if (btn) {
+                btn.addEventListener('click', () => {
+                    const current = document.documentElement.getAttribute('data-theme') || 'dark';
+                    const next = current === 'dark' ? 'light' : 'dark';
+                    applyTheme(next);
+                    localStorage.setItem('norra_theme', next);
+                });
+            }
+        });
+
+        // Back to top logic
+        const topBtn = document.getElementById('sticky-back-to-top');
+        if (topBtn) {
+            window.addEventListener('scroll', () => {
+                if (window.scrollY > 280) topBtn.classList.add('is-visible');
+                else topBtn.classList.remove('is-visible');
+            }, { passive: true });
+            topBtn.addEventListener('click', () => window.scrollTo({ top: 0, behavior: 'smooth' }));
+        }
+    </script>
+</body>
+</html>

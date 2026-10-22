@@ -45,7 +45,25 @@ const TARGET_LEAGUES = [
     { slug: 'esp.copa_del_rey', name: 'Copa del Rey', abbreviation: 'Copa del Rey', country: 'Spain', kind: 'club', sort_order: 29 },
     { slug: 'ita.coppa_italia', name: 'Coppa Italia', abbreviation: 'Coppa Italia', country: 'Italy', kind: 'club', sort_order: 30 },
     { slug: 'ger.dfb_pokal', name: 'German Cup', abbreviation: 'DFB-Pokal', country: 'Germany', kind: 'club', sort_order: 31 },
-    { slug: 'fra.coupe_de_france', name: 'Coupe de France', abbreviation: 'Coupe de France', country: 'France', kind: 'club', sort_order: 32 }
+    { slug: 'fra.coupe_de_france', name: 'Coupe de France', abbreviation: 'Coupe de France', country: 'France', kind: 'club', sort_order: 32 },
+    { slug: 'aut.1', name: 'Austrian Bundesliga', abbreviation: 'Austrian Bundesliga', country: 'Austria', kind: 'club', sort_order: 33 },
+    { slug: 'sui.1', name: 'Swiss Super League', abbreviation: 'Swiss Super League', country: 'Switzerland', kind: 'club', sort_order: 34 },
+    { slug: 'den.1', name: 'Danish Superliga', abbreviation: 'Superliga', country: 'Denmark', kind: 'club', sort_order: 35 },
+    { slug: 'gre.1', name: 'Super League Greece', abbreviation: 'Super League', country: 'Greece', kind: 'club', sort_order: 36 },
+    { slug: 'swe.1', name: 'Swedish Allsvenskan', abbreviation: 'Allsvenskan', country: 'Sweden', kind: 'club', sort_order: 37 },
+    { slug: 'nor.1', name: 'Norwegian Eliteserien', abbreviation: 'Eliteserien', country: 'Norway', kind: 'club', sort_order: 38 },
+    { slug: 'jpn.1', name: 'Japanese J1 League', abbreviation: 'J1 League', country: 'Japan', kind: 'club', sort_order: 39 },
+    { slug: 'aus.1', name: 'Australian A-League', abbreviation: 'A-League', country: 'Australia', kind: 'club', sort_order: 40 },
+    { slug: 'chn.1', name: 'Chinese Super League', abbreviation: 'CSL', country: 'China', kind: 'club', sort_order: 41 },
+    { slug: 'fin.1', name: 'Finnish Veikkausliiga', abbreviation: 'Veikkausliiga', country: 'Finland', kind: 'club', sort_order: 42 },
+    { slug: 'concacaf.champions', name: 'CONCACAF Champions Cup', abbreviation: 'Champions Cup', country: 'International', kind: 'club', sort_order: 43 },
+    { slug: 'caf.champions', name: 'CAF Champions League', abbreviation: 'CAF Champions', country: 'International', kind: 'club', sort_order: 44 },
+    { slug: 'afc.champions', name: 'AFC Champions League Elite', abbreviation: 'AFC Champions', country: 'International', kind: 'club', sort_order: 45 },
+    { slug: 'fifa.cwc', name: 'FIFA Club World Cup', abbreviation: 'Club World Cup', country: 'International', kind: 'club', sort_order: 46 },
+    { slug: 'uefa.super_cup', name: 'UEFA Super Cup', abbreviation: 'Super Cup', country: 'International', kind: 'club', sort_order: 47 },
+    { slug: 'conmebol.recopa', name: 'CONMEBOL Recopa', abbreviation: 'Recopa', country: 'International', kind: 'club', sort_order: 48 },
+    { slug: 'eng.w.1', name: 'Women\'s Super League', abbreviation: 'WSL', country: 'England', kind: 'club', sort_order: 49 },
+    { slug: 'usa.w.1', name: 'National Women\'s Soccer League', abbreviation: 'NWSL', country: 'United States', kind: 'club', sort_order: 50 }
 ];
 
 function fetchJson(url) {
@@ -457,6 +475,24 @@ function resolveLeagueSlug(altGameNote = '', compDesc = '', uid = '') {
     if (text.includes('liga mx') || text.includes('mex.1')) return 'mex.1';
     if (text.includes('libertadores') || text.includes('conmebol.libertadores')) return 'conmebol.libertadores';
     if (text.includes('sudamericana') || text.includes('conmebol.sudamericana')) return 'conmebol.sudamericana';
+    if (text.includes('recopa') || text.includes('conmebol.recopa')) return 'conmebol.recopa';
+    if (text.includes('super cup') || text.includes('uefa.super_cup')) return 'uefa.super_cup';
+    if (text.includes('club world cup') || text.includes('fifa.cwc')) return 'fifa.cwc';
+    if (text.includes('concacaf') || text.includes('concacaf.champions')) return 'concacaf.champions';
+    if (text.includes('caf') || text.includes('caf.champions')) return 'caf.champions';
+    if (text.includes('afc') || text.includes('afc.champions')) return 'afc.champions';
+    if (text.includes('austrian') || text.includes('aut.1')) return 'aut.1';
+    if (text.includes('swiss') || text.includes('sui.1')) return 'sui.1';
+    if (text.includes('danish') || text.includes('den.1')) return 'den.1';
+    if (text.includes('greek') || text.includes('gre.1')) return 'gre.1';
+    if (text.includes('allsvenskan') || text.includes('swe.1')) return 'swe.1';
+    if (text.includes('eliteserien') || text.includes('nor.1')) return 'nor.1';
+    if (text.includes('j1') || text.includes('j.league') || text.includes('jpn.1')) return 'jpn.1';
+    if (text.includes('a-league') || text.includes('aus.1')) return 'aus.1';
+    if (text.includes('chinese') || text.includes('csl') || text.includes('chn.1')) return 'chn.1';
+    if (text.includes('veikkausliiga') || text.includes('fin.1')) return 'fin.1';
+    if (text.includes('wsl') || text.includes('eng.w.1')) return 'eng.w.1';
+    if (text.includes('nwsl') || text.includes('usa.w.1')) return 'usa.w.1';
     return null;
 }
 

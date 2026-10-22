@@ -1,0 +1,444 @@
+<!doctype html>
+<html lang="en" dir="ltr" data-theme="dark">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Commercial Football API Pricing &amp; Plans | Scores by Norra AI</title>
+    <meta name="description" content="Flexible, developer-friendly pricing for real-time live football scores, fixtures, standings, and universal booking code conversion across 50+ world leagues.">
+    <link rel="canonical" href="https://scores.mynorra.xyz/pricing">
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+    <link rel="stylesheet" href="/assets/styles-v8.css">
+    <style>
+        .pricing-page-wrapper {
+            max-width: 1140px;
+            margin: 0 auto;
+            padding: 40px 20px 80px;
+        }
+        .currency-switch-wrap {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            gap: 8px;
+            margin: 20px 0 36px;
+        }
+        .currency-btn {
+            background: var(--bg-surface);
+            border: 1px solid var(--border-subtle);
+            color: var(--text-muted);
+            padding: 6px 14px;
+            border-radius: 20px;
+            font-size: 13px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: var(--transition-smooth);
+        }
+        .currency-btn.active, .currency-btn:hover {
+            border-color: var(--color-primary);
+            color: var(--color-primary);
+            background: var(--color-primary-subtle);
+        }
+        .comparison-section {
+            margin: 60px 0 40px;
+        }
+        .comparison-title {
+            text-align: center;
+            font-size: 24px;
+            font-weight: 800;
+            margin-bottom: 24px;
+            color: var(--text-main);
+        }
+        .comparison-table-wrap {
+            overflow-x: auto;
+            background: var(--bg-surface);
+            border: 1px solid var(--border-subtle);
+            border-radius: 12px;
+        }
+        .comparison-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 13.5px;
+            text-align: left;
+        }
+        .comparison-table th, .comparison-table td {
+            padding: 14px 18px;
+            border-bottom: 1px solid var(--border-subtle);
+        }
+        .comparison-table th {
+            background: var(--bg-surface-elevated);
+            color: var(--text-main);
+            font-weight: 700;
+        }
+        .comparison-table td:first-child {
+            font-weight: 600;
+            color: var(--text-main);
+        }
+        .comparison-table td {
+            color: var(--text-muted);
+        }
+        .check-yes {
+            color: #10b981;
+            font-weight: 800;
+        }
+        .check-no {
+            color: var(--text-faint);
+        }
+        .faq-section {
+            margin: 60px 0 40px;
+        }
+        .faq-title {
+            text-align: center;
+            font-size: 24px;
+            font-weight: 800;
+            margin-bottom: 24px;
+            color: var(--text-main);
+        }
+        .faq-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+            gap: 20px;
+        }
+        .faq-card {
+            background: var(--bg-surface);
+            border: 1px solid var(--border-subtle);
+            border-radius: 10px;
+            padding: 20px;
+        }
+        .faq-question {
+            font-size: 15px;
+            font-weight: 700;
+            color: var(--text-main);
+            margin: 0 0 8px;
+        }
+        .faq-answer {
+            font-size: 13.5px;
+            color: var(--text-muted);
+            line-height: 1.6;
+            margin: 0;
+        }
+    </style>
+</head>
+<body>
+    <header class="site-header">
+        <nav class="nav shell" aria-label="Main navigation">
+            <a class="brand" href="/" aria-label="Scores by Norra AI home">
+                <div class="brand-text">
+                    <span class="brand-icon" aria-hidden="true">⚽</span>
+                    <strong>Norra Scores</strong>
+                </div>
+            </a>
+            <div class="nav-actions">
+                <a class="nav-link" href="/">Scores</a>
+                <a class="nav-link" href="/#live">Live</a>
+                <a class="nav-link nav-link-norra" href="https://mynorra.xyz" target="_blank" rel="noopener">Predictions <span class="ext-icon" aria-hidden="true">↗</span></a>
+                <a class="nav-link active" href="/pricing">Pricing</a>
+                <a class="nav-link" href="/docs">Docs</a>
+                <a class="nav-link" href="/account">Account</a>
+                <button class="btn-icon-toggle" id="theme-toggle" type="button" aria-label="Toggle theme">🌓</button>
+            </div>
+        </nav>
+    </header>
+
+    <main class="pricing-page-wrapper">
+        <div class="pricing-hero">
+            <span class="pricing-badge">Commercial Sports Data API</span>
+            <h1 class="pricing-title">Flexible Plans for Every Developer &amp; Brand</h1>
+            <p class="pricing-subtitle">
+                Supercharge your football apps, fantasy engines, prediction platforms, and media sites with reliable, sub-second live match feeds across 50+ world competitions.
+            </p>
+
+            <div class="currency-switch-wrap" role="group" aria-label="Select currency">
+                <span style="font-size:13px; color:var(--text-muted); font-weight:600;">Display Currency:</span>
+                <button type="button" class="currency-btn active" data-cur="USD">USD ($)</button>
+                <button type="button" class="currency-btn" data-cur="EUR">EUR (€)</button>
+                <button type="button" class="currency-btn" data-cur="GBP">GBP (£)</button>
+                <button type="button" class="currency-btn" data-cur="NGN">NGN (₦)</button>
+            </div>
+        </div>
+
+        <div class="pricing-grid-4">
+            <!-- Free Developer -->
+            <div class="pricing-card">
+                <div>
+                    <h2 class="pricing-tier-name">Free Developer</h2>
+                    <p class="pricing-tier-desc">Ideal for testing, hobby apps, and sandbox integration.</p>
+                    <div class="pricing-tier-price">
+                        <span class="currency" id="cur-free">$</span>
+                        <span class="amount" id="amt-free">0</span>
+                        <span class="interval">/month</span>
+                    </div>
+                    <div class="pricing-local-estimate">Always Free &bull; No credit card required</div>
+                    <ul class="pricing-feature-list">
+                        <li>120 requests / minute</li>
+                        <li>50+ world leagues &amp; cups</li>
+                        <li>Live scoreboards &amp; minute tickers</li>
+                        <li>Full fixture schedules &amp; results</li>
+                        <li>League standings tables</li>
+                        <li>Community developer support</li>
+                    </ul>
+                </div>
+                <a href="/account" class="pricing-cta-btn secondary">Get Free API Key</a>
+            </div>
+
+            <!-- Starter Plan -->
+            <div class="pricing-card">
+                <div>
+                    <h2 class="pricing-tier-name">Starter Plan</h2>
+                    <p class="pricing-tier-desc">For growing sports blogs, livescore sites, and tipster bots.</p>
+                    <div class="pricing-tier-price">
+                        <span class="currency" id="cur-starter">$</span>
+                        <span class="amount" id="amt-starter">19</span>
+                        <span class="interval">/month</span>
+                    </div>
+                    <div class="pricing-local-estimate" id="est-starter">~₦30,000 /mo &bull; Billed monthly</div>
+                    <ul class="pricing-feature-list">
+                        <li>500 requests / minute</li>
+                        <li>All 50+ world competitions</li>
+                        <li>Universal Booking Code Converter Hook</li>
+                        <li>Ad-free clean JSON payloads</li>
+                        <li>Team H2H head-to-head records</li>
+                        <li>Standard email support</li>
+                    </ul>
+                </div>
+                <a href="/account?plan=starter" class="pricing-cta-btn secondary">Subscribe Starter</a>
+            </div>
+
+            <!-- Pro Developer (Featured) -->
+            <div class="pricing-card is-popular">
+                <span class="popular-ribbon">Most Popular</span>
+                <div>
+                    <h2 class="pricing-tier-name">Pro Developer</h2>
+                    <p class="pricing-tier-desc">For high-traffic livescore apps, tipster channels, and syndicates.</p>
+                    <div class="pricing-tier-price">
+                        <span class="currency" id="cur-pro">$</span>
+                        <span class="amount" id="amt-pro">49</span>
+                        <span class="interval">/month</span>
+                    </div>
+                    <div class="pricing-local-estimate" id="est-pro">~₦78,000 /mo &bull; Billed monthly</div>
+                    <ul class="pricing-feature-list">
+                        <li>1,500 requests / minute</li>
+                        <li>Sub-second real-time score updates</li>
+                        <li>Full timeline plays, goals, VAR &amp; cards</li>
+                        <li>Universal Booking Code API hook</li>
+                        <li>Team lineups &amp; roster profiles</li>
+                        <li>Priority 24/7 technical SLA</li>
+                    </ul>
+                </div>
+                <a href="/account?plan=pro" class="pricing-cta-btn primary">Subscribe Pro</a>
+            </div>
+
+            <!-- Enterprise Whitelabel -->
+            <div class="pricing-card">
+                <div>
+                    <h2 class="pricing-tier-name">Enterprise Whitelabel</h2>
+                    <p class="pricing-tier-desc">Complete whitelabel match center engine &amp; AI predictions integration.</p>
+                    <div class="pricing-tier-price">
+                        <span class="currency" id="cur-whitelabel">$</span>
+                        <span class="amount" id="amt-whitelabel">99</span>
+                        <span class="interval">/month</span>
+                    </div>
+                    <div class="pricing-local-estimate" id="est-whitelabel">~₦158,000 /mo &bull; Billed monthly</div>
+                    <ul class="pricing-feature-list">
+                        <li>5,000 requests / minute (High Throughput)</li>
+                        <li>Custom branded livescore center</li>
+                        <li>Direct Norra AI Prediction Engine access</li>
+                        <li>Universal slip conversion (SportyBet, Bet9ja, etc.)</li>
+                        <li>Dedicated account manager &amp; Slack channel</li>
+                        <li>Custom contract &amp; 99.9% uptime SLA</li>
+                    </ul>
+                </div>
+                <a href="/account?plan=whitelabel" class="pricing-cta-btn secondary">Upgrade to Whitelabel</a>
+            </div>
+        </div>
+
+        <!-- Feature Comparison Matrix -->
+        <section class="comparison-section">
+            <h2 class="comparison-title">Full Feature Comparison Matrix</h2>
+            <div class="comparison-table-wrap">
+                <table class="comparison-table">
+                    <thead>
+                        <tr>
+                            <th>Feature</th>
+                            <th>Free Developer</th>
+                            <th>Starter ($19)</th>
+                            <th>Pro ($49)</th>
+                            <th>Enterprise ($99)</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td>Request Throughput</td>
+                            <td>120 / min</td>
+                            <td>500 / min</td>
+                            <td>1,500 / min</td>
+                            <td>5,000 / min</td>
+                        </tr>
+                        <tr>
+                            <td>League Coverage</td>
+                            <td>50+ Competitions</td>
+                            <td>50+ Competitions</td>
+                            <td>50+ Competitions</td>
+                            <td>50+ Competitions</td>
+                        </tr>
+                        <tr>
+                            <td>Real-Time In-Play Scores</td>
+                            <td><span class="check-yes">✓</span> Standard</td>
+                            <td><span class="check-yes">✓</span> Fast</td>
+                            <td><span class="check-yes">✓</span> Sub-second</td>
+                            <td><span class="check-yes">✓</span> Dedicated Stream</td>
+                        </tr>
+                        <tr>
+                            <td>Booking Code Converter</td>
+                            <td><span class="check-no">—</span></td>
+                            <td><span class="check-yes">✓</span> Standard Hook</td>
+                            <td><span class="check-yes">✓</span> Full API</td>
+                            <td><span class="check-yes">✓</span> Unlimited Conversion</td>
+                        </tr>
+                        <tr>
+                            <td>Match Timelines &amp; Plays</td>
+                            <td>Basic</td>
+                            <td>Goals &amp; Cards</td>
+                            <td>Full Commentary &amp; Plays</td>
+                            <td>Full Commentary &amp; Plays</td>
+                        </tr>
+                        <tr>
+                            <td>Head-to-Head (H2H) Records</td>
+                            <td><span class="check-no">—</span></td>
+                            <td><span class="check-yes">✓</span></td>
+                            <td><span class="check-yes">✓</span></td>
+                            <td><span class="check-yes">✓</span></td>
+                        </tr>
+                        <tr>
+                            <td>Clean, Ad-Free Payloads</td>
+                            <td>Ad-supported</td>
+                            <td><span class="check-yes">✓</span> 100% Ad-Free</td>
+                            <td><span class="check-yes">✓</span> 100% Ad-Free</td>
+                            <td><span class="check-yes">✓</span> 100% Ad-Free</td>
+                        </tr>
+                        <tr>
+                            <td>Norra AI Prediction Engine Hook</td>
+                            <td><span class="check-no">—</span></td>
+                            <td><span class="check-no">—</span></td>
+                            <td>Optional Add-on</td>
+                            <td><span class="check-yes">✓</span> Included</td>
+                        </tr>
+                        <tr>
+                            <td>Support SLA</td>
+                            <td>Community</td>
+                            <td>Email Support</td>
+                            <td>Priority 24/7 SLA</td>
+                            <td>Dedicated Slack &amp; WhatsApp</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+        <!-- FAQ Section -->
+        <section class="faq-section">
+            <h2 class="faq-title">Frequently Asked Questions</h2>
+            <div class="faq-grid">
+                <div class="faq-card">
+                    <h3 class="faq-question">How quickly do I get my API key?</h3>
+                    <p class="faq-answer">Instantly. Register for free in the <a href="/account" style="color:var(--color-primary);">Developer Portal</a>, and your key is generated immediately without any waiting period.</p>
+                </div>
+                <div class="faq-card">
+                    <h3 class="faq-question">What payment gateways are supported?</h3>
+                    <p class="faq-answer">We accept credit and debit cards worldwide via PayPal and Flutterwave, as well as local bank transfers, mobile money, and USSD in supported regions.</p>
+                </div>
+                <div class="faq-card">
+                    <h3 class="faq-question">What is the Booking Code Converter?</h3>
+                    <p class="faq-answer">A universal API service that lets your users paste a bet code from one bookmaker (e.g., SportyBet) and instantly re-map it to another (Bet9ja, 1xBet, Betway, Mozzart) with matched event and market identifiers.</p>
+                </div>
+                <div class="faq-card">
+                    <h3 class="faq-question">Can I cancel or upgrade my plan anytime?</h3>
+                    <p class="faq-answer">Yes, there are no long-term contracts. You can upgrade, downgrade, or cancel your subscription at any time directly inside your account dashboard.</p>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <footer class="site-footer">
+        <div class="shell">
+            <div class="footer-bottom">
+                <div>&copy; 2026 Norra AI (scores.mynorra.xyz). All rights reserved.</div>
+                <div class="footer-bottom-links">
+                    <a href="/">Scores</a>
+                    <a href="/pricing">Pricing</a>
+                    <a href="/docs">Docs</a>
+                    <a href="/account">Account</a>
+                    <a href="/terms">Terms</a>
+                    <a href="/privacy">Privacy</a>
+                </div>
+            </div>
+        </div>
+    </footer>
+
+    <!-- Floating Sticky Action Dock (Back to Top + Theme Switcher) -->
+    <aside class="sticky-action-dock" id="sticky-action-dock" aria-label="Quick page actions">
+        <button id="sticky-back-to-top" class="sticky-action-btn sticky-back-to-top" type="button" aria-label="Back to top" title="Scroll to top of page">↑</button>
+        <button id="sticky-theme-toggle" class="sticky-action-btn" type="button" aria-label="Toggle dark/light theme" title="Toggle theme">🌓</button>
+    </aside>
+
+    <script>
+        // Currency switcher logic
+        const RATES = {
+            USD: { symbol: '$', starter: 19, pro: 49, whitelabel: 99, estStarter: '~₦30,000 /mo', estPro: '~₦78,000 /mo', estWhitelabel: '~₦158,000 /mo' },
+            EUR: { symbol: '€', starter: 18, pro: 46, whitelabel: 92, estStarter: 'Billed in EUR', estPro: 'Billed in EUR', estWhitelabel: 'Billed in EUR' },
+            GBP: { symbol: '£', starter: 15, pro: 39, whitelabel: 79, estStarter: 'Billed in GBP', estPro: 'Billed in GBP', estWhitelabel: 'Billed in GBP' },
+            NGN: { symbol: '₦', starter: 30000, pro: 78000, whitelabel: 158000, estStarter: 'Instant Card / Transfer', estPro: 'Instant Card / Transfer', estWhitelabel: 'Instant Card / Transfer' }
+        };
+
+        document.querySelectorAll('.currency-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                document.querySelectorAll('.currency-btn').forEach(b => b.classList.remove('active'));
+                btn.classList.add('active');
+                const cur = btn.dataset.cur;
+                const r = RATES[cur] || RATES.USD;
+                
+                ['starter', 'pro', 'whitelabel'].forEach(tier => {
+                    const curEl = document.getElementById(`cur-${tier}`);
+                    const amtEl = document.getElementById(`amt-${tier}`);
+                    const estEl = document.getElementById(`est-${tier}`);
+                    if (curEl) curEl.textContent = r.symbol;
+                    if (amtEl) amtEl.textContent = r[tier].toLocaleString();
+                    if (estEl) estEl.textContent = tier === 'starter' ? r.estStarter : tier === 'pro' ? r.estPro : r.estWhitelabel;
+                });
+            });
+        });
+
+        // Theme toggle logic
+        function applyTheme(theme) {
+            document.documentElement.setAttribute('data-theme', theme);
+            document.body.className = theme === 'light' ? 'theme-light' : '';
+            const t1 = document.getElementById('theme-toggle');
+            const t2 = document.getElementById('sticky-theme-toggle');
+            const icon = theme === 'light' ? '🌙' : '☀️';
+            if (t1) t1.textContent = icon;
+            if (t2) t2.textContent = icon;
+        }
+        const savedTheme = localStorage.getItem('norra_theme') || 'dark';
+        applyTheme(savedTheme);
+
+        [document.getElementById('theme-toggle'), document.getElementById('sticky-theme-toggle')].forEach(btn => {
+            if (btn) {
+                btn.addEventListener('click', () => {
+                    const current = document.documentElement.getAttribute('data-theme') || 'dark';
+                    const next = current === 'dark' ? 'light' : 'dark';
+                    applyTheme(next);
+                    localStorage.setItem('norra_theme', next);
+                });
+            }
+        });
+
+        // Back to top logic
+        const topBtn = document.getElementById('sticky-back-to-top');
+        if (topBtn) {
+            window.addEventListener('scroll', () => {
+                if (window.scrollY > 280) topBtn.classList.add('is-visible');
+                else topBtn.classList.remove('is-visible');
+            }, { passive: true });
+            topBtn.addEventListener('click', () => window.scrollTo({ top: 0, behavior: 'smooth' }));
+        }
+    </script>
+</body>
+</html>

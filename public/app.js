@@ -62,7 +62,25 @@
         'esp.copa_del_rey': '🇪🇸',
         'ita.coppa_italia': '🇮🇹',
         'ger.dfb_pokal': '🇩🇪',
-        'fra.coupe_de_france': '🇫🇷'
+        'fra.coupe_de_france': '🇫🇷',
+        'aut.1': '🇦🇹',
+        'sui.1': '🇨🇭',
+        'den.1': '🇩🇰',
+        'gre.1': '🇬🇷',
+        'swe.1': '🇸🇪',
+        'nor.1': '🇳🇴',
+        'jpn.1': '🇯🇵',
+        'aus.1': '🇦🇺',
+        'chn.1': '🇨🇳',
+        'fin.1': '🇫🇮',
+        'concacaf.champions': '🏆',
+        'caf.champions': '🌍',
+        'afc.champions': '🌏',
+        'fifa.cwc': '🌐',
+        'uefa.super_cup': '🏆',
+        'conmebol.recopa': '🏆',
+        'eng.w.1': '🏴󠁧󠁢󠁥󠁮󠁧󠁿',
+        'usa.w.1': '🇺🇸'
     };
 
     let currentTimezone = localStorage.getItem('norra_timezone') || Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
@@ -307,9 +325,11 @@
         await loadLiveMatches();
     }
 
-    async function loadLiveMatches() {
-        setLoading('fixtures', true);
-        if (elements['fixtures-list']) elements['fixtures-list'].replaceChildren();
+    async function loadLiveMatches({ background = false } = {}) {
+        if (!background) {
+            setLoading('fixtures', true);
+            if (elements['fixtures-list']) elements['fixtures-list'].replaceChildren();
+        }
 
         try {
             const data = await fetchJson('/api/v1/football/live');
@@ -328,6 +348,7 @@
                     elements['fixtures-empty'].innerHTML = '<span class="empty-icon">⚽</span><p>No matches are currently in progress right now.<br><small style="color:var(--text-faint);">Check Scheduled fixtures or tap "All" to browse today’s match schedule.</small></p>';
                 }
                 if (elements['fixture-count']) elements['fixture-count'].textContent = '0';
+                if (!background && elements['fixtures-list']) elements['fixtures-list'].innerHTML = '';
                 return;
             }
 
@@ -372,7 +393,7 @@
         } catch (error) {
             showToast('Unable to load live matches: ' + error.message);
         } finally {
-            setLoading('fixtures', false);
+            if (!background) setLoading('fixtures', false);
         }
     }
 
@@ -465,9 +486,11 @@
         await loadAllLeagueFixtures();
     }
 
-    async function loadAllLeagueFixtures() {
-        setLoading('fixtures', true);
-        if (elements['fixtures-list']) elements['fixtures-list'].replaceChildren();
+    async function loadAllLeagueFixtures({ background = false } = {}) {
+        if (!background) {
+            setLoading('fixtures', true);
+            if (elements['fixtures-list']) elements['fixtures-list'].replaceChildren();
+        }
 
         try {
             // Determine date param
@@ -507,7 +530,7 @@
             if (elements['fixtures-empty']) elements['fixtures-empty'].hidden = false;
             showToast(`Unable to load all fixtures: ${error.message}`);
         } finally {
-            setLoading('fixtures', false);
+            if (!background) setLoading('fixtures', false);
         }
     }
 
@@ -626,13 +649,15 @@
         return params;
     }
 
-    async function loadFixtures({ append = false } = {}) {
+    async function loadFixtures({ append = false, background = false } = {}) {
         if (!state.league) return;
-        setLoading('fixtures', true);
-        if (!append) {
-            state.fixturePage = 1;
-            state.fixtures = [];
-            if (elements['fixtures-list']) elements['fixtures-list'].replaceChildren();
+        if (!background) {
+            setLoading('fixtures', true);
+            if (!append) {
+                state.fixturePage = 1;
+                state.fixtures = [];
+                if (elements['fixtures-list']) elements['fixtures-list'].replaceChildren();
+            }
         }
         try {
             const page = append ? state.fixturePage + 1 : 1;
@@ -1186,25 +1211,57 @@
         const initialTheme = saved || 'dark';
         applyTheme(initialTheme);
 
+        const toggleTheme = () => {
+            const current = document.documentElement.getAttribute('data-theme') || 'dark';
+            const next = current === 'dark' ? 'light' : 'dark';
+            applyTheme(next);
+            localStorage.setItem('norra_theme', next);
+        };
+
         const toggleBtn = document.getElementById('theme-toggle');
         if (toggleBtn) {
-            toggleBtn.addEventListener('click', () => {
-                const current = document.documentElement.getAttribute('data-theme') || 'dark';
-                const next = current === 'dark' ? 'light' : 'dark';
-                applyTheme(next);
-                localStorage.setItem('norra_theme', next);
-            });
+            toggleBtn.addEventListener('click', toggleTheme);
+        }
+        const stickyToggle = document.getElementById('sticky-theme-toggle');
+        if (stickyToggle) {
+            stickyToggle.addEventListener('click', toggleTheme);
         }
     }
 
     function applyTheme(theme) {
         document.documentElement.setAttribute('data-theme', theme);
         document.body.className = theme === 'light' ? 'theme-light' : '';
+        const icon = theme === 'light' ? '🌙' : '☀️';
+        const title = `Switch to ${theme === 'light' ? 'Dark' : 'Light'} Mode`;
         const toggleBtn = document.getElementById('theme-toggle');
         if (toggleBtn) {
-            toggleBtn.textContent = theme === 'light' ? '🌙' : '☀️';
-            toggleBtn.title = `Switch to ${theme === 'light' ? 'Dark' : 'Light'} Mode`;
+            toggleBtn.textContent = icon;
+            toggleBtn.title = title;
         }
+        const stickyToggle = document.getElementById('sticky-theme-toggle');
+        if (stickyToggle) {
+            stickyToggle.textContent = icon;
+            stickyToggle.title = title;
+        }
+    }
+
+    function setupBackToTop() {
+        const btn = document.getElementById('sticky-back-to-top');
+        if (!btn) return;
+        window.addEventListener('scroll', () => {
+            if (window.scrollY > 280) {
+                btn.classList.add('is-visible');
+            } else {
+                btn.classList.remove('is-visible');
+            }
+        }, { passive: true });
+
+        btn.addEventListener('click', () => {
+            window.scrollTo({
+                top: 0,
+                behavior: 'smooth'
+            });
+        });
     }
 
     function setupTimezones() {
@@ -1654,11 +1711,13 @@
                     fsBadge.style.display = liveMatches.length > 0 ? 'inline-block' : 'none';
                 }
 
-                // If currently viewing live view or matches are live, update smoothly
+                // If currently viewing live view or matches are live, update smoothly in background without screen flashing
                 if (state.selectedLeagueSlug === 'live' || state.currentStatus === 'live') {
-                    loadLiveMatches();
+                    loadLiveMatches({ background: true });
                 } else if (state.selectedLeagueSlug === 'all' && (!state.selectedDayOffset || state.selectedDayOffset === 0)) {
-                    loadAllLeagueFixtures();
+                    loadAllLeagueFixtures({ background: true });
+                } else if (state.league) {
+                    loadFixtures({ background: true });
                 }
             } catch (e) {
                 // background poll notice
@@ -1674,11 +1733,21 @@
 
     async function initialize() {
         setupThemeToggle();
+        setupBackToTop();
         setupTimezones();
         bindEvents();
         setInitialFixtureWindow();
         const currentYearEl = document.getElementById('current-year');
         if (currentYearEl) currentYearEl.textContent = new Date().getFullYear();
+
+        if (document.body.dataset.pageKind === 'api') {
+            const pricingEl = document.getElementById('pricing-page-section');
+            if (pricingEl) {
+                setTimeout(() => {
+                    pricingEl.scrollIntoView({ behavior: 'smooth' });
+                }, 400);
+            }
+        }
 
         const results = await Promise.allSettled([loadMeta(), loadLeagues(), loadAdsAndPromos()]);
         if (results[1].status === 'rejected' && elements['country-select']) {
