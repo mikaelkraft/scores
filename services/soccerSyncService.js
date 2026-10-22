@@ -533,10 +533,10 @@ function resolveLeagueSlug(altGameNote = '', compDesc = '', uid = '') {
     if (text.includes('coupe de france') || text.includes('fra.coupe_de_france')) return 'fra.coupe_de_france';
     if (text.includes('eredivisie') || text.includes('ned.1')) return 'ned.1';
     if (text.includes('primeira') || text.includes('por.1')) return 'por.1';
-    if (text.includes('belgian') || text.includes('pro league') || text.includes('bel.1')) return 'bel.1';
+    if (text.includes('saudi') || text.includes('ksa.1')) return 'ksa.1';
+    if (text.includes('belgian') || text.includes('jupiler') || text.includes('bel.1')) return 'bel.1';
     if (text.includes('super lig') || text.includes('süper lig') || text.includes('tur.1')) return 'tur.1';
     if (text.includes('scottish') || text.includes('premiership') || text.includes('sco.1')) return 'sco.1';
-    if (text.includes('saudi') || text.includes('ksa.1')) return 'ksa.1';
     if (text.includes('brasileir') || text.includes('bra.1')) return 'bra.1';
     if (text.includes('serie b brasil') || text.includes('bra.2')) return 'bra.2';
     if (text.includes('copa argentina') || text.includes('arg.copa')) return 'arg.copa';
