@@ -37,7 +37,7 @@ test('country slugs are stable and URL-safe', () => {
     assert.equal(slugifyCountry(''), 'other');
 });
 
-test('home page renders crawlable league and country links with complete metadata', () => {
+test('home page renders crawlable league links with complete metadata', () => {
     const html = renderSeoPage(template, {
         kind: 'home',
         baseUrl: 'https://worldcup26.ir',
@@ -47,7 +47,6 @@ test('home page renders crawlable league and country links with complete metadat
     assert.match(html, /<title>Free Football Live Scores Today, Fixtures &amp; Results/);
     assert.match(html, /rel="canonical" href="https:\/\/worldcup26\.ir\/"/);
     assert.match(html, /href="https:\/\/worldcup26\.ir\/football\/eng\.1"/);
-    assert.match(html, /href="https:\/\/worldcup26\.ir\/football\/country\/spain"/);
     assert.match(html, /"@type":"WebApplication"/);
     assert.match(html, /"@type":"FAQPage"/);
     assert.match(html, /Football live scores and fixtures today/);

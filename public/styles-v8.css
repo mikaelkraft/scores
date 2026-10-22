@@ -743,6 +743,39 @@ body.theme-light .site-header {
     align-items: center;
     border-bottom: 1px solid var(--border-subtle);
     min-height: 32px;
+    cursor: pointer;
+    user-select: none;
+    transition: background 0.15s ease;
+}
+.fs-league-header:hover {
+    background: var(--bg-canvas-subtle, rgba(255, 255, 255, 0.04));
+}
+.fs-collapse-chevron {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 9px;
+    color: var(--text-muted);
+    transition: transform 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+    margin-right: 2px;
+    width: 14px;
+    height: 14px;
+}
+.fs-collapse-chevron.is-collapsed {
+    transform: rotate(-90deg);
+}
+.fs-league-match-count {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 10px;
+    font-weight: 700;
+    color: var(--text-muted);
+    background: var(--bg-canvas);
+    border: 1px solid var(--border-subtle);
+    border-radius: 10px;
+    padding: 1px 6px;
+    margin-left: 6px;
 }
 .fs-league-title {
     display: flex;

@@ -166,7 +166,12 @@ for (const [route, file] of Object.entries(ROOT_ASSETS)) {
 
 app.use('/assets', express.static(path.join(__dirname, 'public'), {
     index: false,
-    maxAge: config.isProd ? '60s' : 0
+    maxAge: 0,
+    setHeaders: (res, filePath) => {
+        if (filePath.endsWith('.js') || filePath.endsWith('.css')) {
+            res.set('Cache-Control', 'public, max-age=0, must-revalidate');
+        }
+    }
 }));
 
 app.use('/uploads', express.static(path.join(__dirname, 'public', 'uploads'), {

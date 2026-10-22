@@ -9,7 +9,13 @@
     <meta name="robots" content="{{SEO_ROBOTS}}">
     <meta name="theme-color" content="#0b0f19">
     <link rel="canonical" href="{{SEO_CANONICAL}}">
-    <link rel="stylesheet" href="/assets/styles-v8.css">
+    <link rel="stylesheet" href="/assets/styles-v9.css?v=9.2">
+    <script>
+        (function() {
+            var theme = localStorage.getItem('norra_theme') || localStorage.getItem('theme') || 'dark';
+            document.documentElement.setAttribute('data-theme', theme);
+        })();
+    </script>
     <link rel="icon" href="/favicon.ico" sizes="any">
     <link rel="icon" href="/favicon.svg" type="image/svg+xml">
     <link rel="apple-touch-icon" href="/apple-touch-icon.png">
@@ -431,6 +437,53 @@
         <button id="sticky-theme-toggle" class="sticky-action-btn" type="button" aria-label="Toggle dark/light theme" title="Toggle theme">🌓</button>
     </aside>
 
-    <script src="/assets/app-v8.js" defer></script>
+    <script>
+        (function() {
+            function applyThemeUi(theme) {
+                document.documentElement.setAttribute('data-theme', theme);
+                if (document.body) document.body.className = theme === 'light' ? 'theme-light' : '';
+                var icon = theme === 'light' ? '🌙' : '☀️';
+                var title = 'Switch to ' + (theme === 'light' ? 'Dark' : 'Light') + ' Mode';
+                var b1 = document.getElementById('theme-toggle');
+                var b2 = document.getElementById('sticky-theme-toggle');
+                if (b1) { b1.textContent = icon; b1.title = title; }
+                if (b2) { b2.textContent = icon; b2.title = title; }
+                var meta = document.querySelector('meta[name="theme-color"]');
+                if (meta) meta.setAttribute('content', theme === 'light' ? '#ffffff' : '#0b0f19');
+            }
+            var saved = localStorage.getItem('norra_theme') || localStorage.getItem('theme') || 'dark';
+            applyThemeUi(saved);
+
+            function toggleTheme() {
+                var current = document.documentElement.getAttribute('data-theme') || 'dark';
+                var next = current === 'dark' ? 'light' : 'dark';
+                applyThemeUi(next);
+                try {
+                    localStorage.setItem('norra_theme', next);
+                    localStorage.setItem('theme', next);
+                } catch(e) {}
+            }
+
+            var b1 = document.getElementById('theme-toggle');
+            var b2 = document.getElementById('sticky-theme-toggle');
+            if (b1) b1.addEventListener('click', toggleTheme);
+            if (b2) b2.addEventListener('click', toggleTheme);
+
+            var topBtn = document.getElementById('sticky-back-to-top');
+            if (topBtn) {
+                window.addEventListener('scroll', function() {
+                    if (window.scrollY > 280) {
+                        topBtn.classList.add('is-visible');
+                    } else {
+                        topBtn.classList.remove('is-visible');
+                    }
+                }, { passive: true });
+                topBtn.addEventListener('click', function() {
+                    window.scrollTo({ top: 0, behavior: 'smooth' });
+                });
+            }
+        })();
+    </script>
+    <script src="/assets/app-v9.js?v=9.2" defer></script>
 </body>
 </html>

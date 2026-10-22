@@ -454,11 +454,13 @@
         const countries = [...new Set(state.leagues.map(league => league.country || 'Other'))]
             .sort((a, b) => localCountryName(a).localeCompare(localCountryName(b), 'en'));
 
-        elements['country-select'].replaceChildren(new Option('Choose a country', ''));
-        for (const country of countries) {
-            elements['country-select'].add(new Option(localCountryName(country), country));
+        if (elements['country-select']) {
+            elements['country-select'].replaceChildren(new Option('Choose a country', ''));
+            for (const country of countries) {
+                elements['country-select'].add(new Option(localCountryName(country), country));
+            }
+            elements['country-select'].disabled = false;
         }
-        elements['country-select'].disabled = false;
 
         const requestedSlug = document.body.dataset.leagueSlug
             || new URLSearchParams(location.search).get('league');
@@ -473,6 +475,7 @@
     }
 
     function populateLeagues(preferredSlug = '') {
+        if (!elements['country-select'] || !elements['league-select']) return;
         const country = elements['country-select'].value;
         const leagues = state.leagues.filter(league => (league.country || 'Other') === country);
         elements['league-select'].replaceChildren(new Option('Choose a league', ''));
@@ -550,6 +553,7 @@
             let dateParam = 'today';
             if (state.selectedDayOffset === -1) dateParam = 'yesterday';
             else if (state.selectedDayOffset === 1) dateParam = 'tomorrow';
+            else if (state.selectedDayOffset === 0) dateParam = 'today';
             else if (state.selectedDateStr) dateParam = state.selectedDateStr;
 
             const statusParam = state.currentStatus || 'all';
@@ -1610,30 +1614,32 @@
     }
 
     function setupThemeToggle() {
-        const saved = localStorage.getItem('norra_theme');
-        const initialTheme = saved || 'dark';
-        applyTheme(initialTheme);
+        const saved = localStorage.getItem('norra_theme') || localStorage.getItem('theme') || 'dark';
+        applyTheme(saved);
 
         const toggleTheme = () => {
             const current = document.documentElement.getAttribute('data-theme') || 'dark';
             const next = current === 'dark' ? 'light' : 'dark';
             applyTheme(next);
-            localStorage.setItem('norra_theme', next);
+            try {
+                localStorage.setItem('norra_theme', next);
+                localStorage.setItem('theme', next);
+            } catch (e) {}
         };
 
         const toggleBtn = document.getElementById('theme-toggle');
         if (toggleBtn) {
-            toggleBtn.addEventListener('click', toggleTheme);
+            toggleBtn.onclick = toggleTheme;
         }
         const stickyToggle = document.getElementById('sticky-theme-toggle');
         if (stickyToggle) {
-            stickyToggle.addEventListener('click', toggleTheme);
+            stickyToggle.onclick = toggleTheme;
         }
     }
 
     function applyTheme(theme) {
         document.documentElement.setAttribute('data-theme', theme);
-        document.body.className = theme === 'light' ? 'theme-light' : '';
+        if (document.body) document.body.className = theme === 'light' ? 'theme-light' : '';
         const icon = theme === 'light' ? '🌙' : '☀️';
         const title = `Switch to ${theme === 'light' ? 'Dark' : 'Light'} Mode`;
         const toggleBtn = document.getElementById('theme-toggle');
@@ -1646,6 +1652,8 @@
             stickyToggle.textContent = icon;
             stickyToggle.title = title;
         }
+        const metaTheme = document.querySelector('meta[name="theme-color"]');
+        if (metaTheme) metaTheme.setAttribute('content', theme === 'light' ? '#ffffff' : '#0b0f19');
     }
 
     function setupBackToTop() {

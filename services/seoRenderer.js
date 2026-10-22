@@ -513,7 +513,6 @@ function homeContent(context) {
             <h2 id="coverage-title">Football live scores and fixtures today across world leagues</h2>
             <p>Browse live scores, fixtures, standings, and match statistics across ${escapeHtml(leagues.length)} active world competitions. Powered by the Norra AI analytics engine.</p>
         </div>
-        ${renderCountryLinks(leagues, baseUrl)}
         ${renderLeagueCards(leagues, baseUrl)}
         ${matchCrawlerNav}
         <div class="seo-topics faq-grid" style="margin-top:28px;">
