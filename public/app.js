@@ -989,11 +989,11 @@
         let summary = summaryResult.status === 'fulfilled' ? summaryResult.value : null;
 
         if (!summary) {
-            // Fallback to global match API endpoint with ESPN enrichment
+            // Fallback to global match API endpoint with ESPN / LiveScore enrichment
             try {
                 const matchApiRes = await fetchJson(`/api/v1/football/matches/${encodeURIComponent(eventId)}`);
-                if (matchApiRes?.summary) {
-                    summary = matchApiRes.summary;
+                if (matchApiRes?.summary || matchApiRes?.match) {
+                    summary = matchApiRes.summary || matchApiRes.match;
                 }
             } catch (err) {}
         }
@@ -1005,9 +1005,12 @@
             return;
         }
 
-        const plays = playsResult.status === 'fulfilled' ? playsResult.value.items || [] : [];
+        let plays = playsResult.status === 'fulfilled' ? (playsResult.value?.items || []) : [];
+        if (!plays.length && summary.timeline?.length) {
+            plays = summary.timeline;
+        }
         const predictions = predResult.status === 'fulfilled' ? predResult.value : null;
-        renderMatchDetails(summary, plays, predictions);
+        renderMatchDetails(summary, plays, predictions, silent);
 
         const competition = summary.header?.competitions?.[0] || {};
         const status = competition.status?.type?.state;
@@ -1035,6 +1038,7 @@
         if (id && id === awayId) return away.team;
         if (event.team?.side === 'home') return home.team;
         if (event.team?.side === 'away') return away.team;
+        if (event.team?.displayName || event.team?.name) return event.team;
         return event.team || null;
     }
 
@@ -1048,6 +1052,13 @@
         const athleteName = athlete?.displayName || athlete?.fullName || athlete?.shortName || '';
         const text = event.text || event.alternativeText
             || (athleteName ? `${athleteName} · ${typeText}` : typeText);
+        const clockDisplay = typeof event.clock === 'string'
+            ? event.clock
+            : (event.clock?.displayValue || (event.clockValue ? `${event.clockValue}'` : ''));
+        const clockValue = typeof event.clockValue === 'number'
+            ? event.clockValue
+            : (Number(event.clock?.value) || parseInt(event.clock, 10) || 0);
+
         return {
             id: event.id || `${source}-${index}`,
             source,
@@ -1057,9 +1068,9 @@
             athlete,
             participants,
             team,
-            clock: event.clock?.displayValue || '',
-            clockValue: Number(event.clock?.value) || 0,
-            scoringPlay: kind === 'goal',
+            clock: clockDisplay,
+            clockValue,
+            scoringPlay: Boolean(event.scoringPlay || kind === 'goal'),
             penaltyKick: Boolean(event.penaltyKick),
             ownGoal: Boolean(event.ownGoal)
         };
@@ -1084,7 +1095,11 @@
     }
 
     function matchTimeline(summary, plays, home, away) {
-        const keyEvents = (summary.keyEvents || []).map((event, index) =>
+        const rawKeyEvents = [
+            ...(summary.keyEvents || []),
+            ...(summary.header?.competitions?.[0]?.details || [])
+        ];
+        const keyEvents = rawKeyEvents.map((event, index) =>
             normalizeMatchEvent(event, index, 'key-event', home, away));
         const playEvents = (plays || []).map((event, index) =>
             normalizeMatchEvent(event, index, 'play', home, away));
@@ -1092,8 +1107,11 @@
         const events = [];
         const seen = new Set();
         for (const event of [...keyEvents, ...playEvents]) {
-            const teamId = event.team?.id || event.team?.source_id || event.team?.displayName || '';
-            const signature = `${event.kind}|${event.clockValue}|${teamId}`;
+            const teamId = event.team?.id || event.team?.source_id || event.team?.displayName || event.team?.name || '';
+            const textSig = (event.text || '').replace(/\s+/g, '').toLowerCase().slice(0, 16);
+            const signature = event.id && !event.id.startsWith('play-') && !event.id.startsWith('key-event-')
+                ? event.id
+                : `${event.kind}|${event.clockValue}|${teamId}|${textSig}`;
             if (seen.has(signature)) continue;
             seen.add(signature);
             events.push(event);
@@ -1112,14 +1130,14 @@
         return badges[kind] || badges.event;
     }
 
-    function renderMatchDetails(summary, plays, predictions = null) {
+    function renderMatchDetails(summary, plays, predictions = null, silent = false) {
         const competition = summary.header?.competitions?.[0] || {};
         const event = { date: competition.date, competitions: [competition], status: competition.status };
         const { home, away } = competitorsFromEvent(event);
         const status = statusInfo(event);
         const venue = summary.gameInfo?.venue;
-        const homeStats = summary.boxscore?.teams?.find(item => item.homeAway === 'home')?.statistics || [];
-        const awayStats = summary.boxscore?.teams?.find(item => item.homeAway === 'away')?.statistics || [];
+        const homeStats = summary.boxscore?.teams?.find(item => item.homeAway === 'home' || item.id === 'home' || String(item.team?.id) === String(home.team?.id) || item.displayOrder === 1)?.statistics || [];
+        const awayStats = summary.boxscore?.teams?.find(item => item.homeAway === 'away' || item.id === 'away' || String(item.team?.id) === String(away.team?.id) || item.displayOrder === 2)?.statistics || [];
         const events = matchTimeline(summary, plays, home, away);
         const scorers = events.filter(event => event.scoringPlay);
         const substitutions = events.filter(event => event.kind === 'substitution').map(event => ({
@@ -1302,8 +1320,8 @@
         `).join('') : '';
 
         const rosters = summary.rosters || [];
-        const homeRoster = rosters.find(r => String(r.team?.id) === String(home.team?.id) || r.team?.side === 'home') || rosters[0];
-        const awayRoster = rosters.find(r => String(r.team?.id) === String(away.team?.id) || r.team?.side === 'away') || rosters[1];
+        const homeRoster = rosters.find(r => String(r.team?.id) === String(home.team?.id) || r.team?.side === 'home' || r.team?.homeAway === 'home') || rosters[0];
+        const awayRoster = rosters.find(r => String(r.team?.id) === String(away.team?.id) || r.team?.side === 'away' || r.team?.homeAway === 'away') || rosters[1];
 
         function renderRosterList(teamRoster, teamName) {
             if (!teamRoster?.roster?.length) return `<p style="color:var(--text-muted); font-size:13px;">No official lineup announced yet for ${escapeHtml(teamName)}.</p>`;
@@ -1338,6 +1356,7 @@
         }
 
         if (elements['dialog-content']) {
+            const prevScrollTop = elements['dialog-content'].scrollTop;
             const activeTab = state.drawerActiveTab || 'timeline';
 
             elements['dialog-content'].innerHTML = `
@@ -1602,6 +1621,10 @@
                     });
                 });
             });
+
+            if (silent && prevScrollTop > 0) {
+                elements['dialog-content'].scrollTop = prevScrollTop;
+            }
         }
     }
 

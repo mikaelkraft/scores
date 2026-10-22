@@ -93,7 +93,7 @@ router.get(['/live', '/livescores'], async (req, res) => {
                 const requestedSlug = String(league).toLowerCase();
                 if (!FREE_TIER_ALLOWED_LEAGUES.includes(requestedSlug)) {
                     return res.status(403).json({
-                        error: `Access to competition '${league}' is restricted on the Free Developer tier. Upgrade to Starter ($10/mo) or Pro ($29/mo) to access all 50+ world leagues.`,
+                        error: `Access to competition '${league}' is restricted on the Free Developer tier. Upgrade to Starter ($10/mo) or Pro ($29/mo) to access all 100+ world leagues.`,
                         upgradeUrl: '/pricing',
                         tier: 'free',
                         allowedLeagues: FREE_TIER_ALLOWED_LEAGUES
@@ -211,7 +211,7 @@ router.get('/fixtures', async (req, res) => {
                 const requestedSlug = String(league).toLowerCase();
                 if (!FREE_TIER_ALLOWED_LEAGUES.includes(requestedSlug)) {
                     return res.status(403).json({
-                        error: `Access to competition '${league}' is restricted on the Free Developer tier. Upgrade to Starter ($10/mo) or Pro ($29/mo) to access all 50+ world leagues.`,
+                        error: `Access to competition '${league}' is restricted on the Free Developer tier. Upgrade to Starter ($10/mo) or Pro ($29/mo) to access all 100+ world leagues.`,
                         upgradeUrl: '/pricing',
                         tier: 'free',
                         allowedLeagues: FREE_TIER_ALLOWED_LEAGUES
@@ -904,7 +904,7 @@ router.get(['/standings', '/standings/:league'], async (req, res) => {
                 const requestedSlug = String(req.params.league).toLowerCase();
                 if (!FREE_TIER_ALLOWED_LEAGUES.includes(requestedSlug)) {
                     return res.status(403).json({
-                        error: `Access to standings for '${req.params.league}' is restricted on the Free Developer tier. Upgrade to Starter ($10/mo) or Pro ($29/mo) to access all 50+ world leagues.`,
+                        error: `Access to standings for '${req.params.league}' is restricted on the Free Developer tier. Upgrade to Starter ($10/mo) or Pro ($29/mo) to access all 100+ world leagues.`,
                         upgradeUrl: '/pricing',
                         tier: 'free',
                         allowedLeagues: FREE_TIER_ALLOWED_LEAGUES
@@ -996,25 +996,58 @@ router.get('/matches/:eventId', async (req, res) => {
             }
 
             // If ESPN provided no boxscore or for LiveScore matches, enrich with LiveScore telemetry
-            if (!summary.boxscore?.teams?.length) {
+            const hasStats = Boolean(
+                summary.boxscore?.teams?.[0]?.statistics?.length ||
+                summary.boxscore?.teams?.[1]?.statistics?.length
+            );
+            const isLiveScoreEvent = String(match.source?.provider || '').toLowerCase() === 'livescore'
+                || String(match.source?.event_id || eventId).length <= 8;
+
+            if (!hasStats || isLiveScoreEvent || !summary.keyEvents?.length) {
                 try {
                     const { fetchLiveScoreMatchDetails } = require('../services/soccerSyncService');
                     const lsData = await fetchLiveScoreMatchDetails(match.source?.event_id || eventId);
                     if (lsData) {
-                        if (lsData.boxscore && !summary.boxscore?.teams?.length) summary.boxscore = lsData.boxscore;
-                        if (lsData.keyEvents && !summary.keyEvents?.length) summary.keyEvents = lsData.keyEvents;
-                        if (lsData.rosters && !summary.rosters?.length) summary.rosters = lsData.rosters;
-                        if (lsData.gameInfo && !summary.gameInfo) summary.gameInfo = lsData.gameInfo;
+                        if (lsData.boxscore && !hasStats) {
+                            summary.boxscore = lsData.boxscore;
+                        }
+                        if (lsData.keyEvents?.length) {
+                            summary.keyEvents = lsData.keyEvents;
+                            if (summary.header?.competitions?.[0]) {
+                                summary.header.competitions[0].details = lsData.keyEvents;
+                            }
+                        }
+                        if (lsData.rosters?.length && !summary.rosters?.length) {
+                            summary.rosters = lsData.rosters;
+                        }
+                        if (lsData.gameInfo && !summary.gameInfo?.venue?.fullName) {
+                            summary.gameInfo = lsData.gameInfo;
+                        }
                     }
                 } catch {}
             }
         } catch {}
 
+        let timelinePlays = plays.map(serializePlay);
+        if (timelinePlays.length === 0 && summary.keyEvents?.length) {
+            timelinePlays = summary.keyEvents.map((ke, idx) => ({
+                id: ke.id || `play-${idx}`,
+                sequence: idx + 1,
+                type: ke.type || { text: 'Play' },
+                text: ke.text || '',
+                clock: typeof ke.clock === 'string' ? { displayValue: ke.clock, value: ke.clockValue || 0 } : (ke.clock || { displayValue: '', value: 0 }),
+                scoringPlay: Boolean(ke.scoringPlay),
+                team: ke.team || null,
+                participants: (ke.athletesInvolved || []).map(a => ({ athlete: a }))
+            }));
+        }
+
         res.set('Cache-Control', `public, max-age=${match.status?.state === 'in' ? 4 : 30}`);
         return res.json({
             status: 'success',
             match: summary,
-            timeline: plays.map(serializePlay)
+            summary: summary,
+            timeline: timelinePlays
         });
     } catch (err) {
         return res.status(500).json({ error: 'Failed to fetch match details: ' + err.message });

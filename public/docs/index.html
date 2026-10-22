@@ -4,7 +4,7 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Developer Documentation &amp; API Reference | Scores by Norra AI</title>
-    <meta name="description" content="Comprehensive REST API documentation for real-time live football scores, fixtures, standings, H2H, and booking code conversion across 50+ world leagues.">
+    <meta name="description" content="Comprehensive REST API documentation for real-time live football scores, fixtures, standings, H2H, and booking code conversion across 100+ world leagues.">
     <link rel="canonical" href="https://scores.mynorra.xyz/docs">
     <link rel="icon" href="/favicon.svg" type="image/svg+xml">
     <link rel="stylesheet" href="/assets/styles-v8.css">
@@ -285,7 +285,7 @@
             <section class="docs-hero" id="overview">
                 <h1>Norra AI Football API Reference</h1>
                 <p>
-                    A developer-first, high-throughput commercial sports data platform providing sub-second live scores, comprehensive fixture histories, standings, and universal betting code conversions across 50+ world leagues.
+                    A developer-first, high-throughput commercial sports data platform providing sub-second live scores, comprehensive fixture histories, standings, and universal betting code conversions across 100+ world leagues.
                 </p>
 
                 <div class="swagger-callout">
@@ -320,7 +320,7 @@ Authorization: Bearer your_api_key_here
 https://scores.mynorra.xyz/api/v1/football/live?api_key=your_api_key_here</code></pre>
                 </div>
                 <div style="background:var(--bg-canvas); border:1px solid var(--border-subtle); border-radius:8px; padding:12px 14px; margin-top:14px; font-size:13px; color:var(--text-muted);">
-                    <strong style="color:var(--text-main);">Tier League Access:</strong> Free Developer keys are limited to the top 10 world leagues (<code>eng.1</code>, <code>esp.1</code>, <code>uefa.champions</code>, <code>ita.1</code>, <code>ger.1</code>, <code>fra.1</code>, <code>usa.1</code>, <code>ned.1</code>, <code>por.1</code>, <code>tur.1</code>). Querying other competitions returns a <code>403 Forbidden</code> response. Subscribing to <a href="/pricing" style="color:var(--color-primary); font-weight:600;">Starter, Pro, or Whitelabel</a> unlocks all 50+ global competitions.
+                    <strong style="color:var(--text-main);">Tier League Access:</strong> Free Developer keys are limited to the top 10 world leagues (<code>eng.1</code>, <code>esp.1</code>, <code>uefa.champions</code>, <code>ita.1</code>, <code>ger.1</code>, <code>fra.1</code>, <code>usa.1</code>, <code>ned.1</code>, <code>por.1</code>, <code>tur.1</code>). Querying other competitions returns a <code>403 Forbidden</code> response. Subscribing to <a href="/pricing" style="color:var(--color-primary); font-weight:600;">Starter, Pro, or Whitelabel</a> unlocks all 100+ global competitions.
                 </div>
                 <p style="margin-top:14px; font-size:13px; color:var(--text-muted);">
                     Get your key instantly in the <a href="/account" style="color:var(--color-primary); font-weight:600;">Developer Portal</a>.
@@ -334,7 +334,7 @@ https://scores.mynorra.xyz/api/v1/football/live?api_key=your_api_key_here</code>
                     <span class="endpoint-path">/api/v1/football/live</span>
                 </div>
                 <p class="endpoint-desc">
-                    Returns global in-play matches across all 50+ supported competitions in a single, high-speed call. Features live minute clocks, current scores, and recent event summaries.
+                    Returns global in-play matches across all 100+ supported competitions in a single, high-speed call. Features live minute clocks, current scores, and recent event summaries.
                 </p>
                 <table class="params-table">
                     <thead>
@@ -434,7 +434,7 @@ console.log(`Loaded ${data.count} matches today.`);</code></pre>
                     <span class="endpoint-path">/api/v1/football/leagues</span>
                 </div>
                 <p class="endpoint-desc">
-                    Retrieves the complete catalog of all 50+ actively synchronized competitions, their official country, season details, and stored match counts.
+                    Retrieves the complete catalog of all 100+ actively synchronized competitions, their official country, season details, and stored match counts.
                 </p>
                 <div class="code-snippet-box">
                     <div class="code-snippet-header">

@@ -40,11 +40,12 @@ router.get(['/api/plans', '/api/v1/payments/plans'], async (req, res) => {
                     isAdFree: false,
                     whitelabel: false,
                     features: [
-                        '120 requests/minute',
-                        'All world leagues and fixtures',
-                        'Live scores and match events',
-                        'Standard community support',
-                        'Ad-supported on web viewer'
+                        '120 requests / minute',
+                        'Top 10 world leagues (EPL, LaLiga, UCL, Serie A, etc.)',
+                        'Live scoreboards & minute tickers',
+                        'Full fixture dates & historical results',
+                        'League tables & standings',
+                        'Community developer support'
                     ]
                 },
                 {
@@ -55,11 +56,12 @@ router.get(['/api/plans', '/api/v1/payments/plans'], async (req, res) => {
                     isAdFree: true,
                     whitelabel: false,
                     features: [
-                        '500 requests/minute',
-                        'All world leagues & live scores',
-                        '100% Ad-Free on API & web embed',
-                        'Commercial website license',
-                        'Email support'
+                        '500 requests / minute',
+                        'All 100+ world competitions',
+                        'Universal Bet Booking Code Converter',
+                        'Ad-free clean JSON payloads',
+                        'Team H2H head-to-head records',
+                        'Standard email support'
                     ]
                 },
                 {
@@ -70,12 +72,12 @@ router.get(['/api/plans', '/api/v1/payments/plans'], async (req, res) => {
                     isAdFree: true,
                     whitelabel: true,
                     features: [
-                        '1,500 requests/minute',
-                        'Complete match events & rosters',
-                        '100% Ad-Free on all surfaces',
-                        'Full commercial redistribution rights',
-                        'Whitelabel embed widget builder',
-                        'Priority support SLA'
+                        '1,500 requests / minute',
+                        'Sub-second real-time score updates',
+                        'Full timeline plays, goals, VAR & cards',
+                        'Universal Booking Code API hook',
+                        'Team lineups & roster profiles',
+                        'Priority 24/7 technical SLA'
                     ]
                 },
                 {
@@ -86,11 +88,12 @@ router.get(['/api/plans', '/api/v1/payments/plans'], async (req, res) => {
                     isAdFree: true,
                     whitelabel: true,
                     features: [
-                        '5,000 requests/minute (High Throughput)',
-                        'Custom branded match centers',
-                        'Whitelabel iframe & API endpoints',
-                        'Betting code booking adapter access',
-                        'Dedicated account manager & 99.9% SLA'
+                        '5,000 requests / minute (High Throughput)',
+                        'Custom whitelabel branded match centers',
+                        'Direct Norra AI Prediction Engine access',
+                        'Multi-bookmaker odds & universal slip conversion',
+                        'Dedicated account manager & Discord/Telegram VIP channel',
+                        'Custom contract & 99.9% uptime SLA'
                     ]
                 }
             ]

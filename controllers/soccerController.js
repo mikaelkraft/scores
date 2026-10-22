@@ -524,15 +524,33 @@ async function sendSummary(req, res) {
             }
 
             // If ESPN provided no boxscore/events or for LiveScore ingested matches, enrich with LiveScore telemetry
-            if (!summary.boxscore?.teams?.length) {
+            const hasStats = Boolean(
+                summary.boxscore?.teams?.[0]?.statistics?.length ||
+                summary.boxscore?.teams?.[1]?.statistics?.length
+            );
+            const isLiveScoreEvent = String(match.source?.provider || '').toLowerCase() === 'livescore'
+                || String(match.source?.event_id || req.eventId).length <= 8;
+
+            if (!hasStats || isLiveScoreEvent || !summary.keyEvents?.length) {
                 try {
                     const { fetchLiveScoreMatchDetails } = require('../services/soccerSyncService');
                     const lsData = await fetchLiveScoreMatchDetails(match.source?.event_id || req.eventId);
                     if (lsData) {
-                        if (lsData.boxscore && !summary.boxscore?.teams?.length) summary.boxscore = lsData.boxscore;
-                        if (lsData.keyEvents && !summary.keyEvents?.length) summary.keyEvents = lsData.keyEvents;
-                        if (lsData.rosters && !summary.rosters?.length) summary.rosters = lsData.rosters;
-                        if (lsData.gameInfo && !summary.gameInfo) summary.gameInfo = lsData.gameInfo;
+                        if (lsData.boxscore && !hasStats) {
+                            summary.boxscore = lsData.boxscore;
+                        }
+                        if (lsData.keyEvents?.length) {
+                            summary.keyEvents = lsData.keyEvents;
+                            if (summary.header?.competitions?.[0]) {
+                                summary.header.competitions[0].details = lsData.keyEvents;
+                            }
+                        }
+                        if (lsData.rosters?.length && !summary.rosters?.length) {
+                            summary.rosters = lsData.rosters;
+                        }
+                        if (lsData.gameInfo && !summary.gameInfo?.venue?.fullName) {
+                            summary.gameInfo = lsData.gameInfo;
+                        }
                     }
                 } catch {}
             }
@@ -706,7 +724,7 @@ router.get('/:league/events/:eventId/plays', validateLeague, validateEvent, asyn
 
         const [league, match, normalizedCount] = await Promise.all([
             getLeague(req.params.league),
-            SoccerMatch.findOne(filterForMatch(req.params.league, req.eventId), 'status').lean(),
+            SoccerMatch.findOne(filterForMatch(req.params.league, req.eventId), 'status key_events source').lean(),
             SoccerMatchEvent.countDocuments(normalizedFilter)
         ]);
 
@@ -737,7 +755,7 @@ router.get('/:league/events/:eventId/plays', validateLeague, validateEvent, asyn
         const filter = importantOnly
             ? { $and: [sourceFilter, importantFilter] }
             : sourceFilter;
-        const [count, events] = await Promise.all([
+        let [count, events] = await Promise.all([
             !importantOnly && normalizedCount > 0
                 ? Promise.resolve(normalizedCount)
                 : SoccerMatchEvent.countDocuments(filter),
@@ -748,15 +766,40 @@ router.get('/:league/events/:eventId/plays', validateLeague, validateEvent, asyn
                 .lean()
         ]);
 
+        let items = events.map(serializePlay);
+        if (items.length === 0) {
+            let keyEvents = match.key_events || [];
+            if (!keyEvents.length) {
+                try {
+                    const { fetchLiveScoreMatchDetails } = require('../services/soccerSyncService');
+                    const lsData = await fetchLiveScoreMatchDetails(match.source?.event_id || req.eventId);
+                    if (lsData?.keyEvents?.length) keyEvents = lsData.keyEvents;
+                } catch {}
+            }
+            if (keyEvents.length) {
+                items = keyEvents.map((ke, idx) => ({
+                    id: ke.id || `play-${idx}`,
+                    sequence: idx + 1,
+                    type: ke.type || { text: 'Play' },
+                    text: ke.text || '',
+                    clock: typeof ke.clock === 'string' ? { displayValue: ke.clock, value: ke.clockValue || 0 } : (ke.clock || { displayValue: '', value: 0 }),
+                    scoringPlay: Boolean(ke.scoringPlay),
+                    team: ke.team || null,
+                    participants: (ke.athletesInvolved || []).map(a => ({ athlete: a }))
+                }));
+                count = items.length;
+            }
+        }
+
         res.set('Cache-Control', `public, max-age=${match.status?.state === 'in' ? 4 : 30}`);
         return res.json({
             count,
             pageIndex: page,
             pageSize: limit,
-            pageCount: Math.ceil(count / limit),
+            pageCount: Math.max(1, Math.ceil(count / limit)),
             dataSource: 'database',
             importantOnly,
-            items: events.map(serializePlay)
+            items
         });
     } catch (error) {
         return sendError(res, error);

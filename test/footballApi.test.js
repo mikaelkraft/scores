@@ -55,6 +55,37 @@ test('requireApiKey permits Norra Master API key with unlimited throughput', asy
     }
 });
 
+test('Pricing plans API endpoint returns synchronized features across all tiers', async () => {
+    const initPaymentRoutes = require('../controllers/paymentController');
+    const app = express();
+    initPaymentRoutes(app);
+
+    const server = http.createServer(app);
+    await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+    const port = server.address().port;
+
+    try {
+        const res = await fetch(`http://127.0.0.1:${port}/api/plans`);
+        assert.equal(res.status, 200);
+        const data = await res.json();
+        assert.ok(Array.isArray(data.plans));
+        assert.equal(data.plans.length, 4);
+
+        const free = data.plans.find(p => p.id === 'free');
+        const starter = data.plans.find(p => p.id === 'starter');
+        const pro = data.plans.find(p => p.id === 'pro');
+        const enterprise = data.plans.find(p => p.id === 'whitelabel' || p.id === 'enterprise');
+
+        assert.ok(free.features.some(f => f.includes('Top 10 world leagues')));
+        assert.ok(starter.features.some(f => f.includes('All 100+ world competitions')));
+        assert.ok(starter.features.some(f => f.includes('Universal Bet Booking Code Converter')));
+        assert.ok(pro.features.some(f => f.includes('Sub-second real-time score updates')));
+        assert.ok(enterprise.features.some(f => f.includes('Discord/Telegram VIP channel')));
+    } finally {
+        await new Promise(resolve => server.close(resolve));
+    }
+});
+
 test.after(async () => {
     const mongoose = require('../database');
     await mongoose.disconnect();
