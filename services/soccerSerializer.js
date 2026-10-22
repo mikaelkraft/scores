@@ -116,8 +116,14 @@ function serializeLeague(league) {
     };
 }
 
+function sanitizeLogoUrl(url) {
+    if (!url) return '';
+    return String(url).replace('https://static.livescore.com/', 'https://storage.livescore.com/images/team/medium/');
+}
+
 function serializeClub(club) {
     if (!club) return null;
+    const cleanLogo = sanitizeLogoUrl(club.logo);
     return {
         id: club.source_id || club.source?.club_id,
         uid: club.uid || club.source?.uid || '',
@@ -129,8 +135,8 @@ function serializeClub(club) {
         location: club.city || club.country || club.name,
         country: club.country || '',
         city: club.city || '',
-        logo: club.logo || '',
-        logos: club.logos || [],
+        logo: cleanLogo,
+        logos: (club.logos || []).map(l => ({ ...l, href: sanitizeLogoUrl(l.href) })),
         color: club.color || '',
         alternateColor: club.alternate_color || '',
         foundedYear: club.founded_year,
@@ -376,5 +382,6 @@ module.exports = {
     serializeScoreboardEvent,
     serializeStandingGroup,
     serializeSummary,
-    statsToArray
+    statsToArray,
+    sanitizeLogoUrl
 };

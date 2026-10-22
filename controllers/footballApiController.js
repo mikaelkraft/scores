@@ -13,7 +13,8 @@ const {
     serializeSummary,
     serializePlay,
     serializeStandingGroup,
-    serializeClub
+    serializeClub,
+    sanitizeLogoUrl
 } = require('../services/soccerSerializer');
 
 function formatDateKey(d = new Date()) {
@@ -145,7 +146,7 @@ router.get(['/live', '/livescores'], async (req, res) => {
                     name: m.home?.name || m.home?.display_name,
                     displayName: m.home?.display_name || m.home?.name,
                     abbreviation: m.home?.abbreviation || '',
-                    logo: m.home?.logo || '',
+                    logo: sanitizeLogoUrl(m.home?.logo || ''),
                     score: m.home?.score ?? 0,
                     winner: m.home?.winner || false,
                     stats: m.home?.stats || {}
@@ -155,7 +156,7 @@ router.get(['/live', '/livescores'], async (req, res) => {
                     name: m.away?.name || m.away?.display_name,
                     displayName: m.away?.display_name || m.away?.name,
                     abbreviation: m.away?.abbreviation || '',
-                    logo: m.away?.logo || '',
+                    logo: sanitizeLogoUrl(m.away?.logo || ''),
                     score: m.away?.score ?? 0,
                     winner: m.away?.winner || false,
                     stats: m.away?.stats || {}
@@ -291,7 +292,7 @@ router.get('/fixtures', async (req, res) => {
                     name: m.home?.name || m.home?.display_name,
                     displayName: m.home?.display_name || m.home?.name,
                     abbreviation: m.home?.abbreviation || '',
-                    logo: m.home?.logo || '',
+                    logo: sanitizeLogoUrl(m.home?.logo || ''),
                     score: m.home?.score,
                     winner: m.home?.winner,
                     form: m.home?.form || ''
@@ -301,7 +302,7 @@ router.get('/fixtures', async (req, res) => {
                     name: m.away?.name || m.away?.display_name,
                     displayName: m.away?.display_name || m.away?.name,
                     abbreviation: m.away?.abbreviation || '',
-                    logo: m.away?.logo || '',
+                    logo: sanitizeLogoUrl(m.away?.logo || ''),
                     score: m.away?.score,
                     winner: m.away?.winner,
                     form: m.away?.form || ''
