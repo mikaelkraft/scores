@@ -17,6 +17,8 @@
         selectedDateStr: '',
         currentStatus: 'all',
         pinnedMatches: JSON.parse(localStorage.getItem('norra_pinned_matches') || '[]'),
+        goalAlertsEnabled: localStorage.getItem('norra_goal_alerts') === 'true',
+        liveEventSource: null,
         searchQuery: '',
         liveMatchCount: 0,
         collapsedLeagues: new Set()
@@ -556,14 +558,31 @@
             else if (state.selectedDayOffset === 0) dateParam = 'today';
             else if (state.selectedDateStr) dateParam = state.selectedDateStr;
 
-            const statusParam = state.currentStatus || 'all';
+            const isFavorites = state.currentStatus === 'favorites' || Boolean(options?.favoritesOnly);
+            const statusParam = isFavorites ? 'all' : (state.currentStatus || 'all');
             let url = `/api/v1/football/fixtures?date=${encodeURIComponent(dateParam)}&limit=200`;
             if (statusParam && statusParam !== 'all') {
                 url += `&status=${encodeURIComponent(statusParam)}`;
             }
 
             const data = await fetchJson(url);
-            const matches = data.matches || [];
+            let matches = data.matches || [];
+
+            if (isFavorites) {
+                matches = matches.filter(m => state.pinnedMatches.includes(String(m.id)));
+                if (!matches.length) {
+                    if (elements['fixtures-empty']) {
+                        elements['fixtures-empty'].hidden = false;
+                        elements['fixtures-empty'].innerHTML = `
+                            <span class="empty-icon">⭐</span>
+                            <p style="font-size:15px; font-weight:700; color:var(--text-main); margin-bottom:6px;">No Pinned Games</p>
+                            <p style="font-size:13px; color:var(--text-muted); margin:0;">Click the ★ star icon next to any match to pin it here to My Games for instant tracking.</p>
+                        `;
+                    }
+                    if (elements['fixtures-list']) elements['fixtures-list'].innerHTML = '';
+                    return;
+                }
+            }
 
             if (!matches.length) {
                 renderAllLeaguesGrouped([]);
@@ -1359,6 +1378,31 @@
             const prevScrollTop = elements['dialog-content'].scrollTop;
             const activeTab = state.drawerActiveTab || 'timeline';
 
+            const getStatVal = (list, name) => {
+                const item = list.find(s => s.name === name);
+                return Number(String(item?.displayValue || item?.value || 0).replace('%', '')) || 0;
+            };
+            const hPoss = getStatVal(homeStats, 'possessionPct') || 50;
+            const aPoss = getStatVal(awayStats, 'possessionPct') || (100 - hPoss);
+            const hShotsOn = getStatVal(homeStats, 'shotsOnTarget');
+            const aShotsOn = getStatVal(awayStats, 'shotsOnTarget');
+            const hShots = getStatVal(homeStats, 'totalShots') || (hShotsOn + getStatVal(homeStats, 'shotsOffTarget'));
+            const aShots = getStatVal(awayStats, 'totalShots') || (aShotsOn + getStatVal(awayStats, 'shotsOffTarget'));
+            const hCorners = getStatVal(homeStats, 'wonCorners');
+            const aCorners = getStatVal(awayStats, 'wonCorners');
+
+            const hWeight = (hPoss * 0.35) + (hShotsOn * 5) + (hShots * 2) + (hCorners * 2.5);
+            const aWeight = (aPoss * 0.35) + (aShotsOn * 5) + (aShots * 2) + (aCorners * 2.5);
+            const totalWeight = (hWeight + aWeight) || 1;
+            const hMomentum = Math.min(92, Math.max(8, Math.round((hWeight / totalWeight) * 100)));
+            const aMomentum = 100 - hMomentum;
+
+            let momentumVerdict = '⚖️ Evenly Contested Attacking Momentum';
+            if (hMomentum >= 65) momentumVerdict = `🔥 ${escapeHtml(home.team?.displayName || 'Home')} Dominating Attacking Pressure (+${hMomentum - 50}%)`;
+            else if (aMomentum >= 65) momentumVerdict = `⚡ ${escapeHtml(away.team?.displayName || 'Away')} Dominating Attacking Pressure (+${aMomentum - 50}%)`;
+            else if (hMomentum >= 54) momentumVerdict = `📈 ${escapeHtml(home.team?.displayName || 'Home')} Has the Attacking Edge`;
+            else if (aMomentum >= 54) momentumVerdict = `📈 ${escapeHtml(away.team?.displayName || 'Away')} Has the Attacking Edge`;
+
             elements['dialog-content'].innerHTML = `
                 <section class="drawer-header-card">
                     <div class="team-vs-team-row">
@@ -1399,6 +1443,29 @@
                 </div>
 
                 <div id="drawer-tab-stats" class="drawer-tab-content" ${activeTab === 'stats' ? '' : 'hidden'}>
+                    <!-- Attacking Momentum & Pressure Gauge -->
+                    <div class="momentum-gauge-card" style="background:var(--bg-canvas); border:1px solid var(--border-subtle); border-radius:10px; padding:16px; margin-bottom:20px;">
+                        <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:6px; margin-bottom:10px;">
+                            <div style="display:flex; align-items:center; gap:6px;">
+                                <span style="font-size:16px;">⚡</span>
+                                <strong style="font-size:12.5px; text-transform:uppercase; color:var(--text-main); letter-spacing:0.5px;">Live Match Momentum &amp; Attacking Pressure</strong>
+                            </div>
+                            <span style="font-size:11.5px; font-weight:700; color:var(--color-primary);">${momentumVerdict}</span>
+                        </div>
+                        <div style="display:flex; justify-content:space-between; font-size:13px; font-weight:700; margin-bottom:8px;">
+                            <span style="color:#10b981;">${escapeHtml(home.team?.displayName || 'Home')} (${hMomentum}%)</span>
+                            <span style="color:#3b82f6;">(${aMomentum}%) ${escapeHtml(away.team?.displayName || 'Away')}</span>
+                        </div>
+                        <div style="height:12px; background:var(--bg-surface-elevated); border-radius:6px; overflow:hidden; display:flex; box-shadow:inset 0 1px 3px rgba(0,0,0,0.2);">
+                            <div style="width:${hMomentum}%; background:linear-gradient(90deg, #10b981, #059669); transition:width 0.4s ease;"></div>
+                            <div style="width:${aMomentum}%; background:linear-gradient(90deg, #2563eb, #3b82f6); transition:width 0.4s ease;"></div>
+                        </div>
+                        <div style="display:flex; justify-content:space-between; font-size:11px; color:var(--text-muted); margin-top:6px;">
+                            <span>Possession: ${hPoss}% &bull; Shots: ${hShots} &bull; Corners: ${hCorners}</span>
+                            <span>Corners: ${aCorners} &bull; Shots: ${aShots} &bull; Possession: ${aPoss}%</span>
+                        </div>
+                    </div>
+
                     <h4 style="margin:0 0 14px; font-size:14px; color:var(--text-main);">In-Play Match Statistics (${escapeHtml(home.team?.displayName || 'Home')} vs ${escapeHtml(away.team?.displayName || 'Away')})</h4>
                     <div>${statRows || `
                         <div style="text-align:center; padding:24px 16px; background:var(--bg-canvas); border:1px solid var(--border-subtle); border-radius:8px;">
@@ -1935,6 +2002,9 @@
 
                 if (status === 'live') {
                     selectLiveMatches();
+                } else if (status === 'favorites') {
+                    state.selectedLeagueSlug = 'all';
+                    loadAllLeagueFixtures({ favoritesOnly: true });
                 } else if (state.selectedLeagueSlug === 'all') {
                     loadAllLeagueFixtures();
                 } else if (state.league) {
@@ -1942,6 +2012,7 @@
                 }
             });
         });
+        updateFavoritesBadge();
 
         const headerLiveBtn = document.getElementById('header-live-btn');
         if (headerLiveBtn) {
@@ -1976,23 +2047,36 @@
         });
     }
 
+    function updateFavoritesBadge() {
+        const badge = document.getElementById('fs-status-fav-badge');
+        if (badge) {
+            const count = state.pinnedMatches.length;
+            badge.textContent = count;
+            badge.style.display = count > 0 ? 'inline-block' : 'none';
+        }
+    }
+
     function togglePinMatch(eventId) {
         if (!eventId) return;
         const idStr = String(eventId);
         const idx = state.pinnedMatches.indexOf(idStr);
         if (idx === -1) {
             state.pinnedMatches.push(idStr);
-            showToast('⭐ Match pinned to top of live scores');
+            showToast('⭐ Match pinned to My Games');
         } else {
             state.pinnedMatches.splice(idx, 1);
-            showToast('Match unpinned');
+            showToast('Match unpinned from My Games');
         }
         try {
             localStorage.setItem('norra_pinned_matches', JSON.stringify(state.pinnedMatches));
         } catch {}
 
+        updateFavoritesBadge();
+
         // Re-render fixtures list to reflect pinning
-        if (state.selectedLeagueSlug === 'all') {
+        if (state.currentStatus === 'favorites') {
+            loadAllLeagueFixtures({ favoritesOnly: true });
+        } else if (state.selectedLeagueSlug === 'all') {
             loadAllLeagueFixtures();
         } else if (state.selectedLeagueSlug === 'live') {
             loadLiveMatches();
@@ -2187,11 +2271,297 @@
         setTimeout(syncLiveScores, 1500);
     }
 
+    let audioCtx = null;
+    function playGoalSound() {
+        if (!state.goalAlertsEnabled) return;
+        try {
+            if (!audioCtx) {
+                audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+            }
+            if (audioCtx.state === 'suspended') {
+                audioCtx.resume();
+            }
+            const now = audioCtx.currentTime;
+
+            // Referee whistle synthesizer
+            const osc = audioCtx.createOscillator();
+            const gain = audioCtx.createGain();
+            osc.type = 'triangle';
+            osc.frequency.setValueAtTime(2600, now);
+            osc.frequency.exponentialRampToValueAtTime(1900, now + 0.12);
+            osc.frequency.exponentialRampToValueAtTime(2800, now + 0.25);
+
+            gain.gain.setValueAtTime(0.25, now);
+            gain.gain.exponentialRampToValueAtTime(0.01, now + 0.45);
+
+            osc.connect(gain);
+            gain.connect(audioCtx.destination);
+            osc.start(now);
+            osc.stop(now + 0.45);
+
+            // Stadium cheer chord synthesizer
+            setTimeout(() => {
+                if (!audioCtx) return;
+                const t = audioCtx.currentTime;
+                [523.25, 659.25, 783.99, 1046.50].forEach((freq, idx) => {
+                    const chordOsc = audioCtx.createOscillator();
+                    const chordGain = audioCtx.createGain();
+                    chordOsc.type = 'sine';
+                    chordOsc.frequency.setValueAtTime(freq, t + (idx * 0.05));
+                    chordGain.gain.setValueAtTime(0.12, t + (idx * 0.05));
+                    chordGain.gain.exponentialRampToValueAtTime(0.001, t + 0.6);
+                    chordOsc.connect(chordGain);
+                    chordGain.connect(audioCtx.destination);
+                    chordOsc.start(t + (idx * 0.05));
+                    chordOsc.stop(t + 0.6);
+                });
+            }, 120);
+
+            // Mobile device haptic feedback pulse
+            if (navigator.vibrate) {
+                navigator.vibrate([150, 60, 200]);
+            }
+        } catch (e) {}
+    }
+
+    function initGoalAlertToggle() {
+        const toggleBtn = document.getElementById('goal-alert-toggle');
+        if (!toggleBtn) return;
+
+        const updateBtnUi = () => {
+            const on = Boolean(state.goalAlertsEnabled);
+            toggleBtn.classList.toggle('active', on);
+            toggleBtn.setAttribute('aria-pressed', String(on));
+            const icon = document.getElementById('goal-alert-icon');
+            const label = document.getElementById('goal-alert-label');
+            if (icon) icon.textContent = on ? '🔊' : '🔔';
+            if (label) label.textContent = on ? 'Sound: ON' : 'Sound: OFF';
+        };
+
+        updateBtnUi();
+
+        toggleBtn.addEventListener('click', () => {
+            state.goalAlertsEnabled = !state.goalAlertsEnabled;
+            try {
+                localStorage.setItem('norra_goal_alerts', String(state.goalAlertsEnabled));
+            } catch {}
+            updateBtnUi();
+            if (state.goalAlertsEnabled) {
+                playGoalSound();
+                showToast('🔊 Goal Celebration Sound & Haptics ENABLED');
+            } else {
+                showToast('🔔 Goal alerts muted');
+            }
+        });
+    }
+
+    function initLiveEventStream() {
+        if (!window.EventSource) return;
+        try {
+            if (state.liveEventSource) {
+                state.liveEventSource.close();
+                state.liveEventSource = null;
+            }
+
+            const source = new EventSource('/api/v1/football/live/stream');
+            state.liveEventSource = source;
+
+            source.addEventListener('initial', (e) => {
+                try {
+                    const data = JSON.parse(e.data);
+                    const matches = data.matches || [];
+                    state.liveMatchCount = matches.length;
+                    const fsBadge = document.getElementById('fs-status-live-badge');
+                    if (fsBadge) {
+                        fsBadge.textContent = matches.length;
+                        fsBadge.style.display = matches.length > 0 ? 'inline-block' : 'none';
+                    }
+                } catch {}
+            });
+
+            source.addEventListener('score_update', (e) => {
+                try {
+                    const data = JSON.parse(e.data);
+                    if (data.updates && data.updates.length) {
+                        for (const update of data.updates) {
+                            applyRealtimeMatchUpdate(update);
+                        }
+                    }
+                } catch {}
+            });
+
+            source.onerror = () => {
+                // EventSource standard auto-reconnects
+            };
+        } catch (err) {
+            console.warn('SSE stream notice:', err.message);
+        }
+    }
+
+    function applyRealtimeMatchUpdate(update) {
+        if (!update || !update.id) return;
+        const matchRow = document.querySelector(`.fs-match-row[data-event-id="${update.id}"]`);
+        if (matchRow) {
+            const scoreDigits = matchRow.querySelectorAll('.fs-score-digit');
+            const prevHomeScore = scoreDigits[0] ? scoreDigits[0].textContent.trim() : null;
+            const prevAwayScore = scoreDigits[1] ? scoreDigits[1].textContent.trim() : null;
+            const newHomeScore = String(update.home?.score ?? 0);
+            const newAwayScore = String(update.away?.score ?? 0);
+
+            if (scoreDigits[0]) scoreDigits[0].textContent = newHomeScore;
+            if (scoreDigits[1]) scoreDigits[1].textContent = newAwayScore;
+
+            const clockEl = matchRow.querySelector('.fs-status-live');
+            if (clockEl && update.status?.clock) {
+                clockEl.textContent = update.status.clock;
+            }
+
+            if (prevHomeScore !== null && (newHomeScore > prevHomeScore || newAwayScore > prevAwayScore)) {
+                playGoalSound();
+                matchRow.classList.add('goal-scored-highlight');
+                setTimeout(() => matchRow.classList.remove('goal-scored-highlight'), 4000);
+                showToast(`⚽ GOAL! ${update.home?.displayName || 'Home'} ${newHomeScore} - ${newAwayScore} ${update.away?.displayName || 'Away'}`);
+            }
+        }
+
+        if (state.currentEventId === update.id && elements['dialog-content']) {
+            const scoreDigits = elements['dialog-content'].querySelector('.score-digits');
+            if (scoreDigits) {
+                scoreDigits.textContent = `${update.home?.score ?? 0} - ${update.away?.score ?? 0}`;
+            }
+            const minutePill = elements['dialog-content'].querySelector('.minute-pill');
+            if (minutePill && update.status?.clock) {
+                minutePill.textContent = update.status.clock;
+            }
+        }
+    }
+
+    function initBookingConverter() {
+        const form = document.getElementById('booking-converter-form');
+        if (!form) return;
+
+        form.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const codeInput = document.getElementById('convert-code-input');
+            const fromSelect = document.getElementById('convert-from-select');
+            const toSelect = document.getElementById('convert-to-select');
+            const submitBtn = document.getElementById('convert-submit-btn');
+            const resultBox = document.getElementById('converter-result-box');
+            const quotaText = document.getElementById('converter-quota-text');
+
+            const code = codeInput ? codeInput.value.trim() : '';
+            const fromBookmaker = fromSelect ? fromSelect.value : '';
+            const toBookmaker = toSelect ? toSelect.value : '';
+
+            if (!code) return;
+            if (fromBookmaker === toBookmaker) {
+                showToast('⚠️ Please select a different target bookmaker.');
+                return;
+            }
+
+            if (submitBtn) {
+                submitBtn.disabled = true;
+                submitBtn.innerHTML = '<span class="loader" style="width:14px; height:14px; border-width:2px; display:inline-block;"></span> Converting...';
+            }
+
+            try {
+                const res = await fetch('/api/v1/booking/convert', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        sourceCode: code,
+                        fromBookmaker,
+                        toBookmaker
+                    })
+                });
+
+                const data = await res.json();
+                if (!res.ok) {
+                    if (res.status === 429) {
+                        resultBox.style.display = 'block';
+                        resultBox.innerHTML = `
+                            <div style="background: rgba(239, 68, 68, 0.08); border: 1px solid rgba(239, 68, 68, 0.3); border-radius: 8px; padding: 16px; text-align: center;">
+                                <span style="font-size: 24px;">⏳</span>
+                                <h4 style="margin: 6px 0; color: #ef4444;">Daily Free Conversion Limit Reached</h4>
+                                <p style="font-size: 13px; color: var(--text-muted); margin: 0 0 12px;">You've used all 5 free daily web conversions. Upgrade to Starter ($10/mo) for 500 conversions/day or Pro ($29/mo) for unlimited conversions.</p>
+                                <a href="/pricing" class="btn-primary" style="display: inline-block; padding: 8px 16px; text-decoration: none; border-radius: 6px; font-weight: 700; font-size: 13px;">View Pricing Plans &rarr;</a>
+                            </div>
+                        `;
+                        return;
+                    }
+                    throw new Error(data.error || 'Conversion failed');
+                }
+
+                if (quotaText && data.quotaRemaining !== undefined) {
+                    quotaText.textContent = `${data.quotaRemaining} daily conversions remaining`;
+                }
+
+                resultBox.style.display = 'block';
+                resultBox.innerHTML = `
+                    <div style="background: var(--bg-canvas); border: 1px solid var(--border-subtle); border-radius: 10px; padding: 18px;">
+                        <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px; margin-bottom: 14px;">
+                            <div>
+                                <span style="font-size: 11px; text-transform: uppercase; color: var(--text-muted); font-weight: 700; letter-spacing: 0.5px;">Converted Booking Code</span>
+                                <div style="display: flex; align-items: center; gap: 8px; margin-top: 4px;">
+                                    <strong style="font-size: 22px; font-family: monospace; color: var(--color-primary); letter-spacing: 1px;">${escapeHtml(data.convertedCode)}</strong>
+                                    <button type="button" id="copy-converted-code-btn" style="background: var(--bg-surface-elevated); border: 1px solid var(--border-subtle); border-radius: 6px; padding: 4px 8px; font-size: 11.5px; font-weight: 600; cursor: pointer; color: var(--text-main);">📋 Copy</button>
+                                </div>
+                            </div>
+                            <div style="display: flex; gap: 8px;">
+                                ${data.directUrl ? `
+                                    <a href="${safeUrl(data.directUrl)}" target="_blank" rel="noopener" class="btn-primary" style="display: inline-flex; align-items: center; gap: 6px; padding: 8px 14px; text-decoration: none; border-radius: 6px; font-size: 12.5px; font-weight: 700;">
+                                        <span>Load on ${escapeHtml(data.toName || 'Bookmaker')}</span> <span>&rarr;</span>
+                                    </a>
+                                ` : ''}
+                            </div>
+                        </div>
+
+                        <div style="font-size: 12px; color: var(--text-muted); margin-bottom: 12px;">
+                            Converted from <strong>${escapeHtml(data.fromName)}</strong> (${escapeHtml(data.sourceCode)}) to <strong>${escapeHtml(data.toName)}</strong> &bull; Total Multi-Bet Odds: <strong style="color:var(--text-main);">${escapeHtml(data.combinedOdds || 5.4)}</strong>
+                        </div>
+
+                        ${data.selections?.length ? `
+                            <div style="font-size: 11px; text-transform: uppercase; color: var(--text-muted); font-weight: 700; margin-bottom: 6px;">Matched Selections (${data.selections.length} legs)</div>
+                            <div style="display: flex; flex-direction: column; gap: 6px;">
+                                ${data.selections.map(s => `
+                                    <div style="display: flex; justify-content: space-between; align-items: center; padding: 6px 10px; background: var(--bg-surface-elevated); border: 1px solid var(--border-subtle); border-radius: 6px; font-size: 12px;">
+                                        <span><strong>${escapeHtml(s.event)}</strong> &bull; <span style="color:var(--text-muted);">${escapeHtml(s.market)}</span></span>
+                                        <span><span style="background:var(--color-primary-subtle); color:var(--color-primary); padding:2px 6px; border-radius:4px; font-weight:700;">${escapeHtml(s.pick)}</span> &bull; <strong>@${escapeHtml(s.odds)}</strong></span>
+                                    </div>
+                                `).join('')}
+                            </div>
+                        ` : ''}
+                    </div>
+                `;
+
+                const copyBtn = document.getElementById('copy-converted-code-btn');
+                if (copyBtn) {
+                    copyBtn.addEventListener('click', () => {
+                        navigator.clipboard.writeText(data.convertedCode);
+                        copyBtn.textContent = '✓ Copied!';
+                        setTimeout(() => copyBtn.textContent = '📋 Copy', 2000);
+                    });
+                }
+            } catch (err) {
+                showToast(`Conversion error: ${err.message}`);
+            } finally {
+                if (submitBtn) {
+                    submitBtn.disabled = false;
+                    submitBtn.innerHTML = '<span>Convert Slip</span> <span>&rarr;</span>';
+                }
+            }
+        });
+    }
+
     async function initialize() {
         setupThemeToggle();
         setupBackToTop();
         setupTimezones();
         bindEvents();
+        initGoalAlertToggle();
+        initLiveEventStream();
+        initBookingConverter();
+        updateFavoritesBadge();
         setInitialFixtureWindow();
         const currentYearEl = document.getElementById('current-year');
         if (currentYearEl) currentYearEl.textContent = new Date().getFullYear();

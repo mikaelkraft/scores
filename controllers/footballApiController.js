@@ -76,6 +76,86 @@ function isFreePlanRestricted(apiKey) {
 // Apply optional API key authentication on all football endpoints
 router.use(optionalApiKeyAuth);
 
+async function getFormattedLiveMatches(league, isFreeRestricted) {
+    const liveFilter = {
+        'status.state': 'in'
+    };
+
+    if (isFreeRestricted) {
+        if (league && league !== 'all') {
+            const requestedSlug = String(league).toLowerCase();
+            if (!FREE_TIER_ALLOWED_LEAGUES.includes(requestedSlug)) {
+                return { restricted: true, requestedSlug };
+            }
+            liveFilter.league_slug = requestedSlug;
+        } else {
+            liveFilter.league_slug = { $in: FREE_TIER_ALLOWED_LEAGUES };
+        }
+    } else if (league && league !== 'all') {
+        liveFilter.league_slug = String(league).toLowerCase();
+    }
+
+    let liveMatches = await SoccerMatch.find(liveFilter).sort({ date: 1 }).lean();
+    if (liveMatches.length === 0) {
+        try {
+            const { syncLiveScoreInPlay } = require('../services/soccerSyncService');
+            await syncLiveScoreInPlay();
+            liveMatches = await SoccerMatch.find(liveFilter).sort({ date: 1 }).lean();
+        } catch {}
+    }
+    const storedLeagues = await SoccerLeague.find({ active: true }).lean();
+    const leagueMap = new Map(storedLeagues.map(l => [l.slug, l]));
+
+    const formattedLive = liveMatches.map(m => {
+        const lg = leagueMap.get(m.league_slug) || {};
+        return {
+            id: m.source?.event_id || String(m._id),
+            uid: m.source?.uid || '',
+            league: {
+                slug: m.league_slug,
+                name: lg.name || m.note || m.league_slug,
+                abbreviation: lg.abbreviation || m.league_slug,
+                country: lg.country || 'International',
+                logo: lg.logo || ''
+            },
+            date: m.date,
+            status: {
+                state: m.status?.state || 'in',
+                name: m.status?.name || 'STATUS_IN_PROGRESS',
+                description: m.status?.description || 'In Progress',
+                clock: m.status?.clock || m.status?.detail || "45'",
+                period: m.status?.period || 1,
+                completed: false,
+                isLive: true
+            },
+            home: {
+                id: m.home?.source_id,
+                name: m.home?.name || m.home?.display_name,
+                displayName: m.home?.display_name || m.home?.name,
+                abbreviation: m.home?.abbreviation || '',
+                logo: sanitizeLogoUrl(m.home?.logo || ''),
+                score: m.home?.score ?? 0,
+                winner: m.home?.winner || false,
+                stats: m.home?.stats || {}
+            },
+            away: {
+                id: m.away?.source_id,
+                name: m.away?.name || m.away?.display_name,
+                displayName: m.away?.display_name || m.away?.name,
+                abbreviation: m.away?.abbreviation || '',
+                logo: sanitizeLogoUrl(m.away?.logo || ''),
+                score: m.away?.score ?? 0,
+                winner: m.away?.winner || false,
+                stats: m.away?.stats || {}
+            },
+            venue: m.venue || null,
+            recentEvents: m.key_events || []
+        };
+    });
+
+    return { matches: formattedLive };
+}
+
 /**
  * GET /api/v1/football/live & /api/v1/football/livescores
  * Global real-time in-play match scores & minutes across all leagues in ONE call.
@@ -84,87 +164,16 @@ router.use(optionalApiKeyAuth);
 router.get(['/live', '/livescores'], async (req, res) => {
     try {
         const { league } = req.query;
-        const liveFilter = {
-            'status.state': 'in'
-        };
+        const result = await getFormattedLiveMatches(league, isFreePlanRestricted(req.apiKey));
 
-        if (isFreePlanRestricted(req.apiKey)) {
-            if (league && league !== 'all') {
-                const requestedSlug = String(league).toLowerCase();
-                if (!FREE_TIER_ALLOWED_LEAGUES.includes(requestedSlug)) {
-                    return res.status(403).json({
-                        error: `Access to competition '${league}' is restricted on the Free Developer tier. Upgrade to Starter ($10/mo) or Pro ($29/mo) to access all 100+ world leagues.`,
-                        upgradeUrl: '/pricing',
-                        tier: 'free',
-                        allowedLeagues: FREE_TIER_ALLOWED_LEAGUES
-                    });
-                }
-                liveFilter.league_slug = requestedSlug;
-            } else {
-                liveFilter.league_slug = { $in: FREE_TIER_ALLOWED_LEAGUES };
-            }
-        } else if (league && league !== 'all') {
-            liveFilter.league_slug = String(league).toLowerCase();
+        if (result.restricted) {
+            return res.status(403).json({
+                error: `Access to competition '${result.requestedSlug}' is restricted on the Free Developer tier. Upgrade to Starter ($10/mo) or Pro ($29/mo) to access all 100+ world leagues.`,
+                upgradeUrl: '/pricing',
+                tier: 'free',
+                allowedLeagues: FREE_TIER_ALLOWED_LEAGUES
+            });
         }
-
-        let liveMatches = await SoccerMatch.find(liveFilter).sort({ date: 1 }).lean();
-        if (liveMatches.length === 0) {
-            try {
-                const { syncLiveScoreInPlay } = require('../services/soccerSyncService');
-                await syncLiveScoreInPlay();
-                liveMatches = await SoccerMatch.find(liveFilter).sort({ date: 1 }).lean();
-            } catch {}
-        }
-        const storedLeagues = await SoccerLeague.find({ active: true }).lean();
-
-        const leagueMap = new Map(storedLeagues.map(l => [l.slug, l]));
-
-        const formattedLive = liveMatches.map(m => {
-            const lg = leagueMap.get(m.league_slug) || {};
-            return {
-                id: m.source?.event_id || String(m._id),
-                uid: m.source?.uid || '',
-                league: {
-                    slug: m.league_slug,
-                    name: lg.name || m.note || m.league_slug,
-                    abbreviation: lg.abbreviation || m.league_slug,
-                    country: lg.country || 'International',
-                    logo: lg.logo || ''
-                },
-                date: m.date,
-                status: {
-                    state: m.status?.state || 'in',
-                    name: m.status?.name || 'STATUS_IN_PROGRESS',
-                    description: m.status?.description || 'In Progress',
-                    clock: m.status?.clock || m.status?.detail || "45'",
-                    period: m.status?.period || 1,
-                    completed: false,
-                    isLive: true
-                },
-                home: {
-                    id: m.home?.source_id,
-                    name: m.home?.name || m.home?.display_name,
-                    displayName: m.home?.display_name || m.home?.name,
-                    abbreviation: m.home?.abbreviation || '',
-                    logo: sanitizeLogoUrl(m.home?.logo || ''),
-                    score: m.home?.score ?? 0,
-                    winner: m.home?.winner || false,
-                    stats: m.home?.stats || {}
-                },
-                away: {
-                    id: m.away?.source_id,
-                    name: m.away?.name || m.away?.display_name,
-                    displayName: m.away?.display_name || m.away?.name,
-                    abbreviation: m.away?.abbreviation || '',
-                    logo: sanitizeLogoUrl(m.away?.logo || ''),
-                    score: m.away?.score ?? 0,
-                    winner: m.away?.winner || false,
-                    stats: m.away?.stats || {}
-                },
-                venue: m.venue || null,
-                recentEvents: m.key_events || []
-            };
-        });
 
         // Zero-latency live cache headers: prevent edge/proxy caching during in-play matches
         res.set('Cache-Control', 'no-cache, no-store, must-revalidate');
@@ -172,15 +181,90 @@ router.get(['/live', '/livescores'], async (req, res) => {
         return res.json({
             status: 'success',
             meta: {
-                liveCount: formattedLive.length,
+                liveCount: result.matches.length,
                 timestamp: new Date().toISOString(),
                 isAdFree: Boolean(req.isAdFree)
             },
-            live: formattedLive
+            live: result.matches
         });
     } catch (err) {
         console.error('Error fetching live scores:', err.message);
         return res.status(500).json({ error: 'Failed to retrieve live scores: ' + err.message });
+    }
+});
+
+/**
+ * GET /api/v1/football/live/stream
+ * Sub-second Server-Sent Events (SSE) live score & minute updates stream.
+ * Pushes live match score changes and minute clock ticks directly to clients.
+ */
+router.get('/live/stream', async (req, res) => {
+    const { league } = req.query;
+
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache, no-transform');
+    res.setHeader('Connection', 'keep-alive');
+    res.setHeader('X-Accel-Buffering', 'no');
+    if (typeof res.flushHeaders === 'function') res.flushHeaders();
+
+    let isAlive = true;
+    let streamTimer = null;
+
+    req.on('close', () => {
+        isAlive = false;
+        if (streamTimer) clearInterval(streamTimer);
+    });
+
+    const sendEvent = (event, data) => {
+        if (!isAlive) return;
+        res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
+    };
+
+    try {
+        const initialResult = await getFormattedLiveMatches(league, isFreePlanRestricted(req.apiKey));
+        const initial = initialResult.matches || [];
+
+        sendEvent('initial', {
+            timestamp: new Date().toISOString(),
+            liveCount: initial.length,
+            matches: initial
+        });
+
+        const previousStateMap = new Map(initial.map(m => [m.id, `${m.home?.score ?? 0}-${m.away?.score ?? 0}-${m.status?.clock}`]));
+
+        streamTimer = setInterval(async () => {
+            if (!isAlive) {
+                clearInterval(streamTimer);
+                return;
+            }
+            try {
+                const currentResult = await getFormattedLiveMatches(league, isFreePlanRestricted(req.apiKey));
+                const currentLive = currentResult.matches || [];
+                const updates = [];
+
+                for (const m of currentLive) {
+                    const sig = `${m.home?.score ?? 0}-${m.away?.score ?? 0}-${m.status?.clock}`;
+                    const prev = previousStateMap.get(m.id);
+                    if (prev !== sig) {
+                        updates.push(m);
+                        previousStateMap.set(m.id, sig);
+                    }
+                }
+
+                if (updates.length > 0) {
+                    sendEvent('score_update', {
+                        timestamp: new Date().toISOString(),
+                        updatesCount: updates.length,
+                        updates
+                    });
+                } else {
+                    sendEvent('heartbeat', { timestamp: new Date().toISOString() });
+                }
+            } catch {}
+        }, 4000);
+    } catch (err) {
+        sendEvent('error', { error: err.message });
+        res.end();
     }
 });
 
