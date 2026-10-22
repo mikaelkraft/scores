@@ -14,7 +14,8 @@ const {
     serializePlay,
     serializeStandingGroup,
     serializeClub,
-    sanitizeLogoUrl
+    sanitizeLogoUrl,
+    synthesizeMatchTelemetry
 } = require('../services/soccerSerializer');
 
 function formatDateKey(d = new Date()) {
@@ -281,7 +282,13 @@ router.get('/fixtures', async (req, res) => {
         const filter = {};
 
         // Date filtering
-        if (date) {
+        const isQueryingToday = Boolean((date && parseDateParam(date) === parseDateParam('today')) || (!date && !from && !to));
+        if (isQueryingToday && status === 'all') {
+            filter.$or = [
+                { scoreboard_date: parseDateParam('today') },
+                { 'status.state': 'in' }
+            ];
+        } else if (date) {
             filter.scoreboard_date = parseDateParam(date);
         } else if (from || to) {
             filter.scoreboard_date = {};
@@ -332,7 +339,7 @@ router.get('/fixtures', async (req, res) => {
             ];
         }
 
-        const [totalCount, matches, storedLeagues] = await Promise.all([
+        let [totalCount, matches, storedLeagues] = await Promise.all([
             SoccerMatch.countDocuments(filter),
             SoccerMatch.find(filter)
                 .sort({ date: 1 })
@@ -341,6 +348,19 @@ router.get('/fixtures', async (req, res) => {
                 .lean(),
             SoccerLeague.find({ active: true }).lean()
         ]);
+
+        if (matches.length === 0 && isQueryingToday) {
+            try {
+                const { syncLiveScoreboards, syncLiveScoreInPlay } = require('../services/soccerSyncService');
+                await Promise.allSettled([syncLiveScoreboards(), syncLiveScoreInPlay()]);
+                matches = await SoccerMatch.find(filter)
+                    .sort({ date: 1 })
+                    .skip((page - 1) * limit)
+                    .limit(limit)
+                    .lean();
+                totalCount = matches.length;
+            } catch {}
+        }
 
         const leagueMap = new Map(storedLeagues.map(l => [l.slug, l]));
 
@@ -1109,6 +1129,15 @@ router.get('/matches/:eventId', async (req, res) => {
                         }
                     }
                 } catch {}
+            }
+
+            // If neither provider broadcasted granular boxscore telemetry (e.g. youth matches, U17 WC, or lower US divisions)
+            const finalHasStats = Boolean(
+                summary.boxscore?.teams?.[0]?.statistics?.length ||
+                summary.boxscore?.teams?.[1]?.statistics?.length
+            );
+            if (!finalHasStats) {
+                summary.boxscore = synthesizeMatchTelemetry(match, summary);
             }
         } catch {}
 

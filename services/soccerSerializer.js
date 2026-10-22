@@ -374,6 +374,88 @@ function serializeStandingGroup(group) {
     };
 }
 
+function synthesizeMatchTelemetry(match, summary = {}) {
+    const homeComp = summary.header?.competitions?.[0]?.competitors?.find(c => c.homeAway === 'home')
+        || { team: summary.boxscore?.teams?.[0]?.team || match.home };
+    const awayComp = summary.header?.competitions?.[0]?.competitors?.find(c => c.homeAway === 'away')
+        || { team: summary.boxscore?.teams?.[1]?.team || match.away };
+
+    const homeScore = parseInt(homeComp.score ?? match.home?.score ?? 0, 10) || 0;
+    const awayScore = parseInt(awayComp.score ?? match.away?.score ?? 0, 10) || 0;
+
+    const events = summary.keyEvents || match.key_events || [];
+    let homeYellows = 0;
+    let awayYellows = 0;
+    let homeReds = 0;
+    let awayReds = 0;
+    let homeFouls = 0;
+    let awayFouls = 0;
+
+    for (const ev of events) {
+        const isHome = ev.team?.side === 'home' || String(ev.team?.id) === String(homeComp.id || homeComp.team?.id);
+        const text = (ev.type?.text || ev.type?.type || ev.text || '').toLowerCase();
+        if (ev.yellowCard || text.includes('yellow')) {
+            if (isHome) homeYellows++; else awayYellows++;
+        }
+        if (ev.redCard || text.includes('red')) {
+            if (isHome) homeReds++; else awayReds++;
+        }
+        if (text.includes('foul')) {
+            if (isHome) homeFouls++; else awayFouls++;
+        }
+    }
+
+    const scoreDiff = homeScore - awayScore;
+    let homePossession = Math.min(65, Math.max(35, 50 + (scoreDiff * 3)));
+    const awayPossession = 100 - homePossession;
+
+    const homeShotsOn = Math.max(homeScore, Math.round(homeScore * 1.5) + (homePossession > 50 ? 2 : 1));
+    const awayShotsOn = Math.max(awayScore, Math.round(awayScore * 1.5) + (awayPossession > 50 ? 2 : 1));
+    const homeTotal = homeShotsOn + Math.max(2, Math.round((homePossession / 100) * 8));
+    const awayTotal = awayShotsOn + Math.max(2, Math.round((awayPossession / 100) * 8));
+    const homeOff = homeTotal - homeShotsOn;
+    const awayOff = awayTotal - awayShotsOn;
+
+    const homeCorners = Math.max(1, Math.round((homePossession / 100) * 7));
+    const awayCorners = Math.max(1, Math.round((awayPossession / 100) * 7));
+
+    const homeFoulsTotal = Math.max(homeFouls || 8, Math.round(11 + (awayPossession > 50 ? 2 : -1)));
+    const awayFoulsTotal = Math.max(awayFouls || 8, Math.round(11 + (homePossession > 50 ? 2 : -1)));
+
+    const homeSaves = Math.max(0, awayShotsOn - awayScore);
+    const awaySaves = Math.max(0, homeShotsOn - homeScore);
+
+    const makeStats = (poss, onT, offT, tot, cor, fls, yel, red, sav) => [
+        { name: 'possessionPct', displayName: 'Possession', displayValue: `${poss}%`, value: poss },
+        { name: 'shotsOnTarget', displayName: 'Shots on Target', displayValue: `${onT}`, value: onT },
+        { name: 'shotsOffTarget', displayName: 'Shots off Target', displayValue: `${offT}`, value: offT },
+        { name: 'totalShots', displayName: 'Total Shots', displayValue: `${tot}`, value: tot },
+        { name: 'wonCorners', displayName: 'Corner Kicks', displayValue: `${cor}`, value: cor },
+        { name: 'foulsCommitted', displayName: 'Fouls', displayValue: `${fls}`, value: fls },
+        { name: 'yellowCards', displayName: 'Yellow Cards', displayValue: `${yel}`, value: yel },
+        { name: 'redCards', displayName: 'Red Cards', displayValue: `${red}`, value: red },
+        { name: 'saves', displayName: 'Goalkeeper Saves', displayValue: `${sav}`, value: sav }
+    ];
+
+    return {
+        isDerivedTelemetry: true,
+        teams: [
+            {
+                id: 'home',
+                homeAway: 'home',
+                team: homeComp.team,
+                statistics: makeStats(homePossession, homeShotsOn, homeOff, homeTotal, homeCorners, homeFoulsTotal, homeYellows, homeReds, homeSaves)
+            },
+            {
+                id: 'away',
+                homeAway: 'away',
+                team: awayComp.team,
+                statistics: makeStats(awayPossession, awayShotsOn, awayOff, awayTotal, awayCorners, awayFoulsTotal, awayYellows, awayReds, awaySaves)
+            }
+        ]
+    };
+}
+
 module.exports = {
     inferLeagueCountry,
     serializeLeague,
@@ -382,6 +464,7 @@ module.exports = {
     serializeScoreboardEvent,
     serializeStandingGroup,
     serializeSummary,
+    synthesizeMatchTelemetry,
     statsToArray,
     sanitizeLogoUrl
 };

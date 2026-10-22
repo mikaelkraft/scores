@@ -9,7 +9,7 @@
     <meta name="robots" content="{{SEO_ROBOTS}}">
     <meta name="theme-color" content="#0b0f19">
     <link rel="canonical" href="{{SEO_CANONICAL}}">
-    <link rel="stylesheet" href="/assets/styles-v9.css?v=9.3">
+    <link rel="stylesheet" href="/assets/styles-v9.css?v=9.5">
     <script>
         (function() {
             var theme = localStorage.getItem('norra_theme') || localStorage.getItem('theme') || 'dark';
@@ -227,32 +227,32 @@
         <div class="hero-promos-grid shell" id="hero-promos-container" aria-label="Featured sports bookmakers" style="margin-top:24px;"></div>
 
         <!-- Universal Bet Booking Code Converter Widget -->
-        <section class="booking-converter-section shell" id="booking-converter-section" aria-label="Universal Bet Booking Code Converter" style="margin: 32px auto 16px;">
-            <div class="converter-card" style="background: var(--bg-surface); border: 1px solid var(--border-subtle); border-radius: 12px; padding: 24px; box-shadow: 0 4px 20px rgba(0,0,0,0.06);">
-                <div style="display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: 12px; margin-bottom: 18px;">
-                    <div>
-                        <div style="display: flex; align-items: center; gap: 8px;">
-                            <span style="font-size: 20px;">🎫</span>
-                            <h3 style="margin: 0; font-size: 18px; font-weight: 800; color: var(--text-main);">Universal Bet Booking Code Converter</h3>
-                            <span style="background: var(--color-primary-subtle); color: var(--color-primary); font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 12px;">LIVE CONVERTER</span>
+        <section class="booking-converter-section shell" id="booking-converter-section" aria-label="Universal Bet Booking Code Converter">
+            <div class="converter-card">
+                <div class="converter-header">
+                    <div class="converter-info">
+                        <div class="converter-title-row">
+                            <span class="converter-emoji">🎫</span>
+                            <h3 class="converter-title">Universal Bet Booking Code Converter</h3>
+                            <span class="converter-live-badge">LIVE CONVERTER</span>
                         </div>
-                        <p style="margin: 4px 0 0; font-size: 13px; color: var(--text-muted);">
+                        <p class="converter-desc">
                             Instantly convert any betslip or booking code between major sportsbooks (SportyBet, Bet9ja, MSport, 1xBet, Betway).
                         </p>
                     </div>
-                    <div id="converter-tier-badge" style="font-size: 12px; background: var(--bg-canvas); border: 1px solid var(--border-subtle); padding: 4px 10px; border-radius: 6px; color: var(--text-muted);">
-                        ⚡ Free Web Tool: <strong style="color: var(--text-main);" id="converter-quota-text">5 daily conversions remaining</strong>
+                    <div id="converter-tier-badge" class="converter-tier-badge">
+                        ⚡ Free Web Tool: <strong id="converter-quota-text">5 daily conversions remaining</strong>
                     </div>
                 </div>
 
-                <form id="booking-converter-form" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)) 140px; gap: 12px; align-items: end;">
-                    <div>
-                        <label for="convert-code-input" style="display: block; font-size: 12px; font-weight: 700; color: var(--text-muted); margin-bottom: 6px; text-transform: uppercase;">1. Booking Code</label>
-                        <input type="text" id="convert-code-input" placeholder="e.g. BC62A9 or SB-4410" required style="width: 100%; padding: 10px 12px; background: var(--bg-canvas); border: 1px solid var(--border-strong); border-radius: 8px; font-size: 14px; font-weight: 700; font-family: monospace; color: var(--text-main); text-transform: uppercase; box-sizing: border-box;">
+                <form id="booking-converter-form" class="booking-converter-form">
+                    <div class="booking-field-group">
+                        <label for="convert-code-input">1. Booking Code</label>
+                        <input type="text" id="convert-code-input" placeholder="e.g. BC62A9 or SB-4410" required autocomplete="off" autocorrect="off" autocapitalize="characters" spellcheck="false">
                     </div>
-                    <div>
-                        <label for="convert-from-select" style="display: block; font-size: 12px; font-weight: 700; color: var(--text-muted); margin-bottom: 6px; text-transform: uppercase;">2. From Bookmaker</label>
-                        <select id="convert-from-select" style="width: 100%; padding: 10px 12px; background: var(--bg-canvas); border: 1px solid var(--border-strong); border-radius: 8px; font-size: 13px; font-weight: 600; color: var(--text-main); box-sizing: border-box;">
+                    <div class="booking-field-group">
+                        <label for="convert-from-select">2. From Bookmaker</label>
+                        <select id="convert-from-select">
                             <option value="sportybet">🔴 SportyBet</option>
                             <option value="bet9ja" selected>🟢 Bet9ja</option>
                             <option value="msport">🟡 MSport</option>
@@ -260,9 +260,9 @@
                             <option value="betway">⚫ Betway</option>
                         </select>
                     </div>
-                    <div>
-                        <label for="convert-to-select" style="display: block; font-size: 12px; font-weight: 700; color: var(--text-muted); margin-bottom: 6px; text-transform: uppercase;">3. Convert To</label>
-                        <select id="convert-to-select" style="width: 100%; padding: 10px 12px; background: var(--bg-canvas); border: 1px solid var(--border-strong); border-radius: 8px; font-size: 13px; font-weight: 600; color: var(--text-main); box-sizing: border-box;">
+                    <div class="booking-field-group">
+                        <label for="convert-to-select">3. Convert To</label>
+                        <select id="convert-to-select">
                             <option value="sportybet" selected>🔴 SportyBet</option>
                             <option value="bet9ja">🟢 Bet9ja</option>
                             <option value="msport">🟡 MSport</option>
@@ -270,15 +270,15 @@
                             <option value="betway">⚫ Betway</option>
                         </select>
                     </div>
-                    <div>
-                        <button type="submit" id="convert-submit-btn" class="btn-primary" style="width: 100%; padding: 10px 16px; border-radius: 8px; font-weight: 700; font-size: 13px; height: 42px; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 6px;">
+                    <div class="booking-submit-group">
+                        <button type="submit" id="convert-submit-btn" class="btn-primary">
                             <span>Convert Slip</span> <span>&rarr;</span>
                         </button>
                     </div>
                 </form>
 
                 <!-- Result Container -->
-                <div id="converter-result-box" style="display: none; margin-top: 18px; padding-top: 18px; border-top: 1px solid var(--border-subtle);"></div>
+                <div id="converter-result-box" class="converter-result-box" style="display: none;"></div>
             </div>
         </section>
 
@@ -547,6 +547,6 @@
             }
         })();
     </script>
-    <script src="/assets/app-v9.js?v=9.4" defer></script>
+    <script src="/assets/app-v9.js?v=9.5" defer></script>
 </body>
 </html>

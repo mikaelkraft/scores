@@ -2348,3 +2348,206 @@ dialog.match-dialog::backdrop {
     text-shadow: 0 0 8px rgba(245, 158, 11, 0.6);
 }
 
+/* --- Universal Bet Booking Code Converter --- */
+.booking-converter-section {
+    margin: 32px auto 16px;
+    width: 100%;
+    box-sizing: border-box;
+}
+
+.converter-card {
+    background: var(--bg-surface);
+    border: 1px solid var(--border-subtle);
+    border-radius: 12px;
+    padding: 24px;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.06);
+    box-sizing: border-box;
+    width: 100%;
+    max-width: 100%;
+    overflow-x: hidden;
+}
+
+.converter-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    flex-wrap: wrap;
+    gap: 12px;
+    margin-bottom: 18px;
+    width: 100%;
+    box-sizing: border-box;
+}
+
+.converter-info {
+    flex: 1 1 300px;
+    min-width: 0;
+}
+
+.converter-title-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+.converter-emoji {
+    font-size: 20px;
+    line-height: 1;
+}
+
+.converter-title {
+    margin: 0;
+    font-size: 18px;
+    font-weight: 800;
+    color: var(--text-main);
+    letter-spacing: -0.2px;
+}
+
+.converter-live-badge {
+    background: var(--color-primary-subtle);
+    color: var(--color-primary);
+    font-size: 11px;
+    font-weight: 700;
+    padding: 2px 8px;
+    border-radius: 12px;
+    letter-spacing: 0.4px;
+}
+
+.converter-desc {
+    margin: 4px 0 0;
+    font-size: 13px;
+    color: var(--text-muted);
+    line-height: 1.45;
+}
+
+.converter-tier-badge {
+    font-size: 12px;
+    background: var(--bg-canvas);
+    border: 1px solid var(--border-subtle);
+    padding: 4px 10px;
+    border-radius: 6px;
+    color: var(--text-muted);
+    align-self: flex-start;
+    white-space: nowrap;
+}
+
+.converter-tier-badge strong {
+    color: var(--text-main);
+}
+
+.booking-converter-form {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)) 140px;
+    gap: 12px;
+    align-items: end;
+    width: 100%;
+    box-sizing: border-box;
+}
+
+.booking-field-group {
+    width: 100%;
+    box-sizing: border-box;
+    min-width: 0;
+}
+
+.booking-field-group label {
+    display: block;
+    font-size: 12px;
+    font-weight: 700;
+    color: var(--text-muted);
+    margin-bottom: 6px;
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+}
+
+.booking-field-group input,
+.booking-field-group select {
+    width: 100%;
+    padding: 10px 12px;
+    background: var(--bg-canvas);
+    border: 1px solid var(--border-strong);
+    border-radius: 8px;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text-main);
+    box-sizing: border-box;
+    height: 42px;
+    line-height: normal;
+}
+
+.booking-field-group input {
+    font-size: 14px;
+    font-family: monospace;
+    font-weight: 700;
+    text-transform: uppercase;
+}
+
+.booking-submit-group {
+    width: 100%;
+    box-sizing: border-box;
+}
+
+.booking-submit-group button {
+    width: 100%;
+    padding: 10px 16px;
+    border-radius: 8px;
+    font-weight: 700;
+    font-size: 13px;
+    height: 42px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    box-sizing: border-box;
+}
+
+.converter-result-box {
+    margin-top: 18px;
+    padding-top: 18px;
+    border-top: 1px solid var(--border-subtle);
+    width: 100%;
+    box-sizing: border-box;
+    overflow-x: hidden;
+}
+
+@media (max-width: 768px) {
+    .booking-converter-section {
+        padding: 0 10px;
+        margin: 20px auto 12px;
+    }
+
+    .converter-card {
+        padding: 16px 12px !important;
+        border-radius: 10px;
+    }
+
+    .converter-title {
+        font-size: 16px;
+    }
+
+    .converter-tier-badge {
+        font-size: 11px;
+        white-space: normal;
+        margin-top: 4px;
+    }
+
+    .booking-converter-form {
+        grid-template-columns: 1fr !important;
+        gap: 10px !important;
+    }
+
+    .booking-field-group input,
+    .booking-field-group select {
+        height: 44px;
+        font-size: 14px;
+    }
+
+    .booking-submit-group button {
+        height: 46px;
+        font-size: 14px;
+        margin-top: 4px;
+        width: 100% !important;
+    }
+}
+

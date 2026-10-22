@@ -123,43 +123,50 @@ const SiteSettingSchema = new mongoose.Schema({
 
 // Singleton helper to fetch or create default settings
 SiteSettingSchema.statics.getGlobalSettings = async function() {
-    let settings = await this.findOne({ key: 'global' });
-    if (!settings) {
-        settings = await this.create({
-            key: 'global',
-            bookiePromos: [
-                {
-                    bookmaker: 'SportyBet',
-                    badgeColor: '#dc2626',
-                    headline: '150% Welcome Bonus on First Deposit',
-                    promoCode: 'NORRA',
-                    ctaText: 'Claim Bonus',
-                    linkUrl: 'https://www.sportybet.com/',
-                    active: true
-                },
-                {
-                    bookmaker: 'Bet9ja',
-                    badgeColor: '#16a34a',
-                    headline: '100% Match Bonus + 170% Multiple Boost',
-                    promoCode: 'NORRABET',
-                    ctaText: 'Play Now',
-                    linkUrl: 'https://sports.bet9ja.com/',
-                    active: true
-                },
-                {
-                    bookmaker: 'MSport',
-                    badgeColor: '#ea580c',
-                    headline: 'Up to 500,000 NGN Welcome Voucher Pack',
-                    promoCode: 'NORRAVIP',
-                    ctaText: 'Get Voucher',
-                    linkUrl: 'https://www.msport.com/',
-                    active: true
-                }
-            ],
-            featuredLeagues: ['eng.1', 'esp.1', 'uefa.champions', 'ita.1', 'ger.1']
-        });
+    try {
+        if (mongoose.connection.readyState !== 1) {
+            return new this({ key: 'global' });
+        }
+        let settings = await this.findOne({ key: 'global' });
+        if (!settings) {
+            settings = await this.create({
+                key: 'global',
+                bookiePromos: [
+                    {
+                        bookmaker: 'SportyBet',
+                        badgeColor: '#dc2626',
+                        headline: '150% Welcome Bonus on First Deposit',
+                        promoCode: 'NORRA',
+                        ctaText: 'Claim Bonus',
+                        linkUrl: 'https://www.sportybet.com/',
+                        active: true
+                    },
+                    {
+                        bookmaker: 'Bet9ja',
+                        badgeColor: '#16a34a',
+                        headline: '100% Match Bonus + 170% Multiple Boost',
+                        promoCode: 'NORRABET',
+                        ctaText: 'Play Now',
+                        linkUrl: 'https://sports.bet9ja.com/',
+                        active: true
+                    },
+                    {
+                        bookmaker: 'MSport',
+                        badgeColor: '#ea580c',
+                        headline: 'Up to 500,000 NGN Welcome Voucher Pack',
+                        promoCode: 'NORRAVIP',
+                        ctaText: 'Get Voucher',
+                        linkUrl: 'https://www.msport.com/',
+                        active: true
+                    }
+                ],
+                featuredLeagues: ['eng.1', 'esp.1', 'uefa.champions', 'ita.1', 'ger.1']
+            });
+        }
+        return settings;
+    } catch (err) {
+        return new this({ key: 'global' });
     }
-    return settings;
 };
 
 module.exports = mongoose.model('SiteSetting', SiteSettingSchema);

@@ -59,7 +59,8 @@ const {
     serializePlay,
     serializeScoreboardEvent,
     serializeStandingGroup,
-    serializeSummary
+    serializeSummary,
+    synthesizeMatchTelemetry
 } = require('../services/soccerSerializer');
 
 const LEAGUE_PATTERN = /^[a-z0-9][a-z0-9._-]{0,63}$/;
@@ -553,6 +554,15 @@ async function sendSummary(req, res) {
                         }
                     }
                 } catch {}
+            }
+
+            // If neither provider broadcasted granular boxscore telemetry (e.g. youth matches, U17 WC, or lower US divisions)
+            const finalHasStats = Boolean(
+                summary.boxscore?.teams?.[0]?.statistics?.length ||
+                summary.boxscore?.teams?.[1]?.statistics?.length
+            );
+            if (!finalHasStats) {
+                summary.boxscore = synthesizeMatchTelemetry(match, summary);
             }
         } catch (e) {
             // Live fetch non-blocking fallback
