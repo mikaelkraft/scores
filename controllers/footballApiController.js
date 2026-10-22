@@ -55,6 +55,23 @@ function parseNumber(val, fallback, max = 200) {
     return Math.min(num, max);
 }
 
+const FREE_TIER_ALLOWED_LEAGUES = [
+    'eng.1',            // English Premier League
+    'esp.1',            // Spanish La Liga
+    'uefa.champions',   // UEFA Champions League
+    'ita.1',            // Italian Serie A
+    'ger.1',            // German Bundesliga
+    'fra.1',            // French Ligue 1
+    'usa.1',            // Major League Soccer
+    'ned.1',            // Dutch Eredivisie
+    'por.1',            // Portuguese Primeira Liga
+    'tur.1'             // Turkish Süper Lig
+];
+
+function isFreePlanRestricted(apiKey) {
+    return Boolean(apiKey && apiKey.plan === 'free');
+}
+
 // Apply optional API key authentication on all football endpoints
 router.use(optionalApiKeyAuth);
 
@@ -69,7 +86,23 @@ router.get(['/live', '/livescores'], async (req, res) => {
         const liveFilter = {
             'status.state': 'in'
         };
-        if (league && league !== 'all') {
+
+        if (isFreePlanRestricted(req.apiKey)) {
+            if (league && league !== 'all') {
+                const requestedSlug = String(league).toLowerCase();
+                if (!FREE_TIER_ALLOWED_LEAGUES.includes(requestedSlug)) {
+                    return res.status(403).json({
+                        error: `Access to competition '${league}' is restricted on the Free Developer tier. Upgrade to Starter ($10/mo) or Pro ($29/mo) to access all 50+ world leagues.`,
+                        upgradeUrl: '/pricing',
+                        tier: 'free',
+                        allowedLeagues: FREE_TIER_ALLOWED_LEAGUES
+                    });
+                }
+                liveFilter.league_slug = requestedSlug;
+            } else {
+                liveFilter.league_slug = { $in: FREE_TIER_ALLOWED_LEAGUES };
+            }
+        } else if (league && league !== 'all') {
             liveFilter.league_slug = String(league).toLowerCase();
         }
 
@@ -166,8 +199,23 @@ router.get('/fixtures', async (req, res) => {
             if (to) filter.scoreboard_date.$lte = parseDateParam(to);
         }
 
-        // League filtering
-        if (league && league !== 'all') {
+        // League filtering & Free tier restrictions
+        if (isFreePlanRestricted(req.apiKey)) {
+            if (league && league !== 'all') {
+                const requestedSlug = String(league).toLowerCase();
+                if (!FREE_TIER_ALLOWED_LEAGUES.includes(requestedSlug)) {
+                    return res.status(403).json({
+                        error: `Access to competition '${league}' is restricted on the Free Developer tier. Upgrade to Starter ($10/mo) or Pro ($29/mo) to access all 50+ world leagues.`,
+                        upgradeUrl: '/pricing',
+                        tier: 'free',
+                        allowedLeagues: FREE_TIER_ALLOWED_LEAGUES
+                    });
+                }
+                filter.league_slug = requestedSlug;
+            } else {
+                filter.league_slug = { $in: FREE_TIER_ALLOWED_LEAGUES };
+            }
+        } else if (league && league !== 'all') {
             filter.league_slug = String(league).toLowerCase();
         }
 
@@ -631,7 +679,8 @@ router.get('/leagues', async (req, res) => {
                 logo: l.logo,
                 season: l.season,
                 matchCount: countMap.get(l.slug) || 0,
-                lastSyncedAt: l.lastSyncedAt
+                lastSyncedAt: l.lastSyncedAt,
+                isAccessibleOnTier: isFreePlanRestricted(req.apiKey) ? FREE_TIER_ALLOWED_LEAGUES.includes(l.slug) : true
             }))
         });
     } catch (err) {
@@ -646,7 +695,23 @@ router.get('/leagues', async (req, res) => {
 router.get(['/standings', '/standings/:league'], async (req, res) => {
     try {
         const filter = {};
-        if (req.params.league && req.params.league !== 'all') {
+
+        if (isFreePlanRestricted(req.apiKey)) {
+            if (req.params.league && req.params.league !== 'all') {
+                const requestedSlug = String(req.params.league).toLowerCase();
+                if (!FREE_TIER_ALLOWED_LEAGUES.includes(requestedSlug)) {
+                    return res.status(403).json({
+                        error: `Access to standings for '${req.params.league}' is restricted on the Free Developer tier. Upgrade to Starter ($10/mo) or Pro ($29/mo) to access all 50+ world leagues.`,
+                        upgradeUrl: '/pricing',
+                        tier: 'free',
+                        allowedLeagues: FREE_TIER_ALLOWED_LEAGUES
+                    });
+                }
+                filter.league_slug = requestedSlug;
+            } else {
+                filter.league_slug = { $in: FREE_TIER_ALLOWED_LEAGUES };
+            }
+        } else if (req.params.league && req.params.league !== 'all') {
             filter.league_slug = String(req.params.league).toLowerCase();
         }
 

@@ -5,7 +5,23 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Admin Console | Scores by Norra AI</title>
     <link rel="icon" href="/favicon.svg" type="image/svg+xml">
-    <link rel="stylesheet" href="/assets/styles.css">
+    <link rel="stylesheet" href="/assets/styles-v8.css">
+    <script>
+        (function() {
+            try {
+                const savedTheme = localStorage.getItem('norra_theme') || localStorage.getItem('theme');
+                if (savedTheme === 'light') {
+                    document.documentElement.setAttribute('data-theme', 'light');
+                    document.documentElement.classList.add('theme-light');
+                    document.documentElement.classList.remove('theme-dark');
+                } else {
+                    document.documentElement.setAttribute('data-theme', 'dark');
+                    document.documentElement.classList.add('theme-dark');
+                    document.documentElement.classList.remove('theme-light');
+                }
+            } catch (e) {}
+        })();
+    </script>
     <style>
         .admin-layout {
             max-width: 1200px;
@@ -180,6 +196,27 @@
     </style>
 </head>
 <body class="theme-dark" data-theme="dark">
+    <header class="site-header" role="banner">
+        <nav class="nav shell" aria-label="Main navigation">
+            <a class="brand" href="/" aria-label="Scores by Norra AI home">
+                <img id="header-logo-img" class="brand-logo-img" src="" alt="Norra AI" hidden>
+                <div id="header-brand-fallback" class="brand-text">
+                    <span class="brand-icon" aria-hidden="true">⚽</span>
+                    <strong>Norra Scores</strong>
+                </div>
+            </a>
+
+            <div class="nav-actions">
+                <a class="nav-link" href="/" id="nav-scores-link">Scores</a>
+                <a class="nav-link nav-btn-live" href="/?view=live" id="header-live-btn"><span class="live-pulse-dot" aria-hidden="true"></span>Live</a>
+                <a class="nav-link nav-link-norra" href="https://mynorra.xyz" target="_blank" rel="noopener">Predictions <span class="ext-icon" aria-hidden="true">↗</span></a>
+                <a class="nav-link" href="/pricing">Pricing</a>
+                <a class="nav-link docs-link" href="/docs">Docs</a>
+                <a class="nav-link" href="/account" id="nav-account-link">Account</a>
+                <button class="btn-icon-toggle" id="theme-toggle" type="button" aria-label="Toggle light/dark theme" title="Toggle theme">🌓</button>
+            </div>
+        </nav>
+    </header>
 
     <div id="auth-overlay" class="auth-overlay">
         <div class="auth-card">
@@ -502,15 +539,16 @@
         </section>
     </div>
 
-    <footer class="site-footer" style="margin-top: 60px;">
+    <footer class="site-footer">
         <div class="shell">
             <div class="footer-grid">
                 <div class="footer-brand-col">
                     <div class="footer-brand-title">
-                        <span>Scores by Norra AI &bull; Admin</span>
+                        <img id="footer-logo-img" class="footer-logo-img" src="" alt="Norra AI" hidden>
+                        <span>Scores by Norra AI</span>
                     </div>
                     <p class="footer-brand-desc">
-                        Master Administration &amp; Commercial Operations Console. Live site customization, sponsor ads management, user access keys, and payment gateway configuration.
+                        Real-time global football scores, fixtures, live tables, and high-throughput commercial sports APIs. Powered by the Norra AI analytics engine.
                     </p>
                     <a href="https://mynorra.xyz" target="_blank" rel="noopener" class="footer-norra-badge">
                         <span>Visit Norra AI &rarr;</span>
@@ -518,30 +556,35 @@
                 </div>
 
                 <div class="footer-col">
-                    <h4>Public Site</h4>
+                    <h4>Scores &amp; Live</h4>
                     <ul class="footer-col-links">
-                        <li><a href="/">Live Scoreboard</a></li>
-                        <li><a href="/football-api">Commercial Plans</a></li>
-                        <li><a href="/account">Developer Portal</a></li>
+                        <li><a href="/" id="footer-link-today">Today's Live Scores</a></li>
+                        <li><a href="/" id="footer-link-fixtures">League Fixtures</a></li>
+                        <li><a href="/" id="footer-link-standings">League Standings</a></li>
+                        <li><a href="/pricing">API Pricing Plans</a></li>
+                        <li><a href="/account">Booking Converter</a></li>
                     </ul>
                 </div>
 
                 <div class="footer-col">
-                    <h4>API &amp; Docs</h4>
+                    <h4>Top Competitions</h4>
                     <ul class="footer-col-links">
-                        <li><a href="/api-docs/">Swagger API Docs</a></li>
-                        <li><a href="/openapi.json">OpenAPI Spec</a></li>
-                        <li><a href="/service-info.json">Service Telemetry</a></li>
+                        <li><a href="/football/eng.1">Premier League</a></li>
+                        <li><a href="/football/esp.1">La Liga</a></li>
+                        <li><a href="/football/uefa.champions">Champions League</a></li>
+                        <li><a href="/football/ita.1">Serie A</a></li>
+                        <li><a href="/football/ger.1">Bundesliga</a></li>
                     </ul>
                 </div>
 
                 <div class="footer-col">
-                    <h4>Legal &amp; Support</h4>
+                    <h4>Platform &amp; Legal</h4>
                     <ul class="footer-col-links">
+                        <li><a href="/docs">API Documentation</a></li>
+                        <li><a href="/api-docs/" target="_blank" rel="noopener">Swagger Console ↗</a></li>
+                        <li><a href="/account">Developer Portal &amp; Keys</a></li>
                         <li><a href="/terms">Terms of Service</a></li>
                         <li><a href="/privacy">Privacy Policy</a></li>
-                        <li><a href="https://mynorra.xyz" target="_blank" rel="noopener">Norra AI Main</a></li>
-                        <li><a href="mailto:support@mynorra.xyz">support@mynorra.xyz</a></li>
                     </ul>
                 </div>
             </div>
@@ -550,17 +593,76 @@
 
             <div class="footer-bottom">
                 <div>
-                    &copy; 2026 Norra AI. Administrative operations restricted to authorized staff.
+                    &copy; <span id="current-year">2026</span> Norra AI (scores.mynorra.xyz). All rights reserved.
                 </div>
                 <div class="footer-bottom-links">
                     <a href="/terms">Terms</a>
                     <a href="/privacy">Privacy</a>
+                    <a href="/pricing">Pricing</a>
+                    <a href="/docs">Docs</a>
                     <a href="https://mynorra.xyz" target="_blank" rel="noopener">Norra AI</a>
                 </div>
             </div>
         </div>
     </footer>
 
+    <!-- Floating Sticky Action Dock (Back to Top + Theme Switcher) -->
+    <aside class="sticky-action-dock" id="sticky-action-dock" aria-label="Quick page actions">
+        <button id="sticky-back-to-top" class="sticky-action-btn sticky-back-to-top" type="button" aria-label="Back to top" title="Scroll to top of page">↑</button>
+        <button id="sticky-theme-toggle" class="sticky-action-btn" type="button" aria-label="Toggle dark/light theme" title="Toggle theme">🌓</button>
+    </aside>
+
     <script src="/assets/admin/admin.js"></script>
+    <script>
+        // Theme toggle logic
+        function applyAdminTheme(theme) {
+            document.documentElement.setAttribute('data-theme', theme);
+            if (theme === 'light') {
+                document.documentElement.classList.add('theme-light');
+                document.documentElement.classList.remove('theme-dark');
+                document.body.classList.remove('theme-dark');
+                document.body.classList.add('theme-light');
+                document.body.setAttribute('data-theme', 'light');
+            } else {
+                document.documentElement.classList.remove('theme-light');
+                document.documentElement.classList.add('theme-dark');
+                document.body.classList.remove('theme-light');
+                document.body.classList.add('theme-dark');
+                document.body.setAttribute('data-theme', 'dark');
+            }
+            const t1 = document.getElementById('theme-toggle');
+            const t2 = document.getElementById('sticky-theme-toggle');
+            const icon = theme === 'light' ? '🌙' : '☀️';
+            if (t1) t1.textContent = icon;
+            if (t2) t2.textContent = icon;
+        }
+        const savedTheme = localStorage.getItem('norra_theme') || localStorage.getItem('theme') || 'dark';
+        applyAdminTheme(savedTheme);
+
+        [document.getElementById('theme-toggle'), document.getElementById('sticky-theme-toggle')].forEach(btn => {
+            if (btn) {
+                btn.addEventListener('click', () => {
+                    const current = document.documentElement.getAttribute('data-theme') || 'dark';
+                    const next = current === 'dark' ? 'light' : 'dark';
+                    applyAdminTheme(next);
+                    localStorage.setItem('norra_theme', next);
+                    localStorage.setItem('theme', next);
+                });
+            }
+        });
+
+        // Back to top logic
+        const topBtn = document.getElementById('sticky-back-to-top');
+        if (topBtn) {
+            window.addEventListener('scroll', () => {
+                if (window.scrollY > 280) topBtn.classList.add('is-visible');
+                else topBtn.classList.remove('is-visible');
+            }, { passive: true });
+            topBtn.addEventListener('click', () => window.scrollTo({ top: 0, behavior: 'smooth' }));
+        }
+
+        const yr = document.getElementById('current-year');
+        if (yr) yr.textContent = new Date().getFullYear();
+    </script>
 </body>
 </html>

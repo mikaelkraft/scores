@@ -28,7 +28,18 @@ const LEAGUE_NAME_OVERRIDES = {
     'uefa.europa.conf': 'UEFA Conference League',
     'uefa.super_cup': 'UEFA Super Cup',
     'fifa.world': 'FIFA World Cup',
-    'fifa.cwc': 'FIFA Club World Cup'
+    'fifa.cwc': 'FIFA Club World Cup',
+    'caf.champions': 'CAF Champions League',
+    'caf.confed': 'CAF Confederation Cup',
+    'caf.nations': 'Africa Cup of Nations',
+    'rsa.1': 'South African Premiership',
+    'egy.1': 'Egyptian Premier League',
+    'mar.1': 'Moroccan Botola Pro',
+    'nga.1': 'Nigeria Premier League',
+    'eng.3': 'EFL League One',
+    'eng.4': 'EFL League Two',
+    'usa.usl.1': 'USL Championship',
+    'usa.open': 'U.S. Open Cup'
 };
 
 function escapeHtml(value) {
@@ -577,73 +588,15 @@ function apiContent(context) {
             <p>Build sports websites, mobile apps, and betting bots with documented JSON endpoints. No API key is required for public sandbox evaluation, while commercial production tiers offer high-throughput rate limits, sub-second telemetry, and white-label embeds.</p>
         </div>
 
-        <div class="pricing-plans-grid" style="display:grid; grid-template-columns:repeat(auto-fit, minmax(min(100%, 250px), 1fr)); gap:20px; margin:28px 0;">
-            <div class="plan-card" style="background:var(--bg-surface); border:1px solid var(--border-subtle); border-radius:var(--card-radius); padding:24px; display:flex; flex-direction:column; justify-content:space-between;">
-                <div>
-                    <span style="font-size:11px; font-weight:700; color:var(--text-muted); text-transform:uppercase;">Evaluation</span>
-                    <h3 style="font-size:18px; margin:6px 0; color:var(--text-main);">Developer Sandbox</h3>
-                    <div style="font-size:28px; font-weight:800; margin:12px 0; color:var(--text-main);">$0 <small style="font-size:13px; font-weight:400; color:var(--text-muted);">/ free</small></div>
-                    <p style="font-size:12px; color:var(--text-muted); margin-bottom:16px;">Test API responses and build prototypes with stored league telemetry.</p>
-                    <ul style="list-style:none; padding:0; margin:0 0 20px; font-size:13px; color:var(--text-muted); line-height:1.8;">
-                        <li>✓ 100 requests / day</li>
-                        <li>✓ Public Sandbox Access</li>
-                        <li>✓ No API key required for testing</li>
-                        <li>✓ Community Documentation</li>
-                    </ul>
-                </div>
-                <a href="/api-docs/" class="tab-btn" style="display:block; text-align:center; padding:10px 16px;">Test in Swagger</a>
+        <div class="api-pricing-pointer-card" style="background:var(--bg-surface); border:1px solid var(--border-subtle); border-radius:var(--card-radius); padding:24px 28px; margin:28px 0; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:16px;">
+            <div>
+                <span class="overline" style="margin-bottom:4px; display:block; color:var(--color-primary); font-size:12px; font-weight:700;">Commercial Plans &amp; Developer Sandboxes</span>
+                <h3 style="margin:0 0 6px; font-size:20px; font-weight:800; color:var(--text-main);">Flexible Sports API Access Starting at $10/month</h3>
+                <p style="margin:0; font-size:13.5px; color:var(--text-muted); max-width:620px;">Choose from our Free Developer Sandbox ($0/mo), Starter ($10/mo), Pro ($29/mo), and Enterprise Whitelabel ($79/mo) plans. Global checkout via PayPal and Flutterwave in USD, EUR, GBP, and NGN.</p>
             </div>
-
-            <div class="plan-card" style="background:var(--bg-surface); border:1px solid var(--border-subtle); border-radius:var(--card-radius); padding:24px; display:flex; flex-direction:column; justify-content:space-between;">
-                <div>
-                    <span style="font-size:11px; font-weight:700; color:var(--color-primary); text-transform:uppercase;">Starter Tier</span>
-                    <h3 style="font-size:18px; margin:6px 0; color:var(--text-main);">Starter Sports</h3>
-                    <div style="font-size:28px; font-weight:800; margin:12px 0; color:var(--text-main);">$19 <small style="font-size:13px; font-weight:400; color:var(--text-muted);">/ month</small></div>
-                    <p style="font-size:12px; color:var(--text-muted); margin-bottom:16px;">For indie apps, fan blogs, and sports community widgets.</p>
-                    <ul style="list-style:none; padding:0; margin:0 0 20px; font-size:13px; color:var(--text-muted); line-height:1.8;">
-                        <li>✓ 60 requests / minute</li>
-                        <li>✓ 100,000 monthly calls</li>
-                        <li>✓ Dedicated API Key Authentication</li>
-                        <li>✓ Full Fixtures &amp; Tables</li>
-                        <li>✓ Zero Website Ads</li>
-                    </ul>
-                </div>
-                <a href="/account" class="tab-btn" style="display:block; text-align:center; padding:10px 16px; background:var(--color-primary-subtle); border-color:var(--color-primary); color:var(--color-primary);">Get Starter Key</a>
-            </div>
-
-            <div class="plan-card" style="background:var(--bg-surface); border:2px solid var(--color-primary); border-radius:var(--card-radius); padding:24px; display:flex; flex-direction:column; justify-content:space-between; position:relative;">
-                <span style="position:absolute; top:-10px; right:16px; background:var(--color-primary); color:#ffffff; font-size:10px; font-weight:800; padding:2px 8px; border-radius:10px; text-transform:uppercase;">Most Popular</span>
-                <div>
-                    <span style="font-size:11px; font-weight:700; color:var(--color-primary); text-transform:uppercase;">Commercial</span>
-                    <h3 style="font-size:18px; margin:6px 0; color:var(--text-main);">Pro Telemetry</h3>
-                    <div style="font-size:28px; font-weight:800; margin:12px 0; color:var(--text-main);">$49 <small style="font-size:13px; font-weight:400; color:var(--text-muted);">/ month</small></div>
-                    <p style="font-size:12px; color:var(--text-muted); margin-bottom:16px;">High-frequency live score updates for commercial publishing.</p>
-                    <ul style="list-style:none; padding:0; margin:0 0 20px; font-size:13px; color:var(--text-muted); line-height:1.8;">
-                        <li>✓ 300 requests / minute</li>
-                        <li>✓ 1,000,000 monthly calls</li>
-                        <li>✓ In-Play Match Telemetry</li>
-                        <li>✓ Live Goals &amp; Card Events</li>
-                        <li>✓ Fast PayPal &amp; Flutterwave Billing</li>
-                    </ul>
-                </div>
-                <a href="/account" class="tab-btn" style="display:block; text-align:center; padding:10px 16px; background:var(--color-primary); color:#ffffff;">Subscribe to Pro</a>
-            </div>
-
-            <div class="plan-card" style="background:var(--bg-surface); border:1px solid var(--border-subtle); border-radius:var(--card-radius); padding:24px; display:flex; flex-direction:column; justify-content:space-between;">
-                <div>
-                    <span style="font-size:11px; font-weight:700; color:var(--text-muted); text-transform:uppercase;">Enterprise</span>
-                    <h3 style="font-size:18px; margin:6px 0; color:var(--text-main);">Whitelabel Hub</h3>
-                    <div style="font-size:28px; font-weight:800; margin:12px 0; color:var(--text-main);">$149 <small style="font-size:13px; font-weight:400; color:var(--text-muted);">/ month</small></div>
-                    <p style="font-size:12px; color:var(--text-muted); margin-bottom:16px;">Turnkey white-label embeds and booking code converters.</p>
-                    <ul style="list-style:none; padding:0; margin:0 0 20px; font-size:13px; color:var(--text-muted); line-height:1.8;">
-                        <li>✓ 1,200 requests / minute</li>
-                        <li>✓ Unlimited monthly calls</li>
-                        <li>✓ Whitelabel LiveScore Embeds</li>
-                        <li>✓ Betting Booking Code Hook</li>
-                        <li>✓ 99.9% High Availability SLA</li>
-                    </ul>
-                </div>
-                <a href="/account" class="tab-btn" style="display:block; text-align:center; padding:10px 16px;">Contact Enterprise</a>
+            <div style="display:flex; gap:12px; align-items:center;">
+                <a href="/pricing" class="btn" style="padding:10px 20px; font-weight:700; font-size:13.5px; border-radius:6px; background:var(--color-primary); color:#ffffff; text-decoration:none;">View Pricing &amp; Plans &rarr;</a>
+                <a href="/docs" class="btn" style="padding:10px 18px; font-weight:600; font-size:13.5px; border-radius:6px; border:1px solid var(--border-subtle); color:var(--text-main); text-decoration:none; background:var(--bg-surface-elevated);">Read API Docs</a>
             </div>
         </div>
 

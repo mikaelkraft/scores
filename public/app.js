@@ -80,7 +80,17 @@
         'uefa.super_cup': '🏆',
         'conmebol.recopa': '🏆',
         'eng.w.1': '🏴󠁧󠁢󠁥󠁮󠁧󠁿',
-        'usa.w.1': '🇺🇸'
+        'usa.w.1': '🇺🇸',
+        'usa.usl.1': '🇺🇸',
+        'usa.open': '🇺🇸',
+        'caf.confed': '🌍',
+        'caf.nations': '🌍',
+        'rsa.1': '🇿🇦',
+        'egy.1': '🇪🇬',
+        'mar.1': '🇲🇦',
+        'nga.1': '🇳🇬',
+        'eng.3': '🏴󠁧󠁢󠁥󠁮󠁧󠁿',
+        'eng.4': '🏴󠁧󠁢󠁥󠁮󠁧󠁿'
     };
 
     let currentTimezone = localStorage.getItem('norra_timezone') || Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
@@ -592,7 +602,17 @@
         if (elements['fixtures-load-more']) elements['fixtures-load-more'].hidden = true;
 
         if (!totalCount) {
-            if (elements['fixtures-empty']) elements['fixtures-empty'].hidden = false;
+            if (elements['fixtures-empty']) {
+                elements['fixtures-empty'].hidden = false;
+                const dayLabel = (!state.selectedDayOffset || state.selectedDayOffset === 0)
+                    ? "today"
+                    : (state.selectedDayOffset === 1 ? "tomorrow" : state.selectedDayOffset === -1 ? "yesterday" : "on this date");
+                elements['fixtures-empty'].innerHTML = `
+                    <span class="empty-icon">⚽</span>
+                    <p style="font-size:15px; font-weight:600; color:var(--text-main); margin-bottom:6px;">There's no games ${dayLabel}.</p>
+                    <p style="font-size:13px; color:var(--text-muted); margin:0;">Check Tomorrow or pick an upcoming date to browse world match schedules.</p>
+                `;
+            }
             elements['fixtures-list'].innerHTML = '';
         } else {
             if (elements['fixtures-empty']) elements['fixtures-empty'].hidden = true;
@@ -679,11 +699,28 @@
 
     function renderFixtures(fixtures) {
         if (!elements['fixtures-list']) return;
-        elements['fixtures-empty'].hidden = fixtures.length > 0;
+        const hasFixtures = Boolean(fixtures && fixtures.length > 0);
+        if (elements['fixtures-empty']) {
+            elements['fixtures-empty'].hidden = hasFixtures;
+            if (!hasFixtures) {
+                const compName = state.league?.name || 'this competition';
+                const dayLabel = (!state.selectedDayOffset || state.selectedDayOffset === 0)
+                    ? "today"
+                    : (state.selectedDayOffset === 1 ? "tomorrow" : state.selectedDayOffset === -1 ? "yesterday" : "on this date");
+                elements['fixtures-empty'].innerHTML = `
+                    <span class="empty-icon">⚽</span>
+                    <p style="font-size:15px; font-weight:600; color:var(--text-main); margin-bottom:6px;">There's no games ${dayLabel} in ${escapeHtml(compName)}.</p>
+                    <p style="font-size:13px; color:var(--text-muted); margin:0;">Tap "Tomorrow" or use the date picker to browse upcoming fixtures, or switch to Standings.</p>
+                `;
+            }
+        }
         if (elements['fixtures-load-more']) {
             elements['fixtures-load-more'].hidden = !fixtures.length || state.fixturePage >= state.fixturePageCount;
         }
-        if (!fixtures.length) return;
+        if (!fixtures.length) {
+            elements['fixtures-list'].innerHTML = '';
+            return;
+        }
 
         const flag = LEAGUE_FLAGS[state.league?.slug] || '⚽';
 
@@ -1094,6 +1131,66 @@
         `).join('');
 
         const predHints = predictions?.norraAiPredictionHints || {};
+        const h2h = predictions?.h2h || {};
+        const recentH2h = h2h.recentMeetings || [];
+        const homeAnalytics = predictions?.teams?.home?.analytics || {};
+        const awayAnalytics = predictions?.teams?.away?.analytics || {};
+        const homeStanding = predictions?.teams?.home?.standing || null;
+        const awayStanding = predictions?.teams?.away?.standing || null;
+
+        function renderFormBadges(formGuide) {
+            if (!formGuide || !formGuide.length) return '<span style="color:var(--text-muted); font-size:12px;">No recent matches</span>';
+            return formGuide.slice(0, 6).map(res => {
+                const letter = String(res).toUpperCase();
+                const bg = letter === 'W' ? '#10b981' : letter === 'D' ? '#6b7280' : '#ef4444';
+                return `<span style="display:inline-flex; align-items:center; justify-content:center; width:22px; height:22px; border-radius:4px; background:${bg}; color:#ffffff; font-weight:700; font-size:11px; margin-right:4px;">${letter}</span>`;
+            }).join('');
+        }
+
+        const h2hMeetingsRows = recentH2h.length ? recentH2h.map(m => `
+            <div style="display:flex; justify-content:space-between; align-items:center; padding:8px 12px; background:var(--bg-canvas); border:1px solid var(--border-subtle); border-radius:6px; margin-bottom:8px; font-size:12.5px;">
+                <span style="color:var(--text-muted); font-size:11.5px; width:75px;">${formatDate(m.date, { year: false, weekday: false })}</span>
+                <span style="flex:1; text-align:right; font-weight:600; padding-right:10px;">${escapeHtml(m.homeTeam)}</span>
+                <span style="background:var(--bg-surface-elevated); border:1px solid var(--border-subtle); padding:2px 8px; border-radius:4px; font-weight:700; font-size:12px;">${escapeHtml(m.score)}</span>
+                <span style="flex:1; text-align:left; font-weight:600; padding-left:10px;">${escapeHtml(m.awayTeam)}</span>
+            </div>
+        `).join('') : '<p style="color:var(--text-muted); font-size:13px;">No past Head-to-Head encounters recorded between these clubs in recent archives.</p>';
+
+        const rosters = summary.rosters || [];
+        const homeRoster = rosters.find(r => String(r.team?.id) === String(home.team?.id) || r.team?.side === 'home') || rosters[0];
+        const awayRoster = rosters.find(r => String(r.team?.id) === String(away.team?.id) || r.team?.side === 'away') || rosters[1];
+
+        function renderRosterList(teamRoster, teamName) {
+            if (!teamRoster?.roster?.length) return `<p style="color:var(--text-muted); font-size:13px;">No official lineup announced yet for ${escapeHtml(teamName)}.</p>`;
+            const starters = teamRoster.roster.filter(p => p.starter);
+            const bench = teamRoster.roster.filter(p => !p.starter);
+
+            return `
+                <div class="lineup-col" style="flex:1; min-width:240px;">
+                    <div style="font-weight:700; font-size:14px; margin-bottom:10px; color:var(--text-main);">${escapeHtml(teamName)}</div>
+                    <div style="font-size:11px; text-transform:uppercase; color:var(--text-muted); font-weight:700; margin-bottom:6px;">Starting XI</div>
+                    <div class="roster-list" style="margin-bottom:16px;">
+                        ${(starters.length ? starters : teamRoster.roster.slice(0, 11)).map(p => `
+                            <div style="display:flex; justify-content:space-between; padding:5px 0; border-bottom:1px solid var(--border-subtle); font-size:12.5px;">
+                                <span><strong style="color:var(--color-primary); margin-right:6px;">${escapeHtml(p.jersey || '—')}</strong> ${escapeHtml(p.athlete?.displayName || p.athlete?.fullName || 'Player')}</span>
+                                <span style="color:var(--text-muted); font-size:11px;">${escapeHtml(p.position?.abbreviation || p.athlete?.position?.abbreviation || '')}</span>
+                            </div>
+                        `).join('')}
+                    </div>
+                    ${bench.length ? `
+                        <div style="font-size:11px; text-transform:uppercase; color:var(--text-muted); font-weight:700; margin-bottom:6px;">Substitutes / Bench</div>
+                        <div class="roster-list">
+                            ${bench.map(p => `
+                                <div style="display:flex; justify-content:space-between; padding:4px 0; border-bottom:1px solid var(--border-subtle); font-size:12px; color:var(--text-muted);">
+                                    <span><span style="margin-right:6px;">${escapeHtml(p.jersey || '—')}</span> ${escapeHtml(p.athlete?.displayName || p.athlete?.fullName || 'Player')}</span>
+                                    <span style="font-size:11px;">${escapeHtml(p.position?.abbreviation || '')}</span>
+                                </div>
+                            `).join('')}
+                        </div>
+                    ` : ''}
+                </div>
+            `;
+        }
 
         if (elements['dialog-content']) {
             elements['dialog-content'].innerHTML = `
@@ -1120,8 +1217,9 @@
 
                 <div class="drawer-tabs">
                     <button class="drawer-tab active" data-drawer-tab="timeline" type="button">Timeline &amp; Events</button>
-                    <button class="drawer-tab" data-drawer-tab="stats" type="button">H2H Statistics</button>
-                    <button class="drawer-tab" data-drawer-tab="lineups" type="button">Substitutions &amp; Lineups</button>
+                    <button class="drawer-tab" data-drawer-tab="stats" type="button">Match Stats</button>
+                    <button class="drawer-tab" data-drawer-tab="h2h" type="button">Head-to-Head</button>
+                    <button class="drawer-tab" data-drawer-tab="lineups" type="button">Lineups &amp; Rosters</button>
                     <button class="drawer-tab" data-drawer-tab="info" type="button">Match Info</button>
                     <button class="drawer-tab" data-drawer-tab="predictions" type="button" style="color:var(--color-primary); font-weight:700;">🔮 AI Predictions</button>
                 </div>
@@ -1135,24 +1233,92 @@
                 </div>
 
                 <div id="drawer-tab-stats" class="drawer-tab-content" hidden>
-                    <h4 style="margin:0 0 14px; font-size:14px; color:var(--text-main);">Match Statistics (Home vs Away)</h4>
-                    <div>${statRows || '<p style="color:var(--text-muted); font-size:13px;">No statistics recorded for this match.</p>'}</div>
+                    <h4 style="margin:0 0 14px; font-size:14px; color:var(--text-main);">In-Play Match Statistics (${escapeHtml(home.team?.displayName || 'Home')} vs ${escapeHtml(away.team?.displayName || 'Away')})</h4>
+                    <div>${statRows || `
+                        <div style="text-align:center; padding:24px 16px; background:var(--bg-canvas); border:1px solid var(--border-subtle); border-radius:8px;">
+                            <span class="empty-icon" style="font-size:24px;">📊</span>
+                            <p style="margin:8px 0 4px; font-weight:600; color:var(--text-main);">No in-play statistics available.</p>
+                            <small style="color:var(--text-muted);">Match statistics (possession %, shots, corners, fouls, cards) activate during live play or after match conclusion.</small>
+                        </div>
+                    `}</div>
+                </div>
+
+                <div id="drawer-tab-h2h" class="drawer-tab-content" hidden>
+                    <h4 style="margin:0 0 14px; font-size:14px; color:var(--text-main);">Head-to-Head Past Encounters</h4>
+                    <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(130px, 1fr)); gap:10px; margin-bottom:20px;">
+                        <div style="background:var(--bg-canvas); border:1px solid var(--border-subtle); border-radius:8px; padding:12px; text-align:center;">
+                            <span style="font-size:11px; text-transform:uppercase; color:var(--text-muted); display:block;">Total Meetings</span>
+                            <strong style="font-size:20px; color:var(--text-main);">${h2h.totalMeetings || 0}</strong>
+                        </div>
+                        <div style="background:var(--bg-canvas); border:1px solid var(--border-subtle); border-radius:8px; padding:12px; text-align:center;">
+                            <span style="font-size:11px; text-transform:uppercase; color:var(--text-muted); display:block;">${escapeHtml(home.team?.displayName || 'Home')} Wins</span>
+                            <strong style="font-size:20px; color:#10b981;">${h2h.homeWins || 0}</strong>
+                        </div>
+                        <div style="background:var(--bg-canvas); border:1px solid var(--border-subtle); border-radius:8px; padding:12px; text-align:center;">
+                            <span style="font-size:11px; text-transform:uppercase; color:var(--text-muted); display:block;">Draws</span>
+                            <strong style="font-size:20px; color:var(--text-muted);">${h2h.draws || 0}</strong>
+                        </div>
+                        <div style="background:var(--bg-canvas); border:1px solid var(--border-subtle); border-radius:8px; padding:12px; text-align:center;">
+                            <span style="font-size:11px; text-transform:uppercase; color:var(--text-muted); display:block;">${escapeHtml(away.team?.displayName || 'Away')} Wins</span>
+                            <strong style="font-size:20px; color:#3b82f6;">${h2h.awayWins || 0}</strong>
+                        </div>
+                    </div>
+
+                    <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-bottom:20px;">
+                        <div style="background:var(--bg-canvas); border:1px solid var(--border-subtle); border-radius:8px; padding:12px 14px;">
+                            <div style="font-weight:700; font-size:13px; color:var(--text-main); margin-bottom:8px;">${escapeHtml(home.team?.displayName || 'Home')} Form</div>
+                            <div>${renderFormBadges(homeAnalytics.formGuide)}</div>
+                            <div style="font-size:12px; color:var(--text-muted); margin-top:8px;">Avg Scored: <strong style="color:var(--text-main);">${homeAnalytics.goalsScoredAvg ?? '—'}</strong> &bull; Conceded: <strong style="color:var(--text-main);">${homeAnalytics.goalsConcededAvg ?? '—'}</strong></div>
+                        </div>
+                        <div style="background:var(--bg-canvas); border:1px solid var(--border-subtle); border-radius:8px; padding:12px 14px;">
+                            <div style="font-weight:700; font-size:13px; color:var(--text-main); margin-bottom:8px;">${escapeHtml(away.team?.displayName || 'Away')} Form</div>
+                            <div>${renderFormBadges(awayAnalytics.formGuide)}</div>
+                            <div style="font-size:12px; color:var(--text-muted); margin-top:8px;">Avg Scored: <strong style="color:var(--text-main);">${awayAnalytics.goalsScoredAvg ?? '—'}</strong> &bull; Conceded: <strong style="color:var(--text-main);">${awayAnalytics.goalsConcededAvg ?? '—'}</strong></div>
+                        </div>
+                    </div>
+
+                    <h5 style="margin:16px 0 10px; font-size:13px; color:var(--text-main);">Recent Past Meetings</h5>
+                    <div>${h2hMeetingsRows}</div>
                 </div>
 
                 <div id="drawer-tab-lineups" class="drawer-tab-content" hidden>
-                    <h4 style="margin:0 0 12px; font-size:14px; color:var(--text-main);">Substitutions</h4>
-                    <div>${substitutionRows || '<p style="color:var(--text-muted); font-size:13px;">No substitutions recorded for this match.</p>'}</div>
+                    <h4 style="margin:0 0 14px; font-size:14px; color:var(--text-main);">Official Team Lineups</h4>
+                    <div style="display:flex; gap:20px; flex-wrap:wrap; margin-bottom:24px;">
+                        ${renderRosterList(homeRoster, home.team?.displayName || 'Home Team')}
+                        ${renderRosterList(awayRoster, away.team?.displayName || 'Away Team')}
+                    </div>
+
+                    ${substitutionRows ? `
+                        <h4 style="margin:20px 0 12px; font-size:14px; color:var(--text-main);">In-Match Substitutions</h4>
+                        <div>${substitutionRows}</div>
+                    ` : ''}
                 </div>
 
                 <div id="drawer-tab-info" class="drawer-tab-content" hidden>
                     <h4 style="margin:0 0 12px; font-size:14px; color:var(--text-main);">Match Information</h4>
                     <div style="background:var(--bg-canvas); border:1px solid var(--border-subtle); border-radius:8px; padding:16px; font-size:13px;">
-                        <p style="margin:6px 0;"><strong>Venue:</strong> ${escapeHtml(venue?.fullName || 'Unknown')}</p>
-                        <p style="margin:6px 0;"><strong>City:</strong> ${escapeHtml(venue?.address?.city || '—')}</p>
-                        <p style="margin:6px 0;"><strong>Attendance:</strong> ${escapeHtml(competition.attendance || '—')}</p>
-                        <p style="margin:6px 0;"><strong>Home Form:</strong> ${escapeHtml(home.form || '—')}</p>
-                        <p style="margin:6px 0;"><strong>Away Form:</strong> ${escapeHtml(away.form || '—')}</p>
+                        <p style="margin:6px 0;"><strong>Competition:</strong> ${escapeHtml(competition.league?.name || state.league?.name || 'Football Competition')}</p>
+                        <p style="margin:6px 0;"><strong>Date &amp; Time:</strong> ${formatDate(competition.date, { year: true })} at ${formatTime(competition.date)}</p>
+                        <p style="margin:6px 0;"><strong>Venue / Stadium:</strong> ${escapeHtml(venue?.fullName || 'Stadium Venue')}${venue?.address?.city ? ` (${escapeHtml(venue.address.city)})` : ''}</p>
+                        ${competition.attendance ? `<p style="margin:6px 0;"><strong>Attendance:</strong> ${Number(competition.attendance).toLocaleString()} spectators</p>` : ''}
+                        ${summary.gameInfo?.officials?.length ? `<p style="margin:6px 0;"><strong>Referee:</strong> ${escapeHtml(summary.gameInfo.officials.map(o => o.displayName).join(', '))}</p>` : ''}
                     </div>
+
+                    ${(homeStanding || awayStanding) ? `
+                        <h4 style="margin:20px 0 10px; font-size:14px; color:var(--text-main);">Current Table Standing Context</h4>
+                        <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px;">
+                            ${homeStanding ? `
+                                <div style="background:var(--bg-canvas); border:1px solid var(--border-subtle); border-radius:8px; padding:12px; font-size:12.5px;">
+                                    <strong>${escapeHtml(home.team?.displayName || 'Home')}</strong>: Rank <strong>#${homeStanding.rank}</strong> &bull; Points: <strong>${homeStanding.points ?? '—'}</strong> &bull; GD: <strong>${homeStanding.goalDifferential ?? '—'}</strong>
+                                </div>
+                            ` : ''}
+                            ${awayStanding ? `
+                                <div style="background:var(--bg-canvas); border:1px solid var(--border-subtle); border-radius:8px; padding:12px; font-size:12.5px;">
+                                    <strong>${escapeHtml(away.team?.displayName || 'Away')}</strong>: Rank <strong>#${awayStanding.rank}</strong> &bull; Points: <strong>${awayStanding.points ?? '—'}</strong> &bull; GD: <strong>${awayStanding.goalDifferential ?? '—'}</strong>
+                                </div>
+                            ` : ''}
+                        </div>
+                    ` : ''}
                 </div>
 
                 <div id="drawer-tab-predictions" class="drawer-tab-content" hidden>

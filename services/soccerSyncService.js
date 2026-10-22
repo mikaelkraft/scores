@@ -65,7 +65,15 @@ const TARGET_LEAGUES = [
     { slug: 'eng.w.1', name: 'Women\'s Super League', abbreviation: 'WSL', country: 'England', kind: 'club', sort_order: 49 },
     { slug: 'usa.w.1', name: 'National Women\'s Soccer League', abbreviation: 'NWSL', country: 'United States', kind: 'club', sort_order: 50 },
     { slug: 'usa.usl.1', name: 'USL Championship', abbreviation: 'USL Championship', country: 'United States', kind: 'club', sort_order: 51 },
-    { slug: 'usa.open', name: 'U.S. Open Cup', abbreviation: 'US Open Cup', country: 'United States', kind: 'cup', sort_order: 52 }
+    { slug: 'usa.open', name: 'U.S. Open Cup', abbreviation: 'US Open Cup', country: 'United States', kind: 'cup', sort_order: 52 },
+    { slug: 'caf.confed', name: 'CAF Confederation Cup', abbreviation: 'CAF Confed Cup', country: 'International', kind: 'club', sort_order: 53 },
+    { slug: 'caf.nations', name: 'Africa Cup of Nations', abbreviation: 'AFCON', country: 'International', kind: 'international', sort_order: 54 },
+    { slug: 'rsa.1', name: 'South African Premiership', abbreviation: 'PSL', country: 'South Africa', kind: 'club', sort_order: 55 },
+    { slug: 'egy.1', name: 'Egyptian Premier League', abbreviation: 'Egyptian PL', country: 'Egypt', kind: 'club', sort_order: 56 },
+    { slug: 'mar.1', name: 'Moroccan Botola Pro', abbreviation: 'Botola Pro', country: 'Morocco', kind: 'club', sort_order: 57 },
+    { slug: 'nga.1', name: 'Nigeria Premier Football League', abbreviation: 'NPFL', country: 'Nigeria', kind: 'club', sort_order: 58 },
+    { slug: 'eng.3', name: 'EFL League One', abbreviation: 'League One', country: 'England', kind: 'club', sort_order: 59 },
+    { slug: 'eng.4', name: 'EFL League Two', abbreviation: 'League Two', country: 'England', kind: 'club', sort_order: 60 }
 ];
 
 function fetchJson(url) {
@@ -490,7 +498,19 @@ function resolveLeagueSlug(altGameNote = '', compDesc = '', uid = '') {
     if (text.includes('super cup') || text.includes('uefa.super_cup')) return 'uefa.super_cup';
     if (text.includes('club world cup') || text.includes('fifa.cwc')) return 'fifa.cwc';
     if (text.includes('concacaf') || text.includes('concacaf.champions')) return 'concacaf.champions';
+    // English lower divisions (League One, League Two)
+    if (text.includes('league one') || text.includes('eng.3')) return 'eng.3';
+    if (text.includes('league two') || text.includes('eng.4')) return 'eng.4';
+
+    // African continental and domestic leagues
+    if (text.includes('caf confederation') || text.includes('caf.confed')) return 'caf.confed';
+    if (text.includes('africa cup') || text.includes('afcon') || text.includes('caf.nations')) return 'caf.nations';
     if (text.includes('caf') || text.includes('caf.champions')) return 'caf.champions';
+    if (text.includes('botola') || (text.includes('morocco') && text.includes('league')) || text.includes('mar.1')) return 'mar.1';
+    if (text.includes('egypt') || text.includes('egy.1')) return 'egy.1';
+    if (text.includes('south africa') || text.includes('psl') || text.includes('betway premiership') || text.includes('rsa.1')) return 'rsa.1';
+    if (text.includes('npfl') || text.includes('nigeria') || text.includes('nga.1')) return 'nga.1';
+
     if (text.includes('afc') || text.includes('afc.champions')) return 'afc.champions';
     if (text.includes('austrian') || text.includes('aut.1')) return 'aut.1';
     if (text.includes('swiss') || text.includes('sui.1')) return 'sui.1';
