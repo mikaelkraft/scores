@@ -509,7 +509,7 @@ function homeContent(context) {
 
     return `<section class="seo-directory shell" id="competitions" aria-labelledby="coverage-title">
         <div class="seo-section-heading">
-            <p class="overline">Global football competition index &bull; Updated ${escapeHtml(today)} (UTC)</p>
+            <p class="overline">Global football competition index</p>
             <h2 id="coverage-title">Football live scores and fixtures today across world leagues</h2>
             <p>Browse live scores, fixtures, standings, and match statistics across ${escapeHtml(leagues.length)} active world competitions. Powered by the Norra AI analytics engine.</p>
         </div>

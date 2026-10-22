@@ -1334,31 +1334,9 @@
         }
 
         if (elements['dialog-content']) {
+            const activeTab = state.drawerActiveTab || 'timeline';
+
             elements['dialog-content'].innerHTML = `
-                <section class="drawer-header-card">
-                    <div class="team-vs-team-row">
-                        <div class="team-side">
-                            ${teamLogo(home.team, 'team-crest')}
-                            <span class="team-name" style="font-size:15px;">${escapeHtml(home.team?.displayName || 'Home')}</span>
-                        </div>
-                        <div class="score-center-col">
-                            <div class="score-digits" style="font-size:32px;">${escapeHtml(home.score ?? '—')} - ${escapeHtml(away.score ?? '—')}</div>
-                            <div class="minute-pill ${status.pillClass}" style="margin-top:6px;">${escapeHtml(competition.status?.displayClock || status.label)}</div>
-                        </div>
-                        <div class="team-side">
-                            ${teamLogo(away.team, 'team-crest')}
-                            <span class="team-name" style="font-size:15px;">${escapeHtml(away.team?.displayName || 'Away')}</span>
-                        </div>
-                    </div>
-                    <div style="margin-top:14px; font-size:12px; color:var(--text-muted);">
-                        ${venue?.fullName ? `Stadium: ${escapeHtml(venue.fullName)} · ` : ''}
-                        ${venue?.address?.city ? `${escapeHtml(venue.address.city)}` : ''}
-                    </div>
-                </section>
-
-                const activeTab = state.drawerActiveTab || 'timeline';
-
-                elements['dialog-content'].innerHTML = `
                 <section class="drawer-header-card">
                     <div class="team-vs-team-row">
                         <div class="team-side">
