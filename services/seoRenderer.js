@@ -38,6 +38,13 @@ const LEAGUE_NAME_OVERRIDES = {
     'nga.1': 'Nigeria Premier League',
     'eng.3': 'EFL League One',
     'eng.4': 'EFL League Two',
+    'col.1': 'Colombian Primera A',
+    'mex.2': 'Liga de Expansión MX',
+    'bra.2': 'Brasileirão Série B',
+    'arg.copa': 'Copa Argentina',
+    'bol.copa': 'Copa Bolivia',
+    'fifa.youth': 'FIFA Youth Championship',
+    'club.friendly': 'Club Friendlies',
     'usa.usl.1': 'USL Championship',
     'usa.open': 'U.S. Open Cup'
 };

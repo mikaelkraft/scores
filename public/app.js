@@ -83,6 +83,7 @@
         'usa.w.1': '🇺🇸',
         'usa.usl.1': '🇺🇸',
         'usa.open': '🇺🇸',
+        'caf.champions': '🌍',
         'caf.confed': '🌍',
         'caf.nations': '🌍',
         'rsa.1': '🇿🇦',
@@ -90,7 +91,14 @@
         'mar.1': '🇲🇦',
         'nga.1': '🇳🇬',
         'eng.3': '🏴󠁧󠁢󠁥󠁮󠁧󠁿',
-        'eng.4': '🏴󠁧󠁢󠁥󠁮󠁧󠁿'
+        'eng.4': '🏴󠁧󠁢󠁥󠁮󠁧󠁿',
+        'col.1': '🇨🇴',
+        'mex.2': '🇲🇽',
+        'bra.2': '🇧🇷',
+        'arg.copa': '🇦🇷',
+        'bol.copa': '🇧🇴',
+        'fifa.youth': '🌐',
+        'club.friendly': '🤝'
     };
 
     let currentTimezone = localStorage.getItem('norra_timezone') || Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
@@ -1132,9 +1140,54 @@
 
         const predHints = predictions?.norraAiPredictionHints || {};
         const h2h = predictions?.h2h || {};
-        const recentH2h = h2h.recentMeetings || [];
+        let recentH2h = h2h.recentMeetings || [];
+        if (!recentH2h.length && summary.seasonseries?.length) {
+            const series = summary.seasonseries.find(s => s.type === 'head-to-head') || summary.seasonseries[0];
+            if (series?.events?.length) {
+                recentH2h = series.events.map(ev => {
+                    const comps = ev.competitors || [];
+                    const hComp = comps.find(c => c.homeAway === 'home') || comps[0] || {};
+                    const aComp = comps.find(c => c.homeAway === 'away') || comps[1] || {};
+                    return {
+                        id: ev.id,
+                        date: ev.date,
+                        homeTeam: hComp.team?.displayName || 'Home',
+                        awayTeam: aComp.team?.displayName || 'Away',
+                        score: `${hComp.score ?? 0} - ${aComp.score ?? 0}`,
+                        winner: hComp.winner ? (hComp.team?.displayName || 'Home') : aComp.winner ? (aComp.team?.displayName || 'Away') : 'Draw'
+                    };
+                });
+            }
+        }
+
         const homeAnalytics = predictions?.teams?.home?.analytics || {};
         const awayAnalytics = predictions?.teams?.away?.analytics || {};
+
+        if (!homeAnalytics.recentMatches?.length && summary.lastFiveGames?.length) {
+            const hL5 = summary.lastFiveGames.find(t => String(t.team?.id) === String(home.team?.id) || t.team?.displayName === home.team?.displayName);
+            if (hL5?.events?.length) {
+                homeAnalytics.recentMatches = hL5.events.map(ev => ({
+                    date: ev.gameDate,
+                    opponent: ev.opponent?.displayName || 'Opponent',
+                    score: ev.score || '',
+                    result: ev.gameResult || 'D',
+                    venue: ev.atVs === '@' ? 'Away' : 'Home'
+                }));
+            }
+        }
+        if (!awayAnalytics.recentMatches?.length && summary.lastFiveGames?.length) {
+            const aL5 = summary.lastFiveGames.find(t => String(t.team?.id) === String(away.team?.id) || t.team?.displayName === away.team?.displayName);
+            if (aL5?.events?.length) {
+                awayAnalytics.recentMatches = aL5.events.map(ev => ({
+                    date: ev.gameDate,
+                    opponent: ev.opponent?.displayName || 'Opponent',
+                    score: ev.score || '',
+                    result: ev.gameResult || 'D',
+                    venue: ev.atVs === '@' ? 'Away' : 'Home'
+                }));
+            }
+        }
+
         const homeStanding = predictions?.teams?.home?.standing || null;
         const awayStanding = predictions?.teams?.away?.standing || null;
 
@@ -1145,6 +1198,18 @@
                 const bg = letter === 'W' ? '#10b981' : letter === 'D' ? '#6b7280' : '#ef4444';
                 return `<span style="display:inline-flex; align-items:center; justify-content:center; width:22px; height:22px; border-radius:4px; background:${bg}; color:#ffffff; font-weight:700; font-size:11px; margin-right:4px;">${letter}</span>`;
             }).join('');
+        }
+
+        function renderRecentMatchesList(recentMatches) {
+            if (!recentMatches || !recentMatches.length) return '';
+            return `<div style="margin-top:10px; border-top:1px dashed var(--border-subtle); padding-top:8px;">` +
+                recentMatches.slice(0, 5).map(m => {
+                    const resColor = m.result === 'W' ? '#10b981' : m.result === 'D' ? '#9ca3af' : '#ef4444';
+                    return `<div style="display:flex; justify-content:space-between; align-items:center; font-size:11.5px; margin-bottom:5px; color:var(--text-muted);">
+                        <span>${escapeHtml((m.venue === 'Away' ? '@ ' : 'vs ') + (m.opponent || 'Opponent'))}</span>
+                        <span style="font-weight:700; color:${resColor}; font-size:11px;">${escapeHtml(m.score || m.result)}</span>
+                    </div>`;
+                }).join('') + `</div>`;
         }
 
         const h2hMeetingsRows = recentH2h.length ? recentH2h.map(m => `
@@ -1245,10 +1310,15 @@
 
                 <div id="drawer-tab-h2h" class="drawer-tab-content" hidden>
                     <h4 style="margin:0 0 14px; font-size:14px; color:var(--text-main);">Head-to-Head Past Encounters</h4>
+                    ${h2h.seriesSummary || h2h.seriesScore ? `
+                        <div style="background:var(--color-primary-subtle); border:1px solid var(--border-subtle); border-radius:8px; padding:10px 14px; font-size:13px; font-weight:600; color:var(--color-primary); margin-bottom:16px; text-align:center;">
+                            🏆 ${escapeHtml(h2h.seriesSummary || ('Historical Series: ' + h2h.seriesScore))}
+                        </div>
+                    ` : ''}
                     <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(130px, 1fr)); gap:10px; margin-bottom:20px;">
                         <div style="background:var(--bg-canvas); border:1px solid var(--border-subtle); border-radius:8px; padding:12px; text-align:center;">
                             <span style="font-size:11px; text-transform:uppercase; color:var(--text-muted); display:block;">Total Meetings</span>
-                            <strong style="font-size:20px; color:var(--text-main);">${h2h.totalMeetings || 0}</strong>
+                            <strong style="font-size:20px; color:var(--text-main);">${recentH2h.length || h2h.totalMeetings || 0}</strong>
                         </div>
                         <div style="background:var(--bg-canvas); border:1px solid var(--border-subtle); border-radius:8px; padding:12px; text-align:center;">
                             <span style="font-size:11px; text-transform:uppercase; color:var(--text-muted); display:block;">${escapeHtml(home.team?.displayName || 'Home')} Wins</span>
@@ -1269,15 +1339,17 @@
                             <div style="font-weight:700; font-size:13px; color:var(--text-main); margin-bottom:8px;">${escapeHtml(home.team?.displayName || 'Home')} Form</div>
                             <div>${renderFormBadges(homeAnalytics.formGuide)}</div>
                             <div style="font-size:12px; color:var(--text-muted); margin-top:8px;">Avg Scored: <strong style="color:var(--text-main);">${homeAnalytics.goalsScoredAvg ?? '—'}</strong> &bull; Conceded: <strong style="color:var(--text-main);">${homeAnalytics.goalsConcededAvg ?? '—'}</strong></div>
+                            ${renderRecentMatchesList(homeAnalytics.recentMatches)}
                         </div>
                         <div style="background:var(--bg-canvas); border:1px solid var(--border-subtle); border-radius:8px; padding:12px 14px;">
                             <div style="font-weight:700; font-size:13px; color:var(--text-main); margin-bottom:8px;">${escapeHtml(away.team?.displayName || 'Away')} Form</div>
                             <div>${renderFormBadges(awayAnalytics.formGuide)}</div>
                             <div style="font-size:12px; color:var(--text-muted); margin-top:8px;">Avg Scored: <strong style="color:var(--text-main);">${awayAnalytics.goalsScoredAvg ?? '—'}</strong> &bull; Conceded: <strong style="color:var(--text-main);">${awayAnalytics.goalsConcededAvg ?? '—'}</strong></div>
+                            ${renderRecentMatchesList(awayAnalytics.recentMatches)}
                         </div>
                     </div>
 
-                    <h5 style="margin:16px 0 10px; font-size:13px; color:var(--text-main);">Recent Past Meetings</h5>
+                    <h5 style="margin:16px 0 10px; font-size:13px; color:var(--text-main);">Past Head-to-Head Encounters</h5>
                     <div>${h2hMeetingsRows}</div>
                 </div>
 

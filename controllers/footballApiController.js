@@ -392,7 +392,7 @@ router.get('/predictions-context/:eventId', async (req, res) => {
             SoccerLeague.findOne({ slug: leagueSlug }).lean()
         ]);
 
-        // Compute H2H statistics
+        // Compute H2H statistics from database matches
         let homeWins = 0;
         let awayWins = 0;
         let draws = 0;
@@ -400,7 +400,7 @@ router.get('/predictions-context/:eventId', async (req, res) => {
         let bttsCount = 0;
         let over25Count = 0;
 
-        const formattedH2h = h2hMatches.map(m => {
+        let formattedH2h = h2hMatches.map(m => {
             const isHomeOriginal = String(m.home?.source_id) === homeId;
             const hScore = Number(m.home?.score || 0);
             const aScore = Number(m.away?.score || 0);
@@ -427,6 +427,79 @@ router.get('/predictions-context/:eventId', async (req, res) => {
                 winner: hScore > aScore ? m.home?.name : aScore > hScore ? m.away?.name : 'Draw'
             };
         });
+
+        // Enrich with real historical H2H archive and 5-game form from ESPN summary
+        let seriesSummary = '';
+        let seriesScore = '';
+        try {
+            const https = require('https');
+            const zlib = require('zlib');
+            const espnSummary = await new Promise((resolve) => {
+                const req = https.get(`https://site.api.espn.com/apis/site/v2/sports/soccer/${match.league_slug || 'all'}/summary?event=${encodeURIComponent(eventId)}`, {
+                    headers: { 'User-Agent': 'NorraScores/2.1', 'Accept-Encoding': 'gzip, deflate' },
+                    timeout: 3000
+                }, res => {
+                    if (res.statusCode !== 200) return resolve(null);
+                    let stream = res.headers['content-encoding'] === 'gzip' ? res.pipe(zlib.createGunzip()) : res;
+                    let d = '';
+                    stream.on('data', c => d += c);
+                    stream.on('end', () => {
+                        try { resolve(JSON.parse(d)); } catch { resolve(null); }
+                    });
+                });
+                req.on('error', () => resolve(null));
+                req.on('timeout', () => { req.destroy(); resolve(null); });
+            });
+
+            if (espnSummary?.seasonseries?.length) {
+                const series = espnSummary.seasonseries.find(s => s.type === 'head-to-head') || espnSummary.seasonseries[0];
+                seriesSummary = series.summary || '';
+                seriesScore = series.seriesScore || '';
+
+                if (Array.isArray(series.events) && series.events.length > 0) {
+                    const espnH2h = series.events.map(ev => {
+                        const comps = ev.competitors || [];
+                        const hComp = comps.find(c => c.homeAway === 'home') || comps[0] || {};
+                        const aComp = comps.find(c => c.homeAway === 'away') || comps[1] || {};
+                        const hScore = Number(hComp.score) || 0;
+                        const aScore = Number(aComp.score) || 0;
+                        const winnerName = hComp.winner ? (hComp.team?.displayName || 'Home') : aComp.winner ? (aComp.team?.displayName || 'Away') : 'Draw';
+                        return {
+                            id: ev.id,
+                            date: ev.date,
+                            homeTeam: hComp.team?.displayName || match.home?.displayName || 'Home',
+                            awayTeam: aComp.team?.displayName || match.away?.displayName || 'Away',
+                            score: `${hScore} - ${aScore}`,
+                            winner: winnerName
+                        };
+                    });
+
+                    if (espnH2h.length >= formattedH2h.length) {
+                        formattedH2h = espnH2h;
+                        homeWins = 0;
+                        awayWins = 0;
+                        draws = 0;
+                        totalGoals = 0;
+                        bttsCount = 0;
+                        over25Count = 0;
+                        for (const m of formattedH2h) {
+                            const parts = m.score.split('-').map(s => Number(s.trim()));
+                            const hs = parts[0] || 0;
+                            const as = parts[1] || 0;
+                            const tot = hs + as;
+                            totalGoals += tot;
+                            if (hs > 0 && as > 0) bttsCount++;
+                            if (tot > 2.5) over25Count++;
+                            if (hs === as) draws++;
+                            else if (m.winner === (match.home?.displayName || match.home?.name)) homeWins++;
+                            else if (m.winner === (match.away?.displayName || match.away?.name)) awayWins++;
+                            else if (hs > as) homeWins++;
+                            else awayWins++;
+                        }
+                    }
+                }
+            }
+        } catch {}
 
         const h2hCount = formattedH2h.length;
 
@@ -488,6 +561,24 @@ router.get('/predictions-context/:eventId', async (req, res) => {
 
         const homeAnalytics = extractTeamForm(homeRecentMatches, homeId);
         const awayAnalytics = extractTeamForm(awayRecentMatches, awayId);
+
+        // Fallback to match document form string if fewer than 3 matches recorded locally
+        if (homeAnalytics.formGuide.length < 3 && match.home?.form) {
+            const formLetters = String(match.home.form).replace(/[^WDLwdl]/g, '').toUpperCase().split('');
+            if (formLetters.length > 0) {
+                homeAnalytics.formGuide = formLetters;
+                homeAnalytics.formString = formLetters.join('-');
+                homeAnalytics.matchesAnalyzed = Math.max(homeAnalytics.matchesAnalyzed, formLetters.length);
+            }
+        }
+        if (awayAnalytics.formGuide.length < 3 && match.away?.form) {
+            const formLetters = String(match.away.form).replace(/[^WDLwdl]/g, '').toUpperCase().split('');
+            if (formLetters.length > 0) {
+                awayAnalytics.formGuide = formLetters;
+                awayAnalytics.formString = formLetters.join('-');
+                awayAnalytics.matchesAnalyzed = Math.max(awayAnalytics.matchesAnalyzed, formLetters.length);
+            }
+        }
 
         // Standing comparison
         let homeStanding = null;
@@ -560,13 +651,15 @@ router.get('/predictions-context/:eventId', async (req, res) => {
                 }
             },
             h2h: {
-                totalMeetings: h2hCount,
+                totalMeetings: formattedH2h.length,
                 homeWins,
                 awayWins,
                 draws,
-                averageGoalsPerMatch: h2hCount > 0 ? Number((totalGoals / h2hCount).toFixed(2)) : 0,
-                bttsPercentage: h2hCount > 0 ? Number(((bttsCount / h2hCount) * 100).toFixed(1)) : 0,
-                over25Percentage: h2hCount > 0 ? Number(((over25Count / h2hCount) * 100).toFixed(1)) : 0,
+                seriesSummary,
+                seriesScore,
+                averageGoalsPerMatch: formattedH2h.length > 0 ? Number((totalGoals / formattedH2h.length).toFixed(2)) : 0,
+                bttsPercentage: formattedH2h.length > 0 ? Number(((bttsCount / formattedH2h.length) * 100).toFixed(1)) : 0,
+                over25Percentage: formattedH2h.length > 0 ? Number(((over25Count / formattedH2h.length) * 100).toFixed(1)) : 0,
                 recentMeetings: formattedH2h
             },
             odds: match.odds || [],
@@ -786,6 +879,10 @@ router.get('/matches/:eventId', async (req, res) => {
                 if (espnData.rosters?.length) summary.rosters = espnData.rosters;
                 if (espnData.gameInfo) summary.gameInfo = espnData.gameInfo;
                 if (espnData.header?.competitions?.[0]) summary.header.competitions = espnData.header.competitions;
+                if (espnData.seasonseries) summary.seasonseries = espnData.seasonseries;
+                if (espnData.lastFiveGames) summary.lastFiveGames = espnData.lastFiveGames;
+                if (espnData.predictor) summary.predictor = espnData.predictor;
+                if (espnData.pickcenter) summary.pickcenter = espnData.pickcenter;
             }
         } catch {}
 

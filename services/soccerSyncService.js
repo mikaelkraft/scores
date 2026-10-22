@@ -73,7 +73,14 @@ const TARGET_LEAGUES = [
     { slug: 'mar.1', name: 'Moroccan Botola Pro', abbreviation: 'Botola Pro', country: 'Morocco', kind: 'club', sort_order: 57 },
     { slug: 'nga.1', name: 'Nigeria Premier Football League', abbreviation: 'NPFL', country: 'Nigeria', kind: 'club', sort_order: 58 },
     { slug: 'eng.3', name: 'EFL League One', abbreviation: 'League One', country: 'England', kind: 'club', sort_order: 59 },
-    { slug: 'eng.4', name: 'EFL League Two', abbreviation: 'League Two', country: 'England', kind: 'club', sort_order: 60 }
+    { slug: 'eng.4', name: 'EFL League Two', abbreviation: 'League Two', country: 'England', kind: 'club', sort_order: 60 },
+    { slug: 'col.1', name: 'Colombian Primera A', abbreviation: 'Liga BetPlay', country: 'Colombia', kind: 'club', sort_order: 61 },
+    { slug: 'mex.2', name: 'Liga de Expansión MX', abbreviation: 'Expansión MX', country: 'Mexico', kind: 'club', sort_order: 62 },
+    { slug: 'bra.2', name: 'Brasileirão Série B', abbreviation: 'Série B', country: 'Brazil', kind: 'club', sort_order: 63 },
+    { slug: 'arg.copa', name: 'Copa Argentina', abbreviation: 'Copa Argentina', country: 'Argentina', kind: 'cup', sort_order: 64 },
+    { slug: 'bol.copa', name: 'Copa Bolivia', abbreviation: 'Copa Bolivia', country: 'Bolivia', kind: 'cup', sort_order: 65 },
+    { slug: 'fifa.youth', name: 'FIFA Youth World Cup', abbreviation: 'FIFA Youth', country: 'International', kind: 'international', sort_order: 66 },
+    { slug: 'club.friendly', name: 'Club Friendlies', abbreviation: 'Friendlies', country: 'International', kind: 'club', sort_order: 67 }
 ];
 
 function fetchJson(url) {
@@ -288,7 +295,18 @@ async function syncLeague(leagueDef) {
     try {
         // 1. Fetch Primary Scoreboard Data
         const scoreboardUrl = `https://site.api.espn.com/apis/site/v2/sports/soccer/${slug}/scoreboard`;
-        const sbData = await fetchJson(scoreboardUrl);
+        let sbData;
+        try {
+            sbData = await fetchJson(scoreboardUrl);
+        } catch (fetchErr) {
+            // Regional leagues and domestic cups that only air via master all/scoreboard
+            return {
+                league: slug,
+                matchesSynced: 0,
+                standingsSynced: 0,
+                status: 'skipped'
+            };
+        }
 
         const espnLeague = sbData.leagues?.[0] || {};
         const season = espnLeague.season || {};
@@ -464,6 +482,7 @@ function resolveLeagueSlug(altGameNote = '', compDesc = '', uid = '') {
     if (text.includes('u.s. open') || text.includes('us open cup') || text.includes('usa.open')) return 'usa.open';
     if (text.includes('nwsl') || text.includes('usa.w.1')) return 'usa.w.1';
     if (text.includes('mls') || text.includes('major league soccer') || text.includes('usa.1')) return 'usa.1';
+    if (text.includes('ncaa') || text.includes('ncaam')) return 'usa.ncaa';
 
     // English Championship (specifically EFL / English Championship, avoiding bare 'championship')
     if (text.includes('efl championship') || text.includes('english championship') || (text.includes('championship') && (text.includes('eng') || text.includes('efl') || text.includes('sky bet'))) || text.includes('eng.2')) return 'eng.2';
@@ -490,22 +509,32 @@ function resolveLeagueSlug(altGameNote = '', compDesc = '', uid = '') {
     if (text.includes('scottish') || text.includes('premiership') || text.includes('sco.1')) return 'sco.1';
     if (text.includes('saudi') || text.includes('ksa.1')) return 'ksa.1';
     if (text.includes('brasileir') || text.includes('bra.1')) return 'bra.1';
+    if (text.includes('serie b brasil') || text.includes('bra.2')) return 'bra.2';
+    if (text.includes('copa argentina') || text.includes('arg.copa')) return 'arg.copa';
     if (text.includes('argentin') || text.includes('arg.1')) return 'arg.1';
+    if (text.includes('expansión') || text.includes('expansion') || text.includes('mex.2')) return 'mex.2';
     if (text.includes('liga mx') || text.includes('mex.1')) return 'mex.1';
+    if (text.includes('colombia') || text.includes('primera a') || text.includes('col.1')) return 'col.1';
+    if (text.includes('bolivia') || text.includes('bol.1') || text.includes('bol.copa')) return 'bol.copa';
     if (text.includes('libertadores') || text.includes('conmebol.libertadores')) return 'conmebol.libertadores';
     if (text.includes('sudamericana') || text.includes('conmebol.sudamericana')) return 'conmebol.sudamericana';
     if (text.includes('recopa') || text.includes('conmebol.recopa')) return 'conmebol.recopa';
     if (text.includes('super cup') || text.includes('uefa.super_cup')) return 'uefa.super_cup';
     if (text.includes('club world cup') || text.includes('fifa.cwc')) return 'fifa.cwc';
     if (text.includes('concacaf') || text.includes('concacaf.champions')) return 'concacaf.champions';
+    if (text.includes('club friendly') || text.includes('friendly')) return 'club.friendly';
+    if (text.includes('u-17') || text.includes('u17') || text.includes('u-20') || text.includes('u20')) return 'fifa.youth';
+
     // English lower divisions (League One, League Two)
     if (text.includes('league one') || text.includes('eng.3')) return 'eng.3';
     if (text.includes('league two') || text.includes('eng.4')) return 'eng.4';
 
     // African continental and domestic leagues
     if (text.includes('caf confederation') || text.includes('caf.confed')) return 'caf.confed';
+    if (text.includes('caf champions') || text.includes('caf.champions')) return 'caf.champions';
     if (text.includes('africa cup') || text.includes('afcon') || text.includes('caf.nations')) return 'caf.nations';
-    if (text.includes('caf') || text.includes('caf.champions')) return 'caf.champions';
+    if (text.includes('chan') || text.includes('african nations championship') || text.includes('caf.championship')) return 'caf.championship';
+    if (text.includes('cosafa') || text.includes('caf.cosafa')) return 'caf.cosafa';
     if (text.includes('botola') || (text.includes('morocco') && text.includes('league')) || text.includes('mar.1')) return 'mar.1';
     if (text.includes('egypt') || text.includes('egy.1')) return 'egy.1';
     if (text.includes('south africa') || text.includes('psl') || text.includes('betway premiership') || text.includes('rsa.1')) return 'rsa.1';
@@ -522,6 +551,13 @@ function resolveLeagueSlug(altGameNote = '', compDesc = '', uid = '') {
     if (text.includes('a-league') || text.includes('aus.1')) return 'aus.1';
     if (text.includes('chinese') || text.includes('csl') || text.includes('chn.1')) return 'chn.1';
     if (text.includes('veikkausliiga') || text.includes('fin.1')) return 'fin.1';
+
+    // Universal clean fallback: derive from altGameNote or compDesc so NO live matches are ever dropped
+    const cleanTitle = (altGameNote || compDesc || '').split(',')[0].trim();
+    if (cleanTitle) {
+        const slugified = cleanTitle.toLowerCase().replace(/[^a-z0-9]+/g, '.').replace(/^\.+|\.+$/g, '').slice(0, 32);
+        if (slugified.length >= 3) return slugified;
+    }
     return null;
 }
 
@@ -561,9 +597,29 @@ async function syncLiveScoreboards() {
 
             const leagueDef = TARGET_LEAGUES.find(l => l.slug === targetSlug) || {
                 slug: targetSlug,
-                name: comp.altGameNote || 'Football Competition',
-                country: 'International'
+                name: comp.altGameNote ? comp.altGameNote.split(',')[0].trim() : 'Football Competition',
+                abbreviation: comp.altGameNote ? comp.altGameNote.split(',')[0].trim().slice(0, 16) : 'Soccer',
+                country: 'International',
+                kind: 'club'
             };
+
+            if (!TARGET_LEAGUES.some(l => l.slug === targetSlug)) {
+                await SoccerLeague.updateOne(
+                    { slug: targetSlug },
+                    {
+                        $setOnInsert: {
+                            slug: targetSlug,
+                            name: leagueDef.name,
+                            abbreviation: leagueDef.abbreviation || leagueDef.name.slice(0, 16),
+                            country: leagueDef.country || 'International',
+                            kind: 'club',
+                            active: true,
+                            sort_order: 99
+                        }
+                    },
+                    { upsert: true }
+                ).catch(() => {});
+            }
 
             const updateFields = {
                 league_slug: targetSlug,
