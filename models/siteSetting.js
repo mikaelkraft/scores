@@ -33,19 +33,19 @@ const SiteSettingSchema = new mongoose.Schema({
     },
     plans: {
         starter: {
-            priceUsd: { type: Number, default: 19 },
-            name: { type: String, default: 'Starter' },
+            priceUsd: { type: Number, default: 10 },
+            name: { type: String, default: 'Starter Plan' },
             rateLimitPerMinute: { type: Number, default: 500 },
             description: { type: String, default: 'Ideal for small apps and developer projects.' }
         },
         pro: {
-            priceUsd: { type: Number, default: 49 },
+            priceUsd: { type: Number, default: 29 },
             name: { type: String, default: 'Pro Developer' },
             rateLimitPerMinute: { type: Number, default: 1500 },
             description: { type: String, default: 'High throughput for growing sports media websites.' }
         },
         whitelabel: {
-            priceUsd: { type: Number, default: 99 },
+            priceUsd: { type: Number, default: 79 },
             name: { type: String, default: 'Whitelabel / Enterprise' },
             rateLimitPerMinute: { type: Number, default: 5000 },
             description: { type: String, default: 'Dedicated limits, custom branded embeds, and full commercial rights.' }

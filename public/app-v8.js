@@ -500,7 +500,7 @@
             else if (state.selectedDateStr) dateParam = state.selectedDateStr;
 
             const statusParam = state.currentStatus || 'all';
-            let url = `/api/v1/football/fixtures?date=${encodeURIComponent(dateParam)}`;
+            let url = `/api/v1/football/fixtures?date=${encodeURIComponent(dateParam)}&limit=200`;
             if (statusParam && statusParam !== 'all') {
                 url += `&status=${encodeURIComponent(statusParam)}`;
             }
@@ -848,14 +848,16 @@
         if (elements['match-dialog'] && !elements['match-dialog'].open) {
             elements['match-dialog'].showModal();
         }
-        await loadMatchDetails(eventId, false);
+        await loadMatchDetails(eventId, false, leagueSlug);
     }
 
-    async function loadMatchDetails(eventId, silent) {
+    async function loadMatchDetails(eventId, silent, leagueSlug = '') {
+        const slug = leagueSlug || state.league?.slug || 'all';
         if (!state.league && state.leagues.length) {
-            state.league = state.leagues[0];
+            const found = state.leagues.find(item => item.slug === slug);
+            state.league = found || state.leagues[0];
         }
-        if (!state.league || state.currentEventId !== eventId) return;
+        if (state.currentEventId !== eventId) return;
         if (!silent && elements['dialog-content']) {
             if (elements['dialog-status']) {
                 elements['dialog-status'].textContent = 'Loading...';
@@ -865,21 +867,32 @@
             elements['dialog-content'].innerHTML = '<div class="content-state"><span class="loader"></span><p>Loading match details…</p></div>';
         }
 
-        const base = `/get/soccer/${encodeURIComponent(state.league.slug)}/events/${encodeURIComponent(eventId)}`;
+        const base = `/get/soccer/${encodeURIComponent(slug)}/events/${encodeURIComponent(eventId)}`;
         const [summaryResult, playsResult, predResult] = await Promise.allSettled([
             fetchJson(base),
             fetchJson(`${base}/plays?important=true&limit=300`),
             fetchJson(`/api/v1/football/predictions-context/${encodeURIComponent(eventId)}`)
         ]);
 
-        if (summaryResult.status === 'rejected') {
+        let summary = summaryResult.status === 'fulfilled' ? summaryResult.value : null;
+
+        if (!summary) {
+            // Fallback to global match API endpoint with ESPN enrichment
+            try {
+                const matchApiRes = await fetchJson(`/api/v1/football/matches/${encodeURIComponent(eventId)}`);
+                if (matchApiRes?.summary) {
+                    summary = matchApiRes.summary;
+                }
+            } catch (err) {}
+        }
+
+        if (!summary) {
             if (elements['dialog-content']) {
-                elements['dialog-content'].innerHTML = `<div class="content-state"><span class="empty-icon">!</span><p>${escapeHtml(summaryResult.reason.message)}</p></div>`;
+                elements['dialog-content'].innerHTML = `<div class="content-state"><span class="empty-icon">!</span><p>${escapeHtml(summaryResult.reason?.message || 'Match details could not be loaded.')}</p></div>`;
             }
             return;
         }
 
-        const summary = summaryResult.value;
         const plays = playsResult.status === 'fulfilled' ? playsResult.value.items || [] : [];
         const predictions = predResult.status === 'fulfilled' ? predResult.value : null;
         renderMatchDetails(summary, plays, predictions);
@@ -888,7 +901,7 @@
         const status = competition.status?.type?.state;
         if (status === 'in') {
             window.clearInterval(state.matchTimer);
-            state.matchTimer = window.setInterval(() => loadMatchDetails(eventId, true), 15000);
+            state.matchTimer = window.setInterval(() => loadMatchDetails(eventId, true, slug), 15000);
         }
     }
 
@@ -1580,6 +1593,22 @@
             if (elements['date-to']) elements['date-to'].value = iso;
             if (picker) picker.value = iso;
 
+            // When navigating dates, reset status filter from 'live' to 'all' so scheduled/finished fixtures are shown
+            if (state.currentStatus === 'live' || state.selectedLeagueSlug === 'live') {
+                state.currentStatus = 'all';
+                const statusPills = document.querySelectorAll('.fs-status-pill');
+                statusPills.forEach(p => {
+                    const isAll = p.dataset.status === 'all';
+                    p.classList.toggle('active', isAll);
+                    p.setAttribute('aria-selected', isAll ? 'true' : 'false');
+                });
+                if (state.selectedLeagueSlug === 'live') {
+                    state.selectedLeagueSlug = 'all';
+                    const leaguePills = document.querySelectorAll('.quick-league-pill');
+                    leaguePills.forEach(p => p.classList.toggle('active', p.dataset.slug === 'all'));
+                }
+            }
+
             if (state.selectedLeagueSlug === 'all') {
                 loadAllLeagueFixtures();
             } else if (state.league) {
@@ -1712,12 +1741,17 @@
                 }
 
                 // If currently viewing live view or matches are live, update smoothly in background without screen flashing
-                if (state.selectedLeagueSlug === 'live' || state.currentStatus === 'live') {
-                    loadLiveMatches({ background: true });
-                } else if (state.selectedLeagueSlug === 'all' && (!state.selectedDayOffset || state.selectedDayOffset === 0)) {
-                    loadAllLeagueFixtures({ background: true });
-                } else if (state.league) {
-                    loadFixtures({ background: true });
+                // Only update the visible fixture list if the user is currently viewing today (offset 0),
+                // so browsing tomorrow/yesterday fixtures is never wiped out by background live polling!
+                const isViewingToday = !state.selectedDayOffset || state.selectedDayOffset === 0;
+                if (isViewingToday) {
+                    if (state.selectedLeagueSlug === 'live' || state.currentStatus === 'live') {
+                        loadLiveMatches({ background: true });
+                    } else if (state.selectedLeagueSlug === 'all') {
+                        loadAllLeagueFixtures({ background: true });
+                    } else if (state.league) {
+                        loadFixtures({ background: true });
+                    }
                 }
             } catch (e) {
                 // background poll notice

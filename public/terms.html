@@ -4,12 +4,26 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Terms of Service | Scores by Norra AI</title>
-    <meta name="description" content="Terms of Service for Scores by Norra AI football livescores and commercial sports API platform.">
+    <meta name="description" content="Terms of Service for Scores by Norra AI (scores.mynorra.xyz) football livescores and commercial sports API platform.">
     <link rel="icon" href="/favicon.svg" type="image/svg+xml">
-    <link rel="stylesheet" href="/assets/styles.css">
+    <link rel="stylesheet" href="/assets/styles-v8.css">
+    <script>
+        (function() {
+            try {
+                const savedTheme = localStorage.getItem('theme');
+                if (savedTheme === 'light') {
+                    document.documentElement.classList.add('theme-light');
+                    document.documentElement.classList.remove('theme-dark');
+                } else {
+                    document.documentElement.classList.add('theme-dark');
+                    document.documentElement.classList.remove('theme-light');
+                }
+            } catch (e) {}
+        })();
+    </script>
     <style>
         .legal-container {
-            max-width: 860px;
+            max-width: 920px;
             margin: 40px auto;
             padding: 0 20px 80px;
         }
@@ -19,14 +33,35 @@
             margin-bottom: 32px;
         }
         .legal-header h1 {
-            font-size: 28px;
-            font-weight: 700;
+            font-size: 32px;
+            font-weight: 800;
             color: var(--text-main);
-            margin: 0 0 8px 0;
+            margin: 0 0 10px 0;
+            letter-spacing: -0.5px;
         }
         .legal-meta {
-            font-size: 13px;
+            font-size: 13.5px;
             color: var(--text-muted);
+            line-height: 1.6;
+        }
+        .legal-badge-bar {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-top: 14px;
+            flex-wrap: wrap;
+        }
+        .legal-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 12px;
+            font-weight: 600;
+            padding: 4px 10px;
+            border-radius: 999px;
+            background: var(--bg-surface-elevated);
+            border: 1px solid var(--border-subtle);
+            color: var(--text-main);
         }
         .legal-card {
             background: var(--bg-surface);
@@ -34,22 +69,26 @@
             border-radius: var(--card-radius);
             padding: 32px;
             margin-bottom: 24px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.15);
         }
         .legal-card h2 {
             font-size: 19px;
-            font-weight: 600;
+            font-weight: 700;
             color: var(--text-main);
             margin-top: 0;
-            margin-bottom: 12px;
+            margin-bottom: 14px;
         }
         .legal-card p, .legal-card li {
-            font-size: 14px;
-            line-height: 1.7;
+            font-size: 14.5px;
+            line-height: 1.75;
             color: var(--text-muted);
         }
         .legal-card ul {
-            padding-left: 20px;
-            margin: 12px 0;
+            padding-left: 22px;
+            margin: 14px 0;
+        }
+        .legal-card li {
+            margin-bottom: 8px;
         }
         .nav-back-link {
             display: inline-flex;
@@ -58,8 +97,8 @@
             font-size: 13px;
             color: var(--color-primary);
             text-decoration: none;
-            margin-bottom: 20px;
-            font-weight: 500;
+            margin-bottom: 24px;
+            font-weight: 600;
         }
         .nav-back-link:hover {
             text-decoration: underline;
@@ -67,18 +106,26 @@
     </style>
 </head>
 <body>
-    <header class="site-header">
-        <div class="shell header-row">
-            <a href="/" class="brand-link" style="text-decoration:none; display:flex; align-items:center; gap:10px;">
-                <span class="brand-name" style="font-weight:700; font-size:18px; color:var(--text-main);">Scores by Norra AI</span>
+    <header class="site-header" role="banner">
+        <nav class="shell nav-bar" aria-label="Main navigation">
+            <a class="brand" href="/" aria-label="Scores by Norra AI home">
+                <img id="header-logo-img" class="brand-logo-img" src="" alt="Norra AI" hidden>
+                <div id="header-brand-fallback" class="brand-text">
+                    <span class="brand-icon" aria-hidden="true">⚽</span>
+                    <strong>Norra Scores</strong>
+                </div>
             </a>
-            <nav class="nav">
-                <a href="/">Scores</a>
-                <a href="/football-api">API Pricing</a>
-                <a href="/api-docs/">Docs</a>
-                <a href="/account" class="btn btn-outline" style="font-size:13px; padding:6px 14px;">Developer Portal</a>
-            </nav>
-        </div>
+
+            <div class="nav-actions">
+                <a class="nav-link" href="/" id="nav-scores-link">Scores</a>
+                <a class="nav-link nav-btn-live" href="/?view=live" id="header-live-btn"><span class="live-pulse-dot" aria-hidden="true"></span>Live</a>
+                <a class="nav-link nav-link-norra" href="https://mynorra.xyz" target="_blank" rel="noopener">Predictions <span class="ext-icon" aria-hidden="true">↗</span></a>
+                <a class="nav-link" href="/pricing">Pricing</a>
+                <a class="nav-link docs-link" href="/docs">Docs</a>
+                <a class="nav-link" href="/account" id="nav-account-link">Account</a>
+                <button class="btn-icon-toggle" id="theme-toggle" type="button" aria-label="Toggle light/dark theme" title="Toggle theme">🌓</button>
+            </div>
+        </nav>
     </header>
 
     <main class="legal-container">
@@ -86,75 +133,187 @@
 
         <div class="legal-header">
             <h1>Terms of Service</h1>
-            <div class="legal-meta">Last updated: October 2026 &bull; Norra AI Platform (<a href="https://mynorra.xyz" target="_blank" rel="noopener" style="color:var(--color-primary);">mynorra.xyz</a>)</div>
+            <div class="legal-meta">
+                Official Platform: <strong>scores.mynorra.xyz</strong> (Scores by Norra AI) &bull; Part of the Norra AI Ecosystem (<a href="https://mynorra.xyz" target="_blank" rel="noopener" style="color:var(--color-primary);">mynorra.xyz</a>)<br>
+                Effective Date: October 2026 &bull; Version 2.1
+            </div>
+            <div class="legal-badge-bar">
+                <span class="legal-badge">🌐 scores.mynorra.xyz</span>
+                <span class="legal-badge">⚡ Commercial REST API</span>
+                <span class="legal-badge">🔒 Encrypted Service</span>
+            </div>
         </div>
 
         <div class="legal-card">
-            <h2>1. Acceptance of Terms</h2>
-            <p>By accessing or using Scores by Norra AI (available at <code>scores.mynorra.xyz</code>) and its associated application programming interfaces (APIs), feeds, embeds, and web services, you agree to be bound by these Terms of Service. If you are entering into these terms on behalf of a business, you represent that you have authority to bind that entity.</p>
+            <h2>1. Platform Declaration & Acceptance</h2>
+            <p>Welcome to <strong>Scores by Norra AI</strong>, accessible online at <code>scores.mynorra.xyz</code> (the "Platform" or "Service"), operated in synergy with Norra AI (<code>mynorra.xyz</code>). By using or accessing scores.mynorra.xyz, its associated APIs, WebSocket feeds, widgets, and developer portals, you agree to comply with and be bound by these Terms of Service. If you do not agree to these terms, please do not use the Platform.</p>
         </div>
 
         <div class="legal-card">
             <h2>2. Permitted Use & Commercial API Subscriptions</h2>
-            <p>Scores by Norra AI provides football match results, standings, live scores, and developer APIs. We offer free developer access alongside tiered paid commercial subscriptions (Starter, Pro, and Whitelabel):</p>
+            <p>Scores by Norra AI delivers real-time football scores, match clock telemetries, standings, team catalogs, and developer APIs. We offer flexible tiers designed for individual developers, commercial publishers, and enterprise platforms:</p>
             <ul>
-                <li><strong>Free Tier:</strong> Permitted for non-commercial evaluation, personal applications, and small community projects. Governed by default rate limits (120 requests/minute) and ad-supported web views.</li>
-                <li><strong>Commercial Tiers (Starter / Pro / Whitelabel):</strong> Grant commercial license rights to display data within mobile applications, customer-facing websites, and whitelabeled match centers. Paid subscriptions are 100% ad-free across all endpoints and embeds.</li>
-                <li><strong>Whitelabel & Embeds:</strong> Whitelabel subscribers may embed our interactive match centers on their domains without Norra AI branding constraints.</li>
+                <li><strong>Free Developer Tier ($0/mo):</strong> For non-commercial sandbox evaluation, local development, and hobby projects. Features standard rate limits (120 req/min) with ad-supported web views.</li>
+                <li><strong>Starter Tier ($10/mo):</strong> Commercial license permitting up to 100,000 API calls/month, sub-500ms latency, and ad-free access for growing sports blogs, mobile apps, and newsletters.</li>
+                <li><strong>Pro Tier ($29/mo):</strong> Professional commercial license featuring 500,000 API calls/month, dedicated live webhooks, complete player lineups, and head-to-head records.</li>
+                <li><strong>Whitelabel Tier ($79/mo):</strong> Complete whitelabel license with unbranded embeds, custom subdomains, unlimited webhook volume, and 99.9% uptime SLA.</li>
             </ul>
         </div>
 
         <div class="legal-card">
             <h2>3. API Usage, Keys & Fair Use</h2>
-            <p>Every commercial or authenticated user is assigned unique API credentials. You are responsible for safeguarding your API keys. You must not:</p>
+            <p>Every authenticated user or business receives a cryptographically signed API key. You are strictly responsible for protecting your API credentials. You agree that you will not:</p>
             <ul>
-                <li>Share or distribute private secret keys across unauthorized third parties.</li>
-                <li>Attempt to bypass rate limits or compromise server infrastructure through denial-of-service attacks.</li>
-                <li>Scrape private endpoints or resell raw API keys without an authorized Whitelabel plan.</li>
+                <li>Distribute or publicly leak private production API keys on client-side public repositories.</li>
+                <li>Circumvent or attempt to tamper with tier rate-limiting or anti-abuse protection headers.</li>
+                <li>Resell raw API access or reverse-engineer private endpoints without an explicit Whitelabel or Enterprise license.</li>
             </ul>
-            <p>We reserve the right to throttle or temporarily suspend keys that repeatedly violate documented rate limits.</p>
+            <p>Our platform maintains automated anomaly detection to prevent malicious flooding and preserve sub-second response times for all customers.</p>
         </div>
 
         <div class="legal-card">
-            <h2>4. Payments, Renewals & Refunds</h2>
-            <p>Paid subscriptions are billed in USD (with local currency conversion supported via Flutterwave and PayPal):</p>
+            <h2>4. Billing, Renewals & Cancellation</h2>
+            <p>Commercial API subscriptions on <code>scores.mynorra.xyz</code> are billed transparently on a 30-day recurring cycle:</p>
             <ul>
-                <li><strong>Billing Cycle:</strong> Subscriptions renew on a 30-day recurring basis unless cancelled prior to renewal in your <a href="/account" style="color:var(--color-primary);">Developer Portal</a>.</li>
-                <li><strong>Gateways:</strong> Payments are securely processed through regulated gateways (Flutterwave and PayPal). Norra AI does not store credit card or bank credentials on its servers.</li>
-                <li><strong>Refunds:</strong> Refund requests for monthly plans may be considered within 7 days of activation if the API service experienced prolonged unannounced downtime.</li>
+                <li><strong>Supported Currencies:</strong> USD, EUR, GBP, and NGN, processed securely through Flutterwave and PayPal.</li>
+                <li><strong>Cancellation:</strong> You may cancel your subscription at any time with one click from your <a href="/account" style="color:var(--color-primary);">Developer Portal</a>. Your access remains active until the end of the current paid billing cycle.</li>
+                <li><strong>Refunds:</strong> If you experience persistent, verified technical service disruption within the first 7 days of subscription, our support team will issue a prompt prorated refund.</li>
             </ul>
         </div>
 
         <div class="legal-card">
-            <h2>5. Disclaimer of League Affiliation & Data Accuracy</h2>
-            <p>Scores by Norra AI is an independent sports data technology platform powered by the Norra AI sports analytics engine. We are not officially affiliated with, endorsed by, or sponsored by FIFA, UEFA, the Premier League, La Liga, or any official football club or league governing body. All team names, crests, and competition titles are used strictly for descriptive and informational identification.</p>
-            <p>While we strive for high-fidelity real-time score updates, match scores and clocks are delivered on a best-effort basis and should not be relied upon as legal proof for official sporting arbitration or real-money wagering.</p>
+            <h2>5. Disclaimer of League Affiliation & Sporting Data</h2>
+            <p>Scores by Norra AI (scores.mynorra.xyz) is an independent sports analytics technology service. We are not officially affiliated with, endorsed by, or sponsored by FIFA, UEFA, the Premier League, LaLiga, MLS, or any individual sports club. All club crests, trademarks, and league titles belong to their respective copyright holders and are utilized strictly under nominative fair use for descriptive identification.</p>
+            <p>While we leverage high-speed data pipelines to deliver millisecond-accurate match clocks and scores, our data is provided for informational and entertainment purposes and should not be used as the sole basis for real-money gaming decisions.</p>
         </div>
 
         <div class="legal-card">
-            <h2>6. Governing Law & Contact</h2>
-            <p>For questions or formal inquiries regarding these terms or enterprise agreements, contact our support team at <a href="mailto:support@mynorra.xyz" style="color:var(--color-primary);">support@mynorra.xyz</a> or visit <a href="https://mynorra.xyz" target="_blank" rel="noopener" style="color:var(--color-primary);">mynorra.xyz</a>.</p>
+            <h2>6. Contact & Enterprise Licensing</h2>
+            <p>For custom high-volume enterprise agreements, bespoke league integrations, or legal inquiries, please contact our engineering team at <a href="mailto:support@mynorra.xyz" style="color:var(--color-primary);">support@mynorra.xyz</a> or explore Norra AI at <a href="https://mynorra.xyz" target="_blank" rel="noopener" style="color:var(--color-primary);">mynorra.xyz</a>.</p>
         </div>
     </main>
 
-    <footer class="site-footer">
-        <div class="shell footer-row">
-            <div>
-                <strong style="display:block; font-size:15px; margin-bottom:4px;">Scores by Norra AI</strong>
-                <span style="font-size:12px; color:var(--text-muted);">Real-time live scores, standings &amp; commercial sports API.</span>
+    <footer class="site-footer" role="contentinfo">
+        <div class="shell footer-grid">
+            <div class="footer-col footer-col-brand">
+                <div class="footer-brand">
+                    <span class="footer-brand-icon" aria-hidden="true">⚽</span>
+                    <span class="footer-brand-title">Scores by Norra AI</span>
+                </div>
+                <p class="footer-brand-tagline">
+                    The next-generation live sports data platform. Real-time scores, clock synchronization, in-play statistics, standings, and developer REST APIs powered by the Norra AI analytics engine.
+                </p>
+                <div class="footer-status-pill">
+                    <span class="status-indicator-dot"></span>
+                    <span>All sports feeds operational</span>
+                </div>
             </div>
-            <div class="footer-links">
-                <a href="/">Scores</a>
-                <a href="/football-api">API Pricing</a>
-                <a href="/api-docs/">API Docs</a>
-                <a href="/terms">Terms of Service</a>
-                <a href="/privacy">Privacy Policy</a>
-                <a href="https://mynorra.xyz" target="_blank" rel="noopener">Norra AI</a>
+
+            <div class="footer-col">
+                <div class="footer-col-title">Live Scores</div>
+                <ul class="footer-links-list">
+                    <li><a href="/#all">Today's Scores</a></li>
+                    <li><a href="/#live">In-Play Matches</a></li>
+                    <li><a href="/football/eng.1">Premier League</a></li>
+                    <li><a href="/football/esp.1">LaLiga</a></li>
+                    <li><a href="/football/uefa.champions">Champions League</a></li>
+                    <li><a href="/football/ita.1">Serie A</a></li>
+                </ul>
+            </div>
+
+            <div class="footer-col">
+                <div class="footer-col-title">Norra Ecosystem</div>
+                <ul class="footer-links-list">
+                    <li><a href="https://mynorra.xyz" target="_blank" rel="noopener">Norra AI Hub <span class="ext-icon" aria-hidden="true">↗</span></a></li>
+                    <li><a href="https://mynorra.xyz/predictions" target="_blank" rel="noopener">AI Predictions <span class="ext-icon" aria-hidden="true">↗</span></a></li>
+                    <li><a href="/pricing">API Pricing Plans</a></li>
+                    <li><a href="/docs">API Documentation</a></li>
+                    <li><a href="/account">Developer Portal</a></li>
+                </ul>
+            </div>
+
+            <div class="footer-col">
+                <div class="footer-col-title">Platform &amp; Legal</div>
+                <ul class="footer-links-list">
+                    <li><a href="/terms">Terms of Service</a></li>
+                    <li><a href="/privacy">Privacy Policy</a></li>
+                    <li><a href="/football-api">Developer API Guide</a></li>
+                    <li><a href="/account#login">API Key Access</a></li>
+                    <li><a href="mailto:support@mynorra.xyz">support@mynorra.xyz</a></li>
+                </ul>
             </div>
         </div>
-        <div class="shell footer-copy">
-            &copy; 2026 Norra AI. All rights reserved.
+
+        <div class="shell footer-bottom-bar">
+            <div class="footer-legal-copy">
+                &copy; <span id="current-year">2026</span> Scores by Norra AI (<a href="https://scores.mynorra.xyz" style="color:inherit; text-decoration:underline;">scores.mynorra.xyz</a>). Powered by Norra AI. All rights reserved.
+            </div>
+            <div class="footer-secondary-links">
+                <a href="/terms">Terms</a>
+                <span class="footer-dot-sep">&bull;</span>
+                <a href="/privacy">Privacy</a>
+                <span class="footer-dot-sep">&bull;</span>
+                <a href="/pricing">Pricing</a>
+                <span class="footer-dot-sep">&bull;</span>
+                <a href="https://mynorra.xyz" target="_blank" rel="noopener">mynorra.xyz</a>
+            </div>
         </div>
     </footer>
+
+    <!-- Sticky Floating Action Dock: Theme Switcher & Back to Top -->
+    <div class="sticky-action-dock" id="sticky-action-dock" aria-label="Page controls">
+        <button type="button" class="dock-btn dock-btn-top" id="dock-back-to-top" title="Back to top" aria-label="Back to top">
+            <span class="dock-arrow-icon" aria-hidden="true">↑</span>
+            <span class="dock-label">Top</span>
+        </button>
+        <button type="button" class="dock-btn dock-btn-theme" id="dock-theme-toggle" title="Toggle dark/light mode" aria-label="Toggle theme">
+            <span class="dock-theme-icon" aria-hidden="true">🌓</span>
+            <span class="dock-label">Theme</span>
+        </button>
+    </div>
+
+    <script>
+        (function() {
+            const themeBtn = document.getElementById('theme-toggle');
+            const dockThemeBtn = document.getElementById('dock-theme-toggle');
+            const dockTopBtn = document.getElementById('dock-back-to-top');
+
+            function toggleTheme() {
+                const isLight = document.documentElement.classList.contains('theme-light') || document.body.classList.contains('theme-light');
+                if (isLight) {
+                    document.documentElement.classList.remove('theme-light');
+                    document.documentElement.classList.add('theme-dark');
+                    document.body.classList.remove('theme-light');
+                    document.body.classList.add('theme-dark');
+                    localStorage.setItem('theme', 'dark');
+                } else {
+                    document.documentElement.classList.remove('theme-dark');
+                    document.documentElement.classList.add('theme-light');
+                    document.body.classList.remove('theme-dark');
+                    document.body.classList.add('theme-light');
+                    localStorage.setItem('theme', 'light');
+                }
+            }
+
+            if (themeBtn) themeBtn.addEventListener('click', toggleTheme);
+            if (dockThemeBtn) dockThemeBtn.addEventListener('click', toggleTheme);
+
+            if (dockTopBtn) {
+                dockTopBtn.addEventListener('click', function() {
+                    window.scrollTo({ top: 0, behavior: 'smooth' });
+                });
+                window.addEventListener('scroll', function() {
+                    if (window.scrollY > 300) {
+                        dockTopBtn.classList.add('is-visible');
+                    } else {
+                        dockTopBtn.classList.remove('is-visible');
+                    }
+                }, { passive: true });
+            }
+
+            const yr = document.getElementById('current-year');
+            if (yr) yr.textContent = new Date().getFullYear();
+        })();
+    </script>
 </body>
 </html>

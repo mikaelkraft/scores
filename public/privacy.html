@@ -4,12 +4,26 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Privacy Policy | Scores by Norra AI</title>
-    <meta name="description" content="Privacy Policy for Scores by Norra AI football livescores and commercial sports API platform.">
+    <meta name="description" content="Privacy Policy for Scores by Norra AI (scores.mynorra.xyz) football livescores and commercial sports API platform.">
     <link rel="icon" href="/favicon.svg" type="image/svg+xml">
-    <link rel="stylesheet" href="/assets/styles.css">
+    <link rel="stylesheet" href="/assets/styles-v8.css">
+    <script>
+        (function() {
+            try {
+                const savedTheme = localStorage.getItem('theme');
+                if (savedTheme === 'light') {
+                    document.documentElement.classList.add('theme-light');
+                    document.documentElement.classList.remove('theme-dark');
+                } else {
+                    document.documentElement.classList.add('theme-dark');
+                    document.documentElement.classList.remove('theme-light');
+                }
+            } catch (e) {}
+        })();
+    </script>
     <style>
         .legal-container {
-            max-width: 860px;
+            max-width: 920px;
             margin: 40px auto;
             padding: 0 20px 80px;
         }
@@ -19,14 +33,35 @@
             margin-bottom: 32px;
         }
         .legal-header h1 {
-            font-size: 28px;
-            font-weight: 700;
+            font-size: 32px;
+            font-weight: 800;
             color: var(--text-main);
-            margin: 0 0 8px 0;
+            margin: 0 0 10px 0;
+            letter-spacing: -0.5px;
         }
         .legal-meta {
-            font-size: 13px;
+            font-size: 13.5px;
             color: var(--text-muted);
+            line-height: 1.6;
+        }
+        .legal-badge-bar {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-top: 14px;
+            flex-wrap: wrap;
+        }
+        .legal-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 12px;
+            font-weight: 600;
+            padding: 4px 10px;
+            border-radius: 999px;
+            background: var(--bg-surface-elevated);
+            border: 1px solid var(--border-subtle);
+            color: var(--text-main);
         }
         .legal-card {
             background: var(--bg-surface);
@@ -34,22 +69,26 @@
             border-radius: var(--card-radius);
             padding: 32px;
             margin-bottom: 24px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.15);
         }
         .legal-card h2 {
             font-size: 19px;
-            font-weight: 600;
+            font-weight: 700;
             color: var(--text-main);
             margin-top: 0;
-            margin-bottom: 12px;
+            margin-bottom: 14px;
         }
         .legal-card p, .legal-card li {
-            font-size: 14px;
-            line-height: 1.7;
+            font-size: 14.5px;
+            line-height: 1.75;
             color: var(--text-muted);
         }
         .legal-card ul {
-            padding-left: 20px;
-            margin: 12px 0;
+            padding-left: 22px;
+            margin: 14px 0;
+        }
+        .legal-card li {
+            margin-bottom: 8px;
         }
         .nav-back-link {
             display: inline-flex;
@@ -58,8 +97,8 @@
             font-size: 13px;
             color: var(--color-primary);
             text-decoration: none;
-            margin-bottom: 20px;
-            font-weight: 500;
+            margin-bottom: 24px;
+            font-weight: 600;
         }
         .nav-back-link:hover {
             text-decoration: underline;
@@ -67,18 +106,26 @@
     </style>
 </head>
 <body>
-    <header class="site-header">
-        <div class="shell header-row">
-            <a href="/" class="brand-link" style="text-decoration:none; display:flex; align-items:center; gap:10px;">
-                <span class="brand-name" style="font-weight:700; font-size:18px; color:var(--text-main);">Scores by Norra AI</span>
+    <header class="site-header" role="banner">
+        <nav class="shell nav-bar" aria-label="Main navigation">
+            <a class="brand" href="/" aria-label="Scores by Norra AI home">
+                <img id="header-logo-img" class="brand-logo-img" src="" alt="Norra AI" hidden>
+                <div id="header-brand-fallback" class="brand-text">
+                    <span class="brand-icon" aria-hidden="true">⚽</span>
+                    <strong>Norra Scores</strong>
+                </div>
             </a>
-            <nav class="nav">
-                <a href="/">Scores</a>
-                <a href="/football-api">API Pricing</a>
-                <a href="/api-docs/">Docs</a>
-                <a href="/account" class="btn btn-outline" style="font-size:13px; padding:6px 14px;">Developer Portal</a>
-            </nav>
-        </div>
+
+            <div class="nav-actions">
+                <a class="nav-link" href="/" id="nav-scores-link">Scores</a>
+                <a class="nav-link nav-btn-live" href="/?view=live" id="header-live-btn"><span class="live-pulse-dot" aria-hidden="true"></span>Live</a>
+                <a class="nav-link nav-link-norra" href="https://mynorra.xyz" target="_blank" rel="noopener">Predictions <span class="ext-icon" aria-hidden="true">↗</span></a>
+                <a class="nav-link" href="/pricing">Pricing</a>
+                <a class="nav-link docs-link" href="/docs">Docs</a>
+                <a class="nav-link" href="/account" id="nav-account-link">Account</a>
+                <button class="btn-icon-toggle" id="theme-toggle" type="button" aria-label="Toggle light/dark theme" title="Toggle theme">🌓</button>
+            </div>
+        </nav>
     </header>
 
     <main class="legal-container">
@@ -86,77 +133,188 @@
 
         <div class="legal-header">
             <h1>Privacy Policy</h1>
-            <div class="legal-meta">Last updated: October 2026 &bull; Norra AI Platform (<a href="https://mynorra.xyz" target="_blank" rel="noopener" style="color:var(--color-primary);">mynorra.xyz</a>)</div>
+            <div class="legal-meta">
+                Official Platform: <strong>scores.mynorra.xyz</strong> (Scores by Norra AI) &bull; Part of the Norra AI Ecosystem (<a href="https://mynorra.xyz" target="_blank" rel="noopener" style="color:var(--color-primary);">mynorra.xyz</a>)<br>
+                Effective Date: October 2026 &bull; Version 2.1
+            </div>
+            <div class="legal-badge-bar">
+                <span class="legal-badge">🌐 scores.mynorra.xyz</span>
+                <span class="legal-badge">🛡️ Privacy-First</span>
+                <span class="legal-badge">🔒 Encrypted Storage</span>
+            </div>
         </div>
 
         <div class="legal-card">
-            <h2>1. Information We Collect</h2>
-            <p>Scores by Norra AI collects minimal data necessary to provide reliable live match services, commercial API access, and customer support:</p>
+            <h2>1. Platform Scope & Information We Collect</h2>
+            <p>Scores by Norra AI operates transparently under the domain <code>scores.mynorra.xyz</code>. We collect only minimal, purposeful information required to provide reliable live match services, commercial API access, and customer support:</p>
             <ul>
-                <li><strong>Account & Developer Information:</strong> When you register on our developer portal or sign in via Google One-Tap/OAuth, we store your full name, email address, password hash (for password accounts), and Google avatar/account ID (for Google accounts).</li>
-                <li><strong>API Usage & Telemetry:</strong> Request counters, IP addresses, user agent headers, and API key metrics to monitor fair use, prevent abuse, and enforce rate limits.</li>
-                <li><strong>Transaction Records:</strong> For paid plan subscribers, we store transaction identifiers, payment gateway references, plan tier, amount, and subscription renewal status. Financial card numbers are processed directly by Flutterwave and PayPal and are never stored on our servers.</li>
-                <li><strong>Local Device Preferences:</strong> We use browser <code>localStorage</code> to remember your selected theme (dark or light mode) and mute/sound preferences for live score alerts.</li>
+                <li><strong>Developer & Account Credentials:</strong> When creating an account or authenticating via Google One-Tap/OAuth, we store your full name, email address, password hash (for direct signups), and Google avatar/account ID. We never store raw plain-text passwords.</li>
+                <li><strong>API Usage Telemetry:</strong> Request counters, endpoint access stamps, user-agent signatures, and API key metrics used solely for enforcing fair-use rate limits and monitoring server health.</li>
+                <li><strong>Payment Transaction Records:</strong> For commercial subscribers ($10 Starter, $29 Pro, $79 Whitelabel), we record transaction references, plan status, and payment gateway tokens. Credit card details are handled directly by PCI-DSS certified gateways (Flutterwave & PayPal) and never touch our servers.</li>
+                <li><strong>Browser Preferences:</strong> We use client-side <code>localStorage</code> solely to remember your chosen theme (dark/light) and audio preference for goal alerts.</li>
             </ul>
         </div>
 
         <div class="legal-card">
-            <h2>2. How We Use Information</h2>
-            <p>We use your collected information strictly to:</p>
+            <h2>2. How We Use Your Information</h2>
+            <p>All information collected on <code>scores.mynorra.xyz</code> is used exclusively for:</p>
             <ul>
-                <li>Authenticate your account and issue active commercial API keys.</li>
-                <li>Send transactional notifications, email verification links, and subscription receipts.</li>
-                <li>Prevent denial-of-service attacks, fraudulent API key generation, and excessive unauthorized rate bursts.</li>
-                <li>Operate the Norra AI platform and provide customer assistance.</li>
+                <li>Authenticating developers and provisioning secure API credentials.</li>
+                <li>Transmitting transactional notifications, email verification tokens, and billing confirmations.</li>
+                <li>Safeguarding our infrastructure against DDoS attacks, automated scraping, and unauthorized API key abuse.</li>
+                <li>Delivering high-availability livescore feeds to visitors and business partners.</li>
             </ul>
-            <p>We do not sell, rent, or trade your personal information or API usage data to third-party data brokers.</p>
+            <p>We do not sell, rent, or monetize your personal information or API usage metadata to third-party ad networks or data brokers.</p>
         </div>
 
         <div class="legal-card">
-            <h2>3. Third-Party Services & Integrations</h2>
-            <p>Our platform interfaces with select high-trust third-party service providers:</p>
+            <h2>3. Third-Party Infrastructure & Security</h2>
+            <p>We partner only with industry-leading, high-trust providers to ensure robust data security:</p>
             <ul>
-                <li><strong>Google Identity Services:</strong> Used for optional Google Sign-in and registration. Subject to Google's Privacy Policy.</li>
-                <li><strong>Payment Processors (Flutterwave & PayPal):</strong> Process payments and handle recurring billing according to international PCI-DSS compliance standards.</li>
-                <li><strong>Cloudflare:</strong> Acts as our global reverse proxy and content delivery network (CDN) for DDoS mitigation, caching, and SSL encryption.</li>
-                <li><strong>MongoDB Atlas:</strong> Secure cloud database infrastructure hosted with industry-standard encryption in transit and at rest.</li>
+                <li><strong>Google Identity Services:</strong> Provides optional, one-click OAuth authentication adhering to strict Google privacy standards.</li>
+                <li><strong>Payment Processors (Flutterwave & PayPal):</strong> Process all global transactions in compliance with international financial and banking privacy regulations.</li>
+                <li><strong>Cloudflare & CDN:</strong> Delivers global TLS 1.3 encryption, DDoS mitigation, and edge caching for sub-millisecond responses.</li>
+                <li><strong>MongoDB Atlas:</strong> Secure cloud database infrastructure hosted in SOC 2 Type II compliant facilities with encryption both in transit and at rest.</li>
             </ul>
         </div>
 
         <div class="legal-card">
-            <h2>4. Cookies & Tracking</h2>
-            <p>We do not use invasive third-party cross-site behavioral tracking cookies. We utilize privacy-preserving, cookieless analytics for aggregate page view statistics to optimize server performance and bandwidth allocation.</p>
+            <h2>4. Cookies & Analytics</h2>
+            <p>Scores by Norra AI does not deploy cross-site tracking cookies, behavioral tracking pixels, or third-party profiling scripts. We utilize privacy-preserving, cookieless analytics to monitor aggregate traffic patterns and server load without identifying individual visitors.</p>
         </div>
 
         <div class="legal-card">
-            <h2>5. Data Retention & Your Rights</h2>
-            <p>You have the right to access, update, or request the deletion of your account and generated API keys at any time through the <a href="/account" style="color:var(--color-primary);">Developer Portal</a> or by emailing our data protection officer at <a href="mailto:support@mynorra.xyz" style="color:var(--color-primary);">support@mynorra.xyz</a>.</p>
+            <h2>5. Data Retention & User Rights</h2>
+            <p>You have full ownership and rights over your data. You may review your active API keys, update account settings, or request account and data deletion at any time directly through the <a href="/account" style="color:var(--color-primary);">Developer Portal</a> or by emailing our privacy team at <a href="mailto:support@mynorra.xyz" style="color:var(--color-primary);">support@mynorra.xyz</a>.</p>
         </div>
 
         <div class="legal-card">
-            <h2>6. Changes to this Policy</h2>
-            <p>We may update this Privacy Policy from time to time to reflect operational or regulatory changes. Updated versions will be posted on this page with an updated timestamp.</p>
+            <h2>6. Contact Us</h2>
+            <p>For inquiries regarding privacy, data protection, or compliance, please reach out to our team at <a href="mailto:support@mynorra.xyz" style="color:var(--color-primary);">support@mynorra.xyz</a> or explore Norra AI at <a href="https://mynorra.xyz" target="_blank" rel="noopener" style="color:var(--color-primary);">mynorra.xyz</a>.</p>
         </div>
     </main>
 
-    <footer class="site-footer">
-        <div class="shell footer-row">
-            <div>
-                <strong style="display:block; font-size:15px; margin-bottom:4px;">Scores by Norra AI</strong>
-                <span style="font-size:12px; color:var(--text-muted);">Real-time live scores, standings &amp; commercial sports API.</span>
+    <footer class="site-footer" role="contentinfo">
+        <div class="shell footer-grid">
+            <div class="footer-col footer-col-brand">
+                <div class="footer-brand">
+                    <span class="footer-brand-icon" aria-hidden="true">⚽</span>
+                    <span class="footer-brand-title">Scores by Norra AI</span>
+                </div>
+                <p class="footer-brand-tagline">
+                    The next-generation live sports data platform. Real-time scores, clock synchronization, in-play statistics, standings, and developer REST APIs powered by the Norra AI analytics engine.
+                </p>
+                <div class="footer-status-pill">
+                    <span class="status-indicator-dot"></span>
+                    <span>All sports feeds operational</span>
+                </div>
             </div>
-            <div class="footer-links">
-                <a href="/">Scores</a>
-                <a href="/football-api">API Pricing</a>
-                <a href="/api-docs/">API Docs</a>
-                <a href="/terms">Terms of Service</a>
-                <a href="/privacy">Privacy Policy</a>
-                <a href="https://mynorra.xyz" target="_blank" rel="noopener">Norra AI</a>
+
+            <div class="footer-col">
+                <div class="footer-col-title">Live Scores</div>
+                <ul class="footer-links-list">
+                    <li><a href="/#all">Today's Scores</a></li>
+                    <li><a href="/#live">In-Play Matches</a></li>
+                    <li><a href="/football/eng.1">Premier League</a></li>
+                    <li><a href="/football/esp.1">LaLiga</a></li>
+                    <li><a href="/football/uefa.champions">Champions League</a></li>
+                    <li><a href="/football/ita.1">Serie A</a></li>
+                </ul>
+            </div>
+
+            <div class="footer-col">
+                <div class="footer-col-title">Norra Ecosystem</div>
+                <ul class="footer-links-list">
+                    <li><a href="https://mynorra.xyz" target="_blank" rel="noopener">Norra AI Hub <span class="ext-icon" aria-hidden="true">↗</span></a></li>
+                    <li><a href="https://mynorra.xyz/predictions" target="_blank" rel="noopener">AI Predictions <span class="ext-icon" aria-hidden="true">↗</span></a></li>
+                    <li><a href="/pricing">API Pricing Plans</a></li>
+                    <li><a href="/docs">API Documentation</a></li>
+                    <li><a href="/account">Developer Portal</a></li>
+                </ul>
+            </div>
+
+            <div class="footer-col">
+                <div class="footer-col-title">Platform &amp; Legal</div>
+                <ul class="footer-links-list">
+                    <li><a href="/terms">Terms of Service</a></li>
+                    <li><a href="/privacy">Privacy Policy</a></li>
+                    <li><a href="/football-api">Developer API Guide</a></li>
+                    <li><a href="/account#login">API Key Access</a></li>
+                    <li><a href="mailto:support@mynorra.xyz">support@mynorra.xyz</a></li>
+                </ul>
             </div>
         </div>
-        <div class="shell footer-copy">
-            &copy; 2026 Norra AI. All rights reserved.
+
+        <div class="shell footer-bottom-bar">
+            <div class="footer-legal-copy">
+                &copy; <span id="current-year">2026</span> Scores by Norra AI (<a href="https://scores.mynorra.xyz" style="color:inherit; text-decoration:underline;">scores.mynorra.xyz</a>). Powered by Norra AI. All rights reserved.
+            </div>
+            <div class="footer-secondary-links">
+                <a href="/terms">Terms</a>
+                <span class="footer-dot-sep">&bull;</span>
+                <a href="/privacy">Privacy</a>
+                <span class="footer-dot-sep">&bull;</span>
+                <a href="/pricing">Pricing</a>
+                <span class="footer-dot-sep">&bull;</span>
+                <a href="https://mynorra.xyz" target="_blank" rel="noopener">mynorra.xyz</a>
+            </div>
         </div>
     </footer>
+
+    <!-- Sticky Floating Action Dock: Theme Switcher & Back to Top -->
+    <div class="sticky-action-dock" id="sticky-action-dock" aria-label="Page controls">
+        <button type="button" class="dock-btn dock-btn-top" id="dock-back-to-top" title="Back to top" aria-label="Back to top">
+            <span class="dock-arrow-icon" aria-hidden="true">↑</span>
+            <span class="dock-label">Top</span>
+        </button>
+        <button type="button" class="dock-btn dock-btn-theme" id="dock-theme-toggle" title="Toggle dark/light mode" aria-label="Toggle theme">
+            <span class="dock-theme-icon" aria-hidden="true">🌓</span>
+            <span class="dock-label">Theme</span>
+        </button>
+    </div>
+
+    <script>
+        (function() {
+            const themeBtn = document.getElementById('theme-toggle');
+            const dockThemeBtn = document.getElementById('dock-theme-toggle');
+            const dockTopBtn = document.getElementById('dock-back-to-top');
+
+            function toggleTheme() {
+                const isLight = document.documentElement.classList.contains('theme-light') || document.body.classList.contains('theme-light');
+                if (isLight) {
+                    document.documentElement.classList.remove('theme-light');
+                    document.documentElement.classList.add('theme-dark');
+                    document.body.classList.remove('theme-light');
+                    document.body.classList.add('theme-dark');
+                    localStorage.setItem('theme', 'dark');
+                } else {
+                    document.documentElement.classList.remove('theme-dark');
+                    document.documentElement.classList.add('theme-light');
+                    document.body.classList.remove('theme-dark');
+                    document.body.classList.add('theme-light');
+                    localStorage.setItem('theme', 'light');
+                }
+            }
+
+            if (themeBtn) themeBtn.addEventListener('click', toggleTheme);
+            if (dockThemeBtn) dockThemeBtn.addEventListener('click', toggleTheme);
+
+            if (dockTopBtn) {
+                dockTopBtn.addEventListener('click', function() {
+                    window.scrollTo({ top: 0, behavior: 'smooth' });
+                });
+                window.addEventListener('scroll', function() {
+                    if (window.scrollY > 300) {
+                        dockTopBtn.classList.add('is-visible');
+                    } else {
+                        dockTopBtn.classList.remove('is-visible');
+                    }
+                }, { passive: true });
+            }
+
+            const yr = document.getElementById('current-year');
+            if (yr) yr.textContent = new Date().getFullYear();
+        })();
+    </script>
 </body>
 </html>

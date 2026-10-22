@@ -50,7 +50,7 @@ router.get(['/api/plans', '/api/v1/payments/plans'], async (req, res) => {
                 {
                     id: 'starter',
                     name: plans.starter?.name || 'Starter Plan',
-                    priceUsd: plans.starter?.priceUsd || 19,
+                    priceUsd: plans.starter?.priceUsd || 10,
                     rateLimitPerMinute: plans.starter?.rateLimitPerMinute || 500,
                     isAdFree: true,
                     whitelabel: false,
@@ -65,7 +65,7 @@ router.get(['/api/plans', '/api/v1/payments/plans'], async (req, res) => {
                 {
                     id: 'pro',
                     name: plans.pro?.name || 'Pro Developer',
-                    priceUsd: plans.pro?.priceUsd || 49,
+                    priceUsd: plans.pro?.priceUsd || 29,
                     rateLimitPerMinute: plans.pro?.rateLimitPerMinute || 1500,
                     isAdFree: true,
                     whitelabel: true,
@@ -81,7 +81,7 @@ router.get(['/api/plans', '/api/v1/payments/plans'], async (req, res) => {
                 {
                     id: 'whitelabel',
                     name: plans.whitelabel?.name || 'Enterprise Whitelabel',
-                    priceUsd: plans.whitelabel?.priceUsd || 99,
+                    priceUsd: plans.whitelabel?.priceUsd || 79,
                     rateLimitPerMinute: plans.whitelabel?.rateLimitPerMinute || 5000,
                     isAdFree: true,
                     whitelabel: true,

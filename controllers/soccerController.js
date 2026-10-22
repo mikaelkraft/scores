@@ -1,5 +1,47 @@
 const express = require('express');
 const router = express.Router();
+const https = require('https');
+const zlib = require('zlib');
+
+function fetchJson(url) {
+    return new Promise((resolve, reject) => {
+        const req = https.get(url, {
+            headers: {
+                'User-Agent': 'NorraScores/2.1',
+                'Accept-Encoding': 'gzip, deflate'
+            },
+            timeout: 5000
+        }, (res) => {
+            if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
+                return fetchJson(res.headers.location).then(resolve).catch(reject);
+            }
+            if (res.statusCode !== 200) {
+                return reject(new Error(`Upstream returned ${res.statusCode}`));
+            }
+            const encoding = res.headers['content-encoding'];
+            let stream = res;
+            if (encoding === 'gzip') {
+                stream = res.pipe(zlib.createGunzip());
+            } else if (encoding === 'deflate') {
+                stream = res.pipe(zlib.createInflate());
+            }
+            let data = '';
+            stream.on('data', chunk => { data += chunk; });
+            stream.on('end', () => {
+                try {
+                    resolve(JSON.parse(data));
+                } catch (e) {
+                    reject(e);
+                }
+            });
+        });
+        req.on('error', reject);
+        req.on('timeout', () => {
+            req.destroy();
+            reject(new Error('Request timeout'));
+        });
+    });
+}
 
 const SoccerLeague = require('../models/soccerLeague');
 const SoccerClub = require('../models/soccerClub');
@@ -427,20 +469,65 @@ router.get('/:league/fixtures', validateLeague, async(req, res) => {
 
 async function sendSummary(req, res) {
     try {
-        const [league, match, availability] = await Promise.all([
+        let [league, match] = await Promise.all([
             getLeague(req.params.league),
             SoccerMatch.findOne({
                 league_slug: req.params.league,
                 'source.event_id': req.eventId
-            }).lean(),
-            getMatchEventAvailability(req.params.league, req.eventId)
+            }).lean()
         ]);
 
-        if (!league) return res.status(404).json({ error: 'League not found' });
+        if (!match) {
+            match = await SoccerMatch.findOne({
+                'source.event_id': req.eventId
+            }).lean();
+            if (match && !league) {
+                league = await getLeague(match.league_slug);
+            }
+        }
+
         if (!match) return res.status(404).json({ error: 'Match not found' });
+        if (!league) league = { slug: match.league_slug, name: match.note || 'Competition' };
+
+        const availability = await getMatchEventAvailability(match.league_slug, req.eventId);
+        const summary = serializeSummary(match, league, availability);
+
+        // Enrich with real-time match telemetry (boxscore stats, rosters, and keyEvents)
+        try {
+            const espnLeague = match.league_slug || req.params.league || 'all';
+            let espnUrl = `https://site.api.espn.com/apis/site/v2/sports/soccer/${espnLeague}/summary?event=${encodeURIComponent(req.eventId)}`;
+            let espnData = await fetchJson(espnUrl);
+            if (!espnData?.boxscore?.teams?.length && espnLeague !== 'all') {
+                espnUrl = `https://site.api.espn.com/apis/site/v2/sports/soccer/all/summary?event=${encodeURIComponent(req.eventId)}`;
+                const fallbackData = await fetchJson(espnUrl);
+                if (fallbackData) espnData = fallbackData;
+            }
+
+            if (espnData) {
+                if (espnData.boxscore?.teams?.length) {
+                    summary.boxscore = espnData.boxscore;
+                }
+                if (espnData.keyEvents?.length) {
+                    summary.keyEvents = espnData.keyEvents;
+                }
+                if (espnData.rosters?.length) {
+                    summary.rosters = espnData.rosters;
+                }
+                if (espnData.gameInfo) {
+                    summary.gameInfo = espnData.gameInfo;
+                }
+                if (espnData.header?.competitions?.[0]) {
+                    summary.header = summary.header || {};
+                    summary.header.competitions = espnData.header.competitions;
+                    if (espnData.header.season) summary.header.season = espnData.header.season;
+                }
+            }
+        } catch (e) {
+            // Live fetch non-blocking fallback
+        }
 
         res.set('Cache-Control', `public, max-age=${match.status?.state === 'in' ? 4 : 30}`);
-        return res.json(serializeSummary(match, league, availability));
+        return res.json(summary);
     } catch (error) {
         return sendError(res, error);
     }

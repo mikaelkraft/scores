@@ -63,7 +63,9 @@ const TARGET_LEAGUES = [
     { slug: 'uefa.super_cup', name: 'UEFA Super Cup', abbreviation: 'Super Cup', country: 'International', kind: 'club', sort_order: 47 },
     { slug: 'conmebol.recopa', name: 'CONMEBOL Recopa', abbreviation: 'Recopa', country: 'International', kind: 'club', sort_order: 48 },
     { slug: 'eng.w.1', name: 'Women\'s Super League', abbreviation: 'WSL', country: 'England', kind: 'club', sort_order: 49 },
-    { slug: 'usa.w.1', name: 'National Women\'s Soccer League', abbreviation: 'NWSL', country: 'United States', kind: 'club', sort_order: 50 }
+    { slug: 'usa.w.1', name: 'National Women\'s Soccer League', abbreviation: 'NWSL', country: 'United States', kind: 'club', sort_order: 50 },
+    { slug: 'usa.usl.1', name: 'USL Championship', abbreviation: 'USL Championship', country: 'United States', kind: 'club', sort_order: 51 },
+    { slug: 'usa.open', name: 'U.S. Open Cup', abbreviation: 'US Open Cup', country: 'United States', kind: 'cup', sort_order: 52 }
 ];
 
 function fetchJson(url) {
@@ -448,9 +450,19 @@ function resolveLeagueSlug(altGameNote = '', compDesc = '', uid = '') {
     if (text.includes('uefa.europa') || text.includes('europa league')) return 'uefa.europa';
     if (text.includes('uefa.nations') || text.includes('nations league')) return 'uefa.nations';
     if (text.includes('premier league') || text.includes('eng.1')) return 'eng.1';
-    if (text.includes('championship') || text.includes('eng.2')) return 'eng.2';
+
+    // United States competitions first (prevents USL Championship matching 'championship')
+    if (text.includes('usl') || text.includes('united soccer league') || text.includes('usa.usl')) return 'usa.usl.1';
+    if (text.includes('u.s. open') || text.includes('us open cup') || text.includes('usa.open')) return 'usa.open';
+    if (text.includes('nwsl') || text.includes('usa.w.1')) return 'usa.w.1';
+    if (text.includes('mls') || text.includes('major league soccer') || text.includes('usa.1')) return 'usa.1';
+
+    // English Championship (specifically EFL / English Championship, avoiding bare 'championship')
+    if (text.includes('efl championship') || text.includes('english championship') || (text.includes('championship') && (text.includes('eng') || text.includes('efl') || text.includes('sky bet'))) || text.includes('eng.2')) return 'eng.2';
     if (text.includes('fa cup') || text.includes('eng.fa')) return 'eng.fa';
     if (text.includes('carabao') || text.includes('league cup') || text.includes('eng.league_cup')) return 'eng.league_cup';
+    if (text.includes('wsl') || text.includes('eng.w.1')) return 'eng.w.1';
+
     if (text.includes('laliga 2') || text.includes('segunda') || text.includes('esp.2')) return 'esp.2';
     if (text.includes('laliga') || text.includes('la liga') || text.includes('esp.1')) return 'esp.1';
     if (text.includes('copa del rey') || text.includes('esp.copa_del_rey')) return 'esp.copa_del_rey';
@@ -468,7 +480,6 @@ function resolveLeagueSlug(altGameNote = '', compDesc = '', uid = '') {
     if (text.includes('belgian') || text.includes('pro league') || text.includes('bel.1')) return 'bel.1';
     if (text.includes('super lig') || text.includes('süper lig') || text.includes('tur.1')) return 'tur.1';
     if (text.includes('scottish') || text.includes('premiership') || text.includes('sco.1')) return 'sco.1';
-    if (text.includes('mls') || text.includes('major league soccer') || text.includes('usa.1')) return 'usa.1';
     if (text.includes('saudi') || text.includes('ksa.1')) return 'ksa.1';
     if (text.includes('brasileir') || text.includes('bra.1')) return 'bra.1';
     if (text.includes('argentin') || text.includes('arg.1')) return 'arg.1';
@@ -491,8 +502,6 @@ function resolveLeagueSlug(altGameNote = '', compDesc = '', uid = '') {
     if (text.includes('a-league') || text.includes('aus.1')) return 'aus.1';
     if (text.includes('chinese') || text.includes('csl') || text.includes('chn.1')) return 'chn.1';
     if (text.includes('veikkausliiga') || text.includes('fin.1')) return 'fin.1';
-    if (text.includes('wsl') || text.includes('eng.w.1')) return 'eng.w.1';
-    if (text.includes('nwsl') || text.includes('usa.w.1')) return 'usa.w.1';
     return null;
 }
 
@@ -521,9 +530,9 @@ async function syncLiveScoreboards() {
 
             const existingMatch = await SoccerMatch.findOne({ 'source.event_id': String(ev.id) }).select('_id league_slug status').lean();
 
-            let targetSlug = existingMatch?.league_slug;
+            let targetSlug = resolveLeagueSlug(comp.altGameNote || '', comp.notes?.[0]?.headline || '', ev.uid || '');
             if (!targetSlug) {
-                targetSlug = resolveLeagueSlug(comp.altGameNote || '', comp.notes?.[0]?.headline || '', ev.uid || '');
+                targetSlug = existingMatch?.league_slug;
             }
 
             if (!targetSlug) {
@@ -537,6 +546,7 @@ async function syncLiveScoreboards() {
             };
 
             const updateFields = {
+                league_slug: targetSlug,
                 'status.state': state,
                 'status.name': statusType.name || (state === 'in' ? 'STATUS_IN_PROGRESS' : state === 'post' ? 'STATUS_FINAL' : 'STATUS_SCHEDULED'),
                 'status.description': statusType.description || (state === 'in' ? 'In Progress' : state === 'post' ? 'Full Time' : 'Scheduled'),

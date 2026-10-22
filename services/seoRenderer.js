@@ -1,5 +1,5 @@
 const SITE_NAME = 'Scores by Norra AI';
-const GITHUB_URL = 'https://github.com/mikaelkraft/scores';
+const NORRA_URL = 'https://mynorra.xyz';
 
 // Stored names are provider-shaped ("Italian Serie A"); these are the names
 // people actually search for. Extra entries stay inert until the listener
@@ -483,50 +483,34 @@ function clubContent(context) {
 function homeContent(context) {
     const { leagues, baseUrl, todayMatches, recentMatches } = context;
     const today = formatPageDate(context.generatedAt);
-    return `<section class="seo-directory seo-today shell" id="today" aria-labelledby="today-title">
+    const allMatches = [...(todayMatches || []), ...(recentMatches || [])];
+    const matchCrawlerNav = allMatches.length ? `
+        <nav class="seo-crawler-matches visually-hidden" aria-label="Index of today's matches">
+            ${allMatches.filter(m => m.source?.event_id && m.league_slug).map(m => `<a href="${escapeHtml(matchUrl(baseUrl, m))}">${escapeHtml(clubDisplayName(m.home))} vs ${escapeHtml(clubDisplayName(m.away))}</a>`).join('\n')}
+        </nav>` : '';
+
+    return `<section class="seo-directory shell" id="competitions" aria-labelledby="coverage-title">
         <div class="seo-section-heading">
-            <p class="overline">Updated football data for ${escapeHtml(today)} (UTC)</p>
-            <h2 id="today-title">Football live scores and fixtures today</h2>
-            <p>View today's stored football matches across every verified league. Live games show their current match state, completed games show the final score, and scheduled fixtures show the kickoff time.</p>
-        </div>
-        <div class="seo-match-columns">
-            ${renderMatchList("Today's football scores and fixtures", todayMatches, { showLeague: true, baseUrl, emptyMessage: 'No matches are stored for today yet. Upcoming schedules remain available on each league page.' })}
-            ${renderMatchList('Latest football results', recentMatches, { showLeague: true, baseUrl, emptyMessage: 'No completed results are stored yet.' })}
-        </div>
-    </section>
-    <section class="seo-directory shell" id="competitions" aria-labelledby="coverage-title">
-        <div class="seo-section-heading">
-            <p class="overline">Free live football score center</p>
-            <h2 id="coverage-title">Free live scores for football leagues</h2>
-            <p>Choose a competition for live scores, upcoming fixtures, completed results and match details. League tables are shown only where verified standings are stored. Coverage currently includes ${escapeHtml(leagues.length)} active competitions and expands after each new league is validated.</p>
+            <p class="overline">Global football competition index &bull; Updated ${escapeHtml(today)} (UTC)</p>
+            <h2 id="coverage-title">Football live scores and fixtures today across world leagues</h2>
+            <p>Browse live scores, fixtures, standings, and match statistics across ${escapeHtml(leagues.length)} active world competitions. Powered by the Norra AI analytics engine.</p>
         </div>
         ${renderCountryLinks(leagues, baseUrl)}
         ${renderLeagueCards(leagues, baseUrl)}
-        <div class="seo-topics">
+        ${matchCrawlerNav}
+        <div class="seo-topics faq-grid" style="margin-top:28px;">
             <article>
-                <h2>Premier League and LaLiga scores</h2>
-                <p>Open a dedicated competition page for the Premier League schedule, English football results, LaLiga fixtures, Spanish league standings and live match updates.</p>
+                <h2>Real-Time Live Scores &amp; Clocks</h2>
+                <p>Track in-play match scores, live clocks, goal events, card alerts, and substitutions with sub-second polling and WebSocket feeds.</p>
             </article>
             <article>
-                <h2>UEFA Champions League and more</h2>
-                <p>European and additional country competitions are published only when fixtures, live status and results are available. This avoids empty or misleading league pages.</p>
+                <h2>Comprehensive Global Fixtures</h2>
+                <p>Access full season schedules, matchday results, head-to-head records, and official league standings across Europe, the Americas, Asia, and Africa.</p>
             </article>
             <article>
-                <h2>Free football API with no API key</h2>
-                <p>Use the open JSON REST API for fixtures, live scores, clubs, match events and standings. <a href="/football-api">Read the free football API guide</a> or <a href="/api-docs/">try the interactive documentation</a>.</p>
+                <h2>Commercial Sports API Plans</h2>
+                <p>Integrate our low-latency sports API into your websites, apps, and betting platforms. Plans start at $10/mo with free developer sandboxes available in the <a href="/account">Developer Portal</a>.</p>
             </article>
-        </div>
-    </section>
-    <section class="seo-directory shell" id="about-live-scores" aria-labelledby="about-live-title">
-        <div class="seo-section-heading">
-            <p class="overline">How the free service works</p>
-            <h2 id="about-live-title">Live football data without a subscription</h2>
-            <p>The score center and API are free to use. A dedicated listener refreshes normalized football records in MongoDB, while public requests read the stored data without waiting for an upstream provider.</p>
-        </div>
-        <div class="seo-topics faq-grid">
-            <article><h2>Are football scores updated live?</h2><p>Live match snapshots are refreshed by the listener. Match pages and API metadata expose synchronization information so users can check what is currently stored.</p></article>
-            <article><h2>Which football leagues are covered?</h2><p>Verified coverage includes the Premier League, EFL competitions, FA Cup, LaLiga, LaLiga 2, Copa del Rey and additional English and Spanish competitions.</p></article>
-            <article><h2>Is the football API really free?</h2><p>Yes. The public read API currently requires no API key. Fair-use rate limits protect availability, and the complete source code is published on <a href="${GITHUB_URL}">GitHub</a>.</p></article>
         </div>
     </section>`;
 }
@@ -705,7 +689,7 @@ function structuredData(context, canonical, description) {
         '@id': `${context.baseUrl}/#organization`,
         name: SITE_NAME,
         url: `${context.baseUrl}/`,
-        sameAs: [GITHUB_URL]
+        sameAs: [NORRA_URL]
     };
     const website = {
         '@type': 'WebSite',
@@ -714,7 +698,7 @@ function structuredData(context, canonical, description) {
         name: SITE_NAME,
         publisher: { '@id': `${context.baseUrl}/#organization` },
         inLanguage: 'en',
-        description: 'Free live football scores, fixtures, results, standings and open JSON API data.'
+        description: 'Live football scores, fixtures, results, standings, match statistics and REST API data powered by Norra AI.'
     };
 
     if (['notFound', 'unavailable'].includes(context.kind)) {
@@ -922,14 +906,13 @@ function structuredData(context, canonical, description) {
                 {
                     '@type': 'SoftwareApplication',
                     '@id': `${canonical}#software`,
-                    name: 'Free Football Live Scores API',
+                    name: 'Scores by Norra AI Football API',
                     applicationCategory: 'DeveloperApplication',
                     operatingSystem: 'Web',
-                    isAccessibleForFree: true,
-                    license: 'https://opensource.org/licenses/ISC',
+                    isAccessibleForFree: false,
                     url: canonical,
-                    downloadUrl: GITHUB_URL,
-                    featureList: ['Live football scores', 'Fixtures and results', 'League standings', 'Clubs and rosters', 'Match events and play-by-play']
+                    downloadUrl: `${canonical}#api`,
+                    featureList: ['Live football scores', 'Fixtures and results', 'League standings', 'Match statistics', 'Live telemetries and play-by-play']
                 }
             ]
         };

@@ -153,7 +153,7 @@ router.get('/fixtures', async (req, res) => {
     try {
         const { date, from, to, league, status = 'all', team } = req.query;
         const page = parseNumber(req.query.page, 1, 1000);
-        const limit = parseNumber(req.query.limit, 50, 200);
+        const limit = parseNumber(req.query.limit, 200, 500);
 
         const filter = {};
 
@@ -690,10 +690,44 @@ router.get('/matches/:eventId', async (req, res) => {
             }).sort({ sequence_number: 1, clock_seconds: 1 }).limit(200).lean()
         ]);
 
+        const summary = serializeSummary(match, league || { slug: match.league_slug, name: match.note });
+
+        // Enrich with real-time ESPN match telemetry
+        try {
+            const https = require('https');
+            const zlib = require('zlib');
+            const espnData = await new Promise((resolve, reject) => {
+                const req = https.get(`https://site.api.espn.com/apis/site/v2/sports/soccer/${match.league_slug || 'all'}/summary?event=${encodeURIComponent(eventId)}`, {
+                    headers: { 'User-Agent': 'NorraScores/2.1', 'Accept-Encoding': 'gzip, deflate' },
+                    timeout: 4000
+                }, res => {
+                    if (res.statusCode !== 200) return resolve(null);
+                    let stream = res;
+                    if (res.headers['content-encoding'] === 'gzip') stream = res.pipe(zlib.createGunzip());
+                    else if (res.headers['content-encoding'] === 'deflate') stream = res.pipe(zlib.createInflate());
+                    let d = '';
+                    stream.on('data', c => d += c);
+                    stream.on('end', () => {
+                        try { resolve(JSON.parse(d)); } catch { resolve(null); }
+                    });
+                });
+                req.on('error', () => resolve(null));
+                req.on('timeout', () => { req.destroy(); resolve(null); });
+            });
+
+            if (espnData) {
+                if (espnData.boxscore?.teams?.length) summary.boxscore = espnData.boxscore;
+                if (espnData.keyEvents?.length) summary.keyEvents = espnData.keyEvents;
+                if (espnData.rosters?.length) summary.rosters = espnData.rosters;
+                if (espnData.gameInfo) summary.gameInfo = espnData.gameInfo;
+                if (espnData.header?.competitions?.[0]) summary.header.competitions = espnData.header.competitions;
+            }
+        } catch {}
+
         res.set('Cache-Control', `public, max-age=${match.status?.state === 'in' ? 4 : 30}`);
         return res.json({
             status: 'success',
-            match: serializeSummary(match, league || { slug: match.league_slug, name: match.note }),
+            match: summary,
             timeline: plays.map(serializePlay)
         });
     } catch (err) {
