@@ -114,6 +114,34 @@ const SiteSettingSchema = new mongoose.Schema({
         user: { type: String, default: '' },
         pass: { type: String, default: '' },
         fromEmail: { type: String, default: 'Norra AI <support@mynorra.xyz>' }
+    },
+    socialLinks: {
+        twitter: { type: String, default: 'https://twitter.com/norra_ai' },
+        telegram: { type: String, default: 'https://t.me/norra_ai' },
+        discord: { type: String, default: 'https://discord.gg/norra' },
+        github: { type: String, default: 'https://github.com/mikaelkraft/scores' },
+        facebook: { type: String, default: '' },
+        instagram: { type: String, default: '' },
+        youtube: { type: String, default: '' },
+        linkedin: { type: String, default: '' }
+    },
+    infeedSettings: {
+        autoSyncEnabled: { type: Boolean, default: true },
+        syncIntervalSeconds: { type: Number, default: 45 },
+        providers: {
+            espn: { type: Boolean, default: true },
+            livescore: { type: Boolean, default: true }
+        },
+        infeedCard: {
+            enabled: { type: Boolean, default: true },
+            headline: { type: String, default: 'Track Every Goal & Odds Shift in Real Time' },
+            subtext: { type: String, default: 'Sub-second livescores, in-play pressure gauges, and betslip code conversion across 100+ world competitions.' },
+            badgeText: { type: String, default: 'LIVE INFEED' },
+            badgeColor: { type: String, default: '#2563eb' },
+            ctaText: { type: String, default: 'Get API Access' },
+            ctaUrl: { type: String, default: '/pricing' },
+            customHtml: { type: String, default: '' }
+        }
     }
 }, {
     collection: 'site_settings',

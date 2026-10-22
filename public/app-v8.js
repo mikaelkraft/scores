@@ -1930,13 +1930,71 @@
 
             // Semantic Ad Slots
             renderAdSlot('ad-slot-header', res.ads?.header);
-            renderAdSlot('ad-slot-infeed', res.ads?.inFeed);
+            renderInfeedSlot(res.infeedSettings?.infeedCard, res.ads?.inFeed);
             renderAdSlot('ad-slot-drawer', res.ads?.drawer);
             renderAdSlot('ad-slot-footer', res.ads?.footer);
+
+            // Dynamic Social Community Links
+            renderSocialLinks(res.socialLinks);
 
         } catch (err) {
             console.warn('Ad/Promo load error:', err);
         }
+    }
+
+    function renderInfeedSlot(infeedCard, inFeedAd) {
+        const el = document.getElementById('ad-slot-infeed');
+        if (!el) return;
+
+        // Priority 1: Direct In-Feed Ad Banner if explicitly enabled
+        if (inFeedAd && inFeedAd.isEnabled) {
+            renderAdSlot('ad-slot-infeed', inFeedAd);
+            return;
+        }
+
+        // Priority 2: In-Feed Promo / Intelligence Sponsor Card
+        if (infeedCard && infeedCard.enabled) {
+            if (infeedCard.customHtml && infeedCard.customHtml.trim()) {
+                el.innerHTML = infeedCard.customHtml;
+                el.hidden = false;
+                return;
+            }
+
+            el.innerHTML = `
+                <div class="infeed-sponsor-card">
+                    <div class="infeed-sponsor-content">
+                        <span class="infeed-sponsor-badge" style="background:${escapeHtml(infeedCard.badgeColor || '#3b82f6')}">${escapeHtml(infeedCard.badgeText || 'NORRA PRO')}</span>
+                        <div class="infeed-sponsor-headline">${escapeHtml(infeedCard.headline || 'Supercharge Your Match Predictions')}</div>
+                        <p class="infeed-sponsor-subtext">${escapeHtml(infeedCard.subtext || 'Live expected goals (xG), momentum trackers, and intelligent betting signals.')}</p>
+                    </div>
+                    <a class="infeed-sponsor-cta" href="${escapeHtml(infeedCard.ctaUrl || 'https://mynorra.xyz')}" target="_blank" rel="noopener noreferrer">
+                        ${escapeHtml(infeedCard.ctaText || 'Explore Intelligence')} &rarr;
+                    </a>
+                </div>
+            `;
+            el.hidden = false;
+            return;
+        }
+
+        // Neither enabled
+        el.hidden = true;
+        el.innerHTML = '';
+    }
+
+    function renderSocialLinks(socialLinks) {
+        if (!socialLinks) return;
+        const platforms = ['twitter', 'telegram', 'discord', 'github', 'facebook', 'instagram', 'youtube', 'linkedin'];
+        platforms.forEach(platform => {
+            const linkEl = document.getElementById(`social-link-${platform}`);
+            if (!linkEl) return;
+            const url = socialLinks[platform];
+            if (url && typeof url === 'string' && url.trim().length > 0) {
+                linkEl.href = url.trim();
+                linkEl.style.display = 'inline-flex';
+            } else {
+                linkEl.style.display = 'none';
+            }
+        });
     }
 
     function renderAdSlot(elementId, slotData) {

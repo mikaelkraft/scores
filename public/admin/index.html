@@ -253,6 +253,8 @@
         <nav class="admin-nav">
             <button class="admin-tab-btn active" onclick="switchAdminTab('overview')">📊 Overview</button>
             <button class="admin-tab-btn" onclick="switchAdminTab('branding')">🎨 Branding & Logos</button>
+            <button class="admin-tab-btn" onclick="switchAdminTab('social')">🌐 Social Links</button>
+            <button class="admin-tab-btn" onclick="switchAdminTab('infeed')">⚽ Live Infeed &amp; Sync</button>
             <button class="admin-tab-btn" onclick="switchAdminTab('ads')">📢 Ads & Bookie Promos</button>
             <button class="admin-tab-btn" onclick="switchAdminTab('pricing')">💳 Plans & Pricing (USD)</button>
             <button class="admin-tab-btn" onclick="switchAdminTab('keys')">🔑 API Keys & Customers</button>
@@ -344,6 +346,126 @@
                     <textarea id="setting-announcement" rows="2" style="margin-top: 8px;" placeholder="Global announcement message displayed to visitors..."></textarea>
                 </div>
                 <button class="btn-primary" style="margin-top: 20px;" onclick="saveBrandingSettings()">Save Branding Settings</button>
+            </div>
+        </section>
+
+        <!-- Tab: Social Media Links -->
+        <section id="tab-social" class="admin-tab-content" style="display: none;">
+            <div class="admin-card">
+                <h3>🌐 Official Social Media & Community Links</h3>
+                <p style="color: var(--text-muted); font-size: 13px;">Manage links to your official brand community channels. These are dynamically rendered across the website footer, header, and SEO pages. Leave blank to hide any channel.</p>
+                
+                <div class="form-grid">
+                    <div class="form-group">
+                        <label>Twitter / X Profile URL</label>
+                        <input type="url" id="setting-social-twitter" placeholder="https://x.com/norra_ai">
+                    </div>
+                    <div class="form-group">
+                        <label>Telegram Channel / Group URL</label>
+                        <input type="url" id="setting-social-telegram" placeholder="https://t.me/norra_ai">
+                    </div>
+                    <div class="form-group">
+                        <label>Discord Server Invite URL</label>
+                        <input type="url" id="setting-social-discord" placeholder="https://discord.gg/norra">
+                    </div>
+                    <div class="form-group">
+                        <label>GitHub Organization / Repo URL</label>
+                        <input type="url" id="setting-social-github" placeholder="https://github.com/mikaelkraft/scores">
+                    </div>
+                    <div class="form-group">
+                        <label>Facebook Page URL</label>
+                        <input type="url" id="setting-social-facebook" placeholder="https://facebook.com/norra.ai">
+                    </div>
+                    <div class="form-group">
+                        <label>Instagram Profile URL</label>
+                        <input type="url" id="setting-social-instagram" placeholder="https://instagram.com/norra.ai">
+                    </div>
+                    <div class="form-group">
+                        <label>YouTube Channel URL</label>
+                        <input type="url" id="setting-social-youtube" placeholder="https://youtube.com/@norra_ai">
+                    </div>
+                    <div class="form-group">
+                        <label>LinkedIn Company URL</label>
+                        <input type="url" id="setting-social-linkedin" placeholder="https://linkedin.com/company/norra-ai">
+                    </div>
+                </div>
+
+                <button class="btn-primary" style="margin-top: 20px;" onclick="saveSocialSettings()">Save Social Links</button>
+            </div>
+        </section>
+
+        <!-- Tab: Live Infeed & Sync Engine -->
+        <section id="tab-infeed" class="admin-tab-content" style="display: none;">
+            <div class="admin-card">
+                <h3>⚡ Live Game Infeed Engine &amp; Manual Sync</h3>
+                <p style="color: var(--text-muted); font-size: 13px;">Control real-time multi-source game data ingestion from worldwide feeds (ESPN + LiveScore). Trigger instant sync across all global matches or configure background sync rates.</p>
+                
+                <div style="display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 20px;">
+                    <button class="btn-primary" id="btn-sync-infeed" onclick="triggerInfeedSync('infeed')">⚡ Sync Live Infeed Now (Scores &amp; In-Play)</button>
+                    <button class="btn-secondary" id="btn-sync-all" onclick="triggerInfeedSync('all')" style="background:var(--bg-canvas); border:1px solid var(--border-subtle); padding:10px 16px; border-radius:6px; cursor:pointer; font-weight:700; color:var(--text-main);">🔄 Comprehensive Sync (Leagues, Tables &amp; Fixtures)</button>
+                </div>
+
+                <div id="sync-status-indicator" style="display:none; padding:12px 16px; border-radius:8px; margin-bottom:20px; font-size:13px; font-weight:600;"></div>
+
+                <div class="form-grid">
+                    <div class="form-group">
+                        <label class="toggle-switch">
+                            <input type="checkbox" id="setting-infeed-autosync" checked>
+                            <span>Enable Background Auto-Sync</span>
+                        </label>
+                    </div>
+                    <div class="form-group">
+                        <label>Sync Interval (Seconds)</label>
+                        <input type="number" id="setting-infeed-interval" min="15" max="300" value="45">
+                    </div>
+                </div>
+            </div>
+
+            <div class="admin-card">
+                <h3>🎯 In-Feed Highlight &amp; Sponsor Card</h3>
+                <p style="color: var(--text-muted); font-size: 13px;">Configure the native in-feed card displayed between match fixtures in the main explorer.</p>
+
+                <div class="form-group" style="margin-bottom: 14px;">
+                    <label class="toggle-switch">
+                        <input type="checkbox" id="setting-infeed-card-enabled" checked>
+                        <span>Display In-Feed Card in Fixture Explorer</span>
+                    </label>
+                </div>
+
+                <div class="form-grid">
+                    <div class="form-group">
+                        <label>Badge Text</label>
+                        <input type="text" id="setting-infeed-card-badge" placeholder="LIVE INFEED">
+                    </div>
+                    <div class="form-group">
+                        <label>Badge Color (HEX)</label>
+                        <input type="text" id="setting-infeed-card-color" placeholder="#2563eb">
+                    </div>
+                    <div class="form-group">
+                        <label>Headline</label>
+                        <input type="text" id="setting-infeed-card-headline" placeholder="Track Every Goal & Odds Shift in Real Time">
+                    </div>
+                    <div class="form-group">
+                        <label>CTA Button Text</label>
+                        <input type="text" id="setting-infeed-card-cta-text" placeholder="Get API Access">
+                    </div>
+                    <div class="form-group">
+                        <label>CTA Button URL</label>
+                        <input type="text" id="setting-infeed-card-cta-url" placeholder="/pricing">
+                    </div>
+                </div>
+
+                <div class="form-group" style="margin-top: 14px;">
+                    <label>Subtext / Description</label>
+                    <textarea id="setting-infeed-card-subtext" rows="2" placeholder="Sub-second livescores, in-play pressure gauges, and betslip code conversion across 100+ world competitions."></textarea>
+                </div>
+
+                <div class="form-group" style="margin-top: 14px;">
+                    <label>Custom HTML Banner (Optional - Overrides above fields if populated)</label>
+                    <textarea id="setting-infeed-card-html" rows="3" placeholder="<div ...>Custom HTML / Script</div>"></textarea>
+                </div>
+
+                <button class="btn-primary" style="margin-top: 18px;" onclick="saveInfeedSettings()">Save In-Feed Settings</button>
             </div>
         </section>
 

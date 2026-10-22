@@ -296,13 +296,40 @@ router.get('/api/admin/stats', requireAdmin, async (req, res) => {
 
 /**
  * POST /api/admin/sync
- * Manually triggers an upstream sync of leagues, live scores & standings.
+ * Triggers upstream synchronization of live infeed, leagues, or all fixtures.
  */
 router.post('/api/admin/sync', requireAdmin, async (req, res) => {
     try {
-        const { syncAllLeagues } = require('../services/soccerSyncService');
-        const results = await syncAllLeagues();
-        return res.json({ success: true, message: 'Sync complete', results });
+        const { syncAllLeagues, syncLiveScoreboards, syncLiveScoreInPlay } = require('../services/soccerSyncService');
+        const SoccerMatch = require('../models/soccerMatch');
+        const SoccerLeague = require('../models/soccerLeague');
+
+        const syncType = req.body?.type || 'all';
+        let message = '';
+        if (syncType === 'infeed' || syncType === 'live') {
+            await Promise.allSettled([syncLiveScoreboards(), syncLiveScoreInPlay()]);
+            message = 'Real-time live infeed sync completed successfully.';
+        } else {
+            await Promise.allSettled([syncAllLeagues(), syncLiveScoreboards(), syncLiveScoreInPlay()]);
+            message = 'Comprehensive league, fixtures and infeed sync completed.';
+        }
+
+        const [matchesCount, inPlayCount, leaguesCount] = await Promise.all([
+            SoccerMatch.countDocuments(),
+            SoccerMatch.countDocuments({ 'status.state': 'in' }),
+            SoccerLeague.countDocuments({ active: true })
+        ]);
+
+        return res.json({
+            success: true,
+            message,
+            stats: {
+                matchesCount,
+                inPlayCount,
+                leaguesCount,
+                syncedAt: new Date().toISOString()
+            }
+        });
     } catch (err) {
         return res.status(500).json({ error: 'Sync failed: ' + err.message });
     }

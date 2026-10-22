@@ -160,6 +160,31 @@ async function loadSettings() {
         const smtpFromEl = document.getElementById('setting-smtp-from');
         if (smtpFromEl) smtpFromEl.value = smtp.fromEmail || '';
 
+        // Social Links
+        const social = globalSettings.socialLinks || {};
+        if (document.getElementById('setting-social-twitter')) document.getElementById('setting-social-twitter').value = social.twitter || '';
+        if (document.getElementById('setting-social-telegram')) document.getElementById('setting-social-telegram').value = social.telegram || '';
+        if (document.getElementById('setting-social-discord')) document.getElementById('setting-social-discord').value = social.discord || '';
+        if (document.getElementById('setting-social-github')) document.getElementById('setting-social-github').value = social.github || '';
+        if (document.getElementById('setting-social-facebook')) document.getElementById('setting-social-facebook').value = social.facebook || '';
+        if (document.getElementById('setting-social-instagram')) document.getElementById('setting-social-instagram').value = social.instagram || '';
+        if (document.getElementById('setting-social-youtube')) document.getElementById('setting-social-youtube').value = social.youtube || '';
+        if (document.getElementById('setting-social-linkedin')) document.getElementById('setting-social-linkedin').value = social.linkedin || '';
+
+        // Live Infeed Settings
+        const infeed = globalSettings.infeedSettings || {};
+        const infeedCard = infeed.infeedCard || {};
+        if (document.getElementById('setting-infeed-autosync')) document.getElementById('setting-infeed-autosync').checked = infeed.autoSyncEnabled !== false;
+        if (document.getElementById('setting-infeed-interval')) document.getElementById('setting-infeed-interval').value = infeed.syncIntervalSeconds || 45;
+        if (document.getElementById('setting-infeed-card-enabled')) document.getElementById('setting-infeed-card-enabled').checked = infeedCard.enabled !== false;
+        if (document.getElementById('setting-infeed-card-badge')) document.getElementById('setting-infeed-card-badge').value = infeedCard.badgeText || 'LIVE INFEED';
+        if (document.getElementById('setting-infeed-card-color')) document.getElementById('setting-infeed-card-color').value = infeedCard.badgeColor || '#2563eb';
+        if (document.getElementById('setting-infeed-card-headline')) document.getElementById('setting-infeed-card-headline').value = infeedCard.headline || '';
+        if (document.getElementById('setting-infeed-card-subtext')) document.getElementById('setting-infeed-card-subtext').value = infeedCard.subtext || '';
+        if (document.getElementById('setting-infeed-card-cta-text')) document.getElementById('setting-infeed-card-cta-text').value = infeedCard.ctaText || 'Get API Access';
+        if (document.getElementById('setting-infeed-card-cta-url')) document.getElementById('setting-infeed-card-cta-url').value = infeedCard.ctaUrl || '/pricing';
+        if (document.getElementById('setting-infeed-card-html')) document.getElementById('setting-infeed-card-html').value = infeedCard.customHtml || '';
+
         // Render Promos and Ads
         renderBookiePromos(globalSettings.bookiePromos || []);
         renderAdSlots(globalSettings.ads || {});
@@ -295,6 +320,96 @@ async function saveBrandingSettings() {
         announcement: document.getElementById('setting-announcement').value.trim()
     };
     await updateSettingsPayload(payload, 'Branding settings saved!');
+}
+
+async function saveSocialSettings() {
+    const socialLinks = {
+        twitter: document.getElementById('setting-social-twitter')?.value.trim() || '',
+        telegram: document.getElementById('setting-social-telegram')?.value.trim() || '',
+        discord: document.getElementById('setting-social-discord')?.value.trim() || '',
+        github: document.getElementById('setting-social-github')?.value.trim() || '',
+        facebook: document.getElementById('setting-social-facebook')?.value.trim() || '',
+        instagram: document.getElementById('setting-social-instagram')?.value.trim() || '',
+        youtube: document.getElementById('setting-social-youtube')?.value.trim() || '',
+        linkedin: document.getElementById('setting-social-linkedin')?.value.trim() || ''
+    };
+    await updateSettingsPayload({ socialLinks }, 'Social media links saved successfully!');
+}
+
+async function saveInfeedSettings() {
+    const infeedSettings = {
+        autoSyncEnabled: document.getElementById('setting-infeed-autosync')?.checked !== false,
+        syncIntervalSeconds: Number(document.getElementById('setting-infeed-interval')?.value) || 45,
+        providers: {
+            espn: true,
+            livescore: true
+        },
+        infeedCard: {
+            enabled: document.getElementById('setting-infeed-card-enabled')?.checked !== false,
+            badgeText: document.getElementById('setting-infeed-card-badge')?.value.trim() || 'LIVE INFEED',
+            badgeColor: document.getElementById('setting-infeed-card-color')?.value.trim() || '#2563eb',
+            headline: document.getElementById('setting-infeed-card-headline')?.value.trim() || '',
+            subtext: document.getElementById('setting-infeed-card-subtext')?.value.trim() || '',
+            ctaText: document.getElementById('setting-infeed-card-cta-text')?.value.trim() || 'Get API Access',
+            ctaUrl: document.getElementById('setting-infeed-card-cta-url')?.value.trim() || '/pricing',
+            customHtml: document.getElementById('setting-infeed-card-html')?.value.trim() || ''
+        }
+    };
+    await updateSettingsPayload({ infeedSettings }, 'Live infeed settings saved successfully!');
+}
+
+async function triggerInfeedSync(type = 'infeed') {
+    const indicator = document.getElementById('sync-status-indicator');
+    const btnInfeed = document.getElementById('btn-sync-infeed');
+    const btnAll = document.getElementById('btn-sync-all');
+
+    if (indicator) {
+        indicator.style.display = 'block';
+        indicator.style.background = 'rgba(37, 99, 235, 0.1)';
+        indicator.style.color = 'var(--color-primary)';
+        indicator.style.border = '1px solid rgba(37, 99, 235, 0.3)';
+        indicator.innerHTML = '<span class="loader" style="display:inline-block; width:14px; height:14px; margin-right:8px; vertical-align:middle;"></span> Synchronizing live games infeed across global feeds...';
+    }
+    if (btnInfeed) btnInfeed.disabled = true;
+    if (btnAll) btnAll.disabled = true;
+
+    try {
+        const res = await fetch('/api/admin/sync', {
+            method: 'POST',
+            headers: {
+                Authorization: `Bearer ${adminToken}`,
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ type })
+        });
+        const data = await res.json();
+        if (res.ok) {
+            if (indicator) {
+                indicator.style.background = 'rgba(16, 185, 129, 0.1)';
+                indicator.style.color = '#10b981';
+                indicator.style.border = '1px solid rgba(16, 185, 129, 0.3)';
+                indicator.innerHTML = `✓ ${data.message} &bull; Total matches: <strong>${data.stats?.matchesCount || 0}</strong> | In-Play live: <strong>${data.stats?.inPlayCount || 0}</strong> | Active competitions: <strong>${data.stats?.leaguesCount || 0}</strong>`;
+            }
+            loadStats();
+        } else {
+            if (indicator) {
+                indicator.style.background = 'rgba(239, 68, 68, 0.1)';
+                indicator.style.color = '#ef4444';
+                indicator.style.border = '1px solid rgba(239, 68, 68, 0.3)';
+                indicator.innerHTML = `⚠️ ${data.error || 'Sync encountered an error.'}`;
+            }
+        }
+    } catch (err) {
+        if (indicator) {
+            indicator.style.background = 'rgba(239, 68, 68, 0.1)';
+            indicator.style.color = '#ef4444';
+            indicator.style.border = '1px solid rgba(239, 68, 68, 0.3)';
+            indicator.innerHTML = `⚠️ Network error while initiating sync: ${err.message}`;
+        }
+    } finally {
+        if (btnInfeed) btnInfeed.disabled = false;
+        if (btnAll) btnAll.disabled = false;
+    }
 }
 
 async function saveBookiePromos() {

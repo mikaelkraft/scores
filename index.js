@@ -350,9 +350,13 @@ app.listen(PORT, () => {
         }
     }, 3000);
 
-    // Fast in-play scoreboard refresh every 45 seconds
+    // Fast in-play scoreboard and live match infeed refresh every 45 seconds (ESPN + LiveScore worldwide)
+    const { syncLiveScoreInPlay } = require('./services/soccerSyncService');
     const liveScoreInterval = setInterval(() => {
-        syncLiveScoreboards().catch(e => console.warn('Live scoreboard sync notice:', e.message));
+        Promise.allSettled([
+            syncLiveScoreboards(),
+            syncLiveScoreInPlay()
+        ]).catch(e => console.warn('Live infeed sync notice:', e.message));
     }, 45 * 1000);
     if (liveScoreInterval && typeof liveScoreInterval.unref === 'function') {
         liveScoreInterval.unref();
