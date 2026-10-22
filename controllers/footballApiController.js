@@ -358,14 +358,14 @@ router.get('/predictions-context/:eventId', async (req, res) => {
 
         // Run parallel queries: H2H, Home Recent Form, Away Recent Form, Standings
         const [h2hMatches, homeRecentMatches, awayRecentMatches, standingsGroup, leagueDoc] = await Promise.all([
-            // H2H past meetings
+            // H2H past meetings - fetch complete lifetime encounters without artificial cap
             homeId && awayId ? SoccerMatch.find({
                 $or: [
                     { 'home.source_id': homeId, 'away.source_id': awayId },
                     { 'home.source_id': awayId, 'away.source_id': homeId }
                 ],
                 'status.state': 'post'
-            }).sort({ date: -1 }).limit(10).lean() : Promise.resolve([]),
+            }).sort({ date: -1 }).limit(200).lean() : Promise.resolve([]),
 
             // Home team last 6 matches
             homeId ? SoccerMatch.find({
@@ -392,49 +392,38 @@ router.get('/predictions-context/:eventId', async (req, res) => {
             SoccerLeague.findOne({ slug: leagueSlug }).lean()
         ]);
 
-        // Compute H2H statistics from database matches
-        let homeWins = 0;
-        let awayWins = 0;
-        let draws = 0;
-        let totalGoals = 0;
-        let bttsCount = 0;
-        let over25Count = 0;
-
-        let formattedH2h = h2hMatches.map(m => {
+        // Build deduplicated lifetime H2H map
+        const h2hMap = new Map();
+        h2hMatches.forEach(m => {
             const isHomeOriginal = String(m.home?.source_id) === homeId;
             const hScore = Number(m.home?.score || 0);
             const aScore = Number(m.away?.score || 0);
-            const matchTotal = hScore + aScore;
-            totalGoals += matchTotal;
+            const hName = m.home?.display_name || m.home?.name || 'Home';
+            const aName = m.away?.display_name || m.away?.name || 'Away';
+            const winnerName = hScore === aScore ? 'Draw' : (hScore > aScore ? hName : aName);
+            const id = String(m.source?.event_id || m._id);
 
-            if (hScore > 0 && aScore > 0) bttsCount++;
-            if (matchTotal > 2.5) over25Count++;
-
-            if (hScore === aScore) {
-                draws++;
-            } else if (isHomeOriginal) {
-                if (hScore > aScore) homeWins++; else awayWins++;
-            } else {
-                if (aScore > hScore) homeWins++; else awayWins++;
-            }
-
-            return {
-                id: m.source?.event_id,
+            h2hMap.set(id, {
+                id,
                 date: m.date,
-                homeTeam: m.home?.display_name || m.home?.name,
-                awayTeam: m.away?.display_name || m.away?.name,
+                homeTeam: hName,
+                awayTeam: aName,
                 score: `${hScore} - ${aScore}`,
-                winner: hScore > aScore ? m.home?.name : aScore > hScore ? m.away?.name : 'Draw'
-            };
+                winner: winnerName,
+                homeScore: hScore,
+                awayScore: aScore,
+                isHomeOriginal
+            });
         });
 
         // Enrich with real historical H2H archive and 5-game form from ESPN summary
         let seriesSummary = '';
         let seriesScore = '';
+        let espnSummary = null;
         try {
             const https = require('https');
             const zlib = require('zlib');
-            const espnSummary = await new Promise((resolve) => {
+            espnSummary = await new Promise((resolve) => {
                 const req = https.get(`https://site.api.espn.com/apis/site/v2/sports/soccer/${match.league_slug || 'all'}/summary?event=${encodeURIComponent(eventId)}`, {
                     headers: { 'User-Agent': 'NorraScores/2.1', 'Accept-Encoding': 'gzip, deflate' },
                     timeout: 3000
@@ -457,51 +446,93 @@ router.get('/predictions-context/:eventId', async (req, res) => {
                 seriesScore = series.seriesScore || '';
 
                 if (Array.isArray(series.events) && series.events.length > 0) {
-                    const espnH2h = series.events.map(ev => {
+                    for (const ev of series.events) {
                         const comps = ev.competitors || [];
                         const hComp = comps.find(c => c.homeAway === 'home') || comps[0] || {};
                         const aComp = comps.find(c => c.homeAway === 'away') || comps[1] || {};
                         const hScore = Number(hComp.score) || 0;
                         const aScore = Number(aComp.score) || 0;
-                        const winnerName = hComp.winner ? (hComp.team?.displayName || 'Home') : aComp.winner ? (aComp.team?.displayName || 'Away') : 'Draw';
-                        return {
-                            id: ev.id,
-                            date: ev.date,
-                            homeTeam: hComp.team?.displayName || match.home?.displayName || 'Home',
-                            awayTeam: aComp.team?.displayName || match.away?.displayName || 'Away',
-                            score: `${hScore} - ${aScore}`,
-                            winner: winnerName
-                        };
-                    });
+                        const hName = hComp.team?.displayName || match.home?.displayName || 'Home';
+                        const aName = aComp.team?.displayName || match.away?.displayName || 'Away';
+                        const winnerName = hComp.winner ? hName : aComp.winner ? aName : (hScore > aScore ? hName : aScore > hScore ? aName : 'Draw');
+                        const id = String(ev.id);
 
-                    if (espnH2h.length >= formattedH2h.length) {
-                        formattedH2h = espnH2h;
-                        homeWins = 0;
-                        awayWins = 0;
-                        draws = 0;
-                        totalGoals = 0;
-                        bttsCount = 0;
-                        over25Count = 0;
-                        for (const m of formattedH2h) {
-                            const parts = m.score.split('-').map(s => Number(s.trim()));
-                            const hs = parts[0] || 0;
-                            const as = parts[1] || 0;
-                            const tot = hs + as;
-                            totalGoals += tot;
-                            if (hs > 0 && as > 0) bttsCount++;
-                            if (tot > 2.5) over25Count++;
-                            if (hs === as) draws++;
-                            else if (m.winner === (match.home?.displayName || match.home?.name)) homeWins++;
-                            else if (m.winner === (match.away?.displayName || match.away?.name)) awayWins++;
-                            else if (hs > as) homeWins++;
-                            else awayWins++;
+                        if (!h2hMap.has(id)) {
+                            const isHomeTeamH = String(hComp.team?.id) === homeId || hName.toLowerCase() === (match.home?.displayName || match.home?.name || '').toLowerCase();
+                            h2hMap.set(id, {
+                                id,
+                                date: ev.date,
+                                homeTeam: hName,
+                                awayTeam: aName,
+                                score: `${hScore} - ${aScore}`,
+                                winner: winnerName,
+                                homeScore: hScore,
+                                awayScore: aScore,
+                                isHomeOriginal: isHomeTeamH
+                            });
                         }
                     }
                 }
             }
         } catch {}
 
-        const h2hCount = formattedH2h.length;
+        // Compute Lifetime H2H statistics across all deduplicated historical encounters
+        const allLifetimeH2h = Array.from(h2hMap.values()).sort((a, b) => new Date(b.date) - new Date(a.date));
+        const totalLifetimeMeetings = allLifetimeH2h.length;
+
+        let homeWins = 0;
+        let awayWins = 0;
+        let draws = 0;
+        let totalGoals = 0;
+        let bttsCount = 0;
+        let over25Count = 0;
+
+        const currentHomeName = (match.home?.displayName || match.home?.name || '').toLowerCase();
+        const currentAwayName = (match.away?.displayName || match.away?.name || '').toLowerCase();
+
+        for (const m of allLifetimeH2h) {
+            const hScore = m.homeScore;
+            const aScore = m.awayScore;
+            const matchTotal = hScore + aScore;
+            totalGoals += matchTotal;
+
+            if (hScore > 0 && aScore > 0) bttsCount++;
+            if (matchTotal > 2.5) over25Count++;
+
+            if (m.winner && m.winner !== 'Draw') {
+                const w = m.winner.toLowerCase();
+                if (w.includes(currentHomeName) || currentHomeName.includes(w)) {
+                    homeWins++;
+                } else if (w.includes(currentAwayName) || currentAwayName.includes(w)) {
+                    awayWins++;
+                } else if (m.isHomeOriginal !== undefined) {
+                    if (m.isHomeOriginal) {
+                        if (hScore > aScore) homeWins++; else awayWins++;
+                    } else {
+                        if (aScore > hScore) homeWins++; else awayWins++;
+                    }
+                } else if (hScore > aScore) {
+                    homeWins++;
+                } else {
+                    awayWins++;
+                }
+            } else if (hScore === aScore) {
+                draws++;
+            } else if (m.isHomeOriginal !== undefined) {
+                if (m.isHomeOriginal) {
+                    if (hScore > aScore) homeWins++; else awayWins++;
+                } else {
+                    if (aScore > hScore) homeWins++; else awayWins++;
+                }
+            } else if (hScore > aScore) {
+                homeWins++;
+            } else {
+                awayWins++;
+            }
+        }
+
+        // Recent encounters limited to the last 5 meetings
+        const recentH2hMeetings = allLifetimeH2h.slice(0, 5);
 
         // Process team form guide helper
         function extractTeamForm(matchesList, teamId) {
@@ -561,6 +592,56 @@ router.get('/predictions-context/:eventId', async (req, res) => {
 
         const homeAnalytics = extractTeamForm(homeRecentMatches, homeId);
         const awayAnalytics = extractTeamForm(awayRecentMatches, awayId);
+
+        // Enrich team form with ESPN lastFiveGames if available
+        if (Array.isArray(espnSummary?.lastFiveGames) && espnSummary.lastFiveGames.length >= 2) {
+            const hL5 = espnSummary.lastFiveGames.find(g => String(g.team?.id) === homeId) || espnSummary.lastFiveGames[0];
+            const aL5 = espnSummary.lastFiveGames.find(g => String(g.team?.id) === awayId) || espnSummary.lastFiveGames[1];
+
+            if (hL5?.events?.length) {
+                const formattedL5 = hL5.events.map(ev => ({
+                    id: String(ev.id),
+                    date: ev.gameDate,
+                    opponent: ev.opponent?.displayName || 'Opponent',
+                    opponentLogo: ev.opponentLogo || ev.opponent?.logo || '',
+                    venue: ev.atVs === '@' ? 'Away' : 'Home',
+                    atVs: ev.atVs || 'vs',
+                    score: ev.score,
+                    result: ev.gameResult || 'D',
+                    competition: ev.leagueName || ev.competitionName || ''
+                }));
+                homeAnalytics.recentMatches = formattedL5;
+                homeAnalytics.matchesAnalyzed = formattedL5.length;
+                homeAnalytics.formGuide = formattedL5.map(e => e.result);
+                homeAnalytics.formString = homeAnalytics.formGuide.join('-');
+                homeAnalytics.wins = formattedL5.filter(e => e.result === 'W').length;
+                homeAnalytics.draws = formattedL5.filter(e => e.result === 'D').length;
+                homeAnalytics.losses = formattedL5.filter(e => e.result === 'L').length;
+                homeAnalytics.winRate = Number(((homeAnalytics.wins / formattedL5.length) * 100).toFixed(1));
+            }
+
+            if (aL5?.events?.length) {
+                const formattedL5 = aL5.events.map(ev => ({
+                    id: String(ev.id),
+                    date: ev.gameDate,
+                    opponent: ev.opponent?.displayName || 'Opponent',
+                    opponentLogo: ev.opponentLogo || ev.opponent?.logo || '',
+                    venue: ev.atVs === '@' ? 'Away' : 'Home',
+                    atVs: ev.atVs || 'vs',
+                    score: ev.score,
+                    result: ev.gameResult || 'D',
+                    competition: ev.leagueName || ev.competitionName || ''
+                }));
+                awayAnalytics.recentMatches = formattedL5;
+                awayAnalytics.matchesAnalyzed = formattedL5.length;
+                awayAnalytics.formGuide = formattedL5.map(e => e.result);
+                awayAnalytics.formString = awayAnalytics.formGuide.join('-');
+                awayAnalytics.wins = formattedL5.filter(e => e.result === 'W').length;
+                awayAnalytics.draws = formattedL5.filter(e => e.result === 'D').length;
+                awayAnalytics.losses = formattedL5.filter(e => e.result === 'L').length;
+                awayAnalytics.winRate = Number(((awayAnalytics.wins / formattedL5.length) * 100).toFixed(1));
+            }
+        }
 
         // Fallback to match document form string if fewer than 3 matches recorded locally
         if (homeAnalytics.formGuide.length < 3 && match.home?.form) {
@@ -651,16 +732,18 @@ router.get('/predictions-context/:eventId', async (req, res) => {
                 }
             },
             h2h: {
-                totalMeetings: formattedH2h.length,
+                totalMeetings: totalLifetimeMeetings,
+                neverMetBefore: totalLifetimeMeetings === 0,
                 homeWins,
                 awayWins,
                 draws,
                 seriesSummary,
                 seriesScore,
-                averageGoalsPerMatch: formattedH2h.length > 0 ? Number((totalGoals / formattedH2h.length).toFixed(2)) : 0,
-                bttsPercentage: formattedH2h.length > 0 ? Number(((bttsCount / formattedH2h.length) * 100).toFixed(1)) : 0,
-                over25Percentage: formattedH2h.length > 0 ? Number(((over25Count / formattedH2h.length) * 100).toFixed(1)) : 0,
-                recentMeetings: formattedH2h
+                averageGoalsPerMatch: totalLifetimeMeetings > 0 ? Number((totalGoals / totalLifetimeMeetings).toFixed(2)) : 0,
+                bttsPercentage: totalLifetimeMeetings > 0 ? Number(((bttsCount / totalLifetimeMeetings) * 100).toFixed(1)) : 0,
+                over25Percentage: totalLifetimeMeetings > 0 ? Number(((over25Count / totalLifetimeMeetings) * 100).toFixed(1)) : 0,
+                recentMeetings: recentH2hMeetings,
+                allMeetings: allLifetimeH2h
             },
             odds: match.odds || [],
             inPlayTelemetry: match.status?.state === 'in' ? {

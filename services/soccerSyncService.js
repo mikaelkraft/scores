@@ -80,7 +80,26 @@ const TARGET_LEAGUES = [
     { slug: 'arg.copa', name: 'Copa Argentina', abbreviation: 'Copa Argentina', country: 'Argentina', kind: 'cup', sort_order: 64 },
     { slug: 'bol.copa', name: 'Copa Bolivia', abbreviation: 'Copa Bolivia', country: 'Bolivia', kind: 'cup', sort_order: 65 },
     { slug: 'fifa.youth', name: 'FIFA Youth World Cup', abbreviation: 'FIFA Youth', country: 'International', kind: 'international', sort_order: 66 },
-    { slug: 'club.friendly', name: 'Club Friendlies', abbreviation: 'Friendlies', country: 'International', kind: 'club', sort_order: 67 }
+    { slug: 'club.friendly', name: 'Club Friendlies', abbreviation: 'Friendlies', country: 'International', kind: 'club', sort_order: 67 },
+    { slug: 'idn.1', name: 'Indonesian Super League', abbreviation: 'Liga 1', country: 'Indonesia', kind: 'club', sort_order: 68 },
+    { slug: 'tha.1', name: 'Thai League 1', abbreviation: 'Thai League 1', country: 'Thailand', kind: 'club', sort_order: 69 },
+    { slug: 'mys.1', name: 'Malaysian Super League', abbreviation: 'Super League', country: 'Malaysia', kind: 'club', sort_order: 70 },
+    { slug: 'sgp.1', name: 'Singapore Premier League', abbreviation: 'SPL', country: 'Singapore', kind: 'club', sort_order: 71 },
+    { slug: 'ken.1', name: 'Kenyan Premier League', abbreviation: 'FKF Premier', country: 'Kenya', kind: 'club', sort_order: 72 },
+    { slug: 'gha.1', name: 'Ghana Premier League', abbreviation: 'Ghana Premier', country: 'Ghana', kind: 'club', sort_order: 73 },
+    { slug: 'uga.1', name: 'Uganda Premier League', abbreviation: 'Uganda Premier', country: 'Uganda', kind: 'club', sort_order: 74 },
+    { slug: 'ind.1', name: 'Indian Super League', abbreviation: 'ISL', country: 'India', kind: 'club', sort_order: 75 },
+    { slug: 'ind.2', name: 'Indian I-League', abbreviation: 'I-League', country: 'India', kind: 'club', sort_order: 76 },
+    { slug: 'afc.cup', name: 'AFC Champions League Two', abbreviation: 'ACL Two', country: 'International', kind: 'club', sort_order: 77 },
+    { slug: 'per.1', name: 'Peruvian Liga 1', abbreviation: 'Liga 1 Peru', country: 'Peru', kind: 'club', sort_order: 78 },
+    { slug: 'bol.1', name: 'Bolivian Liga Profesional', abbreviation: 'Liga Bolivia', country: 'Bolivia', kind: 'club', sort_order: 79 },
+    { slug: 'ecu.1', name: 'LigaPro Ecuador', abbreviation: 'LigaPro', country: 'Ecuador', kind: 'club', sort_order: 80 },
+    { slug: 'par.1', name: 'Paraguayan Primera División', abbreviation: 'División de Honor', country: 'Paraguay', kind: 'club', sort_order: 81 },
+    { slug: 'ven.1', name: 'Venezuelan Primera División', abbreviation: 'Liga FUTVE', country: 'Venezuela', kind: 'club', sort_order: 82 },
+    { slug: 'uru.1', name: 'Liga AUF Uruguaya', abbreviation: 'Primera Uruguay', country: 'Uruguay', kind: 'club', sort_order: 83 },
+    { slug: 'crc.1', name: 'Costa Rican Primera División', abbreviation: 'Primera Costa Rica', country: 'Costa Rica', kind: 'club', sort_order: 84 },
+    { slug: 'hon.1', name: 'Honduran Liga Nacional', abbreviation: 'Liga Betcris', country: 'Honduras', kind: 'club', sort_order: 85 },
+    { slug: 'gua.1', name: 'Guatemalan Liga Nacional', abbreviation: 'Liga Mayor', country: 'Guatemala', kind: 'club', sort_order: 86 }
 ];
 
 function fetchJson(url) {
@@ -539,8 +558,30 @@ function resolveLeagueSlug(altGameNote = '', compDesc = '', uid = '') {
     if (text.includes('egypt') || text.includes('egy.1')) return 'egy.1';
     if (text.includes('south africa') || text.includes('psl') || text.includes('betway premiership') || text.includes('rsa.1')) return 'rsa.1';
     if (text.includes('npfl') || text.includes('nigeria') || text.includes('nga.1')) return 'nga.1';
+    if (text.includes('kenya') || text.includes('ken.1')) return 'ken.1';
+    if (text.includes('ghana') || text.includes('gha.1')) return 'gha.1';
+    if (text.includes('uganda') || text.includes('uga.1')) return 'uga.1';
 
+    // Asian & Oceanic leagues
+    if (text.includes('indonesia') || text.includes('liga 1') || text.includes('idn.1')) return 'idn.1';
+    if (text.includes('thailand') || text.includes('thai league') || text.includes('tha.1')) return 'tha.1';
+    if (text.includes('malaysia') || text.includes('mys.1')) return 'mys.1';
+    if (text.includes('singapore') || text.includes('sgp.1')) return 'sgp.1';
+    if (text.includes('i-league') || text.includes('ind.2')) return 'ind.2';
+    if (text.includes('indian super league') || text.includes('ind.1')) return 'ind.1';
+    if (text.includes('afc champions league two') || text.includes('acl two') || text.includes('afc.cup')) return 'afc.cup';
     if (text.includes('afc') || text.includes('afc.champions')) return 'afc.champions';
+
+    // South & Central America
+    if (text.includes('peru') || text.includes('per.1')) return 'per.1';
+    if (text.includes('ecuador') || text.includes('ligapro') || text.includes('ecu.1')) return 'ecu.1';
+    if (text.includes('paraguay') || text.includes('par.1')) return 'par.1';
+    if (text.includes('venezuela') || text.includes('futve') || text.includes('ven.1')) return 'ven.1';
+    if (text.includes('uruguay') || text.includes('uru.1')) return 'uru.1';
+    if (text.includes('costa rica') || text.includes('crc.1')) return 'crc.1';
+    if (text.includes('honduras') || text.includes('hon.1')) return 'hon.1';
+    if (text.includes('guatemala') || text.includes('gua.1')) return 'gua.1';
+
     if (text.includes('austrian') || text.includes('aut.1')) return 'aut.1';
     if (text.includes('swiss') || text.includes('sui.1')) return 'sui.1';
     if (text.includes('danish') || text.includes('den.1')) return 'den.1';
@@ -561,14 +602,40 @@ function resolveLeagueSlug(altGameNote = '', compDesc = '', uid = '') {
     return null;
 }
 
+const REGIONAL_SCOREBOARD_FEEDS = [
+    'idn.1', 'tha.1', 'mys.1', 'sgp.1', 'ken.1', 'gha.1', 'uga.1',
+    'afc.cup', 'ind.1', 'ind.2', 'per.1', 'bol.1', 'ecu.1', 'par.1', 'ven.1', 'uru.1'
+];
+
 async function syncLiveScoreboards() {
     const now = new Date();
     let updatedCount = 0;
     try {
         const todayStr = formatDateToScoreboard(now);
-        const url = `https://site.api.espn.com/apis/site/v2/sports/soccer/all/scoreboard?dates=${todayStr}&limit=300`;
-        const data = await fetchJson(url);
-        const events = data.events || [];
+        const allUrl = `https://site.api.espn.com/apis/site/v2/sports/soccer/all/scoreboard?dates=${todayStr}&limit=300`;
+
+        const scoreboardFetches = [
+            fetchJson(allUrl).catch(() => ({ events: [] })),
+            ...REGIONAL_SCOREBOARD_FEEDS.map(slug =>
+                fetchJson(`https://site.api.espn.com/apis/site/v2/sports/soccer/${slug}/scoreboard`)
+                    .then(data => ({
+                        events: (data.events || []).map(e => ({ ...e, _forcedLeagueSlug: slug }))
+                    }))
+                    .catch(() => ({ events: [] }))
+            )
+        ];
+
+        const feedResults = await Promise.all(scoreboardFetches);
+        const events = [];
+        const seenEvIds = new Set();
+        for (const res of feedResults) {
+            for (const ev of (res.events || [])) {
+                if (!seenEvIds.has(String(ev.id))) {
+                    seenEvIds.add(String(ev.id));
+                    events.push(ev);
+                }
+            }
+        }
 
         for (const ev of events) {
             const comp = ev.competitions?.[0];
@@ -586,7 +653,7 @@ async function syncLiveScoreboards() {
 
             const existingMatch = await SoccerMatch.findOne({ 'source.event_id': String(ev.id) }).select('_id league_slug status').lean();
 
-            let targetSlug = resolveLeagueSlug(comp.altGameNote || '', comp.notes?.[0]?.headline || '', ev.uid || '');
+            let targetSlug = ev._forcedLeagueSlug || resolveLeagueSlug(comp.altGameNote || '', comp.notes?.[0]?.headline || '', ev.uid || '');
             if (!targetSlug) {
                 targetSlug = existingMatch?.league_slug;
             }

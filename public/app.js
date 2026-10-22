@@ -98,7 +98,26 @@
         'arg.copa': '🇦🇷',
         'bol.copa': '🇧🇴',
         'fifa.youth': '🌐',
-        'club.friendly': '🤝'
+        'club.friendly': '🤝',
+        'idn.1': '🇮🇩',
+        'tha.1': '🇹🇭',
+        'mys.1': '🇲🇾',
+        'sgp.1': '🇸🇬',
+        'ken.1': '🇰🇪',
+        'gha.1': '🇬🇭',
+        'uga.1': '🇺🇬',
+        'ind.1': '🇮🇳',
+        'ind.2': '🇮🇳',
+        'afc.cup': '🏆',
+        'per.1': '🇵🇪',
+        'bol.1': '🇧🇴',
+        'ecu.1': '🇪🇨',
+        'par.1': '🇵🇾',
+        'ven.1': '🇻🇪',
+        'uru.1': '🇺🇾',
+        'crc.1': '🇨🇷',
+        'hon.1': '🇭🇳',
+        'gua.1': '🇬🇹'
     };
 
     let currentTimezone = localStorage.getItem('norra_timezone') || Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
@@ -1201,25 +1220,38 @@
         }
 
         function renderRecentMatchesList(recentMatches) {
-            if (!recentMatches || !recentMatches.length) return '';
-            return `<div style="margin-top:10px; border-top:1px dashed var(--border-subtle); padding-top:8px;">` +
+            if (!recentMatches || !recentMatches.length) return '<div style="color:var(--text-muted); font-size:12px; font-style:italic; padding:6px 0;">No recorded recent matches</div>';
+            return `<div style="display:flex; flex-direction:column; gap:6px;">` +
                 recentMatches.slice(0, 5).map(m => {
                     const resColor = m.result === 'W' ? '#10b981' : m.result === 'D' ? '#9ca3af' : '#ef4444';
-                    return `<div style="display:flex; justify-content:space-between; align-items:center; font-size:11.5px; margin-bottom:5px; color:var(--text-muted);">
-                        <span>${escapeHtml((m.venue === 'Away' ? '@ ' : 'vs ') + (m.opponent || 'Opponent'))}</span>
-                        <span style="font-weight:700; color:${resColor}; font-size:11px;">${escapeHtml(m.score || m.result)}</span>
+                    const resBg = m.result === 'W' ? 'rgba(16,185,129,0.12)' : m.result === 'D' ? 'rgba(156,163,175,0.12)' : 'rgba(239,68,68,0.12)';
+                    const venueLabel = m.venue === 'Away' || m.atVs === '@' ? '@' : 'vs';
+                    const dateFormatted = m.date ? formatDate(m.date, { year: false, weekday: false }) : '';
+                    return `<div style="display:flex; justify-content:space-between; align-items:center; padding:6px 10px; background:var(--bg-surface-elevated); border:1px solid var(--border-subtle); border-radius:6px; font-size:12px;">
+                        <div style="display:flex; align-items:center; gap:6px; overflow:hidden;">
+                            ${dateFormatted ? `<span style="font-size:10.5px; color:var(--text-muted); min-width:44px;">${dateFormatted}</span>` : ''}
+                            <span style="font-size:11px; color:var(--text-muted); font-weight:700; min-width:16px;">${venueLabel}</span>
+                            <span style="font-weight:600; color:var(--text-main); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;" title="${escapeHtml(m.opponent || '')}">${escapeHtml(m.opponent || 'Opponent')}</span>
+                        </div>
+                        <div style="display:flex; align-items:center; gap:8px; margin-left:8px;">
+                            <span style="font-weight:700; font-size:12px; color:var(--text-main);">${escapeHtml(m.score || '')}</span>
+                            <span style="display:inline-flex; align-items:center; justify-content:center; width:20px; height:20px; border-radius:4px; background:${resBg}; color:${resColor}; font-weight:700; font-size:11px; border:1px solid ${resColor}33;">${escapeHtml(m.result || 'D')}</span>
+                        </div>
                     </div>`;
                 }).join('') + `</div>`;
         }
 
-        const h2hMeetingsRows = recentH2h.length ? recentH2h.map(m => `
+        const totalLifetimeMeetings = Number(h2h.totalMeetings || recentH2h.length || 0);
+        const hasPastMeetings = totalLifetimeMeetings > 0;
+
+        const h2hMeetingsRows = recentH2h.length ? recentH2h.slice(0, 5).map(m => `
             <div style="display:flex; justify-content:space-between; align-items:center; padding:8px 12px; background:var(--bg-canvas); border:1px solid var(--border-subtle); border-radius:6px; margin-bottom:8px; font-size:12.5px;">
                 <span style="color:var(--text-muted); font-size:11.5px; width:75px;">${formatDate(m.date, { year: false, weekday: false })}</span>
                 <span style="flex:1; text-align:right; font-weight:600; padding-right:10px;">${escapeHtml(m.homeTeam)}</span>
                 <span style="background:var(--bg-surface-elevated); border:1px solid var(--border-subtle); padding:2px 8px; border-radius:4px; font-weight:700; font-size:12px;">${escapeHtml(m.score)}</span>
                 <span style="flex:1; text-align:left; font-weight:600; padding-left:10px;">${escapeHtml(m.awayTeam)}</span>
             </div>
-        `).join('') : '<p style="color:var(--text-muted); font-size:13px;">No past Head-to-Head encounters recorded between these clubs in recent archives.</p>';
+        `).join('') : '';
 
         const rosters = summary.rosters || [];
         const homeRoster = rosters.find(r => String(r.team?.id) === String(home.team?.id) || r.team?.side === 'home') || rosters[0];
@@ -1315,42 +1347,114 @@
                             🏆 ${escapeHtml(h2h.seriesSummary || ('Historical Series: ' + h2h.seriesScore))}
                         </div>
                     ` : ''}
-                    <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(130px, 1fr)); gap:10px; margin-bottom:20px;">
-                        <div style="background:var(--bg-canvas); border:1px solid var(--border-subtle); border-radius:8px; padding:12px; text-align:center;">
-                            <span style="font-size:11px; text-transform:uppercase; color:var(--text-muted); display:block;">Total Meetings</span>
-                            <strong style="font-size:20px; color:var(--text-main);">${recentH2h.length || h2h.totalMeetings || 0}</strong>
-                        </div>
-                        <div style="background:var(--bg-canvas); border:1px solid var(--border-subtle); border-radius:8px; padding:12px; text-align:center;">
-                            <span style="font-size:11px; text-transform:uppercase; color:var(--text-muted); display:block;">${escapeHtml(home.team?.displayName || 'Home')} Wins</span>
-                            <strong style="font-size:20px; color:#10b981;">${h2h.homeWins || 0}</strong>
-                        </div>
-                        <div style="background:var(--bg-canvas); border:1px solid var(--border-subtle); border-radius:8px; padding:12px; text-align:center;">
-                            <span style="font-size:11px; text-transform:uppercase; color:var(--text-muted); display:block;">Draws</span>
-                            <strong style="font-size:20px; color:var(--text-muted);">${h2h.draws || 0}</strong>
-                        </div>
-                        <div style="background:var(--bg-canvas); border:1px solid var(--border-subtle); border-radius:8px; padding:12px; text-align:center;">
-                            <span style="font-size:11px; text-transform:uppercase; color:var(--text-muted); display:block;">${escapeHtml(away.team?.displayName || 'Away')} Wins</span>
-                            <strong style="font-size:20px; color:#3b82f6;">${h2h.awayWins || 0}</strong>
-                        </div>
-                    </div>
 
-                    <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-bottom:20px;">
-                        <div style="background:var(--bg-canvas); border:1px solid var(--border-subtle); border-radius:8px; padding:12px 14px;">
-                            <div style="font-weight:700; font-size:13px; color:var(--text-main); margin-bottom:8px;">${escapeHtml(home.team?.displayName || 'Home')} Form</div>
-                            <div>${renderFormBadges(homeAnalytics.formGuide)}</div>
-                            <div style="font-size:12px; color:var(--text-muted); margin-top:8px;">Avg Scored: <strong style="color:var(--text-main);">${homeAnalytics.goalsScoredAvg ?? '—'}</strong> &bull; Conceded: <strong style="color:var(--text-main);">${homeAnalytics.goalsConcededAvg ?? '—'}</strong></div>
-                            ${renderRecentMatchesList(homeAnalytics.recentMatches)}
+                    ${hasPastMeetings ? `
+                        <!-- Lifetime Head-to-Head Record -->
+                        <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(130px, 1fr)); gap:10px; margin-bottom:14px;">
+                            <div style="background:var(--bg-canvas); border:1px solid var(--border-subtle); border-radius:8px; padding:12px; text-align:center;">
+                                <span style="font-size:11px; text-transform:uppercase; color:var(--text-muted); display:block;">Lifetime Encounters</span>
+                                <strong style="font-size:22px; color:var(--text-main);">${totalLifetimeMeetings}</strong>
+                            </div>
+                            <div style="background:var(--bg-canvas); border:1px solid var(--border-subtle); border-radius:8px; padding:12px; text-align:center;">
+                                <span style="font-size:11px; text-transform:uppercase; color:var(--text-muted); display:block;">${escapeHtml(home.team?.displayName || 'Home')} Wins</span>
+                                <strong style="font-size:22px; color:#10b981;">${h2h.homeWins || 0}</strong>
+                            </div>
+                            <div style="background:var(--bg-canvas); border:1px solid var(--border-subtle); border-radius:8px; padding:12px; text-align:center;">
+                                <span style="font-size:11px; text-transform:uppercase; color:var(--text-muted); display:block;">All-Time Draws</span>
+                                <strong style="font-size:22px; color:var(--text-muted);">${h2h.draws || 0}</strong>
+                            </div>
+                            <div style="background:var(--bg-canvas); border:1px solid var(--border-subtle); border-radius:8px; padding:12px; text-align:center;">
+                                <span style="font-size:11px; text-transform:uppercase; color:var(--text-muted); display:block;">${escapeHtml(away.team?.displayName || 'Away')} Wins</span>
+                                <strong style="font-size:22px; color:#3b82f6;">${h2h.awayWins || 0}</strong>
+                            </div>
                         </div>
-                        <div style="background:var(--bg-canvas); border:1px solid var(--border-subtle); border-radius:8px; padding:12px 14px;">
-                            <div style="font-weight:700; font-size:13px; color:var(--text-main); margin-bottom:8px;">${escapeHtml(away.team?.displayName || 'Away')} Form</div>
-                            <div>${renderFormBadges(awayAnalytics.formGuide)}</div>
-                            <div style="font-size:12px; color:var(--text-muted); margin-top:8px;">Avg Scored: <strong style="color:var(--text-main);">${awayAnalytics.goalsScoredAvg ?? '—'}</strong> &bull; Conceded: <strong style="color:var(--text-main);">${awayAnalytics.goalsConcededAvg ?? '—'}</strong></div>
-                            ${renderRecentMatchesList(awayAnalytics.recentMatches)}
-                        </div>
-                    </div>
 
-                    <h5 style="margin:16px 0 10px; font-size:13px; color:var(--text-main);">Past Head-to-Head Encounters</h5>
-                    <div>${h2hMeetingsRows}</div>
+                        <!-- Lifetime Ratio Bar & Quick Rates -->
+                        <div style="background:var(--bg-canvas); border:1px solid var(--border-subtle); border-radius:8px; padding:12px 14px; margin-bottom:20px;">
+                            <div style="display:flex; justify-content:space-between; font-size:11.5px; color:var(--text-muted); margin-bottom:6px; font-weight:600;">
+                                <span style="color:#10b981;">${escapeHtml(home.team?.abbreviation || home.team?.displayName || 'Home')} ${totalLifetimeMeetings > 0 ? Math.round(((h2h.homeWins || 0) / totalLifetimeMeetings) * 100) : 0}%</span>
+                                <span>Draws ${totalLifetimeMeetings > 0 ? Math.round(((h2h.draws || 0) / totalLifetimeMeetings) * 100) : 0}%</span>
+                                <span style="color:#3b82f6;">${escapeHtml(away.team?.abbreviation || away.team?.displayName || 'Away')} ${totalLifetimeMeetings > 0 ? Math.round(((h2h.awayWins || 0) / totalLifetimeMeetings) * 100) : 0}%</span>
+                            </div>
+                            <div style="display:flex; height:8px; border-radius:4px; overflow:hidden; background:var(--bg-surface-elevated);">
+                                <div style="width:${totalLifetimeMeetings > 0 ? ((h2h.homeWins || 0) / totalLifetimeMeetings) * 100 : 0}%; background:#10b981;"></div>
+                                <div style="width:${totalLifetimeMeetings > 0 ? ((h2h.draws || 0) / totalLifetimeMeetings) * 100 : 0}%; background:#9ca3af;"></div>
+                                <div style="width:${totalLifetimeMeetings > 0 ? ((h2h.awayWins || 0) / totalLifetimeMeetings) * 100 : 0}%; background:#3b82f6;"></div>
+                            </div>
+                            <div style="display:flex; justify-content:space-around; margin-top:10px; padding-top:8px; border-top:1px dashed var(--border-subtle); font-size:11.5px; color:var(--text-muted);">
+                                <span>Avg Goals: <strong style="color:var(--text-main);">${h2h.averageGoalsPerMatch || '—'}</strong></span>
+                                <span>BTTS: <strong style="color:var(--text-main);">${h2h.bttsPercentage || 0}%</strong></span>
+                                <span>Over 2.5: <strong style="color:var(--text-main);">${h2h.over25Percentage || 0}%</strong></span>
+                            </div>
+                        </div>
+
+                        <!-- Recent Encounters (Last 5 Head-to-Head) -->
+                        <h5 style="margin:20px 0 10px; font-size:13px; color:var(--text-main); display:flex; justify-content:space-between; align-items:center;">
+                            <span>Recent Encounters (Last 5 Head-to-Head)</span>
+                            <span style="font-size:11.5px; color:var(--text-muted); font-weight:normal;">Showing ${recentH2h.length} of ${totalLifetimeMeetings} encounters</span>
+                        </h5>
+                        <div style="margin-bottom:24px;">${h2hMeetingsRows}</div>
+
+                        <!-- Team Form & Last 5 Matches (Both Clubs) -->
+                        <h5 style="margin:20px 0 10px; font-size:13px; color:var(--text-main);">Current Form &amp; Last 5 Played Matches</h5>
+                        <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(280px, 1fr)); gap:12px; margin-bottom:20px;">
+                            <div style="background:var(--bg-canvas); border:1px solid var(--border-subtle); border-radius:8px; padding:12px 14px;">
+                                <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:8px;">
+                                    <strong style="font-size:13px; color:var(--text-main);">${escapeHtml(home.team?.displayName || 'Home')} Form</strong>
+                                    <span style="font-size:11px; color:#10b981; font-weight:600;">${homeAnalytics.winRate ?? 0}% Win Rate</span>
+                                </div>
+                                <div>${renderFormBadges(homeAnalytics.formGuide)}</div>
+                                <div style="font-size:12px; color:var(--text-muted); margin:8px 0 10px;">Avg Scored: <strong style="color:var(--text-main);">${homeAnalytics.goalsScoredAvg ?? '—'}</strong> &bull; Conceded: <strong style="color:var(--text-main);">${homeAnalytics.goalsConcededAvg ?? '—'}</strong></div>
+                                ${renderRecentMatchesList(homeAnalytics.recentMatches)}
+                            </div>
+                            <div style="background:var(--bg-canvas); border:1px solid var(--border-subtle); border-radius:8px; padding:12px 14px;">
+                                <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:8px;">
+                                    <strong style="font-size:13px; color:var(--text-main);">${escapeHtml(away.team?.displayName || 'Away')} Form</strong>
+                                    <span style="font-size:11px; color:#3b82f6; font-weight:600;">${awayAnalytics.winRate ?? 0}% Win Rate</span>
+                                </div>
+                                <div>${renderFormBadges(awayAnalytics.formGuide)}</div>
+                                <div style="font-size:12px; color:var(--text-muted); margin:8px 0 10px;">Avg Scored: <strong style="color:var(--text-main);">${awayAnalytics.goalsScoredAvg ?? '—'}</strong> &bull; Conceded: <strong style="color:var(--text-main);">${awayAnalytics.goalsConcededAvg ?? '—'}</strong></div>
+                                ${renderRecentMatchesList(awayAnalytics.recentMatches)}
+                            </div>
+                        </div>
+                    ` : `
+                        <!-- First Recorded Meeting Fallback: Render each team's last 5 played games -->
+                        <div style="background:var(--bg-canvas); border:1px dashed var(--border-subtle); border-radius:10px; padding:18px 16px; text-align:center; margin-bottom:20px;">
+                            <div style="font-size:24px; margin-bottom:4px;">⚔️</div>
+                            <div style="font-size:14.5px; font-weight:700; color:var(--text-main); margin-bottom:4px;">First Recorded Encounter</div>
+                            <p style="font-size:12.5px; color:var(--text-muted); margin:0 auto; max-width:480px;">These clubs have never met before in recorded official competitions. Showing each team's last 5 played matches below to compare current form.</p>
+                        </div>
+
+                        <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(280px, 1fr)); gap:12px; margin-bottom:20px;">
+                            <div style="background:var(--bg-canvas); border:1px solid var(--border-subtle); border-radius:8px; padding:14px;">
+                                <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:10px;">
+                                    <div style="display:flex; align-items:center; gap:8px;">
+                                        ${home.team?.logo ? `<img src="${home.team.logo}" alt="" style="width:20px; height:20px; object-fit:contain;">` : ''}
+                                        <strong style="font-size:13.5px; color:var(--text-main);">${escapeHtml(home.team?.displayName || 'Home Team')}</strong>
+                                    </div>
+                                    <span style="font-size:11px; color:#10b981; font-weight:600;">${homeAnalytics.winRate ?? 0}% Win Rate</span>
+                                </div>
+                                <div style="margin-bottom:8px;">${renderFormBadges(homeAnalytics.formGuide)}</div>
+                                <div style="font-size:12px; color:var(--text-muted); margin-bottom:12px;">Avg Scored: <strong style="color:var(--text-main);">${homeAnalytics.goalsScoredAvg ?? '—'}</strong> &bull; Conceded: <strong style="color:var(--text-main);">${homeAnalytics.goalsConcededAvg ?? '—'}</strong></div>
+                                <div style="font-weight:600; font-size:11.5px; color:var(--text-muted); text-transform:uppercase; margin-bottom:8px;">Last 5 Matches</div>
+                                ${renderRecentMatchesList(homeAnalytics.recentMatches)}
+                            </div>
+
+                            <div style="background:var(--bg-canvas); border:1px solid var(--border-subtle); border-radius:8px; padding:14px;">
+                                <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:10px;">
+                                    <div style="display:flex; align-items:center; gap:8px;">
+                                        ${away.team?.logo ? `<img src="${away.team.logo}" alt="" style="width:20px; height:20px; object-fit:contain;">` : ''}
+                                        <strong style="font-size:13.5px; color:var(--text-main);">${escapeHtml(away.team?.displayName || 'Away Team')}</strong>
+                                    </div>
+                                    <span style="font-size:11px; color:#3b82f6; font-weight:600;">${awayAnalytics.winRate ?? 0}% Win Rate</span>
+                                </div>
+                                <div style="margin-bottom:8px;">${renderFormBadges(awayAnalytics.formGuide)}</div>
+                                <div style="font-size:12px; color:var(--text-muted); margin-bottom:12px;">Avg Scored: <strong style="color:var(--text-main);">${awayAnalytics.goalsScoredAvg ?? '—'}</strong> &bull; Conceded: <strong style="color:var(--text-main);">${awayAnalytics.goalsConcededAvg ?? '—'}</strong></div>
+                                <div style="font-weight:600; font-size:11.5px; color:var(--text-muted); text-transform:uppercase; margin-bottom:8px;">Last 5 Matches</div>
+                                ${renderRecentMatchesList(awayAnalytics.recentMatches)}
+                            </div>
+                        </div>
+                    `}
                 </div>
 
                 <div id="drawer-tab-lineups" class="drawer-tab-content" hidden>
