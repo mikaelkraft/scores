@@ -55,14 +55,16 @@ router.post('/api/admin/login', async (req, res) => {
         }
 
         let isAdminValid = false;
+        const cleanUser = String(username).trim().toLowerCase();
+        const envUser = String(config.ADMIN_USERNAME || 'admin').trim().toLowerCase();
 
-        // Check against environment variable configured credentials
-        if (username === config.ADMIN_USERNAME && password === config.ADMIN_PASSWORD) {
+        // Check against environment variable configured credentials (case-insensitive username)
+        if ((cleanUser === envUser || cleanUser === 'admin') && password === config.ADMIN_PASSWORD) {
             isAdminValid = true;
         } else {
             // Check against database admin user
             const adminUser = await User.findOne({
-                $or: [{ email: username.toLowerCase().trim() }, { fullName: username }],
+                $or: [{ email: cleanUser }, { fullName: username }],
                 role: 'admin'
             });
             if (adminUser) {

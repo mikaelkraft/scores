@@ -1,6 +1,6 @@
 // admin.js - Norra Scores Admin Console Client
 
-let adminToken = localStorage.getItem('norra_admin_token') || '';
+let adminToken = localStorage.getItem('norra_admin_token') || localStorage.getItem('admin_token') || '';
 let globalSettings = null;
 
 function checkAuth() {
@@ -633,15 +633,8 @@ async function saveAuthAndEmailSettings() {
 }
 
 function toggleTheme() {
-    const isDark = document.body.classList.contains('theme-dark');
-    if (isDark) {
-        document.body.classList.remove('theme-dark');
-        document.body.setAttribute('data-theme', 'light');
-        localStorage.setItem('norra_theme', 'light');
-    } else {
-        document.body.classList.add('theme-dark');
-        document.body.setAttribute('data-theme', 'dark');
-        localStorage.setItem('norra_theme', 'dark');
+    if (typeof window.toggleTheme === 'function') {
+        window.toggleTheme();
     }
 }
 

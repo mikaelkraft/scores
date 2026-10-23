@@ -1771,9 +1771,13 @@
 
     function setupThemeToggle() {
         const saved = localStorage.getItem('norra_theme') || localStorage.getItem('theme') || 'dark';
-        applyTheme(saved);
+        if (typeof window.applyTheme === 'function') {
+            window.applyTheme(saved);
+        } else {
+            applyTheme(saved);
+        }
 
-        const toggleTheme = () => {
+        const handler = (typeof window.toggleTheme === 'function') ? window.toggleTheme : () => {
             const current = document.documentElement.getAttribute('data-theme') || 'dark';
             const next = current === 'dark' ? 'light' : 'dark';
             applyTheme(next);
@@ -1785,19 +1789,28 @@
 
         const toggleBtn = document.getElementById('theme-toggle');
         if (toggleBtn) {
-            toggleBtn.onclick = toggleTheme;
+            toggleBtn.onclick = handler;
         }
         const stickyToggle = document.getElementById('sticky-theme-toggle');
         if (stickyToggle) {
-            stickyToggle.onclick = toggleTheme;
+            stickyToggle.onclick = handler;
         }
     }
 
     function applyTheme(theme) {
-        document.documentElement.setAttribute('data-theme', theme);
-        if (document.body) document.body.className = theme === 'light' ? 'theme-light' : '';
-        const icon = theme === 'light' ? '🌙' : '☀️';
-        const title = `Switch to ${theme === 'light' ? 'Dark' : 'Light'} Mode`;
+        if (typeof window.applyTheme === 'function') {
+            window.applyTheme(theme);
+            return;
+        }
+        const cleanTheme = theme === 'light' ? 'light' : 'dark';
+        document.documentElement.setAttribute('data-theme', cleanTheme);
+        document.documentElement.className = cleanTheme === 'light' ? 'theme-light' : '';
+        if (document.body) {
+            document.body.setAttribute('data-theme', cleanTheme);
+            document.body.className = cleanTheme === 'light' ? 'theme-light' : '';
+        }
+        const icon = cleanTheme === 'light' ? '🌙' : '☀️';
+        const title = `Switch to ${cleanTheme === 'light' ? 'Dark' : 'Light'} Mode`;
         const toggleBtn = document.getElementById('theme-toggle');
         if (toggleBtn) {
             toggleBtn.textContent = icon;
@@ -1809,7 +1822,7 @@
             stickyToggle.title = title;
         }
         const metaTheme = document.querySelector('meta[name="theme-color"]');
-        if (metaTheme) metaTheme.setAttribute('content', theme === 'light' ? '#ffffff' : '#0b0f19');
+        if (metaTheme) metaTheme.setAttribute('content', cleanTheme === 'light' ? '#ffffff' : '#080b12');
     }
 
     function setupBackToTop() {

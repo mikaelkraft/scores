@@ -325,12 +325,31 @@ router.post('/api/account/google', async (req, res) => {
  */
 router.post('/api/account/login', async (req, res) => {
     try {
-        const { email, password } = req.body;
-        if (!email || !password) {
-            return res.status(400).json({ error: 'Email and password are required.' });
+        const identifier = String(req.body.email || req.body.username || '').trim();
+        const password = String(req.body.password || '');
+        if (!identifier || !password) {
+            return res.status(400).json({ error: 'Email or Username and password are required.' });
         }
 
-        const user = await User.findOne({ email: email.toLowerCase().trim() });
+        // Check if admin credentials from .env match
+        const cleanUser = identifier.toLowerCase();
+        const envUser = String(config.ADMIN_USERNAME || 'admin').trim().toLowerCase();
+        if ((cleanUser === envUser || cleanUser === 'admin') && password === config.ADMIN_PASSWORD) {
+            const token = jwt.sign(
+                { username: config.ADMIN_USERNAME || 'admin', role: 'admin' },
+                JWT_SECRET,
+                { expiresIn: '7d' }
+            );
+            return res.json({
+                status: 'success',
+                isAdmin: true,
+                redirectUrl: '/admin',
+                token,
+                message: 'Admin credentials recognized. Redirecting to Admin Console...'
+            });
+        }
+
+        const user = await User.findOne({ email: identifier.toLowerCase() });
         if (!user || !user.active) {
             return res.status(401).json({ error: 'Invalid email or password.' });
         }

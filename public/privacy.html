@@ -123,6 +123,7 @@
                 <a class="nav-link" href="/pricing">Pricing</a>
                 <a class="nav-link docs-link" href="/docs">Docs</a>
                 <a class="nav-link" href="/account" id="nav-account-link">Account</a>
+                <a class="nav-link" href="/admin" id="nav-admin-link">Admin</a>
                 <button class="btn-icon-toggle" id="theme-toggle" type="button" aria-label="Toggle light/dark theme" title="Toggle theme">🌓</button>
             </div>
         </nav>
@@ -281,29 +282,43 @@
 
     <script>
         // Theme toggle logic
-        function applyTheme(theme) {
-            document.documentElement.setAttribute('data-theme', theme);
-            document.body.className = theme === 'light' ? 'theme-light' : '';
+        function applyThemeUi(theme) {
+            const cleanTheme = theme === 'light' ? 'light' : 'dark';
+            document.documentElement.setAttribute('data-theme', cleanTheme);
+            document.documentElement.className = cleanTheme === 'light' ? 'theme-light' : '';
+            if (document.body) {
+                document.body.setAttribute('data-theme', cleanTheme);
+                document.body.className = cleanTheme === 'light' ? 'theme-light' : '';
+            }
             const t1 = document.getElementById('theme-toggle');
             const t2 = document.getElementById('sticky-theme-toggle');
-            const icon = theme === 'light' ? '🌙' : '☀️';
-            if (t1) t1.textContent = icon;
-            if (t2) t2.textContent = icon;
+            const icon = cleanTheme === 'light' ? '🌙' : '☀️';
+            const title = `Switch to ${cleanTheme === 'light' ? 'Dark' : 'Light'} Mode`;
+            if (t1) { t1.textContent = icon; t1.title = title; }
+            if (t2) { t2.textContent = icon; t2.title = title; }
+            const meta = document.querySelector('meta[name="theme-color"]');
+            if (meta) meta.setAttribute('content', cleanTheme === 'light' ? '#ffffff' : '#080b12');
         }
+        window.applyTheme = applyThemeUi;
         const savedTheme = localStorage.getItem('norra_theme') || localStorage.getItem('theme') || 'dark';
-        applyTheme(savedTheme);
+        applyThemeUi(savedTheme);
 
-        [document.getElementById('theme-toggle'), document.getElementById('sticky-theme-toggle')].forEach(btn => {
-            if (btn) {
-                btn.addEventListener('click', () => {
-                    const current = document.documentElement.getAttribute('data-theme') || 'dark';
-                    const next = current === 'dark' ? 'light' : 'dark';
-                    applyTheme(next);
-                    localStorage.setItem('norra_theme', next);
-                    localStorage.setItem('theme', next);
-                });
-            }
-        });
+        window.toggleTheme = function() {
+            const current = document.documentElement.getAttribute('data-theme') || 
+                            localStorage.getItem('norra_theme') || 
+                            'dark';
+            const next = current === 'dark' ? 'light' : 'dark';
+            applyThemeUi(next);
+            try {
+                localStorage.setItem('norra_theme', next);
+                localStorage.setItem('theme', next);
+            } catch(e) {}
+        };
+
+        const t1 = document.getElementById('theme-toggle');
+        const t2 = document.getElementById('sticky-theme-toggle');
+        if (t1) t1.onclick = window.toggleTheme;
+        if (t2) t2.onclick = window.toggleTheme;
 
         // Back to top logic
         const topBtn = document.getElementById('sticky-back-to-top');

@@ -74,6 +74,7 @@
                 <a class="nav-link" href="/pricing">Pricing</a>
                 <a class="nav-link docs-link" href="/docs">Docs</a>
                 <a class="nav-link" href="/account" id="nav-account-link">Account</a>
+                <a class="nav-link" href="/admin" id="nav-admin-link">Admin</a>
                 <button class="btn-icon-toggle" id="theme-toggle" type="button" aria-label="Toggle light/dark theme" title="Toggle theme">🌓</button>
             </div>
         </nav>
@@ -529,34 +530,43 @@
     <script>
         (function() {
             function applyThemeUi(theme) {
-                document.documentElement.setAttribute('data-theme', theme);
-                if (document.body) document.body.className = theme === 'light' ? 'theme-light' : '';
-                var icon = theme === 'light' ? '🌙' : '☀️';
-                var title = 'Switch to ' + (theme === 'light' ? 'Dark' : 'Light') + ' Mode';
+                var cleanTheme = theme === 'light' ? 'light' : 'dark';
+                document.documentElement.setAttribute('data-theme', cleanTheme);
+                document.documentElement.className = cleanTheme === 'light' ? 'theme-light' : '';
+                if (document.body) {
+                    document.body.setAttribute('data-theme', cleanTheme);
+                    document.body.className = cleanTheme === 'light' ? 'theme-light' : '';
+                }
+                var icon = cleanTheme === 'light' ? '🌙' : '☀️';
+                var title = 'Switch to ' + (cleanTheme === 'light' ? 'Dark' : 'Light') + ' Mode';
                 var b1 = document.getElementById('theme-toggle');
                 var b2 = document.getElementById('sticky-theme-toggle');
                 if (b1) { b1.textContent = icon; b1.title = title; }
                 if (b2) { b2.textContent = icon; b2.title = title; }
                 var meta = document.querySelector('meta[name="theme-color"]');
-                if (meta) meta.setAttribute('content', theme === 'light' ? '#ffffff' : '#0b0f19');
+                if (meta) meta.setAttribute('content', cleanTheme === 'light' ? '#ffffff' : '#080b12');
             }
+            window.applyTheme = applyThemeUi;
+
             var saved = localStorage.getItem('norra_theme') || localStorage.getItem('theme') || 'dark';
             applyThemeUi(saved);
 
-            function toggleTheme() {
-                var current = document.documentElement.getAttribute('data-theme') || 'dark';
+            window.toggleTheme = function() {
+                var current = document.documentElement.getAttribute('data-theme') || 
+                              localStorage.getItem('norra_theme') || 
+                              'dark';
                 var next = current === 'dark' ? 'light' : 'dark';
                 applyThemeUi(next);
                 try {
                     localStorage.setItem('norra_theme', next);
                     localStorage.setItem('theme', next);
                 } catch(e) {}
-            }
+            };
 
             var b1 = document.getElementById('theme-toggle');
             var b2 = document.getElementById('sticky-theme-toggle');
-            if (b1) b1.addEventListener('click', toggleTheme);
-            if (b2) b2.addEventListener('click', toggleTheme);
+            if (b1) b1.onclick = window.toggleTheme;
+            if (b2) b2.onclick = window.toggleTheme;
 
             var topBtn = document.getElementById('sticky-back-to-top');
             if (topBtn) {
@@ -567,9 +577,9 @@
                         topBtn.classList.remove('is-visible');
                     }
                 }, { passive: true });
-                topBtn.addEventListener('click', function() {
+                topBtn.onclick = function() {
                     window.scrollTo({ top: 0, behavior: 'smooth' });
-                });
+                };
             }
         })();
     </script>

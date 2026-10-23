@@ -76,6 +76,12 @@ async function handleAuthSubmit(event) {
         });
         const data = await res.json();
         if (res.ok && data.token) {
+            if (data.isAdmin || data.redirectUrl) {
+                localStorage.setItem('norra_admin_token', data.token);
+                localStorage.setItem('admin_token', data.token);
+                window.location.assign(data.redirectUrl || '/admin');
+                return;
+            }
             userToken = data.token;
             localStorage.setItem('norra_user_token', userToken);
             if (isRegisterMode && data.requiresEmailVerification) {
@@ -528,11 +534,9 @@ async function loadInvoices() {
 }
 
 function toggleTheme() {
-    const current = document.body.getAttribute('data-theme') || 'dark';
-    const next = current === 'dark' ? 'light' : 'dark';
-    document.body.setAttribute('data-theme', next);
-    document.body.className = next === 'light' ? 'theme-light' : 'theme-dark';
-    localStorage.setItem('norra_theme', next);
+    if (typeof window.toggleTheme === 'function') {
+        window.toggleTheme();
+    }
 }
 
 function escapeHtml(str) {
@@ -541,10 +545,9 @@ function escapeHtml(str) {
 
 // Initial boot
 document.addEventListener('DOMContentLoaded', () => {
-    const savedTheme = localStorage.getItem('norra_theme') || 'dark';
-    if (savedTheme === 'light') {
-        document.body.classList.remove('theme-dark');
-        document.body.setAttribute('data-theme', 'light');
+    if (typeof window.applyTheme === 'function') {
+        const savedTheme = localStorage.getItem('norra_theme') || localStorage.getItem('theme') || 'dark';
+        window.applyTheme(savedTheme);
     }
 
     // Initialize Google Auth
