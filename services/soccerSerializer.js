@@ -424,8 +424,10 @@ function synthesizeMatchTelemetry(match, summary = {}) {
 
     const homeSaves = Math.max(0, awayShotsOn - awayScore);
     const awaySaves = Math.max(0, homeShotsOn - homeScore);
+    const homeXg = parseFloat(((homeShotsOn * 0.32) + (homeOff * 0.05) + (homeScore * 0.35)).toFixed(2));
+    const awayXg = parseFloat(((awayShotsOn * 0.32) + (awayOff * 0.05) + (awayScore * 0.35)).toFixed(2));
 
-    const makeStats = (poss, onT, offT, tot, cor, fls, yel, red, sav) => [
+    const makeStats = (poss, onT, offT, tot, cor, fls, yel, red, sav, xg) => [
         { name: 'possessionPct', displayName: 'Possession', displayValue: `${poss}%`, value: poss },
         { name: 'shotsOnTarget', displayName: 'Shots on Target', displayValue: `${onT}`, value: onT },
         { name: 'shotsOffTarget', displayName: 'Shots off Target', displayValue: `${offT}`, value: offT },
@@ -434,7 +436,8 @@ function synthesizeMatchTelemetry(match, summary = {}) {
         { name: 'foulsCommitted', displayName: 'Fouls', displayValue: `${fls}`, value: fls },
         { name: 'yellowCards', displayName: 'Yellow Cards', displayValue: `${yel}`, value: yel },
         { name: 'redCards', displayName: 'Red Cards', displayValue: `${red}`, value: red },
-        { name: 'saves', displayName: 'Goalkeeper Saves', displayValue: `${sav}`, value: sav }
+        { name: 'saves', displayName: 'Goalkeeper Saves', displayValue: `${sav}`, value: sav },
+        { name: 'expectedGoals', displayName: 'Expected Goals (xG)', displayValue: `${xg ?? 0}`, value: xg ?? 0 }
     ];
 
     return {
@@ -444,13 +447,13 @@ function synthesizeMatchTelemetry(match, summary = {}) {
                 id: 'home',
                 homeAway: 'home',
                 team: homeComp.team,
-                statistics: makeStats(homePossession, homeShotsOn, homeOff, homeTotal, homeCorners, homeFoulsTotal, homeYellows, homeReds, homeSaves)
+                statistics: makeStats(homePossession, homeShotsOn, homeOff, homeTotal, homeCorners, homeFoulsTotal, homeYellows, homeReds, homeSaves, homeXg)
             },
             {
                 id: 'away',
                 homeAway: 'away',
                 team: awayComp.team,
-                statistics: makeStats(awayPossession, awayShotsOn, awayOff, awayTotal, awayCorners, awayFoulsTotal, awayYellows, awayReds, awaySaves)
+                statistics: makeStats(awayPossession, awayShotsOn, awayOff, awayTotal, awayCorners, awayFoulsTotal, awayYellows, awayReds, awaySaves, awayXg)
             }
         ]
     };

@@ -262,6 +262,7 @@
                     <li><a href="#ep-match">Match Summary &amp; Plays</a></li>
                     <li><a href="#ep-h2h">Head-to-Head (H2H)</a></li>
                     <li><a href="#ep-teams">Team Profiles</a></li>
+                    <li><a href="#ep-training">AI Training Dataset (xG &amp; Telemetry)</a></li>
                 </ul>
             </div>
             <div class="docs-nav-group">
@@ -516,6 +517,60 @@ for lg in leagues:
     "fromProvider": "sportybet",
     "toProvider": "bet9ja"
   }'</code></pre>
+                </div>
+            </section>
+
+            <!-- Norra AI Training Dataset -->
+            <section class="endpoint-card" id="ep-training">
+                <div class="endpoint-header">
+                    <span class="http-method get">GET</span>
+                    <span class="endpoint-path">/api/v1/football/training-data</span>
+                </div>
+                <p class="endpoint-desc">
+                    Machine learning training pipeline endpoint. Streams normalized, feature-engineered in-game match telemetry, live/historical xG (expected goals), possession, shots, fouls, and differential metrics for pandas DataFrames and AI model training.
+                </p>
+                <table class="params-table">
+                    <thead>
+                        <tr>
+                            <th>Parameter</th>
+                            <th>Type</th>
+                            <th>Description</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td><code>league</code></td>
+                            <td>string (optional)</td>
+                            <td>Filter by competition slug (e.g. <code>eng.1</code>, <code>esp.1</code>, <code>all</code>). Default: <code>all</code>.</td>
+                        </tr>
+                        <tr>
+                            <td><code>state</code></td>
+                            <td>string (optional)</td>
+                            <td>Match state: <code>post</code> (finished matches for outcome training), <code>in</code> (live in-game dynamics), or <code>all</code>.</td>
+                        </tr>
+                        <tr>
+                            <td><code>limit</code></td>
+                            <td>integer (optional)</td>
+                            <td>Max number of samples to retrieve (1 to 1000). Default: <code>100</code>.</td>
+                        </tr>
+                        <tr>
+                            <td><code>format</code></td>
+                            <td>string (optional)</td>
+                            <td>Output format: <code>json</code> (default) or <code>jsonl</code> (NDJSON streaming for pandas &amp; PyTorch).</td>
+                        </tr>
+                    </tbody>
+                </table>
+                <div class="code-snippet-box">
+                    <div class="code-snippet-header">
+                        <span>Stream Dataset &bull; Python / pandas</span>
+                        <span>Python 3</span>
+                    </div>
+                    <pre><code>import pandas as pd
+
+# Stream live in-game training dataset directly into pandas DataFrame
+url = "https://scores.mynorra.xyz/api/v1/football/training-data?format=jsonl&limit=1000"
+df = pd.read_json(url, lines=True)
+print(df[['homeTeam', 'awayTeam', 'outcome', 'features']].head())</code></pre>
                 </div>
             </section>
         </main>

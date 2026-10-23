@@ -361,6 +361,7 @@ async function saveInfeedSettings() {
 async function triggerInfeedSync(type = 'infeed') {
     const indicator = document.getElementById('sync-status-indicator');
     const btnInfeed = document.getElementById('btn-sync-infeed');
+    const btnStats = document.getElementById('btn-sync-stats');
     const btnAll = document.getElementById('btn-sync-all');
 
     if (indicator) {
@@ -368,9 +369,14 @@ async function triggerInfeedSync(type = 'infeed') {
         indicator.style.background = 'rgba(37, 99, 235, 0.1)';
         indicator.style.color = 'var(--color-primary)';
         indicator.style.border = '1px solid rgba(37, 99, 235, 0.3)';
-        indicator.innerHTML = '<span class="loader" style="display:inline-block; width:14px; height:14px; margin-right:8px; vertical-align:middle;"></span> Synchronizing live games infeed across global feeds...';
+        if (type === 'stats') {
+            indicator.innerHTML = '<span class="loader" style="display:inline-block; width:14px; height:14px; margin-right:8px; vertical-align:middle;"></span> Ingesting in-game telemetry & incidents across all worldwide leagues for Norra AI training...';
+        } else {
+            indicator.innerHTML = '<span class="loader" style="display:inline-block; width:14px; height:14px; margin-right:8px; vertical-align:middle;"></span> Synchronizing live games infeed across global feeds...';
+        }
     }
     if (btnInfeed) btnInfeed.disabled = true;
+    if (btnStats) btnStats.disabled = true;
     if (btnAll) btnAll.disabled = true;
 
     try {
@@ -388,7 +394,7 @@ async function triggerInfeedSync(type = 'infeed') {
                 indicator.style.background = 'rgba(16, 185, 129, 0.1)';
                 indicator.style.color = '#10b981';
                 indicator.style.border = '1px solid rgba(16, 185, 129, 0.3)';
-                indicator.innerHTML = `✓ ${data.message} &bull; Total matches: <strong>${data.stats?.matchesCount || 0}</strong> | In-Play live: <strong>${data.stats?.inPlayCount || 0}</strong> | Active competitions: <strong>${data.stats?.leaguesCount || 0}</strong>`;
+                indicator.innerHTML = `✓ ${data.message} &bull; Total matches: <strong>${data.stats?.matchesCount || 0}</strong> | With in-game stats: <strong>${data.stats?.withStatsCount || 0}</strong> | In-Play live: <strong>${data.stats?.inPlayCount || 0}</strong> | Active competitions: <strong>${data.stats?.leaguesCount || 0}</strong>`;
             }
             loadStats();
         } else {
@@ -408,6 +414,7 @@ async function triggerInfeedSync(type = 'infeed') {
         }
     } finally {
         if (btnInfeed) btnInfeed.disabled = false;
+        if (btnStats) btnStats.disabled = false;
         if (btnAll) btnAll.disabled = false;
     }
 }

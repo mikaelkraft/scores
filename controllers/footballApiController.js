@@ -900,6 +900,177 @@ router.get('/predictions-context/:eventId', async (req, res) => {
 });
 
 /**
+ * GET /api/v1/football/training-data
+ * GET /api/v1/football/analytics/training-data
+ * High-performance Norra AI Training Dataset API.
+ * Streams normalized, feature-engineered in-game telemetry and match outcomes
+ * for machine learning pipelines, pandas DataFrames, and AI model training.
+ */
+router.get(['/training-data', '/analytics/training-data'], optionalApiKeyAuth, async (req, res) => {
+    try {
+        const leagueSlug = req.query.league ? String(req.query.league).trim().toLowerCase() : 'all';
+        const stateParam = req.query.state ? String(req.query.state).trim().toLowerCase() : 'all';
+        const limit = Math.min(1000, Math.max(1, parseInt(req.query.limit, 10) || 100));
+        const format = String(req.query.format || 'json').trim().toLowerCase();
+        const minStats = req.query.minStats !== 'false';
+
+        const filter = {};
+        if (leagueSlug && leagueSlug !== 'all') {
+            filter.league_slug = leagueSlug;
+        }
+        if (stateParam && stateParam !== 'all') {
+            filter['status.state'] = stateParam;
+        } else {
+            filter['status.state'] = { $in: ['post', 'in'] };
+        }
+
+        if (minStats) {
+            filter['home.stats'] = { $exists: true, $ne: null };
+        }
+
+        const matches = await SoccerMatch.find(filter)
+            .sort({ date: -1 })
+            .limit(limit)
+            .lean();
+
+        const samples = matches.map(m => {
+            const hStats = m.home?.stats instanceof Map ? Object.fromEntries(m.home.stats) : (m.home?.stats || {});
+            const aStats = m.away?.stats instanceof Map ? Object.fromEntries(m.away.stats) : (m.away?.stats || {});
+
+            const hScore = Number(m.home?.score) || 0;
+            const aScore = Number(m.away?.score) || 0;
+            let outcome = 'draw';
+            if (hScore > aScore) outcome = 'home_win';
+            else if (aScore > hScore) outcome = 'away_win';
+
+            const hPoss = Number(hStats.possessionPct) || 50;
+            const aPoss = Number(aStats.possessionPct) || (100 - hPoss);
+            const hShots = Number(hStats.totalShots) || 0;
+            const aShots = Number(aStats.totalShots) || 0;
+            const hShotsOn = Number(hStats.shotsOnTarget) || 0;
+            const aShotsOn = Number(aStats.shotsOnTarget) || 0;
+            const hCorners = Number(hStats.wonCorners) || 0;
+            const aCorners = Number(aStats.wonCorners) || 0;
+            const hFouls = Number(hStats.foulsCommitted ?? hStats.foulsCommited) || 0;
+            const aFouls = Number(aStats.foulsCommitted ?? aStats.foulsCommited) || 0;
+            const hYellows = Number(hStats.yellowCards) || 0;
+            const aYellows = Number(aStats.yellowCards) || 0;
+            const hReds = Number(hStats.redCards) || 0;
+            const aReds = Number(aStats.redCards) || 0;
+            const hSaves = Number(hStats.saves) || 0;
+            const aSaves = Number(aStats.saves) || 0;
+            const hXg = Number(hStats.expectedGoals) || (parseFloat(((hShotsOn * 0.32) + (Math.max(0, hShots - hShotsOn) * 0.05) + (hScore * 0.35)).toFixed(2)));
+            const aXg = Number(aStats.expectedGoals) || (parseFloat(((aShotsOn * 0.32) + (Math.max(0, aShots - aShotsOn) * 0.05) + (aScore * 0.35)).toFixed(2)));
+
+            const keyEvents = Array.isArray(m.key_events) ? m.key_events : [];
+            const goalEvents = keyEvents.filter(k => k.scoringPlay || String(k.type?.text || k.text || '').toLowerCase().includes('goal')).map(k => ({
+                minute: k.clockValue || (parseInt(k.clock, 10) || 0),
+                clock: String(k.clock || ''),
+                side: k.team?.side || 'unknown',
+                text: k.text || ''
+            }));
+
+            const redCardEvents = keyEvents.filter(k => k.redCard || String(k.type?.text || k.text || '').toLowerCase().includes('red')).map(k => ({
+                minute: k.clockValue || (parseInt(k.clock, 10) || 0),
+                clock: String(k.clock || ''),
+                side: k.team?.side || 'unknown',
+                text: k.text || ''
+            }));
+
+            return {
+                eventId: m.source?.event_id,
+                provider: m.source?.provider || 'upstream',
+                leagueSlug: m.league_slug,
+                date: m.date,
+                scoreboardDate: m.scoreboard_date,
+                homeTeam: {
+                    id: m.home?.source_id,
+                    name: m.home?.name || m.home?.display_name,
+                    score: hScore
+                },
+                awayTeam: {
+                    id: m.away?.source_id,
+                    name: m.away?.name || m.away?.display_name,
+                    score: aScore
+                },
+                status: {
+                    state: m.status?.state,
+                    detail: m.status?.detail || m.status?.clock,
+                    completed: Boolean(m.status?.completed)
+                },
+                outcome: {
+                    winner: outcome,
+                    totalGoals: hScore + aScore,
+                    goalDifferential: hScore - aScore,
+                    bothTeamsScored: hScore > 0 && aScore > 0
+                },
+                features: {
+                    possessionPctHome: hPoss,
+                    possessionPctAway: aPoss,
+                    possessionDifferential: hPoss - aPoss,
+                    shotsHome: hShots,
+                    shotsAway: aShots,
+                    shotsDifferential: hShots - aShots,
+                    shotsOnTargetHome: hShotsOn,
+                    shotsOnTargetAway: aShotsOn,
+                    shotsOnTargetDifferential: hShotsOn - aShotsOn,
+                    shotAccuracyHome: hShots > 0 ? parseFloat((hShotsOn / hShots).toFixed(3)) : 0,
+                    shotAccuracyAway: aShots > 0 ? parseFloat((aShotsOn / aShots).toFixed(3)) : 0,
+                    cornersHome: hCorners,
+                    cornersAway: aCorners,
+                    cornersDifferential: hCorners - aCorners,
+                    foulsHome: hFouls,
+                    foulsAway: aFouls,
+                    foulsDifferential: hFouls - aFouls,
+                    yellowCardsHome: hYellows,
+                    yellowCardsAway: aYellows,
+                    redCardsHome: hReds,
+                    redCardsAway: aReds,
+                    goalkeeperSavesHome: hSaves,
+                    goalkeeperSavesAway: aSaves,
+                    expectedGoalsHome: hXg,
+                    expectedGoalsAway: aXg,
+                    expectedGoalsDifferential: parseFloat((hXg - aXg).toFixed(2))
+                },
+                rawStats: {
+                    home: hStats,
+                    away: aStats
+                },
+                timelineSummary: {
+                    totalIncidents: keyEvents.length,
+                    goals: goalEvents,
+                    redCards: redCardEvents
+                }
+            };
+        });
+
+        res.set('Cache-Control', 'public, max-age=60');
+
+        if (format === 'jsonl' || format === 'ndjson') {
+            res.setHeader('Content-Type', 'application/x-ndjson; charset=utf-8');
+            for (const sample of samples) {
+                res.write(JSON.stringify(sample) + '\n');
+            }
+            return res.end();
+        }
+
+        return res.json({
+            status: 'success',
+            meta: {
+                totalSamples: samples.length,
+                league: leagueSlug,
+                state: stateParam,
+                generatedAt: new Date().toISOString()
+            },
+            samples
+        });
+    } catch (err) {
+        console.error('Error generating training dataset:', err.message);
+        return res.status(500).json({ error: 'Failed to generate training data: ' + err.message });
+    }
+});
+
+/**
  * GET /api/v1/football/h2h/:team1Id/:team2Id
  * Direct Head-to-Head analytics between any two team IDs.
  */

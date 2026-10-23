@@ -350,23 +350,34 @@ app.listen(PORT, () => {
         }
     }, 3000);
 
-    // Fast in-play scoreboard and live match infeed refresh every 45 seconds (ESPN + LiveScore worldwide)
-    const { syncLiveScoreInPlay } = require('./services/soccerSyncService');
+    // Fast in-play scoreboard, match infeed, and in-game telemetry refresh every 45 seconds (ESPN + LiveScore worldwide)
+    const { syncLiveScoreInPlay, syncInGameStats } = require('./services/soccerSyncService');
     const liveScoreInterval = setInterval(() => {
         Promise.allSettled([
             syncLiveScoreboards(),
             syncLiveScoreInPlay()
-        ]).catch(e => console.warn('Live infeed sync notice:', e.message));
+        ]).then(() => {
+            // Continuously update live in-play stats for all ongoing matches
+            return syncInGameStats({ limit: 40, onlyLive: true });
+        }).catch(e => console.warn('Live infeed sync notice:', e.message));
     }, 45 * 1000);
     if (liveScoreInterval && typeof liveScoreInterval.unref === 'function') {
         liveScoreInterval.unref();
     }
 
-    // Comprehensive schedule and table refresh every 15 minutes
+    // Comprehensive schedule, standings, and completed match in-game telemetry refresh every 15 minutes
     const syncInterval = setInterval(() => {
-        syncAllLeagues().catch(e => console.warn('Interval sync notice:', e.message));
+        Promise.allSettled([
+            syncAllLeagues(),
+            syncInGameStats({ limit: 120, onlyLive: false })
+        ]).catch(e => console.warn('Interval sync notice:', e.message));
     }, 15 * 60 * 1000);
     if (syncInterval && typeof syncInterval.unref === 'function') {
         syncInterval.unref();
     }
+
+    // Initial background in-game stats backfill after boot
+    setTimeout(() => {
+        syncInGameStats({ limit: 60, onlyLive: false }).catch(() => {});
+    }, 8000);
 });

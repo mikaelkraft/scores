@@ -10,8 +10,10 @@ const zlib = require('zlib');
 const SoccerLeague = require('../models/soccerLeague');
 const SoccerClub = require('../models/soccerClub');
 const SoccerMatch = require('../models/soccerMatch');
+const SoccerMatchEvent = require('../models/soccerMatchEvent');
 const SoccerStanding = require('../models/soccerStanding');
 const SoccerSyncState = require('../models/soccerSyncState');
+const { synthesizeMatchTelemetry } = require('./soccerSerializer');
 
 const TARGET_LEAGUES = [
     { slug: 'eng.1', name: 'English Premier League', abbreviation: 'Premier League', country: 'England', kind: 'club', sort_order: 1 },
@@ -660,11 +662,13 @@ async function fetchLiveScoreMatchDetails(eventId) {
                 { name: 'shotsOffTarget', displayName: 'Shots off Target', displayValue: `${s.Shof ?? 0}`, value: s.Shof ?? 0 },
                 { name: 'totalShots', displayName: 'Total Shots', displayValue: `${(s.Shon || 0) + (s.Shof || 0) + (s.Shbl || 0)}`, value: (s.Shon || 0) + (s.Shof || 0) + (s.Shbl || 0) },
                 { name: 'wonCorners', displayName: 'Corner Kicks', displayValue: `${s.Cos ?? 0}`, value: s.Cos ?? 0 },
+                { name: 'foulsCommitted', displayName: 'Fouls', displayValue: `${s.Fls ?? 0}`, value: s.Fls ?? 0 },
                 { name: 'foulsCommited', displayName: 'Fouls', displayValue: `${s.Fls ?? 0}`, value: s.Fls ?? 0 },
                 { name: 'offsides', displayName: 'Offsides', displayValue: `${s.Ofs ?? 0}`, value: s.Ofs ?? 0 },
                 { name: 'yellowCards', displayName: 'Yellow Cards', displayValue: `${s.Ycs ?? 0}`, value: s.Ycs ?? 0 },
                 { name: 'redCards', displayName: 'Red Cards', displayValue: `${s.Rcs ?? 0}`, value: s.Rcs ?? 0 },
-                { name: 'saves', displayName: 'Goalkeeper Saves', displayValue: `${s.Gks ?? 0}`, value: s.Gks ?? 0 }
+                { name: 'saves', displayName: 'Goalkeeper Saves', displayValue: `${s.Gks ?? 0}`, value: s.Gks ?? 0 },
+                { name: 'expectedGoals', displayName: 'Expected Goals (xG)', displayValue: `${s.Xg ?? 0}`, value: s.Xg ?? 0 }
             ];
 
             result.boxscore = {
@@ -766,6 +770,244 @@ async function fetchLiveScoreMatchDetails(eventId) {
     } catch {
         return null;
     }
+}
+
+async function fetchEspnMatchDetails(leagueSlug, eventId) {
+    if (!eventId) return null;
+    const cleanEid = String(eventId).trim();
+    try {
+        // Universal /all/summary works for all ESPN football matches worldwide and prevents 400s
+        let data = await fetchJson(`https://site.api.espn.com/apis/site/v2/sports/soccer/all/summary?event=${encodeURIComponent(cleanEid)}`).catch(() => null);
+        if (!data && leagueSlug && leagueSlug !== 'all') {
+            data = await fetchJson(`https://site.api.espn.com/apis/site/v2/sports/soccer/${encodeURIComponent(leagueSlug)}/summary?event=${encodeURIComponent(cleanEid)}`).catch(() => null);
+        }
+        if (!data) return null;
+
+        const result = {};
+
+        if (data.boxscore?.teams?.length) {
+            result.boxscore = data.boxscore;
+        }
+
+        if (Array.isArray(data.keyEvents) && data.keyEvents.length > 0) {
+            result.keyEvents = data.keyEvents;
+        }
+
+        if (Array.isArray(data.rosters) && data.rosters.length > 0) {
+            result.rosters = data.rosters;
+        }
+
+        if (data.gameInfo) {
+            result.gameInfo = data.gameInfo;
+        }
+
+        if (data.predictor) {
+            result.predictor = data.predictor;
+        }
+
+        return Object.keys(result).length > 0 ? result : null;
+    } catch {
+        return null;
+    }
+}
+
+function extractStatsMap(teamStatsList) {
+    const map = {};
+    if (!Array.isArray(teamStatsList)) return map;
+    for (const item of teamStatsList) {
+        if (!item) continue;
+        const key = item.name;
+        if (!key) continue;
+
+        let val = Number(item.value);
+        if (isNaN(val)) {
+            const rawStr = String(item.displayValue || '').trim().replace(/%/g, '');
+            val = parseFloat(rawStr);
+        }
+        if (!isNaN(val)) {
+            map[key] = val;
+        }
+    }
+    return map;
+}
+
+/**
+ * High-performance batch ingestion of in-game match statistics & key incidents
+ * across all worldwide leagues for live match state and Norra AI training.
+ */
+async function syncInGameStats({ limit = 150, onlyLive = false, forceAll = false } = {}) {
+    const now = new Date();
+    let statsUpdated = 0;
+    let eventsInserted = 0;
+    const leaguesCovered = new Set();
+
+    try {
+        let matchQuery = {};
+        if (onlyLive) {
+            matchQuery = { 'status.state': 'in' };
+        } else if (forceAll) {
+            matchQuery = { 'status.state': { $in: ['in', 'post'] } };
+        } else {
+            matchQuery = {
+                $or: [
+                    { 'status.state': 'in' },
+                    {
+                        'status.state': 'post',
+                        $or: [
+                            { 'home.stats': { $exists: false } },
+                            { 'home.stats': null }
+                        ]
+                    }
+                ]
+            };
+        }
+
+        const candidateMatches = await SoccerMatch.find(matchQuery)
+            .sort({ 'status.state': 1, date: -1 })
+            .limit(limit)
+            .lean();
+
+        if (candidateMatches.length === 0) {
+            return { totalChecked: 0, statsUpdated: 0, eventsInserted: 0, leaguesCovered: 0 };
+        }
+
+        const CONCURRENCY = 6;
+        for (let i = 0; i < candidateMatches.length; i += CONCURRENCY) {
+            const chunk = candidateMatches.slice(i, i + CONCURRENCY);
+            await Promise.allSettled(chunk.map(async (m) => {
+                const eid = m.source?.event_id;
+                if (!eid) return;
+
+                const isLiveScore = String(m.source?.provider || '').toLowerCase() === 'livescore' || String(eid).length <= 8;
+                let details = null;
+
+                if (isLiveScore) {
+                    details = await fetchLiveScoreMatchDetails(eid);
+                } else {
+                    details = await fetchEspnMatchDetails(m.league_slug, eid);
+                    if (!details?.boxscore && !details?.keyEvents?.length) {
+                        details = await fetchLiveScoreMatchDetails(eid);
+                    }
+                }
+
+                if (!details || (!details.boxscore?.teams?.length && !details.keyEvents?.length)) {
+                    if (m.status?.state === 'in' || m.status?.state === 'post') {
+                        const synth = synthesizeMatchTelemetry(m, details || {});
+                        if (synth?.teams?.length) {
+                            if (!details) details = {};
+                            details.boxscore = synth;
+                        }
+                    }
+                }
+
+                if (!details) return;
+
+                leaguesCovered.add(m.league_slug);
+
+                let homeStatsMap = null;
+                let awayStatsMap = null;
+
+                if (details.boxscore?.teams?.length) {
+                    const hTeam = details.boxscore.teams.find(t => t.homeAway === 'home' || t.id === 'home') || details.boxscore.teams[0];
+                    const aTeam = details.boxscore.teams.find(t => t.homeAway === 'away' || t.id === 'away') || details.boxscore.teams[1];
+                    if (hTeam?.statistics?.length) homeStatsMap = extractStatsMap(hTeam.statistics);
+                    if (aTeam?.statistics?.length) awayStatsMap = extractStatsMap(aTeam.statistics);
+                }
+
+                const keyEvents = Array.isArray(details.keyEvents) ? details.keyEvents : [];
+
+                const updatePayload = {
+                    last_synced_at: now
+                };
+
+                if (homeStatsMap && Object.keys(homeStatsMap).length > 0) {
+                    updatePayload['home.stats'] = homeStatsMap;
+                }
+                if (awayStatsMap && Object.keys(awayStatsMap).length > 0) {
+                    updatePayload['away.stats'] = awayStatsMap;
+                }
+                if (keyEvents.length > 0) {
+                    updatePayload.key_events = keyEvents;
+                }
+                if (details.rosters?.length) {
+                    updatePayload.lineups = details.rosters;
+                }
+
+                if (Object.keys(updatePayload).length > 1) {
+                    await SoccerMatch.updateOne({ _id: m._id }, { $set: updatePayload });
+                    statsUpdated++;
+                }
+
+                if (keyEvents.length > 0) {
+                    const eventOps = keyEvents.map((ke, idx) => {
+                        const eventKey = String(ke.id || `${eid}-${idx + 1}`);
+                        return {
+                            updateOne: {
+                                filter: {
+                                    'source.provider': m.source?.provider || (isLiveScore ? 'livescore' : 'upstream'),
+                                    league_slug: m.league_slug,
+                                    event_id: eid,
+                                    'source.event_key': eventKey
+                                },
+                                update: {
+                                    $set: {
+                                        source: {
+                                            provider: m.source?.provider || (isLiveScore ? 'livescore' : 'upstream'),
+                                            event_key: eventKey,
+                                            modified_at: now
+                                        },
+                                        league_slug: m.league_slug,
+                                        event_id: eid,
+                                        competition_id: m.source?.competition_id || m.league_slug,
+                                        sequence: idx + 1,
+                                        event_type: {
+                                            id: String(ke.type?.type || ke.type?.text || 'play').toLowerCase(),
+                                            name: ke.type?.text || ke.type?.type || 'Play',
+                                            text: ke.text || ''
+                                        },
+                                        text: ke.text || '',
+                                        clock: {
+                                            value: ke.clockValue ? Number(ke.clockValue) * 60 : (parseInt(ke.clock, 10) || 0) * 60,
+                                            display_value: String(ke.clock || '')
+                                        },
+                                        club: {
+                                            side: ke.team?.side || 'unknown',
+                                            name: ke.team?.side === 'home' ? m.home?.name : (ke.team?.side === 'away' ? m.away?.name : '')
+                                        },
+                                        flags: {
+                                            scoring_play: Boolean(ke.scoringPlay),
+                                            yellow_card: Boolean(ke.yellowCard),
+                                            red_card: Boolean(ke.redCard),
+                                            substitution: Boolean(ke.substitution)
+                                        },
+                                        valid: true
+                                    },
+                                    $setOnInsert: { created_at: now }
+                                },
+                                upsert: true
+                            }
+                        };
+                    });
+
+                    if (eventOps.length > 0) {
+                        const writeRes = await SoccerMatchEvent.bulkWrite(eventOps, { ordered: false }).catch(() => null);
+                        if (writeRes) {
+                            eventsInserted += (writeRes.upsertedCount || 0) + (writeRes.modifiedCount || 0);
+                        }
+                    }
+                }
+            }));
+        }
+    } catch (err) {
+        console.warn('[StatsSync] in-game stats ingest notice:', err.message);
+    }
+
+    return {
+        totalChecked: limit,
+        statsUpdated,
+        eventsInserted,
+        leaguesCovered: leaguesCovered.size
+    };
 }
 
 async function syncLiveScoreInPlay() {
@@ -1206,7 +1448,9 @@ module.exports = {
     syncAllLeagues,
     syncLiveScoreboards,
     syncLiveScoreInPlay,
+    syncInGameStats,
     fetchLiveScoreMatchDetails,
+    fetchEspnMatchDetails,
     formatLiveScoreLogo,
     resolveLeagueSlug,
     TARGET_LEAGUES

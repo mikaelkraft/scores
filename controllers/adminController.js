@@ -300,24 +300,33 @@ router.get('/api/admin/stats', requireAdmin, async (req, res) => {
  */
 router.post('/api/admin/sync', requireAdmin, async (req, res) => {
     try {
-        const { syncAllLeagues, syncLiveScoreboards, syncLiveScoreInPlay } = require('../services/soccerSyncService');
+        const { syncAllLeagues, syncLiveScoreboards, syncLiveScoreInPlay, syncInGameStats } = require('../services/soccerSyncService');
         const SoccerMatch = require('../models/soccerMatch');
         const SoccerLeague = require('../models/soccerLeague');
 
         const syncType = req.body?.type || 'all';
         let message = '';
-        if (syncType === 'infeed' || syncType === 'live') {
+        let statsResult = null;
+
+        if (syncType === 'stats') {
+            const limit = Math.min(500, Math.max(10, parseInt(req.body?.limit, 10) || 200));
+            statsResult = await syncInGameStats({ limit, forceAll: true });
+            message = `In-game statistics ingested for ${statsResult.statsUpdated} matches across ${statsResult.leaguesCovered} leagues (${statsResult.eventsInserted} key incidents recorded for Norra AI training).`;
+        } else if (syncType === 'infeed' || syncType === 'live') {
             await Promise.allSettled([syncLiveScoreboards(), syncLiveScoreInPlay()]);
-            message = 'Real-time live infeed sync completed successfully.';
+            statsResult = await syncInGameStats({ limit: 40, onlyLive: true });
+            message = `Real-time live infeed sync completed successfully (${statsResult.statsUpdated} in-play matches updated with live stats).`;
         } else {
             await Promise.allSettled([syncAllLeagues(), syncLiveScoreboards(), syncLiveScoreInPlay()]);
-            message = 'Comprehensive league, fixtures and infeed sync completed.';
+            statsResult = await syncInGameStats({ limit: 100, onlyLive: false });
+            message = 'Comprehensive league, fixtures, infeed and in-game stats sync completed.';
         }
 
-        const [matchesCount, inPlayCount, leaguesCount] = await Promise.all([
+        const [matchesCount, inPlayCount, leaguesCount, withStatsCount] = await Promise.all([
             SoccerMatch.countDocuments(),
             SoccerMatch.countDocuments({ 'status.state': 'in' }),
-            SoccerLeague.countDocuments({ active: true })
+            SoccerLeague.countDocuments({ active: true }),
+            SoccerMatch.countDocuments({ 'home.stats': { $exists: true, $ne: null } })
         ]);
 
         return res.json({
@@ -327,6 +336,8 @@ router.post('/api/admin/sync', requireAdmin, async (req, res) => {
                 matchesCount,
                 inPlayCount,
                 leaguesCount,
+                withStatsCount,
+                statsResult,
                 syncedAt: new Date().toISOString()
             }
         });
