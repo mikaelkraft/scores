@@ -75,6 +75,44 @@ function isFreePlanRestricted(apiKey) {
     return Boolean(apiKey && apiKey.plan === 'free');
 }
 
+function inferMatchCountry(m) {
+    if (!m) return 'International';
+    const slug = String(m.league_slug || '').toLowerCase();
+    const txt = `${m.note || ''} ${m.name || ''} ${slug}`.toLowerCase();
+    
+    if (txt.includes('wsl') || txt.includes("women's super league") || txt.includes('womens super league') || txt.includes('players cup') || txt.includes('fa cup') || slug.startsWith('eng.')) return 'England';
+    if (txt.includes('nwsl') || slug.startsWith('usa.')) return 'United States';
+    if (txt.includes('femenil') || slug.startsWith('mex.')) return 'Mexico';
+    if (txt.includes('a-league') || slug.startsWith('aus.')) return 'Australia';
+    if (txt.includes('femminile') || slug.startsWith('ita.')) return 'Italy';
+    if (txt.includes('liga f') || slug.startsWith('esp.')) return 'Spain';
+    if (txt.includes('frauen') || slug.startsWith('ger.')) return 'Germany';
+    if (txt.includes('arkema') || slug.startsWith('fra.')) return 'France';
+    if (txt.includes('sco.') || txt.includes('scot')) return 'Scotland';
+    if (txt.includes('ned.') || txt.includes('eredivisie')) return 'Netherlands';
+    if (txt.includes('por.') || txt.includes('portugal')) return 'Portugal';
+    if (txt.includes('tur.') || txt.includes('turkey')) return 'Turkey';
+    if (txt.includes('bra.') || txt.includes('brazil')) return 'Brazil';
+    if (txt.includes('arg.') || txt.includes('argentina')) return 'Argentina';
+    if (txt.includes('caf') || txt.includes('afcon')) return 'Africa';
+    if (txt.includes('uefa') || txt.includes('champions') || txt.includes('europa') || txt.includes('conference')) return 'Europe';
+    return 'International';
+}
+
+function makeFlexibleTeamRegex(rawName) {
+    if (!rawName) return null;
+    const base = String(rawName)
+        .replace(/\b(18\d{2}|19\d{2}|20\d{2})\b/g, '')
+        .replace(/\b(fc|cf|sc|ac|cd|afc|fk|sk|sv|ssc|as|rc|ud|rb|calcio)\b/gi, '')
+        .trim();
+    if (base.length >= 3) {
+        const escaped = base.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        return new RegExp(`(^|\\b)${escaped}(\\b|$)`, 'i');
+    }
+    const escaped = String(rawName).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    return new RegExp(`^${escaped}$`, 'i');
+}
+
 // Apply optional API key authentication on all football endpoints
 router.use(optionalApiKeyAuth);
 
@@ -119,7 +157,7 @@ async function getFormattedLiveMatches(league, isFreeRestricted) {
                 slug: m.league_slug,
                 name: lg.name || m.note || m.league_slug,
                 abbreviation: lg.abbreviation || m.league_slug,
-                country: lg.country || 'International',
+                country: lg.country || inferMatchCountry(m),
                 logo: lg.logo || ''
             },
             date: m.date,
@@ -395,7 +433,7 @@ router.get('/fixtures', async (req, res) => {
                     slug: m.league_slug,
                     name: lg.name || m.note || m.league_slug,
                     abbreviation: lg.abbreviation || m.league_slug,
-                    country: lg.country || 'International',
+                    country: lg.country || inferMatchCountry(m),
                     logo: lg.logo || ''
                 },
                 scoreboardDate: m.scoreboard_date,
@@ -509,8 +547,8 @@ router.get('/predictions-context/:eventId', async (req, res) => {
 
         const hName = (match.home?.name || match.home?.display_name || '').trim();
         const aName = (match.away?.name || match.away?.display_name || '').trim();
-        const hNameEscaped = hName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-        const aNameEscaped = aName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        const hRegex = makeFlexibleTeamRegex(hName);
+        const aRegex = makeFlexibleTeamRegex(aName);
 
         const h2hOrClauses = [];
         if (homeId && awayId) {
@@ -519,22 +557,22 @@ router.get('/predictions-context/:eventId', async (req, res) => {
                 { 'home.source_id': awayId, 'away.source_id': homeId }
             );
         }
-        if (hName && aName) {
+        if (hRegex && aRegex) {
             h2hOrClauses.push(
-                { 'home.name': new RegExp(`^${hNameEscaped}$`, 'i'), 'away.name': new RegExp(`^${aNameEscaped}$`, 'i') },
-                { 'home.name': new RegExp(`^${aNameEscaped}$`, 'i'), 'away.name': new RegExp(`^${hNameEscaped}$`, 'i') },
-                { 'home.display_name': new RegExp(`^${hNameEscaped}$`, 'i'), 'away.display_name': new RegExp(`^${aNameEscaped}$`, 'i') },
-                { 'home.display_name': new RegExp(`^${aNameEscaped}$`, 'i'), 'away.display_name': new RegExp(`^${hNameEscaped}$`, 'i') }
+                { 'home.name': hRegex, 'away.name': aRegex },
+                { 'home.name': aRegex, 'away.name': hRegex },
+                { 'home.display_name': hRegex, 'away.display_name': aRegex },
+                { 'home.display_name': aRegex, 'away.display_name': hRegex }
             );
         }
 
         const homeRecentOrClauses = [];
         if (homeId) homeRecentOrClauses.push({ 'home.source_id': homeId }, { 'away.source_id': homeId });
-        if (hName) homeRecentOrClauses.push({ 'home.name': new RegExp(`^${hNameEscaped}$`, 'i') }, { 'away.name': new RegExp(`^${hNameEscaped}$`, 'i') });
+        if (hRegex) homeRecentOrClauses.push({ 'home.name': hRegex }, { 'away.name': hRegex }, { 'home.display_name': hRegex }, { 'away.display_name': hRegex });
 
         const awayRecentOrClauses = [];
         if (awayId) awayRecentOrClauses.push({ 'home.source_id': awayId }, { 'away.source_id': awayId });
-        if (aName) awayRecentOrClauses.push({ 'home.name': new RegExp(`^${aNameEscaped}$`, 'i') }, { 'away.name': new RegExp(`^${aNameEscaped}$`, 'i') });
+        if (aRegex) awayRecentOrClauses.push({ 'home.name': aRegex }, { 'away.name': aRegex }, { 'home.display_name': aRegex }, { 'away.display_name': aRegex });
 
         // Run parallel queries: H2H, Home Recent Form, Away Recent Form, Standings
         const [h2hMatches, homeRecentMatches, awayRecentMatches, standingsGroup, leagueDoc] = await Promise.all([

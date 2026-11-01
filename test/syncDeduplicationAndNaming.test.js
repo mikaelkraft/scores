@@ -35,6 +35,10 @@ test('resolveLeagueSlug prevents non-English Premier Leagues from colliding with
 
 test('resolveLeagueSlug correctly separates Women competitions', () => {
     assert.equal(resolveLeagueSlug('Barclays Women\'s Super League', 'England', 'eng.w.1'), 'eng.w.1');
+    assert.equal(resolveLeagueSlug('Women\'s Super League', '', ''), 'eng.w.1');
+    assert.equal(resolveLeagueSlug('WSL Players Cup, League Phase', '', ''), 'eng.w.cup');
+    assert.equal(resolveLeagueSlug('Women\'s FA Cup, First Round', '', ''), 'eng.w.fa');
+    assert.equal(resolveLeagueSlug('A-League Women', '', ''), 'aus.w.1');
     assert.equal(resolveLeagueSlug('NWSL Regular Season', 'United States', 'usa.w.1'), 'usa.w.1');
     assert.equal(resolveLeagueSlug('Liga F Femenina', 'Spain', 'esp.w.1'), 'esp.w.1');
     assert.equal(resolveLeagueSlug('Frauen-Bundesliga', 'Germany', 'ger.w.1'), 'ger.w.1');
@@ -106,6 +110,10 @@ test('areTeamNamesMatching accurately deduplicates teams between ESPN and LiveSc
 
     // Wolves aliases
     assert.equal(areTeamNamesMatching('Wolverhampton Wanderers', 'Wolves'), true);
+
+    // Como & Venezia foundation year and FC variations
+    assert.equal(areTeamNamesMatching('Como 1907', 'Como'), true);
+    assert.equal(areTeamNamesMatching('Venezia FC', 'Venezia'), true);
 
     // Non-matching teams do not collide
     assert.equal(areTeamNamesMatching('Chelsea', 'Arsenal'), false);

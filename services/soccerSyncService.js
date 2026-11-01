@@ -118,7 +118,11 @@ const TARGET_LEAGUES = [
     { slug: 'fra.w.1', name: 'Première Ligue', abbreviation: 'D1 Arkema', country: 'France', kind: 'club', sort_order: 100 },
     { slug: 'ita.w.1', name: 'Serie A Femminile', abbreviation: 'Serie A Fem', country: 'Italy', kind: 'club', sort_order: 101 },
     { slug: 'uefa.w.champions', name: 'UEFA Women\'s Champions League', abbreviation: 'UWCL', country: 'International', kind: 'club', sort_order: 102 },
-    { slug: 'eng.u21', name: 'Premier League 2', abbreviation: 'PL2 / U21', country: 'England', kind: 'club', sort_order: 103 },
+    { slug: 'eng.w.cup', name: 'WSL Players Cup', abbreviation: 'WSL Cup', country: 'England', kind: 'cup', sort_order: 103 },
+    { slug: 'eng.w.fa', name: 'Women\'s FA Cup', abbreviation: 'Women\'s FA Cup', country: 'England', kind: 'cup', sort_order: 104 },
+    { slug: 'aus.w.1', name: 'A-League Women', abbreviation: 'A-League W', country: 'Australia', kind: 'club', sort_order: 105 },
+    { slug: 'mex.w.1', name: 'Liga MX Femenil', abbreviation: 'Liga MX Fem', country: 'Mexico', kind: 'club', sort_order: 106 },
+    { slug: 'eng.u21', name: 'Premier League 2', abbreviation: 'PL2 / U21', country: 'England', kind: 'club', sort_order: 107 },
     { slug: 'eng.5', name: 'National League', abbreviation: 'National League', country: 'England', kind: 'club', sort_order: 104 },
     { slug: 'eng.northern', name: 'Northern Premier League', abbreviation: 'Northern PL', country: 'England', kind: 'club', sort_order: 105 },
     { slug: 'eng.southern', name: 'Southern Premier League', abbreviation: 'Southern PL', country: 'England', kind: 'club', sort_order: 106 },
@@ -592,7 +596,11 @@ function resolveLeagueSlug(altGameNote = '', compDesc = '', uid = '') {
                     text.includes('fem.') || text.includes('(w)') || text.includes(' w ');
     if (isWomen) {
         if (text.includes('nwsl') || text.includes('usa.w.1') || ((text.includes('united states') || text.includes('usa')) && !/\bwsl\b/.test(text))) return 'usa.w.1';
-        if (/\bwsl\b/.test(text) || text.includes('eng.w.1') || text.includes('england') || text.includes('english')) return 'eng.w.1';
+        if (text.includes('players cup') || text.includes('wsl cup') || (text.includes('league cup') && (text.includes('women') || text.includes('wsl')))) return 'eng.w.cup';
+        if (text.includes('fa cup') && (text.includes('women') || text.includes('wsl') || text.includes('eng'))) return 'eng.w.fa';
+        if (/\bwsl\b/.test(text) || text.includes("women's super league") || text.includes("womens super league") || (text.includes('super league') && text.includes('women')) || text.includes('eng.w.1') || text.includes('england') || text.includes('english')) return 'eng.w.1';
+        if (text.includes('a-league') || text.includes('australia') || text.includes('aus.w')) return 'aus.w.1';
+        if (text.includes('mex') || text.includes('mexico') || text.includes('femenil')) return 'mex.w.1';
         if (text.includes('liga f') || text.includes('esp.w.1') || text.includes('spain') || text.includes('spanish')) return 'esp.w.1';
         if (text.includes('frauen') || text.includes('ger.w.1') || text.includes('germany') || text.includes('german')) return 'ger.w.1';
         if (text.includes('arkema') || text.includes('fra.w.1') || text.includes('france') || text.includes('french')) return 'fra.w.1';
@@ -1180,8 +1188,9 @@ function normalizeTeamName(name = '') {
         .replace(/\bnewcastle\s+united\b/g, 'newcastle')
         .replace(/\bwest\s+ham\s+united\b/g, 'westham')
         .replace(/\bbrighton\s+(and|&)\s+hove\s+albion\b/g, 'brighton')
-        // Strip common non-distinct club markers like FC, CF, etc. (do NOT strip city/rovers/united to avoid colliding Bristol City with Bristol Rovers)
+        // Strip common non-distinct club markers like FC, CF, etc. and foundation years (e.g. Como 1907 -> como)
         .replace(/\b(fc|cf|sc|ac|cd|afc|fk|sk|sv|ssc|as|rc|ud|rb)\b/g, '')
+        .replace(/\b(18\d{2}|19\d{2}|20\d{2})\b/g, '')
         .replace(/[^a-z0-9]/g, '')
         .trim();
     return s;
