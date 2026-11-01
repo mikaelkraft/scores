@@ -17,7 +17,7 @@ const {
     sanitizeLogoUrl,
     synthesizeMatchTelemetry
 } = require('../services/soccerSerializer');
-const { normalizeTeamName, getTeamCategory } = require('../services/soccerSyncService');
+const { normalizeTeamName, getTeamCategory, resolveMatchEspnId } = require('../services/soccerSyncService');
 
 function formatDateKey(d = new Date()) {
     const y = d.getUTCFullYear();
@@ -80,20 +80,64 @@ function inferMatchCountry(m) {
     const slug = String(m.league_slug || '').toLowerCase();
     const txt = `${m.note || ''} ${m.name || ''} ${slug}`.toLowerCase();
     
-    if (txt.includes('wsl') || txt.includes("women's super league") || txt.includes('womens super league') || txt.includes('players cup') || txt.includes('fa cup') || slug.startsWith('eng.')) return 'England';
-    if (txt.includes('nwsl') || slug.startsWith('usa.')) return 'United States';
-    if (txt.includes('femenil') || slug.startsWith('mex.')) return 'Mexico';
-    if (txt.includes('a-league') || slug.startsWith('aus.')) return 'Australia';
-    if (txt.includes('femminile') || slug.startsWith('ita.')) return 'Italy';
-    if (txt.includes('liga f') || slug.startsWith('esp.')) return 'Spain';
-    if (txt.includes('frauen') || slug.startsWith('ger.')) return 'Germany';
-    if (txt.includes('arkema') || slug.startsWith('fra.')) return 'France';
-    if (txt.includes('sco.') || txt.includes('scot')) return 'Scotland';
-    if (txt.includes('ned.') || txt.includes('eredivisie')) return 'Netherlands';
-    if (txt.includes('por.') || txt.includes('portugal')) return 'Portugal';
-    if (txt.includes('tur.') || txt.includes('turkey')) return 'Turkey';
-    if (txt.includes('bra.') || txt.includes('brazil')) return 'Brazil';
-    if (txt.includes('arg.') || txt.includes('argentina')) return 'Argentina';
+    // Check league slug prefix first to avoid false positives (e.g. sui.w.1 != England WSL)
+    if (slug.startsWith('eng.')) return 'England';
+    if (slug.startsWith('esp.')) return 'Spain';
+    if (slug.startsWith('ita.')) return 'Italy';
+    if (slug.startsWith('ger.')) return 'Germany';
+    if (slug.startsWith('fra.')) return 'France';
+    if (slug.startsWith('ned.')) return 'Netherlands';
+    if (slug.startsWith('por.')) return 'Portugal';
+    if (slug.startsWith('sco.')) return 'Scotland';
+    if (slug.startsWith('sui.')) return 'Switzerland';
+    if (slug.startsWith('bel.')) return 'Belgium';
+    if (slug.startsWith('gre.')) return 'Greece';
+    if (slug.startsWith('tur.')) return 'Turkey';
+    if (slug.startsWith('bra.')) return 'Brazil';
+    if (slug.startsWith('arg.')) return 'Argentina';
+    if (slug.startsWith('usa.')) return 'United States';
+    if (slug.startsWith('mex.')) return 'Mexico';
+    if (slug.startsWith('aus.')) return 'Australia';
+    if (slug.startsWith('swe.')) return 'Sweden';
+    if (slug.startsWith('nor.')) return 'Norway';
+    if (slug.startsWith('den.')) return 'Denmark';
+    if (slug.startsWith('pol.')) return 'Poland';
+    if (slug.startsWith('nga.')) return 'Nigeria';
+    if (slug.startsWith('rsa.')) return 'South Africa';
+    if (slug.startsWith('jpn.')) return 'Japan';
+    if (slug.startsWith('kor.')) return 'South Korea';
+    if (slug.startsWith('sau.')) return 'Saudi Arabia';
+    if (slug.startsWith('caf.')) return 'Africa';
+    if (slug.startsWith('uefa.')) return 'Europe';
+    if (slug.startsWith('conmebol.')) return 'South America';
+    if (slug.startsWith('concacaf.')) return 'North America';
+    if (slug.startsWith('afc.')) return 'Asia';
+    if (slug.startsWith('fifa.')) return 'International';
+
+    // Text inspection with foreign countries checked before generic WSL
+    if (txt.includes('switzerland') || txt.includes('swiss')) return 'Switzerland';
+    if (txt.includes('belgium') || txt.includes('belgian')) return 'Belgium';
+    if (txt.includes('greece') || txt.includes('greek')) return 'Greece';
+    if (txt.includes('scotland') || txt.includes('scottish') || txt.includes('swpl')) return 'Scotland';
+    if (txt.includes('sweden') || txt.includes('swedish') || txt.includes('damallsvenskan')) return 'Sweden';
+    if (txt.includes('norway') || txt.includes('norwegian') || txt.includes('toppserien')) return 'Norway';
+    if (txt.includes('denmark') || txt.includes('danish')) return 'Denmark';
+    if (txt.includes('poland') || txt.includes('polish')) return 'Poland';
+    if (txt.includes('wsl') || txt.includes("women's super league") || txt.includes('womens super league') || txt.includes('players cup') || txt.includes('fa cup')) return 'England';
+    if (txt.includes('nwsl') || txt.includes('usl')) return 'United States';
+    if (txt.includes('femenil')) return 'Mexico';
+    if (txt.includes('a-league')) return 'Australia';
+    if (txt.includes('femminile')) return 'Italy';
+    if (txt.includes('liga f')) return 'Spain';
+    if (txt.includes('frauen')) return 'Germany';
+    if (txt.includes('arkema')) return 'France';
+    if (txt.includes('eredivisie')) return 'Netherlands';
+    if (txt.includes('portugal') || txt.includes('liga bpi')) return 'Portugal';
+    if (txt.includes('turkey') || txt.includes('süper lig')) return 'Turkey';
+    if (txt.includes('brazil') || txt.includes('brasileir')) return 'Brazil';
+    if (txt.includes('argentina')) return 'Argentina';
+    if (txt.includes('nigeria') || txt.includes('npfl') || txt.includes('nwfl')) return 'Nigeria';
+    if (txt.includes('south africa') || txt.includes('psl')) return 'South Africa';
     if (txt.includes('caf') || txt.includes('afcon')) return 'Africa';
     if (txt.includes('uefa') || txt.includes('champions') || txt.includes('europa') || txt.includes('conference')) return 'Europe';
     return 'International';
@@ -103,7 +147,9 @@ function makeFlexibleTeamRegex(rawName) {
     if (!rawName) return null;
     const base = String(rawName)
         .replace(/\b(18\d{2}|19\d{2}|20\d{2})\b/g, '')
+        .replace(/\b(04|05|96|98)\b/g, '')
         .replace(/\b(fc|cf|sc|ac|cd|afc|fk|sk|sv|ssc|as|rc|ud|rb|calcio)\b/gi, '')
+        .replace(/\s+/g, ' ')
         .trim();
     if (base.length >= 3) {
         const escaped = base.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -191,13 +237,13 @@ async function getFormattedLiveMatches(league, isFreeRestricted) {
                 stats: m.away?.stats || {}
             },
             venue: m.venue || null,
-            recentEvents: m.key_events || []
+            recentEvents: m.key_events || [],
+            source: m.source || {}
         };
     });
 
-    // Multi-tier in-memory deduplication across providers
-    const seenLiveSignatures = new Set();
-    const dedupedLive = [];
+    // Multi-tier in-memory deduplication across providers with canonical scoring & live telemetry merge
+    const seenLiveMap = new Map();
     for (const m of formattedLive) {
         const hName = m.home?.displayName || m.home?.name || '';
         const aName = m.away?.displayName || m.away?.name || '';
@@ -206,12 +252,46 @@ async function getFormattedLiveMatches(league, isFreeRestricted) {
         const catH = getTeamCategory(hName);
         const catA = getTeamCategory(aName);
         const sig = [hNorm, aNorm].sort().join('_vs_') + '_' + (catH.isWomen || catA.isWomen ? 'w' : 'm') + '_' + (catH.isYouth || catA.isYouth ? 'y' : 's');
-        if (!seenLiveSignatures.has(sig)) {
-            seenLiveSignatures.add(sig);
-            dedupedLive.push(m);
+
+        // Canonical score: ESPN matches carry official names, crests, and event_id; LiveScore carries ticks
+        const mScore = (m.home?.logo?.includes('espncdn') ? 4 : 0) +
+                       (m.source?.provider === 'espn' || (m.id && /^\d{6,}$/.test(m.id)) ? 3 : 0) +
+                       (m.recentEvents && m.recentEvents.length > 0 ? 2 : 0) +
+                       (m.venue ? 1 : 0);
+
+        if (!seenLiveMap.has(sig)) {
+            seenLiveMap.set(sig, { match: m, score: mScore });
+        } else {
+            const existing = seenLiveMap.get(sig);
+            const winner = mScore > existing.score ? m : existing.match;
+            const secondary = mScore > existing.score ? existing.match : m;
+
+            // Merge in-play clock, scores, detail, and LiveScore ID into winner
+            if (secondary.status?.isLive || secondary.status?.state === 'in') {
+                if (secondary.status?.clock && secondary.status.clock !== "45'") {
+                    winner.status.clock = secondary.status.clock;
+                }
+                if (secondary.status?.detail) winner.status.detail = secondary.status.detail;
+                if (secondary.status?.period) winner.status.period = secondary.status.period;
+                if (secondary.home?.score !== undefined) winner.home.score = secondary.home.score;
+                if (secondary.away?.score !== undefined) winner.away.score = secondary.away.score;
+            }
+            if (secondary.source?.livescore_id && !winner.source?.livescore_id) {
+                if (!winner.source) winner.source = {};
+                winner.source.livescore_id = secondary.source.livescore_id;
+            }
+            if (secondary.source?.espn_id && !winner.source?.espn_id) {
+                if (!winner.source) winner.source = {};
+                winner.source.espn_id = secondary.source.espn_id;
+            }
+            if ((!winner.recentEvents || winner.recentEvents.length === 0) && (secondary.recentEvents && secondary.recentEvents.length > 0)) {
+                winner.recentEvents = secondary.recentEvents;
+            }
+            seenLiveMap.set(sig, { match: winner, score: Math.max(existing.score, mScore) });
         }
     }
 
+    const dedupedLive = Array.from(seenLiveMap.values()).map(e => e.match);
     return { matches: dedupedLive };
 }
 
@@ -472,13 +552,13 @@ router.get('/fixtures', async (req, res) => {
                     form: m.away?.form || ''
                 },
                 venue: m.venue || null,
-                odds: m.odds || []
+                odds: m.odds || [],
+                source: m.source || {}
             };
         });
 
-        // In-memory deduplication across providers
-        const seenFixturesSig = new Set();
-        const dedupedMatches = [];
+        // In-memory deduplication across providers with canonical scoring & live telemetry merge
+        const seenFixturesMap = new Map();
         for (const m of formattedMatches) {
             const hName = m.home?.displayName || m.home?.name || '';
             const aName = m.away?.displayName || m.away?.name || '';
@@ -488,11 +568,41 @@ router.get('/fixtures', async (req, res) => {
             const catA = getTeamCategory(aName);
             const dKey = m.scoreboardDate || (m.date ? new Date(m.date).toISOString().slice(0, 10) : '');
             const sig = [hNorm, aNorm].sort().join('_vs_') + '_' + dKey + '_' + (catH.isWomen || catA.isWomen ? 'w' : 'm') + '_' + (catH.isYouth || catA.isYouth ? 'y' : 's');
-            if (!seenFixturesSig.has(sig)) {
-                seenFixturesSig.add(sig);
-                dedupedMatches.push(m);
+
+            const mScore = (m.home?.logo?.includes('espncdn') ? 4 : 0) +
+                           (m.source?.provider === 'espn' || (m.id && /^\d{6,}$/.test(m.id)) ? 3 : 0) +
+                           (m.odds && m.odds.length > 0 ? 1 : 0) +
+                           (m.venue ? 1 : 0);
+
+            if (!seenFixturesMap.has(sig)) {
+                seenFixturesMap.set(sig, { match: m, score: mScore });
+            } else {
+                const existing = seenFixturesMap.get(sig);
+                const winner = mScore > existing.score ? m : existing.match;
+                const secondary = mScore > existing.score ? existing.match : m;
+
+                if (secondary.status?.isLive || secondary.status?.state === 'in') {
+                    if (secondary.status?.clock && secondary.status.clock !== "45'") {
+                        winner.status.clock = secondary.status.clock;
+                    }
+                    if (secondary.status?.detail) winner.status.detail = secondary.status.detail;
+                    if (secondary.status?.period) winner.status.period = secondary.status.period;
+                    if (secondary.home?.score !== undefined) winner.home.score = secondary.home.score;
+                    if (secondary.away?.score !== undefined) winner.away.score = secondary.away.score;
+                }
+                if (secondary.source?.livescore_id && !winner.source?.livescore_id) {
+                    if (!winner.source) winner.source = {};
+                    winner.source.livescore_id = secondary.source.livescore_id;
+                }
+                if (secondary.source?.espn_id && !winner.source?.espn_id) {
+                    if (!winner.source) winner.source = {};
+                    winner.source.espn_id = secondary.source.espn_id;
+                }
+                seenFixturesMap.set(sig, { match: winner, score: Math.max(existing.score, mScore) });
             }
         }
+
+        const dedupedMatches = Array.from(seenFixturesMap.values()).map(e => e.match);
 
         const hasLive = dedupedMatches.some(m => m.status.isLive);
         if (hasLive || status === 'live') {
@@ -530,16 +640,22 @@ router.get('/fixtures', async (req, res) => {
 router.get('/predictions-context/:eventId', async (req, res) => {
     try {
         const eventId = String(req.params.eventId).trim();
+        const isMongoId = /^[0-9a-fA-F]{24}$/.test(eventId);
         const match = await SoccerMatch.findOne({
             $or: [
                 { 'source.event_id': eventId },
-                { 'source.competition_id': eventId }
+                { 'source.competition_id': eventId },
+                { 'source.livescore_id': eventId },
+                { 'source.espn_id': eventId },
+                ...(isMongoId ? [{ _id: eventId }] : [])
             ]
         }).lean();
 
         if (!match) {
             return res.status(404).json({ error: 'Match not found for ID: ' + eventId });
         }
+
+        const targetEspnId = await resolveMatchEspnId(match, eventId);
 
         const homeId = String(match.home?.source_id || '');
         const awayId = String(match.away?.source_id || '');
@@ -629,25 +745,27 @@ router.get('/predictions-context/:eventId', async (req, res) => {
         let seriesSummary = '';
         let seriesScore = '';
         let espnSummary = null;
-        try {
-            const https = require('https');
-            const zlib = require('zlib');
-            espnSummary = await new Promise((resolve) => {
-                const req = https.get(`https://site.api.espn.com/apis/site/v2/sports/soccer/${match.league_slug || 'all'}/summary?event=${encodeURIComponent(eventId)}`, {
-                    headers: { 'User-Agent': 'NorraScores/2.1', 'Accept-Encoding': 'gzip, deflate' },
-                    timeout: 3000
-                }, res => {
-                    if (res.statusCode !== 200) return resolve(null);
-                    let stream = res.headers['content-encoding'] === 'gzip' ? res.pipe(zlib.createGunzip()) : res;
-                    let d = '';
-                    stream.on('data', c => d += c);
-                    stream.on('end', () => {
-                        try { resolve(JSON.parse(d)); } catch { resolve(null); }
+        const queryEspnId = targetEspnId || (/^\d{6,}$/.test(eventId) ? eventId : null);
+        if (queryEspnId) {
+            try {
+                const https = require('https');
+                const zlib = require('zlib');
+                espnSummary = await new Promise((resolve) => {
+                    const req = https.get(`https://site.api.espn.com/apis/site/v2/sports/soccer/${match.league_slug || 'all'}/summary?event=${encodeURIComponent(queryEspnId)}`, {
+                        headers: { 'User-Agent': 'NorraScores/2.1', 'Accept-Encoding': 'gzip, deflate' },
+                        timeout: 3000
+                    }, res => {
+                        if (res.statusCode !== 200) return resolve(null);
+                        let stream = res.headers['content-encoding'] === 'gzip' ? res.pipe(zlib.createGunzip()) : res;
+                        let d = '';
+                        stream.on('data', c => d += c);
+                        stream.on('end', () => {
+                            try { resolve(JSON.parse(d)); } catch { resolve(null); }
+                        });
                     });
+                    req.on('error', () => resolve(null));
+                    req.on('timeout', () => { req.destroy(); resolve(null); });
                 });
-                req.on('error', () => resolve(null));
-                req.on('timeout', () => { req.destroy(); resolve(null); });
-            });
 
             if (espnSummary?.seasonseries?.length) {
                 const series = espnSummary.seasonseries.find(s => s.type === 'head-to-head') || espnSummary.seasonseries[0];
@@ -684,6 +802,7 @@ router.get('/predictions-context/:eventId', async (req, res) => {
                 }
             }
         } catch {}
+    }
 
         // Parse lifetime series total from summary/seriesScore if available
         let parsedSeriesTotal = 0;
@@ -1305,10 +1424,14 @@ router.get(['/standings', '/standings/:league'], async (req, res) => {
 router.get('/matches/:eventId', async (req, res) => {
     try {
         const eventId = String(req.params.eventId).trim();
+        const isMongoId = /^[0-9a-fA-F]{24}$/.test(eventId);
         const match = await SoccerMatch.findOne({
             $or: [
                 { 'source.event_id': eventId },
-                { 'source.competition_id': eventId }
+                { 'source.competition_id': eventId },
+                { 'source.livescore_id': eventId },
+                { 'source.espn_id': eventId },
+                ...(isMongoId ? [{ _id: eventId }] : [])
             ]
         }).lean();
 
@@ -1316,12 +1439,15 @@ router.get('/matches/:eventId', async (req, res) => {
             return res.status(404).json({ error: 'Match not found' });
         }
 
+        const targetEspnId = await resolveMatchEspnId(match, eventId);
+
         const [league, plays] = await Promise.all([
             SoccerLeague.findOne({ slug: match.league_slug }).lean(),
             SoccerMatchEvent.find({
                 $or: [
                     { event_id: eventId },
-                    { match_id: eventId }
+                    { match_id: eventId },
+                    ...(targetEspnId ? [{ event_id: targetEspnId }, { match_id: targetEspnId }] : [])
                 ]
             }).sort({ sequence_number: 1, clock_seconds: 1 }).limit(200).lean()
         ]);
@@ -1329,52 +1455,58 @@ router.get('/matches/:eventId', async (req, res) => {
         const summary = serializeSummary(match, league || { slug: match.league_slug, name: match.note });
 
         // Enrich with real-time ESPN match telemetry
-        try {
-            const https = require('https');
-            const zlib = require('zlib');
-            const espnData = await new Promise((resolve, reject) => {
-                const req = https.get(`https://site.api.espn.com/apis/site/v2/sports/soccer/${match.league_slug || 'all'}/summary?event=${encodeURIComponent(eventId)}`, {
-                    headers: { 'User-Agent': 'NorraScores/2.1', 'Accept-Encoding': 'gzip, deflate' },
-                    timeout: 4000
-                }, res => {
-                    if (res.statusCode !== 200) return resolve(null);
-                    let stream = res;
-                    if (res.headers['content-encoding'] === 'gzip') stream = res.pipe(zlib.createGunzip());
-                    else if (res.headers['content-encoding'] === 'deflate') stream = res.pipe(zlib.createInflate());
-                    let d = '';
-                    stream.on('data', c => d += c);
-                    stream.on('end', () => {
-                        try { resolve(JSON.parse(d)); } catch { resolve(null); }
+        const queryEspnId = targetEspnId || (/^\d{6,}$/.test(eventId) ? eventId : null);
+        if (queryEspnId) {
+            try {
+                const https = require('https');
+                const zlib = require('zlib');
+                const espnData = await new Promise((resolve, reject) => {
+                    const req = https.get(`https://site.api.espn.com/apis/site/v2/sports/soccer/${match.league_slug || 'all'}/summary?event=${encodeURIComponent(queryEspnId)}`, {
+                        headers: { 'User-Agent': 'NorraScores/2.1', 'Accept-Encoding': 'gzip, deflate' },
+                        timeout: 4000
+                    }, res => {
+                        if (res.statusCode !== 200) return resolve(null);
+                        let stream = res;
+                        if (res.headers['content-encoding'] === 'gzip') stream = res.pipe(zlib.createGunzip());
+                        else if (res.headers['content-encoding'] === 'deflate') stream = res.pipe(zlib.createInflate());
+                        let d = '';
+                        stream.on('data', c => d += c);
+                        stream.on('end', () => {
+                            try { resolve(JSON.parse(d)); } catch { resolve(null); }
+                        });
                     });
+                    req.on('error', () => resolve(null));
+                    req.on('timeout', () => { req.destroy(); resolve(null); });
                 });
-                req.on('error', () => resolve(null));
-                req.on('timeout', () => { req.destroy(); resolve(null); });
-            });
 
-            if (espnData) {
-                if (espnData.boxscore?.teams?.length) summary.boxscore = espnData.boxscore;
-                if (espnData.keyEvents?.length) summary.keyEvents = espnData.keyEvents;
-                if (espnData.rosters?.length) summary.rosters = espnData.rosters;
-                if (espnData.gameInfo) summary.gameInfo = espnData.gameInfo;
-                if (espnData.header?.competitions?.[0]) summary.header.competitions = espnData.header.competitions;
-                if (espnData.seasonseries) summary.seasonseries = espnData.seasonseries;
-                if (espnData.lastFiveGames) summary.lastFiveGames = espnData.lastFiveGames;
-                if (espnData.predictor) summary.predictor = espnData.predictor;
-                if (espnData.pickcenter) summary.pickcenter = espnData.pickcenter;
-            }
+                if (espnData) {
+                    if (espnData.boxscore?.teams?.length) summary.boxscore = espnData.boxscore;
+                    if (espnData.keyEvents?.length) summary.keyEvents = espnData.keyEvents;
+                    if (espnData.rosters?.length) summary.rosters = espnData.rosters;
+                    if (espnData.gameInfo) summary.gameInfo = espnData.gameInfo;
+                    if (espnData.header?.competitions?.[0]) summary.header.competitions = espnData.header.competitions;
+                    if (espnData.seasonseries) summary.seasonseries = espnData.seasonseries;
+                    if (espnData.lastFiveGames) summary.lastFiveGames = espnData.lastFiveGames;
+                    if (espnData.predictor) summary.predictor = espnData.predictor;
+                    if (espnData.pickcenter) summary.pickcenter = espnData.pickcenter;
+                }
+            } catch {}
+        }
 
-            // If ESPN provided no boxscore or for LiveScore matches, enrich with LiveScore telemetry
-            const hasStats = Boolean(
-                summary.boxscore?.teams?.[0]?.statistics?.length ||
-                summary.boxscore?.teams?.[1]?.statistics?.length
-            );
-            const isLiveScoreEvent = String(match.source?.provider || '').toLowerCase() === 'livescore'
-                || String(match.source?.event_id || eventId).length <= 8;
+        // If ESPN provided no boxscore or for LiveScore matches, enrich with LiveScore telemetry
+        const hasStats = Boolean(
+            summary.boxscore?.teams?.[0]?.statistics?.length ||
+            summary.boxscore?.teams?.[1]?.statistics?.length
+        );
+        const isLiveScoreEvent = String(match.source?.provider || '').toLowerCase() === 'livescore'
+            || Boolean(match.source?.livescore_id)
+            || String(match.source?.event_id || eventId).length <= 8;
 
-            if (!hasStats || isLiveScoreEvent || !summary.keyEvents?.length) {
-                try {
-                    const { fetchLiveScoreMatchDetails } = require('../services/soccerSyncService');
-                    const lsData = await fetchLiveScoreMatchDetails(match.source?.event_id || eventId);
+        if (!hasStats || isLiveScoreEvent || !summary.keyEvents?.length) {
+            try {
+                const { fetchLiveScoreMatchDetails } = require('../services/soccerSyncService');
+                const lsId = match.source?.livescore_id || (String(match.source?.provider || '').toLowerCase() === 'livescore' ? match.source?.event_id : null) || eventId;
+                const lsData = await fetchLiveScoreMatchDetails(lsId);
                     if (lsData) {
                         if (lsData.boxscore && !hasStats) {
                             summary.boxscore = lsData.boxscore;
@@ -1403,7 +1535,6 @@ router.get('/matches/:eventId', async (req, res) => {
             if (!finalHasStats) {
                 summary.boxscore = synthesizeMatchTelemetry(match, summary);
             }
-        } catch {}
 
         let timelinePlays = plays.map(serializePlay);
         if (timelinePlays.length === 0 && summary.keyEvents?.length) {

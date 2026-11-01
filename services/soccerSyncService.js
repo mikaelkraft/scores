@@ -122,7 +122,12 @@ const TARGET_LEAGUES = [
     { slug: 'eng.w.fa', name: 'Women\'s FA Cup', abbreviation: 'Women\'s FA Cup', country: 'England', kind: 'cup', sort_order: 104 },
     { slug: 'aus.w.1', name: 'A-League Women', abbreviation: 'A-League W', country: 'Australia', kind: 'club', sort_order: 105 },
     { slug: 'mex.w.1', name: 'Liga MX Femenil', abbreviation: 'Liga MX Fem', country: 'Mexico', kind: 'club', sort_order: 106 },
-    { slug: 'eng.u21', name: 'Premier League 2', abbreviation: 'PL2 / U21', country: 'England', kind: 'club', sort_order: 107 },
+    { slug: 'sui.w.1', name: 'Swiss Women\'s Super League', abbreviation: 'Swiss WSL', country: 'Switzerland', kind: 'club', sort_order: 107 },
+    { slug: 'bel.w.1', name: 'Belgian Super League Women', abbreviation: 'Super League W', country: 'Belgium', kind: 'club', sort_order: 108 },
+    { slug: 'sco.w.1', name: 'Scottish Women\'s Premier League', abbreviation: 'SWPL', country: 'Scotland', kind: 'club', sort_order: 109 },
+    { slug: 'bra.w.1', name: 'Brasileirão Feminino', abbreviation: 'Brasileirão Fem', country: 'Brazil', kind: 'club', sort_order: 110 },
+    { slug: 'w.international', name: 'Women\'s International Football', abbreviation: 'Women Intl', country: 'International', kind: 'international', sort_order: 111 },
+    { slug: 'eng.u21', name: 'Premier League 2', abbreviation: 'PL2 / U21', country: 'England', kind: 'club', sort_order: 112 },
     { slug: 'eng.5', name: 'National League', abbreviation: 'National League', country: 'England', kind: 'club', sort_order: 104 },
     { slug: 'eng.northern', name: 'Northern Premier League', abbreviation: 'Northern PL', country: 'England', kind: 'club', sort_order: 105 },
     { slug: 'eng.southern', name: 'Southern Premier League', abbreviation: 'Southern PL', country: 'England', kind: 'club', sort_order: 106 },
@@ -595,18 +600,48 @@ function resolveLeagueSlug(altGameNote = '', compDesc = '', uid = '') {
                     text.includes('d1 arkema') || text.includes('liga f') || text.includes('.w.') ||
                     text.includes('fem.') || text.includes('(w)') || text.includes(' w ');
     if (isWomen) {
-        if (text.includes('nwsl') || text.includes('usa.w.1') || ((text.includes('united states') || text.includes('usa')) && !/\bwsl\b/.test(text))) return 'usa.w.1';
+        // USA Women
+        if (text.includes('nwsl') || text.includes('usa.w.1') || (text.includes('national women') && (text.includes('soccer') || text.includes('league'))) || ((text.includes('united states') || text.includes('usa')) && !text.includes('wsl'))) return 'usa.w.1';
+        if (text.includes('usl super league') || text.includes('usl w') || text.includes('usa.w.usl')) return 'usa.w.usl';
+
+        // Continental & International Tournaments
+        if (text.includes('uefa.w.champions') || text.includes('uwcl') || (text.includes('champions league') && (text.includes('uefa') || !text.includes('caf')))) return 'uefa.w.champions';
+        if (text.includes('caf') && text.includes('champions')) return 'caf.w.champions';
+        if (text.includes('world cup') || text.includes('fifa.w')) return 'fifa.w.worldcup';
+        if (text.includes('euro') || text.includes('uefa.w.euro')) return 'uefa.w.euro';
+
+        // Foreign Super Leagues (check foreign countries before English WSL)
+        if (text.includes('switzerland') || text.includes('swiss') || text.includes('sui.w')) return 'sui.w.1';
+        if (text.includes('belgium') || text.includes('belgian') || text.includes('bel.w')) return 'bel.w.1';
+        if (text.includes('greece') || text.includes('greek') || text.includes('gre.w')) return 'gre.w.1';
+
+        // England Women
         if (text.includes('players cup') || text.includes('wsl cup') || (text.includes('league cup') && (text.includes('women') || text.includes('wsl')))) return 'eng.w.cup';
         if (text.includes('fa cup') && (text.includes('women') || text.includes('wsl') || text.includes('eng'))) return 'eng.w.fa';
-        if (/\bwsl\b/.test(text) || text.includes("women's super league") || text.includes("womens super league") || (text.includes('super league') && text.includes('women')) || text.includes('eng.w.1') || text.includes('england') || text.includes('english')) return 'eng.w.1';
+        if (text.includes('women\'s championship') || text.includes('eng.w.2')) return 'eng.w.2';
+        if (/\bwsl\b/.test(text) || text.includes("women's super league") || text.includes("womens super league") || (text.includes('super league') && (text.includes('england') || text.includes('english') || !text.includes(' '))) || text.includes('eng.w.1') || text.includes('barclays')) {
+            return 'eng.w.1';
+        }
+
+        // Domestic European & World Women's Leagues
         if (text.includes('a-league') || text.includes('australia') || text.includes('aus.w')) return 'aus.w.1';
         if (text.includes('mex') || text.includes('mexico') || text.includes('femenil')) return 'mex.w.1';
-        if (text.includes('liga f') || text.includes('esp.w.1') || text.includes('spain') || text.includes('spanish')) return 'esp.w.1';
+        if (text.includes('liga f') || text.includes('esp.w.1') || text.includes('copa de la reina') || text.includes('spain') || text.includes('spanish')) return 'esp.w.1';
         if (text.includes('frauen') || text.includes('ger.w.1') || text.includes('germany') || text.includes('german')) return 'ger.w.1';
-        if (text.includes('arkema') || text.includes('fra.w.1') || text.includes('france') || text.includes('french')) return 'fra.w.1';
+        if (text.includes('arkema') || text.includes('premiere ligue') || text.includes('fra.w.1') || text.includes('france') || text.includes('french')) return 'fra.w.1';
         if (text.includes('femminile') || text.includes('ita.w.1') || text.includes('italy') || text.includes('italian')) return 'ita.w.1';
-        if (text.includes('uefa') || text.includes('champions')) return 'uefa.w.champions';
-        return 'w.other';
+        if (text.includes('swpl') || text.includes('scotland') || text.includes('scottish') || text.includes('sco.w')) return 'sco.w.1';
+        if (text.includes('brasileir') || text.includes('brazil') || text.includes('bra.w')) return 'bra.w.1';
+        if (text.includes('vrouwen') || text.includes('netherlands') || text.includes('dutch') || text.includes('ned.w')) return 'ned.w.1';
+        if (text.includes('liga bpi') || text.includes('portugal') || text.includes('por.w')) return 'por.w.1';
+        if (text.includes('damallsvenskan') || text.includes('sweden') || text.includes('swe.w')) return 'swe.w.1';
+        if (text.includes('toppserien') || text.includes('norway') || text.includes('nor.w')) return 'nor.w.1';
+        if (text.includes('denmark') || text.includes('danish') || text.includes('den.w')) return 'den.w.1';
+        if (text.includes('poland') || text.includes('polish') || text.includes('pol.w')) return 'pol.w.1';
+        if (text.includes('nigeria') || text.includes('nwfl') || text.includes('nga.w')) return 'nga.w.1';
+        if (text.includes('south africa') || text.includes('rsa.w')) return 'rsa.w.1';
+
+        return 'w.international';
     }
 
     // 3. Youth & Reserves Football Discriminator (prevents U21 PL2 matching senior Premier League)
@@ -1189,8 +1224,9 @@ function normalizeTeamName(name = '') {
         .replace(/\bwest\s+ham\s+united\b/g, 'westham')
         .replace(/\bbrighton\s+(and|&)\s+hove\s+albion\b/g, 'brighton')
         // Strip common non-distinct club markers like FC, CF, etc. and foundation years (e.g. Como 1907 -> como)
-        .replace(/\b(fc|cf|sc|ac|cd|afc|fk|sk|sv|ssc|as|rc|ud|rb)\b/g, '')
+        .replace(/\b(fc|cf|sc|ac|cd|afc|fk|sk|sv|ssc|as|rc|ud|rb|calcio)\b/gi, '')
         .replace(/\b(18\d{2}|19\d{2}|20\d{2})\b/g, '')
+        .replace(/\b(04|05|96|98)\b/g, '')
         .replace(/[^a-z0-9]/g, '')
         .trim();
     return s;
@@ -1210,7 +1246,7 @@ function areTeamNamesMatching(nameA = '', nameB = '') {
     if (!a || !b) return false;
     if (a === b) return true;
     if (a.includes(b) || b.includes(a)) {
-        if (Math.min(a.length, b.length) >= 4) return true;
+        if (Math.min(a.length, b.length) >= 3) return true;
     }
     return false;
 }
@@ -1250,6 +1286,47 @@ async function findExistingMatch({ eventId, homeName, awayName, matchDate, score
         const candAway = cand.away?.name || cand.away?.display_name || '';
         if (areTeamNamesMatching(candHome, homeName) && areTeamNamesMatching(candAway, awayName)) {
             return cand;
+        }
+    }
+    return null;
+}
+
+/**
+ * Resolves the primary ESPN event ID for a given match document, searching
+ * cross-provider matches on the same date window if the current record originated from LiveScore.
+ */
+async function resolveMatchEspnId(match, rawEventId = '') {
+    if (!match) return null;
+    if (match.source?.espn_id && /^\d+$/.test(match.source.espn_id)) {
+        return String(match.source.espn_id);
+    }
+    const currentEventId = String(match.source?.event_id || rawEventId || '');
+    if (/^\d{6,}$/.test(currentEventId)) {
+        return currentEventId;
+    }
+    // Cross-provider lookup: find canonical ESPN match on same date with matching teams
+    if (match.date) {
+        const hName = match.home?.name || match.home?.display_name || '';
+        const aName = match.away?.name || match.away?.display_name || '';
+        if (hName && aName) {
+            const mTime = new Date(match.date).getTime();
+            const minDate = new Date(mTime - 24 * 3600 * 1000);
+            const maxDate = new Date(mTime + 24 * 3600 * 1000);
+            const candidates = await SoccerMatch.find({
+                _id: { $ne: match._id },
+                date: { $gte: minDate, $lte: maxDate },
+                'source.event_id': { $regex: /^\d{6,}$/ }
+            }).lean();
+            for (const cand of candidates) {
+                const candH = cand.home?.name || cand.home?.display_name || '';
+                const candA = cand.away?.name || cand.away?.display_name || '';
+                if ((areTeamNamesMatching(candH, hName) && areTeamNamesMatching(candA, aName)) ||
+                    (areTeamNamesMatching(candH, aName) && areTeamNamesMatching(candA, hName))) {
+                    const resolvedId = String(cand.source?.event_id);
+                    SoccerMatch.updateOne({ _id: match._id }, { $set: { 'source.espn_id': resolvedId } }).catch(() => {});
+                    return resolvedId;
+                }
+            }
         }
     }
     return null;
@@ -1328,6 +1405,15 @@ async function cleanupStuckMatchesAndPurgeNcaa() {
             }
         }
 
+        // 4b. Re-classify matches mistakenly categorized under 'w.other'
+        const misclassifiedWOther = await SoccerMatch.find({ league_slug: 'w.other' }).lean();
+        for (const m of misclassifiedWOther) {
+            const rawHint = `${m.note || ''} ${m.name || ''} ${m.home?.name || ''} ${m.away?.name || ''}`;
+            const newSlug = resolveLeagueSlug(rawHint, m.venue?.country || '', m.source?.uid || '') || 'w.international';
+            await SoccerMatch.updateOne({ _id: m._id }, { $set: { league_slug: newSlug } });
+        }
+        await SoccerLeague.deleteOne({ slug: 'w.other' }).catch(() => {});
+
         // 5. Purge duplicate match documents across the past 7 days
         const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 3600 * 1000);
         const recentMatches = await SoccerMatch.find({ date: { $gte: sevenDaysAgo } }).sort({ date: 1, _id: 1 }).lean();
@@ -1348,6 +1434,25 @@ async function cleanupStuckMatchesAndPurgeNcaa() {
                 const primary = signatureMap.get(sig);
                 const currentScore = (m.home?.logo?.includes('espncdn') ? 3 : 0) + (m.source?.livescore_id ? 2 : 0) + (m.boxscore ? 2 : 0) + (m.key_events?.length ? 1 : 0);
                 const primaryScore = (primary.home?.logo?.includes('espncdn') ? 3 : 0) + (primary.source?.livescore_id ? 2 : 0) + (primary.boxscore ? 2 : 0) + (primary.key_events?.length ? 1 : 0);
+
+                const toDelete = (currentScore > primaryScore) ? primary : m;
+                const winnerDoc = (currentScore > primaryScore) ? m : primary;
+
+                const mergeUpdates = {};
+                if (toDelete.source?.livescore_id && !winnerDoc.source?.livescore_id) {
+                    mergeUpdates['source.livescore_id'] = toDelete.source.livescore_id;
+                }
+                if (toDelete.status?.state === 'in') {
+                    mergeUpdates['status.state'] = toDelete.status.state;
+                    mergeUpdates['status.clock'] = toDelete.status.clock;
+                    mergeUpdates['status.detail'] = toDelete.status.detail;
+                    mergeUpdates['status.period'] = toDelete.status.period;
+                    mergeUpdates['home.score'] = toDelete.home?.score ?? winnerDoc.home?.score;
+                    mergeUpdates['away.score'] = toDelete.away?.score ?? winnerDoc.away?.score;
+                }
+                if (Object.keys(mergeUpdates).length > 0) {
+                    await SoccerMatch.updateOne({ _id: winnerDoc._id }, { $set: mergeUpdates });
+                }
 
                 if (currentScore > primaryScore) {
                     idsToDelete.push(primary._id);
@@ -1882,5 +1987,6 @@ module.exports = {
     fetchEspnMatchDetails,
     formatLiveScoreLogo,
     resolveLeagueSlug,
+    resolveMatchEspnId,
     TARGET_LEAGUES
 };

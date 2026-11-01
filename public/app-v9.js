@@ -83,6 +83,32 @@
         'uefa.super_cup': '🏆',
         'conmebol.recopa': '🏆',
         'eng.w.1': '🏴󠁧󠁢󠁥󠁮󠁧󠁿',
+        'eng.w.cup': '🏴󠁧󠁢󠁥󠁮󠁧󠁿',
+        'eng.w.fa': '🏴󠁧󠁢󠁥󠁮󠁧󠁿',
+        'sui.w.1': '🇨🇭',
+        'bel.w.1': '🇧🇪',
+        'sco.w.1': '🏴󠁧󠁢󠁳󠁣󠁴󠁿',
+        'bra.w.1': '🇧🇷',
+        'esp.w.1': '🇪🇸',
+        'fra.w.1': '🇫🇷',
+        'ger.w.1': '🇩🇪',
+        'ita.w.1': '🇮🇹',
+        'aus.w.1': '🇦🇺',
+        'mex.w.1': '🇲🇽',
+        'swe.w.1': '🇸🇪',
+        'nor.w.1': '🇳🇴',
+        'den.w.1': '🇩🇰',
+        'ned.w.1': '🇳🇱',
+        'por.w.1': '🇵🇹',
+        'pol.w.1': '🇵🇱',
+        'gre.w.1': '🇬🇷',
+        'nga.w.1': '🇳🇬',
+        'rsa.w.1': '🇿🇦',
+        'uefa.w.champions': '🏆',
+        'caf.w.champions': '🌍',
+        'fifa.w.worldcup': '🌐',
+        'uefa.w.euro': '🏆',
+        'w.international': '🌐',
         'usa.w.1': '🇺🇸',
         'usa.usl.1': '🇺🇸',
         'usa.open': '🇺🇸',
@@ -807,21 +833,37 @@
             if (!events || !events.length) return '';
 
             // Deduplicate events within this league to ensure zero double rows
-            const seenMatchSig = new Set();
-            const dedupedEvents = [];
+            const seenMatchSig = new Map();
             for (const ev of events) {
                 const comp = ev.competitions?.[0] || {};
                 const hName = comp.competitors?.find(c => c.homeAway === 'home')?.team?.displayName || ev.name?.split(' vs ')?.[0] || '';
                 const aName = comp.competitors?.find(c => c.homeAway === 'away')?.team?.displayName || ev.name?.split(' vs ')?.[1] || '';
-                const cleanH = hName.toLowerCase().replace(/[^a-z0-9]/g, '');
-                const cleanA = aName.toLowerCase().replace(/[^a-z0-9]/g, '');
+                const cleanH = hName.toLowerCase()
+                    .replace(/\b(18\d{2}|19\d{2}|20\d{2})\b/g, '')
+                    .replace(/\b(04|05|96|98)\b/g, '')
+                    .replace(/\b(fc|cf|sc|ac|cd|afc|fk|sk|sv|ssc|as|rc|ud|rb|calcio)\b/g, '')
+                    .replace(/[^a-z0-9]/g, '');
+                const cleanA = aName.toLowerCase()
+                    .replace(/\b(18\d{2}|19\d{2}|20\d{2})\b/g, '')
+                    .replace(/\b(04|05|96|98)\b/g, '')
+                    .replace(/\b(fc|cf|sc|ac|cd|afc|fk|sk|sv|ssc|as|rc|ud|rb|calcio)\b/g, '')
+                    .replace(/[^a-z0-9]/g, '');
                 const dKey = ev.date ? String(ev.date).slice(0, 10) : '';
                 const sig = [cleanH, cleanA].sort().join('_vs_') + '_' + dKey;
+
+                const hLogo = comp.competitors?.find(c => c.homeAway === 'home')?.team?.logo || '';
+                const evScore = (hLogo.includes('espncdn') ? 3 : 0) + (/^\d{6,}$/.test(String(ev.id)) ? 2 : 0);
+
                 if (!seenMatchSig.has(sig)) {
-                    seenMatchSig.add(sig);
-                    dedupedEvents.push(ev);
+                    seenMatchSig.set(sig, { event: ev, score: evScore });
+                } else {
+                    const existing = seenMatchSig.get(sig);
+                    if (evScore > existing.score) {
+                        seenMatchSig.set(sig, { event: ev, score: evScore });
+                    }
                 }
             }
+            const dedupedEvents = Array.from(seenMatchSig.values()).map(e => e.event);
             if (!dedupedEvents.length) return '';
 
             totalCount += dedupedEvents.length;

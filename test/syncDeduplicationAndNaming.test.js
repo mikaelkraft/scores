@@ -35,7 +35,7 @@ test('resolveLeagueSlug prevents non-English Premier Leagues from colliding with
 
 test('resolveLeagueSlug correctly separates Women competitions', () => {
     assert.equal(resolveLeagueSlug('Barclays Women\'s Super League', 'England', 'eng.w.1'), 'eng.w.1');
-    assert.equal(resolveLeagueSlug('Women\'s Super League', '', ''), 'eng.w.1');
+    assert.equal(resolveLeagueSlug('Women\'s Super League', 'England', ''), 'eng.w.1');
     assert.equal(resolveLeagueSlug('WSL Players Cup, League Phase', '', ''), 'eng.w.cup');
     assert.equal(resolveLeagueSlug('Women\'s FA Cup, First Round', '', ''), 'eng.w.fa');
     assert.equal(resolveLeagueSlug('A-League Women', '', ''), 'aus.w.1');
@@ -45,6 +45,18 @@ test('resolveLeagueSlug correctly separates Women competitions', () => {
     assert.equal(resolveLeagueSlug('D1 Arkema', 'France', 'fra.w.1'), 'fra.w.1');
     assert.equal(resolveLeagueSlug('Serie A Femminile', 'Italy', 'ita.w.1'), 'ita.w.1');
     assert.equal(resolveLeagueSlug('UEFA Women\'s Champions League', 'International', 'uefa.w.champions'), 'uefa.w.champions');
+
+    // Foreign Women's Super Leagues must NEVER be lumped into English WSL or International w.other
+    assert.equal(resolveLeagueSlug('Swiss Women\'s Super League', 'Switzerland', 'sui.w.1'), 'sui.w.1');
+    assert.equal(resolveLeagueSlug('Super League Women', 'Switzerland', ''), 'sui.w.1');
+    assert.equal(resolveLeagueSlug('Belgian Women\'s Super League', 'Belgium', 'bel.w.1'), 'bel.w.1');
+    assert.equal(resolveLeagueSlug('Scottish Women\'s Premier League', 'Scotland', 'sco.w.1'), 'sco.w.1');
+    assert.equal(resolveLeagueSlug('Brasileirão Feminino', 'Brazil', 'bra.w.1'), 'bra.w.1');
+    assert.equal(resolveLeagueSlug('Damallsvenskan', 'Sweden', 'swe.w.1'), 'swe.w.1');
+    assert.equal(resolveLeagueSlug('Toppserien Women', 'Norway', 'nor.w.1'), 'nor.w.1');
+
+    // Unmapped women's games route cleanly to w.international instead of dumping under WSL
+    assert.equal(resolveLeagueSlug('International Friendly Women', 'International', ''), 'w.international');
 });
 
 test('resolveLeagueSlug correctly differentiates youth, reserves, and lower tiers from eng.1', () => {
@@ -118,4 +130,14 @@ test('areTeamNamesMatching accurately deduplicates teams between ESPN and LiveSc
     // Non-matching teams do not collide
     assert.equal(areTeamNamesMatching('Chelsea', 'Arsenal'), false);
     assert.equal(areTeamNamesMatching('Real Madrid', 'Barcelona'), false);
+});
+
+test('normalizeTeamName accurately strips foundation years and club noise', () => {
+    assert.equal(normalizeTeamName('Como 1907'), 'como');
+    assert.equal(normalizeTeamName('Venezia FC'), 'venezia');
+    assert.equal(normalizeTeamName('Schalke 04'), 'schalke');
+    assert.equal(normalizeTeamName('Bayer 04 Leverkusen'), 'bayerleverkusen');
+    assert.equal(normalizeTeamName('Hannover 96'), 'hannover');
+    assert.equal(normalizeTeamName('Como Calcio 1907'), 'como');
+    assert.equal(normalizeTeamName('AC Milan'), 'acmilan');
 });

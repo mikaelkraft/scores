@@ -62,6 +62,7 @@ const {
     serializeSummary,
     synthesizeMatchTelemetry
 } = require('../services/soccerSerializer');
+const { resolveMatchEspnId } = require('../services/soccerSyncService');
 
 const LEAGUE_PATTERN = /^[a-z0-9][a-z0-9._-]{0,63}$/;
 const EVENT_PATTERN = /^[a-zA-Z0-9_-]{1,128}$/;
@@ -475,72 +476,80 @@ router.get('/:league/fixtures', validateLeague, async(req, res) => {
 
 async function sendSummary(req, res) {
     try {
+        const isMongoId = /^[0-9a-fA-F]{24}$/.test(req.eventId);
         let [league, match] = await Promise.all([
             getLeague(req.params.league),
             SoccerMatch.findOne({
-                league_slug: req.params.league,
-                'source.event_id': req.eventId
+                $or: [
+                    { 'source.event_id': req.eventId },
+                    { 'source.competition_id': req.eventId },
+                    { 'source.livescore_id': req.eventId },
+                    { 'source.espn_id': req.eventId },
+                    ...(isMongoId ? [{ _id: req.eventId }] : [])
+                ]
             }).lean()
         ]);
 
-        if (!match) {
-            match = await SoccerMatch.findOne({
-                'source.event_id': req.eventId
-            }).lean();
-            if (match && !league) {
-                league = await getLeague(match.league_slug);
-            }
+        if (match && !league) {
+            league = await getLeague(match.league_slug);
         }
 
         if (!match) return res.status(404).json({ error: 'Match not found' });
         if (!league) league = { slug: match.league_slug, name: match.note || 'Competition' };
 
-        const availability = await getMatchEventAvailability(match.league_slug, req.eventId);
+        const targetEspnId = await resolveMatchEspnId(match, req.eventId);
+        const availability = await getMatchEventAvailability(match.league_slug, targetEspnId || req.eventId);
         const summary = serializeSummary(match, league, availability);
 
         // Enrich with real-time match telemetry (boxscore stats, rosters, and keyEvents)
-        try {
-            const espnLeague = match.league_slug || req.params.league || 'all';
-            let espnUrl = `https://site.api.espn.com/apis/site/v2/sports/soccer/${espnLeague}/summary?event=${encodeURIComponent(req.eventId)}`;
-            let espnData = await fetchJson(espnUrl);
-            if (!espnData?.boxscore?.teams?.length && espnLeague !== 'all') {
-                espnUrl = `https://site.api.espn.com/apis/site/v2/sports/soccer/all/summary?event=${encodeURIComponent(req.eventId)}`;
-                const fallbackData = await fetchJson(espnUrl);
-                if (fallbackData) espnData = fallbackData;
-            }
+        const queryEspnId = targetEspnId || (/^\d{6,}$/.test(req.eventId) ? req.eventId : null);
+        if (queryEspnId) {
+            try {
+                const espnLeague = match.league_slug || req.params.league || 'all';
+                let espnUrl = `https://site.api.espn.com/apis/site/v2/sports/soccer/${espnLeague}/summary?event=${encodeURIComponent(queryEspnId)}`;
+                let espnData = await fetchJson(espnUrl);
+                if (!espnData?.boxscore?.teams?.length && espnLeague !== 'all') {
+                    espnUrl = `https://site.api.espn.com/apis/site/v2/sports/soccer/all/summary?event=${encodeURIComponent(queryEspnId)}`;
+                    const fallbackData = await fetchJson(espnUrl);
+                    if (fallbackData) espnData = fallbackData;
+                }
 
-            if (espnData) {
-                if (espnData.boxscore?.teams?.length) {
-                    summary.boxscore = espnData.boxscore;
+                if (espnData) {
+                    if (espnData.boxscore?.teams?.length) {
+                        summary.boxscore = espnData.boxscore;
+                    }
+                    if (espnData.keyEvents?.length) {
+                        summary.keyEvents = espnData.keyEvents;
+                    }
+                    if (espnData.rosters?.length) {
+                        summary.rosters = espnData.rosters;
+                    }
+                    if (espnData.gameInfo) {
+                        summary.gameInfo = espnData.gameInfo;
+                    }
+                    if (espnData.header?.competitions?.[0]) {
+                        summary.header = summary.header || {};
+                        summary.header.competitions = espnData.header.competitions;
+                        if (espnData.header.season) summary.header.season = espnData.header.season;
+                    }
                 }
-                if (espnData.keyEvents?.length) {
-                    summary.keyEvents = espnData.keyEvents;
-                }
-                if (espnData.rosters?.length) {
-                    summary.rosters = espnData.rosters;
-                }
-                if (espnData.gameInfo) {
-                    summary.gameInfo = espnData.gameInfo;
-                }
-                if (espnData.header?.competitions?.[0]) {
-                    summary.header = summary.header || {};
-                    summary.header.competitions = espnData.header.competitions;
-                    if (espnData.header.season) summary.header.season = espnData.header.season;
-                }
-            }
+            } catch {}
+        }
 
-            // If ESPN provided no boxscore/events or for LiveScore ingested matches, enrich with LiveScore telemetry
-            const hasStats = Boolean(
-                summary.boxscore?.teams?.[0]?.statistics?.length ||
-                summary.boxscore?.teams?.[1]?.statistics?.length
-            );
-            const isLiveScoreEvent = String(match.source?.provider || '').toLowerCase() === 'livescore'
-                || String(match.source?.event_id || req.eventId).length <= 8;
+        // If ESPN provided no boxscore/events or for LiveScore ingested matches, enrich with LiveScore telemetry
+        const hasStats = Boolean(
+            summary.boxscore?.teams?.[0]?.statistics?.length ||
+            summary.boxscore?.teams?.[1]?.statistics?.length
+        );
+        const isLiveScoreEvent = String(match.source?.provider || '').toLowerCase() === 'livescore'
+            || Boolean(match.source?.livescore_id)
+            || String(match.source?.event_id || req.eventId).length <= 8;
 
-            if (!hasStats || isLiveScoreEvent || !summary.keyEvents?.length) {
-                try {
-                    const { fetchLiveScoreMatchDetails } = require('../services/soccerSyncService');
-                    const lsData = await fetchLiveScoreMatchDetails(match.source?.event_id || req.eventId);
+        if (!hasStats || isLiveScoreEvent || !summary.keyEvents?.length) {
+            try {
+                const { fetchLiveScoreMatchDetails } = require('../services/soccerSyncService');
+                const lsId = match.source?.livescore_id || (String(match.source?.provider || '').toLowerCase() === 'livescore' ? match.source?.event_id : null) || req.eventId;
+                const lsData = await fetchLiveScoreMatchDetails(lsId);
                     if (lsData) {
                         if (lsData.boxscore && !hasStats) {
                             summary.boxscore = lsData.boxscore;
@@ -569,9 +578,6 @@ async function sendSummary(req, res) {
             if (!finalHasStats) {
                 summary.boxscore = synthesizeMatchTelemetry(match, summary);
             }
-        } catch (e) {
-            // Live fetch non-blocking fallback
-        }
 
         res.set('Cache-Control', `public, max-age=${match.status?.state === 'in' ? 4 : 30}`);
         return res.json(summary);
