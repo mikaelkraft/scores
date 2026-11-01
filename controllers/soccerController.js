@@ -527,6 +527,12 @@ async function sendSummary(req, res) {
                     if (espnData.gameInfo) {
                         summary.gameInfo = espnData.gameInfo;
                     }
+                    if (espnData.seasonseries?.length) {
+                        summary.seasonseries = espnData.seasonseries;
+                    }
+                    if (espnData.lastFiveGames?.length) {
+                        summary.lastFiveGames = espnData.lastFiveGames;
+                    }
                     if (espnData.header?.competitions?.[0]) {
                         summary.header = summary.header || {};
                         summary.header.competitions = espnData.header.competitions;

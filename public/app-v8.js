@@ -439,6 +439,136 @@
         if (loading && elements[`${kind}-empty`]) elements[`${kind}-empty`].hidden = true;
     }
 
+    function cleanTeamNameForDedup(name) {
+        return (name || '')
+            .toLowerCase()
+            .replace(/\b(18\d{2}|19\d{2}|20\d{2})\b/g, '')
+            .replace(/\b(04|05|96|98)\b/g, '')
+            .replace(/\b(fc|cf|sc|ac|cd|afc|fk|sk|sv|ssc|as|rc|ud|rb|calcio)\b/g, '')
+            .replace(/[^a-z0-9]/g, '');
+    }
+
+    function getEventDedupSignature(ev) {
+        const { home, away } = competitorsFromEvent(ev);
+        const hName = cleanTeamNameForDedup(home.team?.displayName || home.team?.name || ev.name?.split(' vs ')?.[0] || '');
+        const aName = cleanTeamNameForDedup(away.team?.displayName || away.team?.name || ev.name?.split(' vs ')?.[1] || '');
+        const dKey = ev.scoreboardDate || (ev.date ? String(ev.date).slice(0, 10) : '');
+        return [hName, aName].sort().join('_vs_') + '_' + dKey;
+    }
+
+    function getEventQualityScore(ev) {
+        const { home, away } = competitorsFromEvent(ev);
+        const hLogo = home.team?.logo || '';
+        const aLogo = away.team?.logo || '';
+        const hasEspnLogo = (hLogo.includes('espncdn') || aLogo.includes('espncdn')) ? 4 : 0;
+        const hasCanonicalId = (/^\d{6,}$/.test(String(ev.id))) ? 3 : 0;
+        const slug = ev.league?.slug || ev.league_slug || '';
+        const hasSpecificSlug = (slug && slug !== 'other' && slug !== 'w.other') ? 2 : 0;
+        const hasClock = (ev.status?.clock || ev.status?.detail) ? 1 : 0;
+        return hasEspnLogo + hasCanonicalId + hasSpecificSlug + hasClock;
+    }
+
+    function deduplicateMatchesList(matchList) {
+        if (!Array.isArray(matchList) || !matchList.length) return [];
+        const seenMap = new Map();
+        for (const m of matchList) {
+            const sig = getEventDedupSignature(m);
+            if (!sig || sig === '_vs_') {
+                seenMap.set(`m_${m.id || Math.random()}`, { item: m, score: 0 });
+                continue;
+            }
+            const score = getEventQualityScore(m);
+            if (!seenMap.has(sig)) {
+                seenMap.set(sig, { item: m, score });
+            } else {
+                const existing = seenMap.get(sig);
+                if (score > existing.score) {
+                    seenMap.set(sig, { item: m, score });
+                }
+            }
+        }
+        return Array.from(seenMap.values()).map(v => v.item);
+    }
+
+    function enrichLeagueMeta(league, ev = null) {
+        let slug = league?.slug || ev?.league_slug || 'other';
+        let name = league?.name || ev?.note || 'Competition';
+        let country = league?.country || '';
+
+        const lowerName = name.toLowerCase();
+        const lowerSlug = slug.toLowerCase();
+
+        // 1. Identify domestic women's leagues and map them to their correct country and slug
+        if (lowerName.includes("women's super league") || lowerName.includes("wsl players cup") || lowerName.includes("wsl cup") || lowerName.includes("women's fa cup")) {
+            country = 'England';
+            if (!slug || slug === 'w.other' || slug === 'other') {
+                slug = (lowerName.includes('players cup') || lowerName.includes('wsl cup')) ? 'eng.w.cup' : (lowerName.includes('fa cup') ? 'eng.w.fa' : 'eng.w.1');
+            }
+        } else if (lowerName.includes("nwsl") || lowerName.includes("national women's soccer league")) {
+            country = 'USA';
+            if (!slug || slug === 'w.other' || slug === 'other') slug = 'usa.w.1';
+        } else if (lowerName.includes("liga mx femenil") || (lowerName.includes("femenil") && !lowerName.includes("esp"))) {
+            country = 'Mexico';
+            if (!slug || slug === 'w.other' || slug === 'other') slug = 'mex.w.1';
+        } else if (lowerName.includes("a-league women") || lowerName.includes("w-league")) {
+            country = 'Australia';
+            if (!slug || slug === 'w.other' || slug === 'other') slug = 'aus.w.1';
+        } else if (lowerName.includes("frauen-bundesliga") || lowerName.includes("frauen bundesliga")) {
+            country = 'Germany';
+            if (!slug || slug === 'w.other' || slug === 'other') slug = 'ger.w.1';
+        } else if (lowerName.includes("première ligue") || lowerName.includes("d1 féminine") || lowerName.includes("division 1 féminine") || lowerName.includes("arkema")) {
+            country = 'France';
+            if (!slug || slug === 'w.other' || slug === 'other') slug = 'fra.w.1';
+        } else if (lowerName.includes("serie a femminile") || lowerName.includes("femminile")) {
+            country = 'Italy';
+            if (!slug || slug === 'w.other' || slug === 'other') slug = 'ita.w.1';
+        } else if (lowerName.includes("liga f") || lowerName.includes("primera división femenina") || lowerName.includes("copa de la reina")) {
+            country = 'Spain';
+            if (!slug || slug === 'w.other' || slug === 'other') slug = 'esp.w.1';
+        } else if (lowerName.includes("damallsvenskan")) {
+            country = 'Sweden';
+            if (!slug || slug === 'w.other' || slug === 'other') slug = 'swe.w.1';
+        } else if (lowerName.includes("toppserien")) {
+            country = 'Norway';
+            if (!slug || slug === 'w.other' || slug === 'other') slug = 'nor.w.1';
+        } else if (lowerName.includes("swpl") || lowerName.includes("scottish women")) {
+            country = 'Scotland';
+            if (!slug || slug === 'w.other' || slug === 'other') slug = 'sco.w.1';
+        } else if (lowerName.includes("super league women") && (lowerSlug.startsWith('sui') || lowerName.includes('swiss'))) {
+            country = 'Switzerland';
+            if (!slug || slug === 'w.other' || slug === 'other') slug = 'sui.w.1';
+        } else if (lowerName.includes("super league women") && (lowerSlug.startsWith('bel') || lowerName.includes('belgian') || lowerName.includes('lotto'))) {
+            country = 'Belgium';
+            if (!slug || slug === 'w.other' || slug === 'other') slug = 'bel.w.1';
+        }
+
+        // 2. Infer country from slug prefix if country is missing or generic 'International'
+        if (!country || country.toLowerCase() === 'international') {
+            const prefix = slug.split('.')[0];
+            const countryMap = {
+                eng: 'England', esp: 'Spain', ita: 'Italy', ger: 'Germany', fra: 'France',
+                ned: 'Netherlands', por: 'Portugal', bel: 'Belgium', sco: 'Scotland',
+                sui: 'Switzerland', aut: 'Austria', gre: 'Greece', tur: 'Turkey',
+                den: 'Denmark', swe: 'Sweden', nor: 'Norway', fin: 'Finland',
+                pol: 'Poland', rus: 'Russia', ukr: 'Ukraine', cze: 'Czech Republic',
+                bra: 'Brazil', arg: 'Argentina', col: 'Colombia', chi: 'Chile',
+                mex: 'Mexico', usa: 'USA', aus: 'Australia', jpn: 'Japan',
+                chn: 'China', kor: 'South Korea', ksa: 'Saudi Arabia',
+                egy: 'Egypt', rsa: 'South Africa', nga: 'Nigeria', mar: 'Morocco'
+            };
+            if (countryMap[prefix]) {
+                country = countryMap[prefix];
+            }
+        }
+
+        return {
+            ...league,
+            slug: slug || 'other',
+            name: name || 'Competition',
+            country: country || (slug.startsWith('uefa.') ? 'Europe' : (slug.startsWith('conmebol.') ? 'South America' : 'International'))
+        };
+    }
+
     async function loadMeta() {
         try {
             const data = await fetchJson('/get/soccer/meta');
@@ -541,15 +671,18 @@
         try {
             const data = await fetchJson('/api/v1/football/live');
             const liveMatches = data.live || [];
-            state.liveMatchCount = liveMatches.length;
+
+            // Deduplicate live matches globally across all feeds / providers
+            const dedupedLive = deduplicateMatchesList(liveMatches);
+            state.liveMatchCount = dedupedLive.length;
 
             const badge = document.getElementById('live-count-badge');
             if (badge) {
-                badge.textContent = liveMatches.length;
-                badge.style.display = liveMatches.length > 0 ? 'inline-block' : 'none';
+                badge.textContent = dedupedLive.length;
+                badge.style.display = dedupedLive.length > 0 ? 'inline-block' : 'none';
             }
 
-            if (!liveMatches.length) {
+            if (!dedupedLive.length) {
                 if (elements['fixtures-empty']) {
                     elements['fixtures-empty'].hidden = false;
                     elements['fixtures-empty'].innerHTML = '<span class="empty-icon">⚽</span><p>No matches are currently in progress right now.<br><small style="color:var(--text-faint);">Check Scheduled fixtures or tap "All" to browse today’s match schedule.</small></p>';
@@ -559,21 +692,29 @@
                 return;
             }
 
-            // Group live matches by league
+            // Group live matches by specific league (isolating distinct women & cup competitions)
             const groupsMap = new Map();
-            for (const m of liveMatches) {
-                const slug = m.league?.slug || 'other';
-                if (!groupsMap.has(slug)) {
-                    groupsMap.set(slug, {
-                        league: m.league,
+            for (const m of dedupedLive) {
+                const league = enrichLeagueMeta(m.league, m);
+                const groupKey = (league.slug && league.slug !== 'w.other' && league.slug !== 'other')
+                    ? league.slug
+                    : `league_${(league.name || 'other').toLowerCase().replace(/[^a-z0-9]/g, '_')}`;
+
+                if (!groupsMap.has(groupKey)) {
+                    groupsMap.set(groupKey, {
+                        league,
                         events: []
                     });
                 }
+
+                const hName = m.home?.displayName || m.home?.name || 'Home';
+                const aName = m.away?.displayName || m.away?.name || 'Away';
+
                 // Adapt to format expected by renderFlashscoreMatchRow
-                groupsMap.get(slug).events.push({
+                groupsMap.get(groupKey).events.push({
                     id: m.id,
                     date: m.date,
-                    name: `${m.home.displayName} vs ${m.away.displayName}`,
+                    name: `${hName} vs ${aName}`,
                     status: {
                         type: {
                             state: 'in',
@@ -589,11 +730,11 @@
                         id: m.id,
                         date: m.date,
                         competitors: [
-                            { homeAway: 'home', score: m.home.score, winner: m.home.winner, team: m.home },
-                            { homeAway: 'away', score: m.away.score, winner: m.away.winner, team: m.away }
+                            { homeAway: 'home', score: m.home?.score ?? 0, winner: m.home?.winner, team: m.home },
+                            { homeAway: 'away', score: m.away?.score ?? 0, winner: m.away?.winner, team: m.away }
                         ]
                     }],
-                    league_slug: slug
+                    league_slug: league.slug
                 });
             }
 
@@ -767,16 +908,23 @@
                 return;
             }
 
+            // Deduplicate all fixtures globally across all feeds / providers
+            const dedupedMatches = deduplicateMatchesList(matches);
+
             const groupsMap = new Map();
-            for (const m of matches) {
-                const slug = m.league?.slug || 'other';
-                if (!groupsMap.has(slug)) {
-                    groupsMap.set(slug, {
-                        league: m.league || { slug, name: 'Competition', country: '' },
+            for (const m of dedupedMatches) {
+                const league = enrichLeagueMeta(m.league, m);
+                const groupKey = (league.slug && league.slug !== 'w.other' && league.slug !== 'other')
+                    ? league.slug
+                    : `league_${(league.name || 'other').toLowerCase().replace(/[^a-z0-9]/g, '_')}`;
+
+                if (!groupsMap.has(groupKey)) {
+                    groupsMap.set(groupKey, {
+                        league,
                         events: []
                     });
                 }
-                groupsMap.get(slug).events.push(m);
+                groupsMap.get(groupKey).events.push(m);
             }
 
             renderAllLeaguesGrouped([...groupsMap.values()]);
