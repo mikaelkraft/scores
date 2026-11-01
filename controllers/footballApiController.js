@@ -607,9 +607,24 @@ router.get('/predictions-context/:eventId', async (req, res) => {
             }
         } catch {}
 
+        // Parse lifetime series total from summary/seriesScore if available
+        let parsedSeriesTotal = 0;
+        if (seriesSummary) {
+            const m = seriesSummary.match(/(\d+)[\s-]+(\d+)(?:[\s-]+(\d+))?/);
+            if (m) {
+                parsedSeriesTotal = (parseInt(m[1], 10) || 0) + (parseInt(m[2], 10) || 0) + (parseInt(m[3], 10) || 0);
+            }
+        }
+        if (!parsedSeriesTotal && seriesScore) {
+            const m = seriesScore.match(/(\d+)[\s-]+(\d+)(?:[\s-]+(\d+))?/);
+            if (m) {
+                parsedSeriesTotal = (parseInt(m[1], 10) || 0) + (parseInt(m[2], 10) || 0) + (parseInt(m[3], 10) || 0);
+            }
+        }
+
         // Compute Lifetime H2H statistics across all deduplicated historical encounters
         const allLifetimeH2h = Array.from(h2hMap.values()).sort((a, b) => new Date(b.date) - new Date(a.date));
-        const totalLifetimeMeetings = allLifetimeH2h.length;
+        const totalLifetimeMeetings = Math.max(parsedSeriesTotal, allLifetimeH2h.length);
 
         let homeWins = 0;
         let awayWins = 0;

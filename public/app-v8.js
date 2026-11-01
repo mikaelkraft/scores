@@ -268,16 +268,47 @@
         };
     }
 
+    function formatMatchClock(status, type = {}) {
+        const detail = String(status?.displayClock || type?.shortDetail || type?.detail || '').trim();
+        // If detail is not a raw multi-digit number in seconds (e.g. '45'', 'HT', 'FT', '45+2''), return it
+        if (detail && !/^\d{3,}$/.test(detail)) {
+            return detail;
+        }
+        const raw = status?.clock ?? type?.clock;
+        if (raw !== undefined && raw !== null && raw !== '') {
+            const num = Number(raw);
+            if (!isNaN(num)) {
+                if (num > 120) {
+                    // Raw seconds (e.g. 2700 -> 45', 5400 -> 90')
+                    const mins = Math.floor(num / 60);
+                    return `${mins}'`;
+                }
+                if (num > 0) {
+                    return `${num}'`;
+                }
+            }
+        }
+        if (detail) {
+            const num = Number(detail);
+            if (!isNaN(num) && num > 120) {
+                return `${Math.floor(num / 60)}'`;
+            }
+            return detail;
+        }
+        return type?.state === 'in' ? 'Live' : (type?.shortDetail || 'Live');
+    }
+
     function statusInfo(event) {
         const status = event?.status || competitionFromEvent(event).status || {};
         const type = status.type || {};
         const stateName = status.state || type.state || 'unknown';
         if (stateName === 'in' || status.isLive) {
-            const clock = status.clock || status.displayClock || type.shortDetail || 'Live';
+            const clock = formatMatchClock(status, type);
             return { state: 'live', label: clock, pillClass: 'in-play' };
         }
         if (stateName === 'post' || status.completed || type.completed) {
-            return { state: 'finished', label: status.detail || type.shortDetail || 'FT', pillClass: 'post' };
+            const label = type.shortDetail || status.detail || 'FT';
+            return { state: 'finished', label: /^\d{3,}$/.test(label) ? 'FT' : label, pillClass: 'post' };
         }
         return { state: 'scheduled', label: status.detail || type.shortDetail || 'Upcoming', pillClass: 'pre' };
     }
@@ -300,7 +331,7 @@
     }
 
     async function loadLeagues() {
-        const data = await fetchJson('/get/soccer/leagues?kind=club&available=true');
+        const data = await fetchJson('/get/soccer/leagues?kind=all');
         state.leagues = data.leagues || [];
         populateCountries();
     }
@@ -1138,18 +1169,43 @@
             normalizeMatchEvent(event, index, 'play', home, away));
 
         const events = [];
-        const seen = new Set();
+        const seenIncidents = new Map();
+
         for (const event of [...keyEvents, ...playEvents]) {
-            const teamId = event.team?.id || event.team?.source_id || event.team?.displayName || event.team?.name || '';
-            const textSig = (event.text || '').replace(/\s+/g, '').toLowerCase().slice(0, 16);
-            const signature = event.id && !event.id.startsWith('play-') && !event.id.startsWith('key-event-')
-                ? event.id
-                : `${event.kind}|${event.clockValue}|${teamId}|${textSig}`;
-            if (seen.has(signature)) continue;
-            seen.add(signature);
+            const teamId = String(event.team?.id || event.team?.source_id || event.team?.displayName || event.team?.name || '').toLowerCase();
+            const minute = event.clockValue || (parseInt(event.clock, 10) || 0);
+            
+            // Format display clock if raw seconds
+            if (typeof event.clock === 'string' && /^\d{3,}$/.test(event.clock.trim())) {
+                const num = Number(event.clock.trim());
+                event.clock = `${Math.floor(num / 60)}'`;
+            }
+
+            // Deduplicate matching goals, cards, and substitutions occurring in the same minute for the same team
+            const isKeyIncident = event.kind === 'goal' || event.kind === 'red-card' || event.kind === 'yellow-card' || event.kind === 'substitution';
+            const incidentKey = isKeyIncident
+                ? `${event.kind}|${minute}|${teamId}`
+                : `${event.kind}|${minute}|${teamId}|${(event.text || '').replace(/\s+/g, '').toLowerCase().slice(0, 16)}`;
+
+            if (seenIncidents.has(incidentKey)) {
+                const existing = seenIncidents.get(incidentKey);
+                const existingHasPlayer = Boolean(existing.athlete?.displayName || existing.athlete?.fullName);
+                const currentHasPlayer = Boolean(event.athlete?.displayName || event.athlete?.fullName);
+                if (!existingHasPlayer && currentHasPlayer) {
+                    existing.athlete = event.athlete;
+                    existing.participants = event.participants;
+                    existing.text = event.text;
+                }
+                if (event.scoringPlay) existing.scoringPlay = true;
+                if (event.penaltyKick) existing.penaltyKick = true;
+                if (event.ownGoal) existing.ownGoal = true;
+                continue;
+            }
+
+            seenIncidents.set(incidentKey, event);
             events.push(event);
         }
-        return events.sort((left, right) => left.clockValue - right.clockValue);
+        return events.sort((left, right) => (left.clockValue || 0) - (right.clockValue || 0));
     }
 
     function eventBadge(kind) {
@@ -1439,6 +1495,8 @@
 
         if (elements['dialog-content']) {
             const prevScrollTop = elements['dialog-content'].scrollTop;
+            const existingTabs = elements['dialog-content'].querySelector('.drawer-tabs');
+            const prevTabsScrollLeft = existingTabs ? existingTabs.scrollLeft : 0;
             const activeTab = state.drawerActiveTab || 'timeline';
 
             const getStatVal = (list, name) => {
@@ -1475,7 +1533,7 @@
                         </div>
                         <div class="score-center-col">
                             <div class="score-digits" style="font-size:32px;">${escapeHtml(home.score ?? '—')} - ${escapeHtml(away.score ?? '—')}</div>
-                            <div class="minute-pill ${status.pillClass}" style="margin-top:6px;">${escapeHtml(competition.status?.displayClock || status.label)}</div>
+                            <div class="minute-pill ${status.pillClass}" style="margin-top:6px;">${escapeHtml(formatMatchClock(competition.status, competition.status?.type) || status.label)}</div>
                         </div>
                         <div class="team-side">
                             ${teamLogo(away.team, 'team-crest')}
@@ -1498,10 +1556,27 @@
                 </div>
 
                 <div id="drawer-tab-timeline" class="drawer-tab-content" ${activeTab === 'timeline' ? '' : 'hidden'}>
-                    <h4 style="margin:0 0 12px; font-size:14px; color:var(--text-main);">Goals &amp; Scorers</h4>
-                    <div>${scorerRows || '<p style="color:var(--text-muted); font-size:13px;">No goals recorded for this match.</p>'}</div>
+                    ${scorers.length ? `
+                        <div class="timeline-goals-summary" style="background:var(--bg-canvas); border:1px solid var(--border-subtle); border-radius:8px; padding:12px 14px; margin-bottom:18px;">
+                            <div style="font-size:11.5px; text-transform:uppercase; color:var(--text-muted); font-weight:700; margin-bottom:8px; letter-spacing:0.5px;">⚽ Goals &amp; Match Deciders</div>
+                            <div style="display:flex; flex-wrap:wrap; gap:8px;">
+                                ${scorers.map(goal => {
+                                    const athleteName = goal.athlete?.displayName || goal.athlete?.fullName || goal.text || 'Goal';
+                                    const teamName = goal.team?.displayName || goal.team?.name || '';
+                                    return `<span style="display:inline-flex; align-items:center; gap:6px; background:var(--bg-surface-elevated); border:1px solid var(--border-subtle); padding:4px 10px; border-radius:6px; font-size:12px; font-weight:600; color:var(--text-main);">
+                                        <strong style="color:var(--color-primary);">${escapeHtml(goal.clock || '—')}</strong>
+                                        <span>⚽ ${escapeHtml(athleteName)}</span>
+                                        ${teamName ? `<span style="color:var(--text-muted); font-size:11px;">(${escapeHtml(teamName)})</span>` : ''}
+                                    </span>`;
+                                }).join('')}
+                            </div>
+                        </div>
+                    ` : ''}
 
-                    <h4 style="margin:20px 0 12px; font-size:14px; color:var(--text-main);">Match Timeline</h4>
+                    <h4 style="margin:0 0 12px; font-size:14px; color:var(--text-main); display:flex; justify-content:space-between; align-items:center;">
+                        <span>Chronological Match Timeline &amp; Events</span>
+                        <span style="font-size:11.5px; color:var(--text-muted); font-weight:normal;">${events.length} recorded events</span>
+                    </h4>
                     <div>${timelineRows || '<p style="color:var(--text-muted); font-size:13px;">No play-by-play events recorded.</p>'}</div>
                 </div>
 
@@ -1551,10 +1626,10 @@
                     ` : ''}
 
                     ${hasPastMeetings ? `
-                        <!-- Lifetime Head-to-Head Record -->
+                        <!-- Head-to-Head Record -->
                         <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(130px, 1fr)); gap:10px; margin-bottom:14px;">
                             <div style="background:var(--bg-canvas); border:1px solid var(--border-subtle); border-radius:8px; padding:12px; text-align:center;">
-                                <span style="font-size:11px; text-transform:uppercase; color:var(--text-muted); display:block;">Lifetime Encounters</span>
+                                <span style="font-size:11px; text-transform:uppercase; color:var(--text-muted); display:block;">${totalLifetimeMeetings > 5 ? 'Lifetime Encounters' : 'Recorded Meetings'}</span>
                                 <strong style="font-size:22px; color:var(--text-main);">${totalLifetimeMeetings}</strong>
                             </div>
                             <div style="background:var(--bg-canvas); border:1px solid var(--border-subtle); border-radius:8px; padding:12px; text-align:center;">
@@ -1562,7 +1637,7 @@
                                 <strong style="font-size:22px; color:#10b981;">${h2h.homeWins || 0}</strong>
                             </div>
                             <div style="background:var(--bg-canvas); border:1px solid var(--border-subtle); border-radius:8px; padding:12px; text-align:center;">
-                                <span style="font-size:11px; text-transform:uppercase; color:var(--text-muted); display:block;">All-Time Draws</span>
+                                <span style="font-size:11px; text-transform:uppercase; color:var(--text-muted); display:block;">${totalLifetimeMeetings > 5 ? 'All-Time Draws' : 'Recorded Draws'}</span>
                                 <strong style="font-size:22px; color:var(--text-muted);">${h2h.draws || 0}</strong>
                             </div>
                             <div style="background:var(--bg-canvas); border:1px solid var(--border-subtle); border-radius:8px; padding:12px; text-align:center;">
@@ -1571,7 +1646,7 @@
                             </div>
                         </div>
 
-                        <!-- Lifetime Ratio Bar & Quick Rates -->
+                        <!-- Ratio Bar & Quick Rates -->
                         <div style="background:var(--bg-canvas); border:1px solid var(--border-subtle); border-radius:8px; padding:12px 14px; margin-bottom:20px;">
                             <div style="display:flex; justify-content:space-between; font-size:11.5px; color:var(--text-muted); margin-bottom:6px; font-weight:600;">
                                 <span style="color:#10b981;">${escapeHtml(home.team?.abbreviation || home.team?.displayName || 'Home')} ${totalLifetimeMeetings > 0 ? Math.round(((h2h.homeWins || 0) / totalLifetimeMeetings) * 100) : 0}%</span>
@@ -1590,10 +1665,10 @@
                             </div>
                         </div>
 
-                        <!-- Recent Encounters (Last 5 Head-to-Head) -->
+                        <!-- Recent Encounters (Head-to-Head) -->
                         <h5 style="margin:20px 0 10px; font-size:13px; color:var(--text-main); display:flex; justify-content:space-between; align-items:center;">
-                            <span>Recent Encounters (Last 5 Head-to-Head)</span>
-                            <span style="font-size:11.5px; color:var(--text-muted); font-weight:normal;">Showing ${recentH2h.length} of ${totalLifetimeMeetings} encounters</span>
+                            <span>Recent Encounters (Last ${recentH2h.length} Head-to-Head)</span>
+                            <span style="font-size:11.5px; color:var(--text-muted); font-weight:normal;">Showing ${recentH2h.length} of ${totalLifetimeMeetings} recorded encounters</span>
                         </h5>
                         <div style="margin-bottom:24px;">${h2hMeetingsRows}</div>
 
@@ -1754,6 +1829,12 @@
                     });
                 });
             });
+
+            // Restore horizontal tabs scroll position so drawer doesn't jerk back to start during live refresh
+            const newTabs = elements['dialog-content'].querySelector('.drawer-tabs');
+            if (newTabs && prevTabsScrollLeft > 0) {
+                newTabs.scrollLeft = prevTabsScrollLeft;
+            }
 
             if (silent && prevScrollTop > 0) {
                 elements['dialog-content'].scrollTop = prevScrollTop;

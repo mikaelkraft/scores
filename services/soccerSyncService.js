@@ -375,22 +375,47 @@ async function syncLeague(leagueDef) {
         matchCount += await processEvents(sbData.events || [], slug, leagueDef, season, now);
 
         // 2. Discover and sync multi-date rounds from league calendar
-        const calendarDates = (espnLeague.calendar || [])
-            .map(entry => typeof entry === 'string' ? entry : entry.date)
-            .filter(Boolean);
+        const targetDates = new Set();
+        const pastCutoff = new Date(now.getTime() - 8 * 24 * 60 * 60 * 1000);   // past 8 days
+        const futureCutoff = new Date(now.getTime() + 14 * 24 * 60 * 60 * 1000); // next 14 days
 
-        if (calendarDates.length > 0) {
-            const pastCutoff = new Date(now.getTime() - 8 * 24 * 60 * 60 * 1000);   // past 8 days
-            const futureCutoff = new Date(now.getTime() + 14 * 24 * 60 * 60 * 1000); // next 14 days
-            const targetDates = new Set();
-
-            for (const calStr of calendarDates) {
-                const d = new Date(calStr);
+        function extractCalendarDates(item) {
+            if (!item) return;
+            if (typeof item === 'string') {
+                const d = new Date(item);
+                if (!isNaN(d.getTime()) && d >= pastCutoff && d <= futureCutoff) {
+                    targetDates.add(formatDateToScoreboard(d));
+                }
+                return;
+            }
+            if (item.date) {
+                const d = new Date(item.date);
                 if (!isNaN(d.getTime()) && d >= pastCutoff && d <= futureCutoff) {
                     targetDates.add(formatDateToScoreboard(d));
                 }
             }
+            if (item.startDate) {
+                const d = new Date(item.startDate);
+                if (!isNaN(d.getTime()) && d >= pastCutoff && d <= futureCutoff) {
+                    targetDates.add(formatDateToScoreboard(d));
+                }
+            }
+            if (item.endDate) {
+                const d = new Date(item.endDate);
+                if (!isNaN(d.getTime()) && d >= pastCutoff && d <= futureCutoff) {
+                    targetDates.add(formatDateToScoreboard(d));
+                }
+            }
+            if (Array.isArray(item.entries)) {
+                item.entries.forEach(extractCalendarDates);
+            }
+        }
 
+        if (Array.isArray(espnLeague.calendar)) {
+            espnLeague.calendar.forEach(extractCalendarDates);
+        }
+
+        if (targetDates.size > 0) {
             // Sync up to 6 match dates per league
             const dateList = Array.from(targetDates).slice(0, 6);
             for (const dateKey of dateList) {
@@ -1040,52 +1065,54 @@ async function syncLiveScoreInPlay() {
             const leagueName = stage.Snm || 'Football Competition';
             const cLower = country.toLowerCase();
 
-            let targetSlug = 'int.misc';
-            if (cLower.includes('indonesia')) targetSlug = 'idn.1';
-            else if (cLower.includes('vietnam')) targetSlug = 'vie.1';
-            else if (cLower.includes('thailand')) targetSlug = 'tha.1';
-            else if (cLower.includes('malaysia')) targetSlug = 'mys.1';
-            else if (cLower.includes('singapore')) targetSlug = 'sgp.1';
-            else if (cLower.includes('kenya')) targetSlug = 'ken.1';
-            else if (cLower.includes('ghana')) targetSlug = 'gha.1';
-            else if (cLower.includes('uganda')) targetSlug = 'uga.1';
-            else if (cLower.includes('india')) targetSlug = 'ind.1';
-            else if (cLower.includes('iran')) targetSlug = 'irn.1';
-            else if (cLower.includes('emirates') || cLower.includes('uae')) targetSlug = 'uae.1';
-            else if (cLower.includes('uzbekistan')) targetSlug = 'uzb.1';
-            else if (cLower.includes('romania')) targetSlug = 'rou.2';
-            else if (cLower.includes('montenegro')) targetSlug = 'mne.1';
-            else if (cLower.includes('qatar')) targetSlug = 'qat.1';
-            else if (cLower.includes('iraq')) targetSlug = 'irq.1';
-            else if (cLower.includes('jordan')) targetSlug = 'jor.1';
-            else if (cLower.includes('bahrain')) targetSlug = 'bhr.1';
-            else if (cLower.includes('egypt')) targetSlug = 'egy.1';
-            else if (cLower.includes('saudi')) targetSlug = 'ksa.1';
-            else if (cLower.includes('colombia')) targetSlug = 'col.1';
-            else if (cLower.includes('morocco')) targetSlug = 'mar.1';
-            else if (cLower.includes('nigeria')) targetSlug = 'nga.1';
-            else if (cLower.includes('south africa')) targetSlug = 'rsa.1';
-            else if (cLower.includes('brazil')) targetSlug = 'bra.1';
-            else if (cLower.includes('argentina')) targetSlug = 'arg.1';
-            else if (cLower.includes('england')) targetSlug = 'eng.1';
-            else if (cLower.includes('spain')) targetSlug = 'esp.1';
-            else if (cLower.includes('italy')) targetSlug = 'ita.1';
-            else if (cLower.includes('germany')) targetSlug = 'ger.1';
-            else if (cLower.includes('france')) targetSlug = 'fra.1';
-            else if (cLower.includes('peru')) targetSlug = 'per.1';
-            else if (cLower.includes('bolivia')) targetSlug = 'bol.1';
-            else if (cLower.includes('ecuador')) targetSlug = 'ecu.1';
-            else if (cLower.includes('paraguay')) targetSlug = 'par.1';
-            else if (cLower.includes('venezuela')) targetSlug = 'ven.1';
-            else if (cLower.includes('uruguay')) targetSlug = 'uru.1';
-            else if (cLower.includes('costa rica')) targetSlug = 'crc.1';
-            else if (cLower.includes('honduras')) targetSlug = 'hon.1';
-            else if (cLower.includes('guatemala')) targetSlug = 'gua.1';
-            else if (cLower.includes('iceland')) targetSlug = 'isl.1';
-            else {
-                const cSlug = (stage.Ccd || country).toLowerCase().replace(/[^a-z0-9]+/g, '').slice(0, 3);
-                const sSlug = (stage.Scd || leagueName).toLowerCase().replace(/[^a-z0-9]+/g, '.').slice(0, 16);
-                targetSlug = `${cSlug}.${sSlug}`.replace(/^\.+|\.+$/g, '');
+            let targetSlug = resolveLeagueSlug(leagueName, country, stage.Scd || '');
+            if (!targetSlug) {
+                if (cLower.includes('indonesia')) targetSlug = 'idn.1';
+                else if (cLower.includes('vietnam')) targetSlug = 'vie.1';
+                else if (cLower.includes('thailand')) targetSlug = 'tha.1';
+                else if (cLower.includes('malaysia')) targetSlug = 'mys.1';
+                else if (cLower.includes('singapore')) targetSlug = 'sgp.1';
+                else if (cLower.includes('kenya')) targetSlug = 'ken.1';
+                else if (cLower.includes('ghana')) targetSlug = 'gha.1';
+                else if (cLower.includes('uganda')) targetSlug = 'uga.1';
+                else if (cLower.includes('india')) targetSlug = 'ind.1';
+                else if (cLower.includes('iran')) targetSlug = 'irn.1';
+                else if (cLower.includes('emirates') || cLower.includes('uae')) targetSlug = 'uae.1';
+                else if (cLower.includes('uzbekistan')) targetSlug = 'uzb.1';
+                else if (cLower.includes('romania')) targetSlug = 'rou.2';
+                else if (cLower.includes('montenegro')) targetSlug = 'mne.1';
+                else if (cLower.includes('qatar')) targetSlug = 'qat.1';
+                else if (cLower.includes('iraq')) targetSlug = 'irq.1';
+                else if (cLower.includes('jordan')) targetSlug = 'jor.1';
+                else if (cLower.includes('bahrain')) targetSlug = 'bhr.1';
+                else if (cLower.includes('egypt')) targetSlug = 'egy.1';
+                else if (cLower.includes('saudi')) targetSlug = 'ksa.1';
+                else if (cLower.includes('colombia')) targetSlug = 'col.1';
+                else if (cLower.includes('morocco')) targetSlug = 'mar.1';
+                else if (cLower.includes('nigeria')) targetSlug = 'nga.1';
+                else if (cLower.includes('south africa')) targetSlug = 'rsa.1';
+                else if (cLower.includes('brazil')) targetSlug = 'bra.1';
+                else if (cLower.includes('argentina')) targetSlug = 'arg.1';
+                else if (cLower.includes('england')) targetSlug = 'eng.1';
+                else if (cLower.includes('spain')) targetSlug = 'esp.1';
+                else if (cLower.includes('italy')) targetSlug = 'ita.1';
+                else if (cLower.includes('germany')) targetSlug = 'ger.1';
+                else if (cLower.includes('france')) targetSlug = 'fra.1';
+                else if (cLower.includes('peru')) targetSlug = 'per.1';
+                else if (cLower.includes('bolivia')) targetSlug = 'bol.1';
+                else if (cLower.includes('ecuador')) targetSlug = 'ecu.1';
+                else if (cLower.includes('paraguay')) targetSlug = 'par.1';
+                else if (cLower.includes('venezuela')) targetSlug = 'ven.1';
+                else if (cLower.includes('uruguay')) targetSlug = 'uru.1';
+                else if (cLower.includes('costa rica')) targetSlug = 'crc.1';
+                else if (cLower.includes('honduras')) targetSlug = 'hon.1';
+                else if (cLower.includes('guatemala')) targetSlug = 'gua.1';
+                else if (cLower.includes('iceland')) targetSlug = 'isl.1';
+                else {
+                    const cSlug = (stage.Ccd || country).toLowerCase().replace(/[^a-z0-9]+/g, '').slice(0, 3);
+                    const sSlug = (stage.Scd || leagueName).toLowerCase().replace(/[^a-z0-9]+/g, '.').slice(0, 16);
+                    targetSlug = `${cSlug}.${sSlug}`.replace(/^\.+|\.+$/g, '');
+                }
             }
 
             const leagueDef = TARGET_LEAGUES.find(l => l.slug === targetSlug) || {
@@ -1320,8 +1347,13 @@ async function syncLiveScoreInPlay() {
 }
 
 const REGIONAL_SCOREBOARD_FEEDS = [
-    'idn.1', 'tha.1', 'mys.1', 'sgp.1', 'ken.1', 'gha.1', 'uga.1',
-    'afc.cup', 'ind.1', 'ind.2', 'per.1', 'bol.1', 'ecu.1', 'par.1', 'ven.1', 'uru.1'
+    // African continental and domestic premier leagues
+    'caf.champions', 'caf.confed', 'caf.nations', 'caf.championship', 'caf.cosafa',
+    'nga.1', 'rsa.1', 'mar.1', 'egy.1', 'ken.1', 'gha.1', 'uga.1',
+    // Asian & Oceanic
+    'afc.champions', 'afc.cup', 'idn.1', 'tha.1', 'mys.1', 'sgp.1', 'ind.1', 'ind.2',
+    // Americas & International
+    'concacaf.champions', 'per.1', 'bol.1', 'ecu.1', 'par.1', 'ven.1', 'uru.1', 'col.1', 'mex.2'
 ];
 
 async function syncLiveScoreboards() {

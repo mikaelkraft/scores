@@ -14,6 +14,11 @@
         (function() {
             var theme = localStorage.getItem('norra_theme') || localStorage.getItem('theme') || 'dark';
             document.documentElement.setAttribute('data-theme', theme);
+            if (theme === 'light') {
+                document.documentElement.classList.add('theme-light');
+            } else {
+                document.documentElement.classList.remove('theme-light');
+            }
         })();
     </script>
     <link rel="icon" href="/favicon.ico" sizes="any">
@@ -68,7 +73,6 @@
             </div>
 
             <div class="nav-actions">
-                <a class="nav-link active" href="/" id="nav-scores-link">Scores</a>
                 <button class="nav-link nav-btn-live" type="button" id="header-live-btn"><span class="live-pulse-dot" aria-hidden="true"></span>Live</button>
                 <a class="nav-link nav-link-norra" href="https://mynorra.xyz" target="_blank" rel="noopener">Predictions <span class="ext-icon" aria-hidden="true">↗</span></a>
                 <a class="nav-link" href="/pricing">Pricing</a>
@@ -556,11 +560,15 @@
                               localStorage.getItem('norra_theme') || 
                               'dark';
                 var next = current === 'dark' ? 'light' : 'dark';
+                document.documentElement.classList.add('no-theme-transition');
                 applyThemeUi(next);
                 try {
                     localStorage.setItem('norra_theme', next);
                     localStorage.setItem('theme', next);
                 } catch(e) {}
+                setTimeout(function() {
+                    document.documentElement.classList.remove('no-theme-transition');
+                }, 40);
             };
 
             var b1 = document.getElementById('theme-toggle');

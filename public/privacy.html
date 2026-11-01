@@ -10,7 +10,8 @@
     <script>
         (function() {
             try {
-                const savedTheme = localStorage.getItem('theme');
+                const savedTheme = localStorage.getItem('norra_theme') || localStorage.getItem('theme') || 'dark';
+                document.documentElement.setAttribute('data-theme', savedTheme);
                 if (savedTheme === 'light') {
                     document.documentElement.classList.add('theme-light');
                     document.documentElement.classList.remove('theme-dark');
@@ -117,7 +118,6 @@
             </a>
 
             <div class="nav-actions">
-                <a class="nav-link" href="/" id="nav-scores-link">Scores</a>
                 <a class="nav-link nav-btn-live" href="/?view=live" id="header-live-btn"><span class="live-pulse-dot" aria-hidden="true"></span>Live</a>
                 <a class="nav-link nav-link-norra" href="https://mynorra.xyz" target="_blank" rel="noopener">Predictions <span class="ext-icon" aria-hidden="true">↗</span></a>
                 <a class="nav-link" href="/pricing">Pricing</a>
@@ -308,11 +308,15 @@
                             localStorage.getItem('norra_theme') || 
                             'dark';
             const next = current === 'dark' ? 'light' : 'dark';
+            document.documentElement.classList.add('no-theme-transition');
             applyThemeUi(next);
             try {
                 localStorage.setItem('norra_theme', next);
                 localStorage.setItem('theme', next);
             } catch(e) {}
+            setTimeout(function() {
+                document.documentElement.classList.remove('no-theme-transition');
+            }, 40);
         };
 
         const t1 = document.getElementById('theme-toggle');

@@ -207,7 +207,6 @@
             </a>
 
             <div class="nav-actions">
-                <a class="nav-link" href="/" id="nav-scores-link">Scores</a>
                 <a class="nav-link nav-btn-live" href="/?view=live" id="header-live-btn"><span class="live-pulse-dot" aria-hidden="true"></span>Live</a>
                 <a class="nav-link nav-link-norra" href="https://mynorra.xyz" target="_blank" rel="noopener">Predictions <span class="ext-icon" aria-hidden="true">↗</span></a>
                 <a class="nav-link" href="/pricing">Pricing</a>
@@ -762,11 +761,15 @@
         window.toggleTheme = function() {
             const current = document.documentElement.getAttribute('data-theme') || localStorage.getItem('norra_theme') || 'dark';
             const next = current === 'dark' ? 'light' : 'dark';
+            document.documentElement.classList.add('no-theme-transition');
             applyTheme(next);
             try {
                 localStorage.setItem('norra_theme', next);
                 localStorage.setItem('theme', next);
             } catch(e) {}
+            setTimeout(function() {
+                document.documentElement.classList.remove('no-theme-transition');
+            }, 40);
         };
 
         const savedTheme = localStorage.getItem('norra_theme') || localStorage.getItem('theme') || 'dark';
