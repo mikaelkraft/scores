@@ -112,7 +112,22 @@ const TARGET_LEAGUES = [
     { slug: 'irq.1', name: 'Iraq Stars League', abbreviation: 'Stars League', country: 'Iraq', kind: 'club', sort_order: 94 },
     { slug: 'jor.1', name: 'Jordanian Pro League', abbreviation: 'Pro League', country: 'Jordan', kind: 'club', sort_order: 95 },
     { slug: 'bhr.1', name: 'Bahraini Premier League', abbreviation: 'Premier League', country: 'Bahrain', kind: 'club', sort_order: 96 },
-    { slug: 'isl.1', name: 'Icelandic Besta deild', abbreviation: 'Besta deild', country: 'Iceland', kind: 'club', sort_order: 97 }
+    { slug: 'isl.1', name: 'Icelandic Besta deild', abbreviation: 'Besta deild', country: 'Iceland', kind: 'club', sort_order: 97 },
+    { slug: 'esp.w.1', name: 'Liga F', abbreviation: 'Liga F', country: 'Spain', kind: 'club', sort_order: 98 },
+    { slug: 'ger.w.1', name: 'Frauen-Bundesliga', abbreviation: 'Frauen-BL', country: 'Germany', kind: 'club', sort_order: 99 },
+    { slug: 'fra.w.1', name: 'Première Ligue', abbreviation: 'D1 Arkema', country: 'France', kind: 'club', sort_order: 100 },
+    { slug: 'ita.w.1', name: 'Serie A Femminile', abbreviation: 'Serie A Fem', country: 'Italy', kind: 'club', sort_order: 101 },
+    { slug: 'uefa.w.champions', name: 'UEFA Women\'s Champions League', abbreviation: 'UWCL', country: 'International', kind: 'club', sort_order: 102 },
+    { slug: 'eng.u21', name: 'Premier League 2', abbreviation: 'PL2 / U21', country: 'England', kind: 'club', sort_order: 103 },
+    { slug: 'eng.5', name: 'National League', abbreviation: 'National League', country: 'England', kind: 'club', sort_order: 104 },
+    { slug: 'eng.northern', name: 'Northern Premier League', abbreviation: 'Northern PL', country: 'England', kind: 'club', sort_order: 105 },
+    { slug: 'eng.southern', name: 'Southern Premier League', abbreviation: 'Southern PL', country: 'England', kind: 'club', sort_order: 106 },
+    { slug: 'eng.isthmian', name: 'Isthmian Premier League', abbreviation: 'Isthmian PL', country: 'England', kind: 'club', sort_order: 107 },
+    { slug: 'can.1', name: 'Canadian Premier League', abbreviation: 'CPL', country: 'Canada', kind: 'club', sort_order: 108 },
+    { slug: 'kwt.1', name: 'Kuwait Premier League', abbreviation: 'Kuwait PL', country: 'Kuwait', kind: 'club', sort_order: 109 },
+    { slug: 'rus.1', name: 'Russian Premier League', abbreviation: 'Russian PL', country: 'Russia', kind: 'club', sort_order: 110 },
+    { slug: 'ukr.1', name: 'Ukrainian Premier League', abbreviation: 'Ukrainian PL', country: 'Ukraine', kind: 'club', sort_order: 111 },
+    { slug: 'nzl.1', name: 'New Zealand National League', abbreviation: 'NZ National', country: 'New Zealand', kind: 'club', sort_order: 112 }
 ];
 
 function fetchJson(url) {
@@ -305,14 +320,49 @@ async function processEvents(events, slug, leagueDef, season, now) {
             last_synced_at: now
         };
 
-        await SoccerMatch.updateOne(
-            { 'source.provider': 'upstream', 'source.event_id': String(ev.id) },
-            {
-                $set: matchDoc,
-                $setOnInsert: { created_at: now }
-            },
-            { upsert: true }
-        );
+        const existingMatch = await findExistingMatch({
+            eventId: ev.id,
+            homeName: homeTeam.displayName || homeTeam.name,
+            awayName: awayTeam.displayName || awayTeam.name,
+            matchDate,
+            scoreboardDate
+        });
+
+        if (existingMatch) {
+            await SoccerMatch.updateOne(
+                { _id: existingMatch._id },
+                {
+                    $set: {
+                        'source.espn_id': String(ev.id),
+                        league_slug: matchDoc.league_slug,
+                        scoreboard_date: matchDoc.scoreboard_date,
+                        date: matchDoc.date,
+                        name: matchDoc.name,
+                        short_name: matchDoc.short_name,
+                        season: matchDoc.season,
+                        status: matchDoc.status,
+                        'home.logo': matchDoc.home.logo || existingMatch.home?.logo,
+                        'home.abbreviation': matchDoc.home.abbreviation || existingMatch.home?.abbreviation,
+                        'home.color': homeTeam.color || existingMatch.home?.color,
+                        'away.logo': matchDoc.away.logo || existingMatch.away?.logo,
+                        'away.abbreviation': matchDoc.away.abbreviation || existingMatch.away?.abbreviation,
+                        'away.color': awayTeam.color || existingMatch.away?.color,
+                        venue: matchDoc.venue,
+                        note: matchDoc.note,
+                        last_synced_at: now
+                    }
+                }
+            );
+        } else {
+            await SoccerMatch.updateOne(
+                { 'source.provider': 'upstream', 'source.event_id': String(ev.id) },
+                {
+                    $set: matchDoc,
+                    $setOnInsert: { created_at: now }
+                },
+                { upsert: true }
+            );
+        }
         count++;
     }
     return count;
@@ -529,12 +579,79 @@ async function syncAllLeagues() {
 function resolveLeagueSlug(altGameNote = '', compDesc = '', uid = '') {
     const text = `${altGameNote} ${compDesc} ${uid}`.toLowerCase();
 
-    // Explicitly reject NCAA non-soccer and college basketball events
-    if (text.includes('ncaam') || text.includes('ncaa') || text.includes('college basketball') || text.includes('mens college')) {
+    // 1. Explicitly reject NCAA non-soccer and college basketball events
+    if (text.includes('ncaam') || text.includes('ncaa') || text.includes('college basketball') || text.includes('mens college') || text.includes('wnba') || text.includes('nba')) {
         return null;
     }
 
-    // Confederation-specific continental tournaments FIRST (prevents CAF/AFC/CONCACAF matching UEFA Champions League)
+    // 2. Women's Football Discriminator FIRST (prevents WSL, Liga F, NWSL matching men's senior leagues)
+    const isWomen = text.includes('women') || text.includes('woman') || text.includes('ladies') ||
+                    text.includes('femenin') || text.includes('frauen') || text.includes('damen') ||
+                    text.includes('vrouwen') || text.includes('wsl') || text.includes('nwsl') ||
+                    text.includes('d1 arkema') || text.includes('liga f') || text.includes('.w.') ||
+                    text.includes('fem.') || text.includes('(w)') || text.includes(' w ');
+    if (isWomen) {
+        if (text.includes('nwsl') || text.includes('usa.w.1') || ((text.includes('united states') || text.includes('usa')) && !/\bwsl\b/.test(text))) return 'usa.w.1';
+        if (/\bwsl\b/.test(text) || text.includes('eng.w.1') || text.includes('england') || text.includes('english')) return 'eng.w.1';
+        if (text.includes('liga f') || text.includes('esp.w.1') || text.includes('spain') || text.includes('spanish')) return 'esp.w.1';
+        if (text.includes('frauen') || text.includes('ger.w.1') || text.includes('germany') || text.includes('german')) return 'ger.w.1';
+        if (text.includes('arkema') || text.includes('fra.w.1') || text.includes('france') || text.includes('french')) return 'fra.w.1';
+        if (text.includes('femminile') || text.includes('ita.w.1') || text.includes('italy') || text.includes('italian')) return 'ita.w.1';
+        if (text.includes('uefa') || text.includes('champions')) return 'uefa.w.champions';
+        return 'w.other';
+    }
+
+    // 3. Youth & Reserves Football Discriminator (prevents U21 PL2 matching senior Premier League)
+    const isYouth = text.includes('u23') || text.includes('u-23') ||
+                    text.includes('u21') || text.includes('u-21') ||
+                    text.includes('u20') || text.includes('u-20') ||
+                    text.includes('u19') || text.includes('u-19') ||
+                    text.includes('u18') || text.includes('u-18') ||
+                    text.includes('u17') || text.includes('u-17') ||
+                    text.includes('pl2') || text.includes('premier league 2') ||
+                    text.includes('primavera') || text.includes('development league') ||
+                    text.includes('youth') || text.includes('reserves');
+    if (isYouth) {
+        if (text.includes('pl2') || text.includes('premier league 2') || text.includes('eng.u21') || ((text.includes('premier league') || text.includes('development')) && (text.includes('u21') || text.includes('u-21') || text.includes('u23') || text.includes('u-23')))) {
+            return 'eng.u21';
+        }
+        if (text.includes('primavera') || (text.includes('ita') && text.includes('youth'))) {
+            return 'ita.primavera';
+        }
+        return 'fifa.youth';
+    }
+
+    // 4. English Lower Divisions & Cups (prevents Northern/Southern Premier matching senior Premier League)
+    if (text.includes('northern premier') || text.includes('eng.northern')) return 'eng.northern';
+    if (text.includes('southern premier') || text.includes('eng.southern') || text.includes('southern football league')) return 'eng.southern';
+    if (text.includes('isthmian') || text.includes('eng.isthmian')) return 'eng.isthmian';
+    if (text.includes('national league north') || text.includes('national league south') || text.includes('eng.6')) return 'eng.6';
+    if (text.includes('national league') || text.includes('eng.5')) return 'eng.5';
+    if (text.includes('league two') || text.includes('league 2') || text.includes('eng.4')) return 'eng.4';
+    if (text.includes('league one') || text.includes('league 1') || text.includes('eng.3')) return 'eng.3';
+    if (text.includes('efl championship') || text.includes('english championship') || (text.includes('championship') && (text.includes('eng') || text.includes('efl') || text.includes('sky bet'))) || text.includes('eng.2')) return 'eng.2';
+    if (text.includes('fa cup') || text.includes('eng.fa')) return 'eng.fa';
+    if (text.includes('carabao') || text.includes('efl cup') || (text.includes('league cup') && !text.includes('scot') && !text.includes('thai')) || text.includes('eng.league_cup')) return 'eng.league_cup';
+
+    // 5. Foreign Domestic Leagues that contain "Premier League" or "Premiership" (MUST BE EVALUATED BEFORE SENIOR EPL!)
+    if (text.includes('egypt') || text.includes('egy.1')) return 'egy.1';
+    if (text.includes('npfl') || text.includes('nigeria') || text.includes('nga.1') || text.includes('nigerian')) return 'nga.1';
+    if (text.includes('kenya') || text.includes('fkf') || text.includes('ken.1')) return 'ken.1';
+    if (text.includes('ghana') || text.includes('gha.1')) return 'gha.1';
+    if (text.includes('uganda') || text.includes('uga.1')) return 'uga.1';
+    if (text.includes('south africa') || text.includes('psl') || text.includes('betway premiership') || text.includes('rsa.1')) return 'rsa.1';
+    if (text.includes('botola') || (text.includes('morocco') && text.includes('league')) || text.includes('mar.1')) return 'mar.1';
+    if (text.includes('singapore') || text.includes('spl') || text.includes('sgp.1')) return 'sgp.1';
+    if (text.includes('bahrain') || text.includes('bhr.1')) return 'bhr.1';
+    if (text.includes('canadian premier') || text.includes('cpl') || text.includes('can.1') || (text.includes('canada') && text.includes('premier'))) return 'can.1';
+    if (text.includes('scottish') || text.includes('premiership') || text.includes('sco.1')) return 'sco.1';
+    if (text.includes('saudi') || text.includes('roshn') || text.includes('ksa.1')) return 'ksa.1';
+    if (text.includes('kuwait') || text.includes('kwt.1')) return 'kwt.1';
+    if (text.includes('russia') || text.includes('rus.1')) return 'rus.1';
+    if (text.includes('ukrain') || text.includes('ukr.1')) return 'ukr.1';
+    if (text.includes('new zealand') || text.includes('nzl.1')) return 'nzl.1';
+
+    // 6. Continental Tournaments (Confederation-specific first to prevent UEFA collisions)
     if (text.includes('caf champions') || text.includes('caf.champions') || text.includes('totalenergies caf cl') || (text.includes('caf') && text.includes('champions'))) return 'caf.champions';
     if (text.includes('caf confederation') || text.includes('caf confed') || text.includes('caf.confed') || (text.includes('caf') && text.includes('confed'))) return 'caf.confed';
     if (text.includes('africa cup') || text.includes('afcon') || text.includes('caf.nations') || (text.includes('caf') && text.includes('nations'))) return 'caf.nations';
@@ -545,24 +662,23 @@ function resolveLeagueSlug(altGameNote = '', compDesc = '', uid = '') {
     if (text.includes('afc champions') || text.includes('afc.champions') || (text.includes('afc') && text.includes('champions'))) return 'afc.champions';
     if (text.includes('concacaf') || text.includes('concacaf.champions')) return 'concacaf.champions';
 
+    if (text.includes('libertadores') || text.includes('conmebol.libertadores')) return 'conmebol.libertadores';
+    if (text.includes('sudamericana') || text.includes('conmebol.sudamericana')) return 'conmebol.sudamericana';
+    if (text.includes('recopa') || text.includes('conmebol.recopa')) return 'conmebol.recopa';
+
     if (text.includes('uefa.champions') || (text.includes('champions league') && !text.includes('caf') && !text.includes('afc') && !text.includes('concacaf'))) return 'uefa.champions';
     if (text.includes('uefa.europa.conf') || text.includes('conference league')) return 'uefa.europa.conf';
     if (text.includes('uefa.europa') || text.includes('europa league')) return 'uefa.europa';
     if (text.includes('uefa.nations') || text.includes('nations league')) return 'uefa.nations';
-    if (text.includes('premier league') || text.includes('eng.1')) return 'eng.1';
+    if (text.includes('super cup') || text.includes('uefa.super_cup')) return 'uefa.super_cup';
+    if (text.includes('club world cup') || text.includes('fifa.cwc')) return 'fifa.cwc';
 
-    // United States competitions first (prevents USL Championship matching 'championship')
+    // 7. United States Senior Soccer
     if (text.includes('usl') || text.includes('united soccer league') || text.includes('usa.usl')) return 'usa.usl.1';
     if (text.includes('u.s. open') || text.includes('us open cup') || text.includes('usa.open')) return 'usa.open';
-    if (text.includes('nwsl') || text.includes('usa.w.1')) return 'usa.w.1';
     if (text.includes('mls') || text.includes('major league soccer') || text.includes('usa.1')) return 'usa.1';
 
-    // English Championship (specifically EFL / English Championship, avoiding bare 'championship')
-    if (text.includes('efl championship') || text.includes('english championship') || (text.includes('championship') && (text.includes('eng') || text.includes('efl') || text.includes('sky bet'))) || text.includes('eng.2')) return 'eng.2';
-    if (text.includes('fa cup') || text.includes('eng.fa')) return 'eng.fa';
-    if (text.includes('carabao') || text.includes('league cup') || text.includes('eng.league_cup')) return 'eng.league_cup';
-    if (text.includes('wsl') || text.includes('eng.w.1')) return 'eng.w.1';
-
+    // 8. Major Senior Domestic Leagues
     if (text.includes('laliga 2') || text.includes('segunda') || text.includes('esp.2')) return 'esp.2';
     if (text.includes('laliga') || text.includes('la liga') || text.includes('esp.1')) return 'esp.1';
     if (text.includes('copa del rey') || text.includes('esp.copa_del_rey')) return 'esp.copa_del_rey';
@@ -577,10 +693,8 @@ function resolveLeagueSlug(altGameNote = '', compDesc = '', uid = '') {
     if (text.includes('coupe de france') || text.includes('fra.coupe_de_france')) return 'fra.coupe_de_france';
     if (text.includes('eredivisie') || text.includes('ned.1')) return 'ned.1';
     if (text.includes('primeira') || text.includes('por.1')) return 'por.1';
-    if (text.includes('saudi') || text.includes('ksa.1')) return 'ksa.1';
     if (text.includes('belgian') || text.includes('jupiler') || text.includes('bel.1')) return 'bel.1';
     if (text.includes('super lig') || text.includes('süper lig') || text.includes('tur.1')) return 'tur.1';
-    if (text.includes('scottish') || text.includes('premiership') || text.includes('sco.1')) return 'sco.1';
     if (text.includes('brasileir') || text.includes('bra.1')) return 'bra.1';
     if (text.includes('serie b brasil') || text.includes('bra.2')) return 'bra.2';
     if (text.includes('copa argentina') || text.includes('arg.copa')) return 'arg.copa';
@@ -589,44 +703,34 @@ function resolveLeagueSlug(altGameNote = '', compDesc = '', uid = '') {
     if (text.includes('liga mx') || text.includes('mex.1')) return 'mex.1';
     if (text.includes('colombia') || text.includes('primera a') || text.includes('col.1')) return 'col.1';
     if (text.includes('bolivia') || text.includes('bol.1') || text.includes('bol.copa')) return 'bol.copa';
-    if (text.includes('libertadores') || text.includes('conmebol.libertadores')) return 'conmebol.libertadores';
-    if (text.includes('sudamericana') || text.includes('conmebol.sudamericana')) return 'conmebol.sudamericana';
-    if (text.includes('recopa') || text.includes('conmebol.recopa')) return 'conmebol.recopa';
-    if (text.includes('super cup') || text.includes('uefa.super_cup')) return 'uefa.super_cup';
-    if (text.includes('club world cup') || text.includes('fifa.cwc')) return 'fifa.cwc';
-    if (text.includes('concacaf') || text.includes('concacaf.champions')) return 'concacaf.champions';
     if (text.includes('club friendly') || text.includes('friendly')) return 'club.friendly';
-    if (text.includes('u-17') || text.includes('u17') || text.includes('u-20') || text.includes('u20')) return 'fifa.youth';
 
-    // English lower divisions (League One, League Two)
-    if (text.includes('league one') || text.includes('eng.3')) return 'eng.3';
-    if (text.includes('league two') || text.includes('eng.4')) return 'eng.4';
+    // 9. Senior English Premier League (Only match if it is strictly English EPL and not foreign)
+    if (text.includes('english premier league') || text.includes('premier league') || text.includes('epl') || text.includes('eng.1')) {
+        const foreignIndicators = ['egypt', 'ghana', 'kenya', 'uganda', 'singapore', 'bahrain', 'canada', 'scotland', 'russia', 'ukraine', 'kuwait', 'new zealand', 'ireland', 'wales', 'jamaica', 'india', 'nigeria', 'south africa'];
+        const hasForeign = foreignIndicators.some(country => text.includes(country));
+        if (!hasForeign) {
+            return 'eng.1';
+        }
+    }
 
-    // African continental and domestic leagues
-    if (text.includes('caf confederation') || text.includes('caf confed') || (text.includes('caf') && text.includes('confed')) || text.includes('caf.confed')) return 'caf.confed';
-    if (text.includes('caf champions') || (text.includes('caf') && text.includes('champions')) || text.includes('caf.champions') || text.includes('totalenergies caf cl')) return 'caf.champions';
-    if (text.includes('africa cup') || text.includes('afcon') || text.includes('caf.nations') || (text.includes('caf') && text.includes('nations'))) return 'caf.nations';
-    if (text.includes('chan') || text.includes('african nations championship') || text.includes('caf.championship')) return 'caf.championship';
-    if (text.includes('cosafa') || text.includes('caf.cosafa')) return 'caf.cosafa';
-    if (text.includes('botola') || (text.includes('morocco') && text.includes('league')) || text.includes('mar.1')) return 'mar.1';
-    if (text.includes('egypt') || text.includes('egy.1')) return 'egy.1';
-    if (text.includes('south africa') || text.includes('psl') || text.includes('betway premiership') || text.includes('rsa.1')) return 'rsa.1';
-    if (text.includes('npfl') || text.includes('nigeria') || text.includes('nga.1') || text.includes('nigerian')) return 'nga.1';
-    if (text.includes('kenya') || text.includes('ken.1')) return 'ken.1';
-    if (text.includes('ghana') || text.includes('gha.1')) return 'gha.1';
-    if (text.includes('uganda') || text.includes('uga.1')) return 'uga.1';
-
-    // Asian & Oceanic leagues
+    // 10. Regional Domestic Leagues (Asia, Americas, Europe)
     if (text.includes('indonesia') || text.includes('liga 1') || text.includes('idn.1')) return 'idn.1';
     if (text.includes('thailand') || text.includes('thai league') || text.includes('tha.1')) return 'tha.1';
     if (text.includes('malaysia') || text.includes('mys.1')) return 'mys.1';
-    if (text.includes('singapore') || text.includes('sgp.1')) return 'sgp.1';
     if (text.includes('i-league') || text.includes('ind.2')) return 'ind.2';
     if (text.includes('indian super league') || text.includes('ind.1')) return 'ind.1';
-    if (text.includes('afc champions league two') || text.includes('acl two') || text.includes('afc.cup')) return 'afc.cup';
-    if (text.includes('afc') || text.includes('afc.champions')) return 'afc.champions';
+    if (text.includes('j1') || text.includes('j.league') || text.includes('jpn.1')) return 'jpn.1';
+    if (text.includes('a-league') || text.includes('aus.1')) return 'aus.1';
+    if (text.includes('chinese') || text.includes('csl') || text.includes('chn.1')) return 'chn.1';
+    if (text.includes('vietnam') || text.includes('vie.1')) return 'vie.1';
+    if (text.includes('iran') || text.includes('irn.1')) return 'irn.1';
+    if (text.includes('emirates') || text.includes('uae.1')) return 'uae.1';
+    if (text.includes('uzbekistan') || text.includes('uzb.1')) return 'uzb.1';
+    if (text.includes('qatar') || text.includes('qat.1')) return 'qat.1';
+    if (text.includes('iraq') || text.includes('irq.1')) return 'irq.1';
+    if (text.includes('jordan') || text.includes('jor.1')) return 'jor.1';
 
-    // South & Central America
     if (text.includes('peru') || text.includes('per.1')) return 'per.1';
     if (text.includes('ecuador') || text.includes('ligapro') || text.includes('ecu.1')) return 'ecu.1';
     if (text.includes('paraguay') || text.includes('par.1')) return 'par.1';
@@ -636,27 +740,14 @@ function resolveLeagueSlug(altGameNote = '', compDesc = '', uid = '') {
     if (text.includes('honduras') || text.includes('hon.1')) return 'hon.1';
     if (text.includes('guatemala') || text.includes('gua.1')) return 'gua.1';
 
-    // Asian & Regional Additions
-    if (text.includes('vietnam') || text.includes('vie.1')) return 'vie.1';
-    if (text.includes('iran') || text.includes('irn.1')) return 'irn.1';
-    if (text.includes('emirates') || text.includes('uae.1')) return 'uae.1';
-    if (text.includes('uzbekistan') || text.includes('uzb.1')) return 'uzb.1';
     if (text.includes('romania') || text.includes('rou.2')) return 'rou.2';
     if (text.includes('montenegro') || text.includes('mne.1')) return 'mne.1';
-    if (text.includes('qatar') || text.includes('qat.1')) return 'qat.1';
-    if (text.includes('iraq') || text.includes('irq.1')) return 'irq.1';
-    if (text.includes('jordan') || text.includes('jor.1')) return 'jor.1';
-    if (text.includes('bahrain') || text.includes('bhr.1')) return 'bhr.1';
-
     if (text.includes('austrian') || text.includes('aut.1')) return 'aut.1';
     if (text.includes('swiss') || text.includes('sui.1')) return 'sui.1';
     if (text.includes('danish') || text.includes('den.1')) return 'den.1';
     if (text.includes('greek') || text.includes('gre.1')) return 'gre.1';
     if (text.includes('allsvenskan') || text.includes('swe.1')) return 'swe.1';
     if (text.includes('eliteserien') || text.includes('nor.1')) return 'nor.1';
-    if (text.includes('j1') || text.includes('j.league') || text.includes('jpn.1')) return 'jpn.1';
-    if (text.includes('a-league') || text.includes('aus.1')) return 'aus.1';
-    if (text.includes('chinese') || text.includes('csl') || text.includes('chn.1')) return 'chn.1';
     if (text.includes('veikkausliiga') || text.includes('fin.1')) return 'fin.1';
     if (text.includes('iceland') || text.includes('besta deild') || text.includes('isl.1')) return 'isl.1';
 
@@ -1052,6 +1143,16 @@ async function syncInGameStats({ limit = 150, onlyLive = false, forceAll = false
 }
 
 /**
+ * Detects team category (gender and age/reserves tier)
+ */
+function getTeamCategory(name = '') {
+    const s = String(name).toLowerCase();
+    const isWomen = /\b(women|woman|ladies|femenin[oa]?|frauen|damen|vrouwen|fem|wfc)\b|\(w\)/i.test(s);
+    const isYouth = /\b(u-?23|u-?21|u-?20|u-?19|u-?18|u-?17|u-?16|u-?15|youth|reserves?|development)\b|\b(ii|b)\b$/i.test(s);
+    return { isWomen, isYouth };
+}
+
+/**
  * Normalizes club names for robust cross-provider fuzzy matching (ESPN vs LiveScore)
  */
 function normalizeTeamName(name = '') {
@@ -1059,6 +1160,10 @@ function normalizeTeamName(name = '') {
     let s = String(name).toLowerCase()
         .normalize('NFD')
         .replace(/[\u0300-\u036f]/g, '')
+        // Remove gender/youth markers from base name so e.g. "Arsenal Women" and "Arsenal Ladies" match each other
+        .replace(/\b(women|woman|ladies|femenin[oa]?|frauen|damen|vrouwen|fem|wfc)\b|\(w\)/gi, '')
+        .replace(/\b(u-?23|u-?21|u-?20|u-?19|u-?18|u-?17|u-?16|u-?15|youth|reserves?|development)\b/gi, '')
+        // Canonical club aliases
         .replace(/\bman\s+utd\b|\bman\s+united\b|\bmanchester\s+utd\b/g, 'manchesterunited')
         .replace(/\bman\s+city\b|\bmanchester\s+city\b/g, 'manchestercity')
         .replace(/\bspurs\b|\btottenham\s+hotspur\b/g, 'tottenham')
@@ -1074,8 +1179,9 @@ function normalizeTeamName(name = '') {
         .replace(/\bjuve\b|\bjuventus\b/g, 'juventus')
         .replace(/\bnewcastle\s+united\b/g, 'newcastle')
         .replace(/\bwest\s+ham\s+united\b/g, 'westham')
+        .replace(/\bbrighton\s+(and|&)\s+hove\s+albion\b/g, 'brighton')
+        // Strip common non-distinct club markers like FC, CF, etc. (do NOT strip city/rovers/united to avoid colliding Bristol City with Bristol Rovers)
         .replace(/\b(fc|cf|sc|ac|cd|afc|fk|sk|sv|ssc|as|rc|ud|rb)\b/g, '')
-        .replace(/\b(united|city|town|athletic|hotspur|wanderers|albion|rovers|club)\b/g, '')
         .replace(/[^a-z0-9]/g, '')
         .trim();
     return s;
@@ -1083,6 +1189,13 @@ function normalizeTeamName(name = '') {
 
 function areTeamNamesMatching(nameA = '', nameB = '') {
     if (!nameA || !nameB) return false;
+    const catA = getTeamCategory(nameA);
+    const catB = getTeamCategory(nameB);
+    // Women vs Men teams must NEVER match
+    if (catA.isWomen !== catB.isWomen) return false;
+    // Youth/Reserves vs Senior teams must NEVER match
+    if (catA.isYouth !== catB.isYouth) return false;
+
     const a = normalizeTeamName(nameA);
     const b = normalizeTeamName(nameB);
     if (!a || !b) return false;
@@ -1134,7 +1247,8 @@ async function findExistingMatch({ eventId, homeName, awayName, matchDate, score
 }
 
 /**
- * Auto-finalizes stuck matches older than 3 hours and removes any accidental NCAA basketball entries
+ * Auto-finalizes stuck matches older than 3 hours, re-classifies miscategorized games,
+ * purges duplicate match documents, and removes accidental NCAA basketball entries
  */
 async function cleanupStuckMatchesAndPurgeNcaa() {
     try {
@@ -1184,6 +1298,62 @@ async function cleanupStuckMatchesAndPurgeNcaa() {
             if (cleanName && cleanName !== l.name) {
                 await SoccerLeague.updateOne({ _id: l._id }, { $set: { name: cleanName } });
             }
+        }
+
+        // 4. Re-classify matches mistakenly categorized under 'eng.1'
+        const misclassifiedEngMatches = await SoccerMatch.find({
+            league_slug: 'eng.1',
+            $or: [
+                { note: /egypt|kenya|ghana|uganda|singapore|bahrain|canada|scotland|saudi|kuwait|russia|ukraine|new zealand|women|wsl|nwsl|u21|u-21|u23|northern|southern|isthmian|national league/i },
+                { name: /women|ladies|femenin|frauen|u21|u-21|u23|u19|u18|u17|pl2/i },
+                { 'home.name': /women|ladies|femenin|frauen|u21|u-21|u23|u19|u18|u17/i },
+                { 'away.name': /women|ladies|femenin|frauen|u21|u-21|u23|u19|u18|u17/i }
+            ]
+        }).lean();
+
+        for (const m of misclassifiedEngMatches) {
+            const rawHint = `${m.note || ''} ${m.name || ''} ${m.home?.name || ''} ${m.away?.name || ''}`;
+            const newSlug = resolveLeagueSlug(rawHint, m.venue?.country || '', m.source?.uid || '');
+            if (newSlug && newSlug !== 'eng.1') {
+                await SoccerMatch.updateOne({ _id: m._id }, { $set: { league_slug: newSlug } });
+            }
+        }
+
+        // 5. Purge duplicate match documents across the past 7 days
+        const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 3600 * 1000);
+        const recentMatches = await SoccerMatch.find({ date: { $gte: sevenDaysAgo } }).sort({ date: 1, _id: 1 }).lean();
+        const signatureMap = new Map();
+        const idsToDelete = [];
+
+        for (const m of recentMatches) {
+            const homeNorm = normalizeTeamName(m.home?.name || m.home?.display_name || '');
+            const awayNorm = normalizeTeamName(m.away?.name || m.away?.display_name || '');
+            if (!homeNorm || !awayNorm) continue;
+            const catHome = getTeamCategory(m.home?.name || '');
+            const categoryKey = `${catHome.isWomen ? 'w' : 'm'}_${catHome.isYouth ? 'y' : 's'}`;
+            const teamsKey = [homeNorm, awayNorm].sort().join('_vs_');
+            const dateKey = m.scoreboard_date || (m.date ? m.date.toISOString().slice(0, 10) : '');
+            const sig = `${teamsKey}_${dateKey}_${categoryKey}`;
+
+            if (signatureMap.has(sig)) {
+                const primary = signatureMap.get(sig);
+                const currentScore = (m.home?.logo?.includes('espncdn') ? 3 : 0) + (m.source?.livescore_id ? 2 : 0) + (m.boxscore ? 2 : 0) + (m.key_events?.length ? 1 : 0);
+                const primaryScore = (primary.home?.logo?.includes('espncdn') ? 3 : 0) + (primary.source?.livescore_id ? 2 : 0) + (primary.boxscore ? 2 : 0) + (primary.key_events?.length ? 1 : 0);
+
+                if (currentScore > primaryScore) {
+                    idsToDelete.push(primary._id);
+                    signatureMap.set(sig, m);
+                } else {
+                    idsToDelete.push(m._id);
+                }
+            } else {
+                signatureMap.set(sig, m);
+            }
+        }
+
+        if (idsToDelete.length > 0) {
+            await SoccerMatch.deleteMany({ _id: { $in: idsToDelete } });
+            console.log(`🧹 [Deduplication] Purged ${idsToDelete.length} duplicate match documents from database.`);
         }
     } catch (err) {
         console.warn('Notice running startup match cleanup:', err.message);
@@ -1696,6 +1866,7 @@ module.exports = {
     syncLiveScoreInPlay,
     syncInGameStats,
     cleanupStuckMatchesAndPurgeNcaa,
+    getTeamCategory,
     normalizeTeamName,
     areTeamNamesMatching,
     fetchLiveScoreMatchDetails,

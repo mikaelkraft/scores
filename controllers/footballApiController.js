@@ -17,6 +17,7 @@ const {
     sanitizeLogoUrl,
     synthesizeMatchTelemetry
 } = require('../services/soccerSerializer');
+const { normalizeTeamName, getTeamCategory } = require('../services/soccerSyncService');
 
 function formatDateKey(d = new Date()) {
     const y = d.getUTCFullYear();
@@ -156,7 +157,24 @@ async function getFormattedLiveMatches(league, isFreeRestricted) {
         };
     });
 
-    return { matches: formattedLive };
+    // Multi-tier in-memory deduplication across providers
+    const seenLiveSignatures = new Set();
+    const dedupedLive = [];
+    for (const m of formattedLive) {
+        const hName = m.home?.displayName || m.home?.name || '';
+        const aName = m.away?.displayName || m.away?.name || '';
+        const hNorm = normalizeTeamName(hName);
+        const aNorm = normalizeTeamName(aName);
+        const catH = getTeamCategory(hName);
+        const catA = getTeamCategory(aName);
+        const sig = [hNorm, aNorm].sort().join('_vs_') + '_' + (catH.isWomen || catA.isWomen ? 'w' : 'm') + '_' + (catH.isYouth || catA.isYouth ? 'y' : 's');
+        if (!seenLiveSignatures.has(sig)) {
+            seenLiveSignatures.add(sig);
+            dedupedLive.push(m);
+        }
+    }
+
+    return { matches: dedupedLive };
 }
 
 /**
@@ -420,7 +438,25 @@ router.get('/fixtures', async (req, res) => {
             };
         });
 
-        const hasLive = formattedMatches.some(m => m.status.isLive);
+        // In-memory deduplication across providers
+        const seenFixturesSig = new Set();
+        const dedupedMatches = [];
+        for (const m of formattedMatches) {
+            const hName = m.home?.displayName || m.home?.name || '';
+            const aName = m.away?.displayName || m.away?.name || '';
+            const hNorm = normalizeTeamName(hName);
+            const aNorm = normalizeTeamName(aName);
+            const catH = getTeamCategory(hName);
+            const catA = getTeamCategory(aName);
+            const dKey = m.scoreboardDate || (m.date ? new Date(m.date).toISOString().slice(0, 10) : '');
+            const sig = [hNorm, aNorm].sort().join('_vs_') + '_' + dKey + '_' + (catH.isWomen || catA.isWomen ? 'w' : 'm') + '_' + (catH.isYouth || catA.isYouth ? 'y' : 's');
+            if (!seenFixturesSig.has(sig)) {
+                seenFixturesSig.add(sig);
+                dedupedMatches.push(m);
+            }
+        }
+
+        const hasLive = dedupedMatches.some(m => m.status.isLive);
         if (hasLive || status === 'live') {
             res.set('Cache-Control', 'no-cache, no-store, must-revalidate');
             res.set('Pragma', 'no-cache');
@@ -431,15 +467,15 @@ router.get('/fixtures', async (req, res) => {
         return res.json({
             status: 'success',
             meta: {
-                totalMatches: totalCount,
-                count: formattedMatches.length,
+                totalMatches: dedupedMatches.length,
+                count: dedupedMatches.length,
                 page,
                 pageSize: limit,
-                totalPages: Math.ceil(totalCount / limit),
+                totalPages: Math.ceil(dedupedMatches.length / limit) || 1,
                 filters: { date, from, to, league, status, team },
                 isAdFree: Boolean(req.isAdFree)
             },
-            matches: formattedMatches
+            matches: dedupedMatches
         });
     } catch (err) {
         console.error('Error fetching fixtures:', err.message);

@@ -667,12 +667,20 @@
 
         let totalCount = 0;
 
-        // Pinned Matches Section at the top
+        // Pinned Matches Section at the top (deduplicated)
         const pinnedEvents = [];
+        const seenPinnedSig = new Set();
         for (const grp of groupedData) {
             for (const ev of (grp.events || [])) {
                 if (state.pinnedMatches.includes(String(ev.id))) {
-                    pinnedEvents.push({ event: ev, league: grp.league });
+                    const comp = ev.competitions?.[0] || {};
+                    const hName = comp.competitors?.find(c => c.homeAway === 'home')?.team?.displayName || ev.name?.split(' vs ')?.[0] || '';
+                    const aName = comp.competitors?.find(c => c.homeAway === 'away')?.team?.displayName || ev.name?.split(' vs ')?.[1] || '';
+                    const sig = [hName.toLowerCase().replace(/[^a-z0-9]/g, ''), aName.toLowerCase().replace(/[^a-z0-9]/g, '')].sort().join('_vs_');
+                    if (!seenPinnedSig.has(sig)) {
+                        seenPinnedSig.add(sig);
+                        pinnedEvents.push({ event: ev, league: grp.league });
+                    }
                 }
             }
         }
@@ -697,7 +705,26 @@
 
         const html = groupedData.map(({ league, events }) => {
             if (!events || !events.length) return '';
-            totalCount += events.length;
+
+            // Deduplicate events within this league to ensure zero double rows
+            const seenMatchSig = new Set();
+            const dedupedEvents = [];
+            for (const ev of events) {
+                const comp = ev.competitions?.[0] || {};
+                const hName = comp.competitors?.find(c => c.homeAway === 'home')?.team?.displayName || ev.name?.split(' vs ')?.[0] || '';
+                const aName = comp.competitors?.find(c => c.homeAway === 'away')?.team?.displayName || ev.name?.split(' vs ')?.[1] || '';
+                const cleanH = hName.toLowerCase().replace(/[^a-z0-9]/g, '');
+                const cleanA = aName.toLowerCase().replace(/[^a-z0-9]/g, '');
+                const dKey = ev.date ? String(ev.date).slice(0, 10) : '';
+                const sig = [cleanH, cleanA].sort().join('_vs_') + '_' + dKey;
+                if (!seenMatchSig.has(sig)) {
+                    seenMatchSig.add(sig);
+                    dedupedEvents.push(ev);
+                }
+            }
+            if (!dedupedEvents.length) return '';
+
+            totalCount += dedupedEvents.length;
             const flag = LEAGUE_FLAGS[league.slug] || '⚽';
             const isCollapsed = state.collapsedLeagues.has(league.slug);
             return `
@@ -708,12 +735,12 @@
                             <span class="fs-league-flag">${flag}</span>
                             <strong>${escapeHtml(league.name)}</strong>
                             <small class="fs-league-country">${escapeHtml(league.country || '')}</small>
-                            <span class="fs-league-match-count" title="${events.length} games">${events.length}</span>
+                            <span class="fs-league-match-count" title="${dedupedEvents.length} games">${dedupedEvents.length}</span>
                         </div>
                         <button class="fs-league-view-btn" type="button" data-slug="${escapeHtml(league.slug)}">Table &rsaquo;</button>
                     </div>
                     <div class="fs-league-matches" style="${isCollapsed ? 'display:none;' : ''}">
-                        ${events.map(ev => renderFlashscoreMatchRow(ev, league)).join('')}
+                        ${dedupedEvents.map(ev => renderFlashscoreMatchRow(ev, league)).join('')}
                     </div>
                 </div>
             `;
