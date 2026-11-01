@@ -23,9 +23,11 @@ const storage = multer.diskStorage({
         cb(null, dest);
     },
     filename: (req, file, cb) => {
-        const logoType = req.body.logoType === 'footer' ? 'footer-logo' : 'header-logo';
+        let prefix = 'header-logo';
+        if (req.body.logoType === 'footer') prefix = 'footer-logo';
+        else if (req.body.logoType === 'favicon') prefix = 'favicon';
         const ext = path.extname(file.originalname).toLowerCase() || '.png';
-        cb(null, `${logoType}-${Date.now()}${ext}`);
+        cb(null, `${prefix}-${Date.now()}${ext}`);
     }
 });
 
@@ -33,13 +35,13 @@ const upload = multer({
     storage,
     limits: { fileSize: 5 * 1024 * 1024 }, // 5MB limit
     fileFilter: (req, file, cb) => {
-        const allowedTypes = /jpeg|jpg|png|svg\+xml|svg|webp|gif/;
+        const allowedTypes = /jpeg|jpg|png|svg\+xml|svg|webp|gif|x-icon|vnd\.microsoft\.icon|ico/;
         const mimeValid = allowedTypes.test(file.mimetype);
         const extValid = allowedTypes.test(path.extname(file.originalname).toLowerCase().replace('.', ''));
         if (mimeValid || extValid) {
             return cb(null, true);
         }
-        cb(new Error('Only image files (PNG, JPG, SVG, WebP) are allowed.'));
+        cb(new Error('Only image files (PNG, JPG, SVG, WebP, ICO) are allowed.'));
     }
 });
 
@@ -141,15 +143,19 @@ router.post('/api/admin/upload-logo', requireAdmin, upload.single('logo'), async
             return res.status(400).json({ error: 'No image file uploaded.' });
         }
 
-        const logoType = req.body.logoType === 'footer' ? 'footer' : 'header';
+        const logoType = req.body.logoType === 'footer' ? 'footer' : (req.body.logoType === 'favicon' ? 'favicon' : 'header');
         const fileUrl = `/uploads/branding/${req.file.filename}`;
 
-        const updateField = logoType === 'footer' ? { footerLogoUrl: fileUrl } : { headerLogoUrl: fileUrl };
+        let updateField = { headerLogoUrl: fileUrl };
+        if (logoType === 'footer') updateField = { footerLogoUrl: fileUrl };
+        else if (logoType === 'favicon') updateField = { faviconUrl: fileUrl };
+
         await SiteSetting.updateOne({ key: 'global' }, { $set: updateField });
 
+        const labelMap = { header: 'Header logo', footer: 'Footer logo', favicon: 'Favicon' };
         return res.json({
             status: 'success',
-            message: `${logoType === 'footer' ? 'Footer' : 'Header'} logo uploaded successfully!`,
+            message: `${labelMap[logoType] || 'Logo'} uploaded successfully!`,
             url: fileUrl,
             logoType
         });

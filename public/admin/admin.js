@@ -121,6 +121,9 @@ async function loadSettings() {
         if (globalSettings.footerLogoUrl) {
             document.getElementById('preview-footer-logo').src = globalSettings.footerLogoUrl;
         }
+        if (globalSettings.faviconUrl && document.getElementById('preview-favicon')) {
+            document.getElementById('preview-favicon').src = globalSettings.faviconUrl;
+        }
 
         // Pricing
         const plans = globalSettings.plans || {};
@@ -209,8 +212,10 @@ async function uploadLogoFile(type, inputEl) {
         });
         const data = await res.json();
         if (res.ok && data.url) {
-            alert(`${type === 'header' ? 'Header' : 'Footer'} logo uploaded successfully!`);
-            document.getElementById(`preview-${type}-logo`).src = data.url;
+            const labelMap = { header: 'Header logo', footer: 'Footer logo', favicon: 'Favicon' };
+            alert(`${labelMap[type] || 'Logo'} uploaded successfully!`);
+            const previewEl = document.getElementById(type === 'favicon' ? 'preview-favicon' : `preview-${type}-logo`);
+            if (previewEl) previewEl.src = data.url;
         } else {
             alert(data.error || 'Failed to upload logo.');
         }

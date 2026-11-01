@@ -209,6 +209,101 @@
         if (elements['date-to']) elements['date-to'].value = iso;
         const picker = document.getElementById('matchday-picker');
         if (picker) picker.value = iso;
+
+        const bannerEl = document.getElementById('fs-banner-date-text');
+        if (bannerEl) {
+            const fullDayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+            const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+            bannerEl.textContent = `Today · ${fullDayNames[today.getDay()]}, ${monthNames[today.getMonth()]} ${today.getDate()}`;
+        }
+    }
+
+    function setMatchdayDate(dateObj) {
+        if (!dateObj || isNaN(dateObj.getTime())) return;
+        const iso = isoDateInput(dateObj);
+        state.selectedDateStr = iso;
+        if (elements['date-from']) elements['date-from'].value = iso;
+        if (elements['date-to']) elements['date-to'].value = iso;
+        const picker = document.getElementById('matchday-picker');
+        if (picker) picker.value = iso;
+
+        // Compute day offset relative to today
+        const now = new Date();
+        const todayMid = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+        const targetMid = new Date(dateObj.getFullYear(), dateObj.getMonth(), dateObj.getDate()).getTime();
+        const offset = Math.round((targetMid - todayMid) / (1000 * 60 * 60 * 24));
+        state.selectedDayOffset = offset;
+
+        // Formatted date labels
+        const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+        const fullDayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+        const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+        const dayOfWeek = fullDayNames[dateObj.getDay()];
+        const shortDay = dayNames[dateObj.getDay()];
+        const monthName = monthNames[dateObj.getMonth()];
+        const dayNum = dateObj.getDate();
+        const year = dateObj.getFullYear();
+
+        let bannerText = `${dayOfWeek}, ${monthName} ${dayNum}, ${year}`;
+        if (offset === 0) bannerText = `Today · ${dayOfWeek}, ${monthName} ${dayNum}`;
+        else if (offset === 1) bannerText = `Tomorrow · ${dayOfWeek}, ${monthName} ${dayNum}`;
+        else if (offset === -1) bannerText = `Yesterday · ${dayOfWeek}, ${monthName} ${dayNum}`;
+
+        const bannerEl = document.getElementById('fs-banner-date-text');
+        if (bannerEl) bannerEl.textContent = bannerText;
+
+        // Update pills
+        const pillsList = document.getElementById('date-pills-list');
+        if (pillsList) {
+            pillsList.querySelectorAll('.date-pill-btn').forEach(b => b.classList.remove('active'));
+            let dynamicPill = pillsList.querySelector('.dynamic-date-pill');
+
+            if (offset === -1) {
+                const yBtn = pillsList.querySelector('[data-day="yesterday"]');
+                if (yBtn) yBtn.classList.add('active');
+                if (dynamicPill) dynamicPill.remove();
+            } else if (offset === 0) {
+                const tBtn = pillsList.querySelector('[data-day="today"]');
+                if (tBtn) tBtn.classList.add('active');
+                if (dynamicPill) dynamicPill.remove();
+            } else if (offset === 1) {
+                const tmBtn = pillsList.querySelector('[data-day="tomorrow"]');
+                if (tmBtn) tmBtn.classList.add('active');
+                if (dynamicPill) dynamicPill.remove();
+            } else {
+                if (!dynamicPill) {
+                    dynamicPill = document.createElement('button');
+                    dynamicPill.className = 'date-pill-btn active dynamic-date-pill';
+                    dynamicPill.type = 'button';
+                    dynamicPill.setAttribute('data-day', 'custom');
+                    pillsList.appendChild(dynamicPill);
+                }
+                dynamicPill.classList.add('active');
+                dynamicPill.textContent = `${shortDay}, ${dayNum} ${monthName}`;
+            }
+        }
+
+        // When navigating dates, reset status filter from 'live' to 'all' so scheduled/finished fixtures are shown
+        if (state.currentStatus === 'live' || state.selectedLeagueSlug === 'live') {
+            state.currentStatus = 'all';
+            const statusPills = document.querySelectorAll('.fs-status-pill');
+            statusPills.forEach(p => {
+                const isAll = p.dataset.status === 'all';
+                p.classList.toggle('active', isAll);
+                p.setAttribute('aria-selected', isAll ? 'true' : 'false');
+            });
+            if (state.selectedLeagueSlug === 'live') {
+                state.selectedLeagueSlug = 'all';
+                const leaguePills = document.querySelectorAll('.quick-league-pill');
+                leaguePills.forEach(p => p.classList.toggle('active', p.dataset.slug === 'all'));
+            }
+        }
+
+        if (state.selectedLeagueSlug === 'all') {
+            loadAllLeagueFixtures();
+        } else if (state.league) {
+            loadFixtures();
+        }
     }
 
     async function fetchJson(path) {
@@ -582,6 +677,11 @@
         if (leagueToolbar) leagueToolbar.style.display = 'none';
         switchView('fixtures');
 
+        const explorer = document.querySelector('.explorer') || elements['fixtures-list'];
+        if (explorer && window.scrollY > (explorer.offsetTop + 200)) {
+            window.scrollTo({ top: Math.max(0, explorer.offsetTop - 70), behavior: 'smooth' });
+        }
+
         await loadAllLeagueFixtures();
     }
 
@@ -824,6 +924,11 @@
         const leagueToolbar = document.getElementById('league-view-toolbar');
         if (leagueToolbar) leagueToolbar.style.display = 'flex';
 
+        const explorer = document.querySelector('.explorer') || elements['fixtures-list'];
+        if (explorer && window.scrollY > (explorer.offsetTop + 200)) {
+            window.scrollTo({ top: Math.max(0, explorer.offsetTop - 70), behavior: 'smooth' });
+        }
+
         await Promise.allSettled([loadFixtures(), loadStandings()]);
     }
 
@@ -870,6 +975,47 @@
         }
     }
 
+    async function checkUpcomingLeagueMatchday(league, dayLabel) {
+        try {
+            const data = await fetchJson(`/get/soccer/${encodeURIComponent(league.slug)}/fixtures?status=scheduled&limit=1`);
+            const upcoming = (data.events || [])[0];
+            if (upcoming && upcoming.date && elements['fixtures-empty'] && !elements['fixtures-empty'].hidden) {
+                const upcomingDate = new Date(upcoming.date);
+                if (!isNaN(upcomingDate.getTime())) {
+                    const fullDayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+                    const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+                    const formatted = `${fullDayNames[upcomingDate.getDay()]}, ${monthNames[upcomingDate.getMonth()]} ${upcomingDate.getDate()}`;
+
+                    const jumpContainer = document.createElement('div');
+                    jumpContainer.className = 'fs-upcoming-jump-box';
+                    jumpContainer.style.marginTop = '14px';
+                    jumpContainer.innerHTML = `
+                        <p style="font-size:13px; color:var(--text-muted); margin:0 0 10px;">
+                            Next scheduled matchday for <strong>${escapeHtml(league.name)}</strong> is <strong>${formatted}</strong>:
+                        </p>
+                        <button type="button" class="btn-primary" id="btn-jump-next-matchday" style="display:inline-flex; align-items:center; gap:6px; padding:7px 14px; font-size:13px; font-weight:700; border-radius:6px; cursor:pointer;">
+                            <span>📅 View ${formatted} Matches</span> <span>&rarr;</span>
+                        </button>
+                    `;
+                    if (state.league && state.league.slug === league.slug) {
+                        const existingJump = elements['fixtures-empty'].querySelector('.fs-upcoming-jump-box');
+                        if (existingJump) existingJump.remove();
+                        elements['fixtures-empty'].appendChild(jumpContainer);
+
+                        const jumpBtn = document.getElementById('btn-jump-next-matchday');
+                        if (jumpBtn) {
+                            jumpBtn.addEventListener('click', () => {
+                                setMatchdayDate(upcomingDate);
+                            });
+                        }
+                    }
+                }
+            }
+        } catch {
+            // Non-critical background enhancement
+        }
+    }
+
     function renderFixtures(fixtures) {
         if (!elements['fixtures-list']) return;
         const hasFixtures = Boolean(fixtures && fixtures.length > 0);
@@ -885,6 +1031,10 @@
                     <p style="font-size:15px; font-weight:600; color:var(--text-main); margin-bottom:6px;">There's no games ${dayLabel} in ${escapeHtml(compName)}.</p>
                     <p style="font-size:13px; color:var(--text-muted); margin:0;">Tap "Tomorrow" or use the date picker to browse upcoming fixtures, or switch to Standings.</p>
                 `;
+
+                if (state.league && state.league.slug) {
+                    checkUpcomingLeagueMatchday(state.league, dayLabel);
+                }
             }
         }
         if (elements['fixtures-load-more']) {
@@ -2038,6 +2188,17 @@
                 footerLogoImg.hidden = false;
             }
 
+            // Custom Favicon
+            if (res.branding?.faviconUrl) {
+                let favLink = document.getElementById('site-favicon') || document.querySelector('link[rel="icon"]');
+                if (!favLink) {
+                    favLink = document.createElement('link');
+                    favLink.rel = 'icon';
+                    document.head.appendChild(favLink);
+                }
+                favLink.href = res.branding.faviconUrl;
+            }
+
             // 3-Box Hero Bookmaker Promos Grid
             const promosContainer = document.getElementById('hero-promos-container');
             if (promosContainer) {
@@ -2353,52 +2514,16 @@
         const nextBtn = document.getElementById('date-next-btn');
         const picker = document.getElementById('matchday-picker');
 
-        function setMatchdayDate(dateObj) {
-            const iso = isoDateInput(dateObj);
-            state.selectedDateStr = iso;
-            if (elements['date-from']) elements['date-from'].value = iso;
-            if (elements['date-to']) elements['date-to'].value = iso;
-            if (picker) picker.value = iso;
-
-            // When navigating dates, reset status filter from 'live' to 'all' so scheduled/finished fixtures are shown
-            if (state.currentStatus === 'live' || state.selectedLeagueSlug === 'live') {
-                state.currentStatus = 'all';
-                const statusPills = document.querySelectorAll('.fs-status-pill');
-                statusPills.forEach(p => {
-                    const isAll = p.dataset.status === 'all';
-                    p.classList.toggle('active', isAll);
-                    p.setAttribute('aria-selected', isAll ? 'true' : 'false');
-                });
-                if (state.selectedLeagueSlug === 'live') {
-                    state.selectedLeagueSlug = 'all';
-                    const leaguePills = document.querySelectorAll('.quick-league-pill');
-                    leaguePills.forEach(p => p.classList.toggle('active', p.dataset.slug === 'all'));
-                }
-            }
-
-            if (state.selectedLeagueSlug === 'all') {
-                loadAllLeagueFixtures();
-            } else if (state.league) {
-                loadFixtures();
-            }
-        }
-
         if (pillsList) {
             pillsList.querySelectorAll('.date-pill-btn').forEach(btn => {
                 btn.addEventListener('click', (e) => {
                     e.preventDefault();
-                    pillsList.querySelectorAll('.date-pill-btn').forEach(b => b.classList.remove('active'));
-                    btn.classList.add('active');
                     const day = btn.dataset.day;
                     const d = new Date();
                     if (day === 'yesterday') {
                         d.setDate(d.getDate() - 1);
-                        state.selectedDayOffset = -1;
                     } else if (day === 'tomorrow') {
                         d.setDate(d.getDate() + 1);
-                        state.selectedDayOffset = 1;
-                    } else {
-                        state.selectedDayOffset = 0;
                     }
                     setMatchdayDate(d);
                 });
@@ -2408,22 +2533,18 @@
         if (prevBtn) {
             prevBtn.addEventListener('click', (e) => {
                 e.preventDefault();
-                state.selectedDayOffset -= 1;
-                const d = new Date();
-                d.setDate(d.getDate() + state.selectedDayOffset);
-                if (pillsList) pillsList.querySelectorAll('.date-pill-btn').forEach(b => b.classList.remove('active'));
-                setMatchdayDate(d);
+                const baseDate = state.selectedDateStr ? new Date(state.selectedDateStr + 'T12:00:00Z') : new Date();
+                baseDate.setDate(baseDate.getDate() - 1);
+                setMatchdayDate(baseDate);
             });
         }
 
         if (nextBtn) {
             nextBtn.addEventListener('click', (e) => {
                 e.preventDefault();
-                state.selectedDayOffset += 1;
-                const d = new Date();
-                d.setDate(d.getDate() + state.selectedDayOffset);
-                if (pillsList) pillsList.querySelectorAll('.date-pill-btn').forEach(b => b.classList.remove('active'));
-                setMatchdayDate(d);
+                const baseDate = state.selectedDateStr ? new Date(state.selectedDateStr + 'T12:00:00Z') : new Date();
+                baseDate.setDate(baseDate.getDate() + 1);
+                setMatchdayDate(baseDate);
             });
         }
 
@@ -2431,10 +2552,8 @@
             picker.value = isoDateInput(new Date());
             picker.addEventListener('change', (e) => {
                 if (e.target.value) {
-                    const picked = new Date(e.target.value);
+                    const picked = new Date(e.target.value + 'T12:00:00Z');
                     if (!isNaN(picked.getTime())) {
-                        state.selectedDayOffset = 999;
-                        if (pillsList) pillsList.querySelectorAll('.date-pill-btn').forEach(b => b.classList.remove('active'));
                         setMatchdayDate(picked);
                     }
                 }
@@ -2831,14 +2950,6 @@
         const currentYearEl = document.getElementById('current-year');
         if (currentYearEl) currentYearEl.textContent = new Date().getFullYear();
 
-        if (document.body.dataset.pageKind === 'api') {
-            const pricingEl = document.getElementById('pricing-page-section');
-            if (pricingEl) {
-                setTimeout(() => {
-                    pricingEl.scrollIntoView({ behavior: 'smooth' });
-                }, 400);
-            }
-        }
 
         const results = await Promise.allSettled([loadMeta(), loadLeagues(), loadAdsAndPromos()]);
         if (results[1].status === 'rejected' && elements['country-select']) {

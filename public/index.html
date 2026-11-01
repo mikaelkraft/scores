@@ -22,7 +22,7 @@
         })();
     </script>
     <link rel="icon" href="/favicon.ico" sizes="any">
-    <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+    <link rel="icon" id="site-favicon" href="/favicon.svg" type="image/svg+xml">
     <link rel="apple-touch-icon" href="/apple-touch-icon.png">
     <link rel="manifest" href="/manifest.webmanifest">
     <link rel="alternate" type="text/plain" href="/llms.txt" title="AI content guide">
@@ -118,6 +118,10 @@
                     <button class="date-nav-arrow" id="date-next-btn" type="button" title="Next day">›</button>
                     <div class="date-picker-wrap">
                         <input type="date" id="matchday-picker" class="matchday-picker-input" title="Choose specific date" aria-label="Select matchday date">
+                    </div>
+                    <div class="fs-matchday-banner" id="fs-matchday-banner" title="Active matchday date">
+                        <span class="fs-banner-cal" aria-hidden="true">📅</span>
+                        <strong id="fs-banner-date-text">Today · Sunday, Nov 1</strong>
                     </div>
                 </div>
 
@@ -287,8 +291,8 @@
             </div>
         </section>
 
-        <!-- Commercial Sports API & Live Data Pricing (Expanded) -->
-        <section class="pricing-page-section shell" id="pricing-page-section" aria-label="Commercial Sports API Plans" style="margin: 36px auto 20px;">
+        <!-- Commercial Sports API & Live Data Pricing (Expanded - Dedicated page at /pricing) -->
+        <section class="pricing-page-section shell" id="pricing-page-section" aria-label="Commercial Sports API Plans" style="display: none;">
             <div class="pricing-hero">
                 <span class="pricing-badge">Commercial Sports Data API</span>
                 <h2 class="pricing-title">Flexible Plans for Every Developer &amp; Brand</h2>

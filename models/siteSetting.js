@@ -23,6 +23,10 @@ const SiteSettingSchema = new mongoose.Schema({
         type: String,
         default: ''
     },
+    faviconUrl: {
+        type: String,
+        default: ''
+    },
     announcement: {
         type: String,
         default: 'Welcome to Scores by Norra AI — Real-time live match telemetry and commercial sports API'

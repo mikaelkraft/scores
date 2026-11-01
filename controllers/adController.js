@@ -22,7 +22,8 @@ router.get(['/api/v1/ads', '/api/ads/active', '/api/v1/settings/public'], option
                     siteTitle: settings.siteTitle,
                     tagline: settings.tagline,
                     headerLogoUrl: settings.headerLogoUrl,
-                    footerLogoUrl: settings.footerLogoUrl
+                    footerLogoUrl: settings.footerLogoUrl,
+                    faviconUrl: settings.faviconUrl || ''
                 },
                 ads: {
                     header: { enabled: false },
@@ -45,7 +46,8 @@ router.get(['/api/v1/ads', '/api/ads/active', '/api/v1/settings/public'], option
                 siteTitle: settings.siteTitle,
                 tagline: settings.tagline,
                 headerLogoUrl: settings.headerLogoUrl,
-                footerLogoUrl: settings.footerLogoUrl
+                footerLogoUrl: settings.footerLogoUrl,
+                faviconUrl: settings.faviconUrl || ''
             },
             ads: {
                 header: settings.ads?.header || { enabled: false },
