@@ -436,7 +436,12 @@ router.get('/:league/fixtures', validateLeague, async(req, res) => {
             if (to) filter.scoreboard_date.$lte = to;
         }
         const stateByStatus = { scheduled: 'pre', live: 'in', finished: 'post' };
-        if (status !== 'all') filter['status.state'] = stateByStatus[status];
+        if (status !== 'all') {
+            filter['status.state'] = stateByStatus[status];
+            if (status === 'live') {
+                filter.date = { $gte: new Date(Date.now() - 6 * 3600 * 1000) };
+            }
+        }
 
         const [count, matches] = await Promise.all([
             SoccerMatch.countDocuments(filter),

@@ -332,11 +332,16 @@ app.listen(PORT, () => {
     }, 2000);
 
     // Auto-sync live scores and world leagues in background
-    const { syncAllLeagues, syncLiveScoreboards, TARGET_LEAGUES } = require('./services/soccerSyncService');
+    const { syncAllLeagues, syncLiveScoreboards, cleanupStuckMatchesAndPurgeNcaa, TARGET_LEAGUES } = require('./services/soccerSyncService');
     const SoccerLeague = require('./models/soccerLeague');
 
     setTimeout(async () => {
         try {
+            // Clean stuck matches and purge any NCAA/non-soccer records on startup
+            if (typeof cleanupStuckMatchesAndPurgeNcaa === 'function') {
+                await cleanupStuckMatchesAndPurgeNcaa();
+            }
+
             // Immediate live scoreboard tick on boot
             await syncLiveScoreboards();
             

@@ -528,7 +528,24 @@ async function syncAllLeagues() {
 
 function resolveLeagueSlug(altGameNote = '', compDesc = '', uid = '') {
     const text = `${altGameNote} ${compDesc} ${uid}`.toLowerCase();
-    if (text.includes('uefa.champions') || text.includes('champions league')) return 'uefa.champions';
+
+    // Explicitly reject NCAA non-soccer and college basketball events
+    if (text.includes('ncaam') || text.includes('ncaa') || text.includes('college basketball') || text.includes('mens college')) {
+        return null;
+    }
+
+    // Confederation-specific continental tournaments FIRST (prevents CAF/AFC/CONCACAF matching UEFA Champions League)
+    if (text.includes('caf champions') || text.includes('caf.champions') || text.includes('totalenergies caf cl') || (text.includes('caf') && text.includes('champions'))) return 'caf.champions';
+    if (text.includes('caf confederation') || text.includes('caf confed') || text.includes('caf.confed') || (text.includes('caf') && text.includes('confed'))) return 'caf.confed';
+    if (text.includes('africa cup') || text.includes('afcon') || text.includes('caf.nations') || (text.includes('caf') && text.includes('nations'))) return 'caf.nations';
+    if (text.includes('chan') || text.includes('african nations championship') || text.includes('caf.championship')) return 'caf.championship';
+    if (text.includes('cosafa') || text.includes('caf.cosafa')) return 'caf.cosafa';
+
+    if (text.includes('afc champions league two') || text.includes('acl two') || text.includes('afc.cup')) return 'afc.cup';
+    if (text.includes('afc champions') || text.includes('afc.champions') || (text.includes('afc') && text.includes('champions'))) return 'afc.champions';
+    if (text.includes('concacaf') || text.includes('concacaf.champions')) return 'concacaf.champions';
+
+    if (text.includes('uefa.champions') || (text.includes('champions league') && !text.includes('caf') && !text.includes('afc') && !text.includes('concacaf'))) return 'uefa.champions';
     if (text.includes('uefa.europa.conf') || text.includes('conference league')) return 'uefa.europa.conf';
     if (text.includes('uefa.europa') || text.includes('europa league')) return 'uefa.europa';
     if (text.includes('uefa.nations') || text.includes('nations league')) return 'uefa.nations';
@@ -539,7 +556,6 @@ function resolveLeagueSlug(altGameNote = '', compDesc = '', uid = '') {
     if (text.includes('u.s. open') || text.includes('us open cup') || text.includes('usa.open')) return 'usa.open';
     if (text.includes('nwsl') || text.includes('usa.w.1')) return 'usa.w.1';
     if (text.includes('mls') || text.includes('major league soccer') || text.includes('usa.1')) return 'usa.1';
-    if (text.includes('ncaa') || text.includes('ncaam')) return 'usa.ncaa';
 
     // English Championship (specifically EFL / English Championship, avoiding bare 'championship')
     if (text.includes('efl championship') || text.includes('english championship') || (text.includes('championship') && (text.includes('eng') || text.includes('efl') || text.includes('sky bet'))) || text.includes('eng.2')) return 'eng.2';
@@ -587,15 +603,15 @@ function resolveLeagueSlug(altGameNote = '', compDesc = '', uid = '') {
     if (text.includes('league two') || text.includes('eng.4')) return 'eng.4';
 
     // African continental and domestic leagues
-    if (text.includes('caf confederation') || text.includes('caf.confed')) return 'caf.confed';
-    if (text.includes('caf champions') || text.includes('caf.champions')) return 'caf.champions';
-    if (text.includes('africa cup') || text.includes('afcon') || text.includes('caf.nations')) return 'caf.nations';
+    if (text.includes('caf confederation') || text.includes('caf confed') || (text.includes('caf') && text.includes('confed')) || text.includes('caf.confed')) return 'caf.confed';
+    if (text.includes('caf champions') || (text.includes('caf') && text.includes('champions')) || text.includes('caf.champions') || text.includes('totalenergies caf cl')) return 'caf.champions';
+    if (text.includes('africa cup') || text.includes('afcon') || text.includes('caf.nations') || (text.includes('caf') && text.includes('nations'))) return 'caf.nations';
     if (text.includes('chan') || text.includes('african nations championship') || text.includes('caf.championship')) return 'caf.championship';
     if (text.includes('cosafa') || text.includes('caf.cosafa')) return 'caf.cosafa';
     if (text.includes('botola') || (text.includes('morocco') && text.includes('league')) || text.includes('mar.1')) return 'mar.1';
     if (text.includes('egypt') || text.includes('egy.1')) return 'egy.1';
     if (text.includes('south africa') || text.includes('psl') || text.includes('betway premiership') || text.includes('rsa.1')) return 'rsa.1';
-    if (text.includes('npfl') || text.includes('nigeria') || text.includes('nga.1')) return 'nga.1';
+    if (text.includes('npfl') || text.includes('nigeria') || text.includes('nga.1') || text.includes('nigerian')) return 'nga.1';
     if (text.includes('kenya') || text.includes('ken.1')) return 'ken.1';
     if (text.includes('ghana') || text.includes('gha.1')) return 'gha.1';
     if (text.includes('uganda') || text.includes('uga.1')) return 'uga.1';
@@ -1035,6 +1051,145 @@ async function syncInGameStats({ limit = 150, onlyLive = false, forceAll = false
     };
 }
 
+/**
+ * Normalizes club names for robust cross-provider fuzzy matching (ESPN vs LiveScore)
+ */
+function normalizeTeamName(name = '') {
+    if (!name) return '';
+    let s = String(name).toLowerCase()
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .replace(/\bman\s+utd\b|\bman\s+united\b|\bmanchester\s+utd\b/g, 'manchesterunited')
+        .replace(/\bman\s+city\b|\bmanchester\s+city\b/g, 'manchestercity')
+        .replace(/\bspurs\b|\btottenham\s+hotspur\b/g, 'tottenham')
+        .replace(/\bwolves\b|\bwolverhampton\s+wanderers\b/g, 'wolverhampton')
+        .replace(/\bpsg\b|\bparis\s+sg\b|\bparis\s+saint-germain\b/g, 'parissaintgermain')
+        .replace(/\batletico\s+madrid\b|\batl\.\s*madrid\b/g, 'atleticomadrid')
+        .replace(/\breal\s+madrid\b/g, 'realmadrid')
+        .replace(/\bbayern\s+munich\b|\bbayern\s+munchen\b/g, 'bayernmunich')
+        .replace(/\bdortmund\b|\bborussia\s+dortmund\b/g, 'borussiadortmund')
+        .replace(/\binter\s+milan\b|\binternazionale\b/g, 'intermilan')
+        .replace(/\bac\s+milan\b/g, 'acmilan')
+        .replace(/\bsporting\s+cp\b|\bsporting\s+lisbon\b/g, 'sportingcp')
+        .replace(/\bjuve\b|\bjuventus\b/g, 'juventus')
+        .replace(/\bnewcastle\s+united\b/g, 'newcastle')
+        .replace(/\bwest\s+ham\s+united\b/g, 'westham')
+        .replace(/\b(fc|cf|sc|ac|cd|afc|fk|sk|sv|ssc|as|rc|ud|rb)\b/g, '')
+        .replace(/\b(united|city|town|athletic|hotspur|wanderers|albion|rovers|club)\b/g, '')
+        .replace(/[^a-z0-9]/g, '')
+        .trim();
+    return s;
+}
+
+function areTeamNamesMatching(nameA = '', nameB = '') {
+    if (!nameA || !nameB) return false;
+    const a = normalizeTeamName(nameA);
+    const b = normalizeTeamName(nameB);
+    if (!a || !b) return false;
+    if (a === b) return true;
+    if (a.includes(b) || b.includes(a)) {
+        if (Math.min(a.length, b.length) >= 4) return true;
+    }
+    return false;
+}
+
+/**
+ * Searches for an existing match across providers by ID, date window, and team names
+ */
+async function findExistingMatch({ eventId, homeName, awayName, matchDate, scoreboardDate }) {
+    if (eventId) {
+        const idMatch = await SoccerMatch.findOne({
+            $or: [
+                { 'source.event_id': String(eventId) },
+                { 'source.livescore_id': String(eventId) },
+                { 'source.espn_id': String(eventId) }
+            ]
+        });
+        if (idMatch) return idMatch;
+    }
+
+    if (!homeName || !awayName) return null;
+
+    const dateQuery = [];
+    if (scoreboardDate) {
+        dateQuery.push({ scoreboard_date: scoreboardDate });
+    }
+    if (matchDate instanceof Date && !isNaN(matchDate.getTime())) {
+        const minDate = new Date(matchDate.getTime() - 14 * 3600 * 1000);
+        const maxDate = new Date(matchDate.getTime() + 14 * 3600 * 1000);
+        dateQuery.push({ date: { $gte: minDate, $lte: maxDate } });
+    }
+
+    if (dateQuery.length === 0) return null;
+
+    const candidates = await SoccerMatch.find({ $or: dateQuery }).lean();
+    for (const cand of candidates) {
+        const candHome = cand.home?.name || cand.home?.display_name || '';
+        const candAway = cand.away?.name || cand.away?.display_name || '';
+        if (areTeamNamesMatching(candHome, homeName) && areTeamNamesMatching(candAway, awayName)) {
+            return cand;
+        }
+    }
+    return null;
+}
+
+/**
+ * Auto-finalizes stuck matches older than 3 hours and removes any accidental NCAA basketball entries
+ */
+async function cleanupStuckMatchesAndPurgeNcaa() {
+    try {
+        // 1. Purge NCAA basketball and non-soccer records completely
+        await SoccerMatch.deleteMany({
+            $or: [
+                { league_slug: 'usa.ncaa' },
+                { 'source.uid': /ncaa/i },
+                { name: /ncaam|ncaa basketball/i },
+                { note: /ncaam|ncaa basketball/i }
+            ]
+        });
+        await SoccerLeague.deleteMany({
+            $or: [
+                { slug: 'usa.ncaa' },
+                { name: /ncaa/i }
+            ]
+        });
+
+        // 2. Auto-finalize ALL stuck in-play matches that started more than 180 minutes (3 hours) ago
+        const threeHoursAgo = new Date(Date.now() - 180 * 60 * 1000);
+        const finalRes = await SoccerMatch.updateMany(
+            {
+                'status.state': 'in',
+                date: { $lt: threeHoursAgo }
+            },
+            {
+                $set: {
+                    'status.state': 'post',
+                    'status.name': 'STATUS_FINAL',
+                    'status.description': 'Full Time',
+                    'status.detail': 'FT',
+                    'status.short_detail': 'FT',
+                    'status.clock': 'FT',
+                    'status.completed': true
+                }
+            }
+        );
+        if (finalRes.modifiedCount > 0) {
+            console.log(`🧹 [AutoFinalize] Finalized ${finalRes.modifiedCount} stale in-progress matches older than 3 hours.`);
+        }
+
+        // 3. Clean any corrupted league names starting with "International "
+        const intlLeagues = await SoccerLeague.find({ name: /^international\s+/i }).lean();
+        for (const l of intlLeagues) {
+            const cleanName = l.name.replace(/^international\s+/i, '');
+            if (cleanName && cleanName !== l.name) {
+                await SoccerLeague.updateOne({ _id: l._id }, { $set: { name: cleanName } });
+            }
+        }
+    } catch (err) {
+        console.warn('Notice running startup match cleanup:', err.message);
+    }
+}
+
 async function syncLiveScoreInPlay() {
     const now = new Date();
     let updatedCount = 0;
@@ -1115,11 +1270,21 @@ async function syncLiveScoreInPlay() {
                 }
             }
 
+            // Normalizing league display name: DO NOT prepend "International" or duplicate country
+            let displayName = leagueName;
+            if (cLower !== 'international' && cLower !== 'world') {
+                if (!leagueName.toLowerCase().startsWith(cLower)) {
+                    displayName = `${country} ${leagueName}`;
+                }
+            } else {
+                displayName = leagueName.replace(/^international\s+/i, '');
+            }
+
             const leagueDef = TARGET_LEAGUES.find(l => l.slug === targetSlug) || {
                 slug: targetSlug,
-                name: `${country} ${leagueName}`,
+                name: displayName,
                 abbreviation: leagueName.slice(0, 16),
-                country,
+                country: (cLower === 'international' || cLower === 'world') ? 'International' : country,
                 kind: 'club'
             };
 
@@ -1171,103 +1336,115 @@ async function syncLiveScoreInPlay() {
                 const homeCrest = formatLiveScoreLogo(h.Img);
                 const awayCrest = formatLiveScoreLogo(a.Img);
 
-                const existingMatch = await SoccerMatch.findOne({
-                    $or: [
-                        { 'source.event_id': eid },
+                const existingMatch = await findExistingMatch({
+                    eventId: eid,
+                    homeName,
+                    awayName,
+                    matchDate,
+                    scoreboardDate
+                });
+
+                const finalHomeLogo = existingMatch?.home?.logo || homeCrest || '';
+                const finalAwayLogo = existingMatch?.away?.logo || awayCrest || '';
+                const finalHomeName = existingMatch?.home?.name || homeName;
+                const finalAwayName = existingMatch?.away?.name || awayName;
+                const finalLeagueSlug = existingMatch?.league_slug || targetSlug;
+
+                if (existingMatch) {
+                    await SoccerMatch.updateOne(
+                        { _id: existingMatch._id },
                         {
-                            league_slug: targetSlug,
-                            scoreboard_date: scoreboardDate,
-                            'home.name': homeName,
-                            'away.name': awayName
-                        }
-                    ]
-                }).select('home.logo away.logo').lean();
-
-                const finalHomeLogo = homeCrest || existingMatch?.home?.logo || '';
-                const finalAwayLogo = awayCrest || existingMatch?.away?.logo || '';
-
-                const matchDoc = {
-                    source: {
-                        provider: 'livescore',
-                        event_id: eid,
-                        competition_id: String(stage.CompId || stage.Sid || targetSlug),
-                        uid: `ls:${eid}`,
-                        modified_at: now
-                    },
-                    league_slug: targetSlug,
-                    scoreboard_date: scoreboardDate,
-                    date: matchDate,
-                    name: `${homeName} vs ${awayName}`,
-                    short_name: `${h.Abr || homeName.slice(0, 3)} vs ${a.Abr || awayName.slice(0, 3)}`,
-                    season: {
-                        year: matchDate.getUTCFullYear(),
-                        type_id: '1',
-                        slug: 'regular-season',
-                        name: `${leagueDef.name} ${matchDate.getUTCFullYear()}`
-                    },
-                    status: {
-                        state,
-                        name: state === 'in' ? 'STATUS_IN_PROGRESS' : state === 'post' ? 'STATUS_FINAL' : 'STATUS_SCHEDULED',
-                        description: state === 'in' ? 'In Progress' : state === 'post' ? (isPostponed ? 'Postponed' : 'Full Time') : 'Scheduled',
-                        detail: displayClock,
-                        short_detail: displayClock,
-                        clock: displayClock,
-                        clock_seconds: parseInt(displayClock, 10) ? parseInt(displayClock, 10) * 60 : (displayClock === 'HT' ? 2700 : 0),
-                        period: ev.Epr || (displayClock === 'HT' ? 1 : 2),
-                        completed: isFinished,
-                        suspended: isPostponed
-                    },
-                    home: {
-                        source_id: String(h.ID || homeName.toLowerCase().replace(/[^a-z0-9]+/g, '-')),
-                        name: homeName,
-                        display_name: homeName,
-                        abbreviation: h.Abr || homeName.slice(0, 3).toUpperCase(),
-                        logo: finalHomeLogo,
-                        score: isNaN(homeScore) ? 0 : homeScore,
-                        winner: isFinished && homeScore > awayScore,
-                        form: ''
-                    },
-                    away: {
-                        source_id: String(a.ID || awayName.toLowerCase().replace(/[^a-z0-9]+/g, '-')),
-                        name: awayName,
-                        display_name: awayName,
-                        abbreviation: a.Abr || awayName.slice(0, 3).toUpperCase(),
-                        logo: finalAwayLogo,
-                        score: isNaN(awayScore) ? 0 : awayScore,
-                        winner: isFinished && awayScore > homeScore,
-                        form: ''
-                    },
-                    venue: {
-                        name: 'Stadium',
-                        city: country,
-                        country
-                    },
-                    attendance: 0,
-                    note: leagueDef.name,
-                    play_by_play_available: true,
-                    broadcasts: [],
-                    key_events: [],
-                    last_synced_at: now
-                };
-
-                await SoccerMatch.updateOne(
-                    {
-                        $or: [
-                            { 'source.event_id': eid },
-                            {
-                                league_slug: targetSlug,
-                                scoreboard_date: scoreboardDate,
-                                'home.name': homeName,
-                                'away.name': awayName
+                            $set: {
+                                'source.livescore_id': eid,
+                                'status.state': state,
+                                'status.name': state === 'in' ? 'STATUS_IN_PROGRESS' : state === 'post' ? 'STATUS_FINAL' : 'STATUS_SCHEDULED',
+                                'status.description': state === 'in' ? 'In Progress' : state === 'post' ? (isPostponed ? 'Postponed' : 'Full Time') : 'Scheduled',
+                                'status.detail': displayClock,
+                                'status.short_detail': displayClock,
+                                'status.clock': displayClock,
+                                'status.clock_seconds': parseInt(displayClock, 10) ? parseInt(displayClock, 10) * 60 : (displayClock === 'HT' ? 2700 : 0),
+                                'status.period': ev.Epr || (displayClock === 'HT' ? 1 : 2),
+                                'status.completed': isFinished,
+                                'status.suspended': isPostponed,
+                                'home.score': isNaN(homeScore) ? (existingMatch.home?.score ?? 0) : homeScore,
+                                'away.score': isNaN(awayScore) ? (existingMatch.away?.score ?? 0) : awayScore,
+                                'home.winner': isFinished && homeScore > awayScore,
+                                'away.winner': isFinished && awayScore > homeScore,
+                                'home.logo': finalHomeLogo,
+                                'away.logo': finalAwayLogo,
+                                last_synced_at: now
                             }
-                        ]
-                    },
-                    {
-                        $set: matchDoc,
-                        $setOnInsert: { created_at: now }
-                    },
-                    { upsert: true }
-                );
+                        }
+                    );
+                } else {
+                    const matchDoc = {
+                        source: {
+                            provider: 'livescore',
+                            event_id: eid,
+                            livescore_id: eid,
+                            competition_id: String(stage.CompId || stage.Sid || targetSlug),
+                            uid: `ls:${eid}`,
+                            modified_at: now
+                        },
+                        league_slug: targetSlug,
+                        scoreboard_date: scoreboardDate,
+                        date: matchDate,
+                        name: `${homeName} vs ${awayName}`,
+                        short_name: `${h.Abr || homeName.slice(0, 3)} vs ${a.Abr || awayName.slice(0, 3)}`,
+                        season: {
+                            year: matchDate.getUTCFullYear(),
+                            type_id: '1',
+                            slug: 'regular-season',
+                            name: `${leagueDef.name} ${matchDate.getUTCFullYear()}`
+                        },
+                        status: {
+                            state,
+                            name: state === 'in' ? 'STATUS_IN_PROGRESS' : state === 'post' ? 'STATUS_FINAL' : 'STATUS_SCHEDULED',
+                            description: state === 'in' ? 'In Progress' : state === 'post' ? (isPostponed ? 'Postponed' : 'Full Time') : 'Scheduled',
+                            detail: displayClock,
+                            short_detail: displayClock,
+                            clock: displayClock,
+                            clock_seconds: parseInt(displayClock, 10) ? parseInt(displayClock, 10) * 60 : (displayClock === 'HT' ? 2700 : 0),
+                            period: ev.Epr || (displayClock === 'HT' ? 1 : 2),
+                            completed: isFinished,
+                            suspended: isPostponed
+                        },
+                        home: {
+                            source_id: String(h.ID || homeName.toLowerCase().replace(/[^a-z0-9]+/g, '-')),
+                            name: homeName,
+                            display_name: homeName,
+                            abbreviation: h.Abr || homeName.slice(0, 3).toUpperCase(),
+                            logo: finalHomeLogo,
+                            score: isNaN(homeScore) ? 0 : homeScore,
+                            winner: isFinished && homeScore > awayScore,
+                            form: ''
+                        },
+                        away: {
+                            source_id: String(a.ID || awayName.toLowerCase().replace(/[^a-z0-9]+/g, '-')),
+                            name: awayName,
+                            display_name: awayName,
+                            abbreviation: a.Abr || awayName.slice(0, 3).toUpperCase(),
+                            logo: finalAwayLogo,
+                            score: isNaN(awayScore) ? 0 : awayScore,
+                            winner: isFinished && awayScore > homeScore,
+                            form: ''
+                        },
+                        venue: {
+                            name: 'Stadium',
+                            city: country,
+                            country
+                        },
+                        attendance: 0,
+                        note: leagueDef.name,
+                        play_by_play_available: true,
+                        broadcasts: [],
+                        key_events: [],
+                        created_at: now,
+                        last_synced_at: now
+                    };
+
+                    await SoccerMatch.create(matchDoc).catch(() => {});
+                }
 
                 const homeClubSet = {
                     name: homeName,
@@ -1283,7 +1460,7 @@ async function syncLiveScoreInPlay() {
                     { source_id: String(h.ID || homeName.toLowerCase().replace(/[^a-z0-9]+/g, '-')) },
                     {
                         $set: homeClubSet,
-                        $addToSet: { league_slugs: targetSlug },
+                        $addToSet: { league_slugs: finalLeagueSlug },
                         $setOnInsert: {
                             slug: homeName.toLowerCase().replace(/[^a-z0-9]+/g, '-'),
                             created_at: now
@@ -1306,7 +1483,7 @@ async function syncLiveScoreInPlay() {
                     { source_id: String(a.ID || awayName.toLowerCase().replace(/[^a-z0-9]+/g, '-')) },
                     {
                         $set: awayClubSet,
-                        $addToSet: { league_slugs: targetSlug },
+                        $addToSet: { league_slugs: finalLeagueSlug },
                         $setOnInsert: {
                             slug: awayName.toLowerCase().replace(/[^a-z0-9]+/g, '-'),
                             created_at: now
@@ -1319,14 +1496,12 @@ async function syncLiveScoreInPlay() {
             }
         }
 
-        // Clean up any stale livescore in-play matches that have concluded (started > 130 minutes ago) and are no longer in the active live feed
-        const twoHoursTenMinsAgo = new Date(Date.now() - 130 * 60 * 1000);
+        // Auto-finalize ANY stuck in-play matches that have concluded (started > 180 minutes ago)
+        const threeHoursAgo = new Date(Date.now() - 180 * 60 * 1000);
         await SoccerMatch.updateMany(
             {
-                'source.provider': 'livescore',
                 'status.state': 'in',
-                date: { $lt: twoHoursTenMinsAgo },
-                'source.event_id': { $nin: [...activeLiveEventIds] }
+                date: { $lt: threeHoursAgo }
             },
             {
                 $set: {
@@ -1400,21 +1575,32 @@ async function syncLiveScoreboards() {
             const homeScore = parseInt(homeComp.score, 10);
             const awayScore = parseInt(awayComp.score, 10);
 
-            const existingMatch = await SoccerMatch.findOne({ 'source.event_id': String(ev.id) }).select('_id league_slug status').lean();
-
             let targetSlug = ev._forcedLeagueSlug || resolveLeagueSlug(comp.altGameNote || '', comp.notes?.[0]?.headline || '', ev.uid || '');
-            if (!targetSlug) {
-                targetSlug = existingMatch?.league_slug;
+            if (!targetSlug || targetSlug === 'usa.ncaa') {
+                continue;
             }
 
-            if (!targetSlug) {
-                continue;
+            const homeCompName = homeComp.team?.displayName || homeComp.team?.name || '';
+            const awayCompName = awayComp.team?.displayName || awayComp.team?.name || '';
+            const eventDate = ev.date ? new Date(ev.date) : now;
+            const scoreboardDate = formatDateToScoreboard(eventDate);
+
+            const existingMatch = await findExistingMatch({
+                eventId: String(ev.id),
+                homeName: homeCompName,
+                awayName: awayCompName,
+                matchDate: eventDate,
+                scoreboardDate
+            });
+
+            if (!targetSlug && existingMatch?.league_slug) {
+                targetSlug = existingMatch.league_slug;
             }
 
             const leagueDef = TARGET_LEAGUES.find(l => l.slug === targetSlug) || {
                 slug: targetSlug,
-                name: comp.altGameNote ? comp.altGameNote.split(',')[0].trim() : 'Football Competition',
-                abbreviation: comp.altGameNote ? comp.altGameNote.split(',')[0].trim().slice(0, 16) : 'Soccer',
+                name: comp.altGameNote ? comp.altGameNote.split(',')[0].trim().replace(/^international\s+/i, '') : 'Football Competition',
+                abbreviation: comp.altGameNote ? comp.altGameNote.split(',')[0].trim().replace(/^international\s+/i, '').slice(0, 16) : 'Soccer',
                 country: 'International',
                 kind: 'club'
             };
@@ -1458,13 +1644,41 @@ async function syncLiveScoreboards() {
             if (existingMatch) {
                 await SoccerMatch.updateOne(
                     { _id: existingMatch._id },
-                    { $set: updateFields }
+                    {
+                        $set: {
+                            ...updateFields,
+                            'source.espn_id': String(ev.id),
+                            'home.logo': homeComp.team?.logo || existingMatch.home?.logo || '',
+                            'away.logo': awayComp.team?.logo || existingMatch.away?.logo || '',
+                            'home.display_name': homeCompName || existingMatch.home?.display_name || '',
+                            'away.display_name': awayCompName || existingMatch.away?.display_name || ''
+                        }
+                    }
                 );
             } else {
                 await processEvents([ev], targetSlug, leagueDef, ev.season || {}, now);
             }
             updatedCount++;
         }
+
+        // Auto-finalize any in-play matches that have concluded (started > 180 minutes ago)
+        await SoccerMatch.updateMany(
+            {
+                'status.state': 'in',
+                date: { $lt: new Date(Date.now() - 180 * 60 * 1000) }
+            },
+            {
+                $set: {
+                    'status.state': 'post',
+                    'status.name': 'STATUS_FINAL',
+                    'status.description': 'Full Time',
+                    'status.detail': 'FT',
+                    'status.short_detail': 'FT',
+                    'status.clock': 'FT',
+                    'status.completed': true
+                }
+            }
+        );
 
         // Ingest real-time in-play matches across Asian, African, and European regional leagues
         const liveInPlayCount = await syncLiveScoreInPlay();
@@ -1481,6 +1695,9 @@ module.exports = {
     syncLiveScoreboards,
     syncLiveScoreInPlay,
     syncInGameStats,
+    cleanupStuckMatchesAndPurgeNcaa,
+    normalizeTeamName,
+    areTeamNamesMatching,
     fetchLiveScoreMatchDetails,
     fetchEspnMatchDetails,
     formatLiveScoreLogo,

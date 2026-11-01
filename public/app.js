@@ -372,7 +372,8 @@
         container.innerHTML = allPill + livePill + leaguePills;
 
         container.querySelectorAll('.quick-league-btn').forEach(btn => {
-            btn.addEventListener('click', () => {
+            btn.addEventListener('click', (e) => {
+                e.preventDefault();
                 const slug = btn.dataset.slug;
                 if (slug === 'all') {
                     selectAllLeagues();
@@ -625,10 +626,16 @@
             }
 
             if (!matches.length) {
-                // If today's scheduled match query returned empty but we have live games, gracefully display in-play matches
-                if (state.liveMatchCount > 0 && dateParam === 'today' && !isFavorites) {
-                    await loadLiveMatches({ background });
-                    return;
+                // If today's scheduled match query returned empty, query live matches before giving up
+                if (dateParam === 'today' && !isFavorites) {
+                    try {
+                        const liveData = await fetchJson('/api/v1/football/live');
+                        if (liveData?.matches?.length) {
+                            state.liveMatchCount = liveData.matches.length;
+                            await loadLiveMatches({ background });
+                            return;
+                        }
+                    } catch {}
                 }
                 renderAllLeaguesGrouped([]);
                 return;
@@ -893,9 +900,9 @@
         const isPinned = state.pinnedMatches.includes(String(event.id));
 
         const timeOrStatus = isLive
-            ? `<span class="live-pulse-dot"></span><span class="fs-status-live">${escapeHtml(status.label)}</span>`
+            ? `<div class="fs-status-live-col"><span class="live-pulse-dot"></span><span class="fs-status-live">${escapeHtml(status.label)}</span></div>`
             : status.state === 'finished'
-            ? `<span class="fs-status-ft">FT</span>`
+            ? `<div class="fs-status-finished-col"><span class="fs-status-ft">FT</span><span class="fs-status-time-sub">${kickoffTime}</span></div>`
             : `<span class="fs-status-time">${kickoffTime}</span>`;
 
         return `
@@ -1014,8 +1021,11 @@
         }
     }
 
+    let lastWindowScrollY = 0;
+
     async function openMatch(eventId, leagueSlug = '') {
         state.currentEventId = eventId;
+        lastWindowScrollY = window.scrollY || window.pageYOffset || document.documentElement.scrollTop || 0;
         if (leagueSlug) {
             const found = state.leagues.find(item => item.slug === leagueSlug);
             if (found) state.league = found;
@@ -1023,6 +1033,8 @@
         window.clearInterval(state.matchTimer);
         if (elements['match-dialog'] && !elements['match-dialog'].open) {
             elements['match-dialog'].showModal();
+            window.scrollTo({ top: lastWindowScrollY, behavior: 'instant' });
+            document.body.classList.add('dialog-open');
         }
         await loadMatchDetails(eventId, false, leagueSlug);
     }
@@ -1820,7 +1832,8 @@
 
             // Bind drawer tabs
             elements['dialog-content'].querySelectorAll('.drawer-tab').forEach(tabBtn => {
-                tabBtn.addEventListener('click', () => {
+                tabBtn.addEventListener('click', (e) => {
+                    e.preventDefault();
                     const target = tabBtn.dataset.drawerTab;
                     state.drawerActiveTab = target;
                     elements['dialog-content'].querySelectorAll('.drawer-tab').forEach(b => b.classList.toggle('active', b === tabBtn));
@@ -1847,7 +1860,9 @@
         state.matchTimer = null;
         state.currentEventId = null;
         state.drawerActiveTab = 'timeline';
+        document.body.classList.remove('dialog-open');
         if (elements['match-dialog']) elements['match-dialog'].close();
+        window.scrollTo({ top: lastWindowScrollY, behavior: 'instant' });
     }
 
     function setupThemeToggle() {
@@ -2169,6 +2184,7 @@
 
                 const card = event.target.closest('[data-event-id]');
                 if (card) {
+                    event.preventDefault();
                     const eventId = card.dataset.eventId;
                     const leagueSlug = card.dataset.leagueSlug || state.league?.slug;
                     openMatch(eventId, leagueSlug);
@@ -2206,7 +2222,8 @@
     function initStatusPills() {
         const pills = document.querySelectorAll('.fs-status-pill');
         pills.forEach(pill => {
-            pill.addEventListener('click', () => {
+            pill.addEventListener('click', (e) => {
+                e.preventDefault();
                 pills.forEach(p => {
                     p.classList.remove('active');
                     p.setAttribute('aria-selected', 'false');
@@ -2341,7 +2358,8 @@
 
         if (pillsList) {
             pillsList.querySelectorAll('.date-pill-btn').forEach(btn => {
-                btn.addEventListener('click', () => {
+                btn.addEventListener('click', (e) => {
+                    e.preventDefault();
                     pillsList.querySelectorAll('.date-pill-btn').forEach(b => b.classList.remove('active'));
                     btn.classList.add('active');
                     const day = btn.dataset.day;
@@ -2361,7 +2379,8 @@
         }
 
         if (prevBtn) {
-            prevBtn.addEventListener('click', () => {
+            prevBtn.addEventListener('click', (e) => {
+                e.preventDefault();
                 state.selectedDayOffset -= 1;
                 const d = new Date();
                 d.setDate(d.getDate() + state.selectedDayOffset);
@@ -2371,7 +2390,8 @@
         }
 
         if (nextBtn) {
-            nextBtn.addEventListener('click', () => {
+            nextBtn.addEventListener('click', (e) => {
+                e.preventDefault();
                 state.selectedDayOffset += 1;
                 const d = new Date();
                 d.setDate(d.getDate() + state.selectedDayOffset);

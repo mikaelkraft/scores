@@ -78,8 +78,10 @@ function isFreePlanRestricted(apiKey) {
 router.use(optionalApiKeyAuth);
 
 async function getFormattedLiveMatches(league, isFreeRestricted) {
+    const sixHoursAgo = new Date(Date.now() - 6 * 3600 * 1000);
     const liveFilter = {
-        'status.state': 'in'
+        'status.state': 'in',
+        date: { $gte: sixHoursAgo }
     };
 
     if (isFreeRestricted) {
@@ -283,10 +285,11 @@ router.get('/fixtures', async (req, res) => {
 
         // Date filtering
         const isQueryingToday = Boolean((date && parseDateParam(date) === parseDateParam('today')) || (!date && !from && !to));
+        const sixHoursAgo = new Date(Date.now() - 6 * 3600 * 1000);
         if (isQueryingToday && status === 'all') {
             filter.$or = [
                 { scoreboard_date: parseDateParam('today') },
-                { 'status.state': 'in' }
+                { 'status.state': 'in', date: { $gte: sixHoursAgo } }
             ];
         } else if (date) {
             filter.scoreboard_date = parseDateParam(date);
@@ -319,6 +322,7 @@ router.get('/fixtures', async (req, res) => {
         // Status filtering
         if (status === 'live') {
             filter['status.state'] = 'in';
+            filter.date = { $gte: sixHoursAgo };
             delete filter.scoreboard_date;
         } else if (status === 'scheduled') {
             filter['status.state'] = 'pre';
