@@ -1445,6 +1445,110 @@ router.get('/matches/:eventId', async (req, res) => {
         }).lean();
 
         if (!match) {
+            // Check if this is an ESPN event ID or LiveScore event ID that can be fetched live on-demand
+            if (/^\d{5,}$/.test(eventId)) {
+                try {
+                    const https = require('https');
+                    const zlib = require('zlib');
+                    const espnUrl = `https://site.api.espn.com/apis/site/v2/sports/soccer/all/summary?event=${encodeURIComponent(eventId)}`;
+                    const liveEspnData = await new Promise((resolve) => {
+                        const req = https.get(espnUrl, {
+                            headers: { 'User-Agent': 'NorraScores/2.1', 'Accept-Encoding': 'gzip, deflate' },
+                            timeout: 4500
+                        }, res => {
+                            if (res.statusCode !== 200) return resolve(null);
+                            let stream = res;
+                            if (res.headers['content-encoding'] === 'gzip') stream = res.pipe(zlib.createGunzip());
+                            else if (res.headers['content-encoding'] === 'deflate') stream = res.pipe(zlib.createInflate());
+                            let d = '';
+                            stream.on('data', c => d += c);
+                            stream.on('end', () => {
+                                try { resolve(JSON.parse(d)); } catch { resolve(null); }
+                            });
+                        });
+                        req.on('error', () => resolve(null));
+                        req.on('timeout', () => { req.destroy(); resolve(null); });
+                    });
+
+                    if (liveEspnData && liveEspnData.header) {
+                        const comp = liveEspnData.header?.competitions?.[0] || {};
+                        const summary = {
+                            id: eventId,
+                            header: liveEspnData.header,
+                            boxscore: liveEspnData.boxscore || { teams: [] },
+                            keyEvents: liveEspnData.keyEvents || [],
+                            rosters: liveEspnData.rosters || [],
+                            gameInfo: liveEspnData.gameInfo || {},
+                            seasonseries: liveEspnData.seasonseries || [],
+                            lastFiveGames: liveEspnData.lastFiveGames || [],
+                            predictor: liveEspnData.predictor,
+                            pickcenter: liveEspnData.pickcenter,
+                            status: comp.status?.type || { state: 'pre' }
+                        };
+
+                        let timelinePlays = (summary.keyEvents || []).map((ke, idx) => ({
+                            id: ke.id || `play-${idx}`,
+                            sequence: idx + 1,
+                            type: ke.type || { text: 'Play' },
+                            text: ke.text || '',
+                            clock: typeof ke.clock === 'string' ? { displayValue: ke.clock, value: ke.clockValue || 0 } : (ke.clock || { displayValue: '', value: 0 }),
+                            scoringPlay: Boolean(ke.scoringPlay),
+                            team: ke.team || null,
+                            participants: (ke.athletesInvolved || []).map(a => ({ athlete: a }))
+                        }));
+
+                        res.set('Cache-Control', 'public, max-age=10');
+                        return res.json({
+                            status: 'success',
+                            match: summary,
+                            summary: summary,
+                            timeline: timelinePlays
+                        });
+                    }
+                } catch (liveFetchErr) {
+                    console.error('[LiveMatchFetch] On-demand ESPN match summary fetch failed:', liveFetchErr.message);
+                }
+            }
+
+            // Fallback for LiveScore match IDs
+            try {
+                const { fetchLiveScoreMatchDetails } = require('../services/soccerSyncService');
+                const lsData = await fetchLiveScoreMatchDetails(eventId);
+                if (lsData && (lsData.boxscore || lsData.keyEvents?.length || lsData.rosters?.length)) {
+                    const summary = {
+                        id: eventId,
+                        header: {
+                            competitions: [{
+                                id: eventId,
+                                status: { type: { state: 'in', description: 'Live' } },
+                                details: lsData.keyEvents || []
+                            }]
+                        },
+                        boxscore: lsData.boxscore || { teams: [] },
+                        keyEvents: lsData.keyEvents || [],
+                        rosters: lsData.rosters || [],
+                        gameInfo: lsData.gameInfo || {},
+                        status: { state: 'in' }
+                    };
+                    res.set('Cache-Control', 'public, max-age=10');
+                    return res.json({
+                        status: 'success',
+                        match: summary,
+                        summary: summary,
+                        timeline: (lsData.keyEvents || []).map((ke, idx) => ({
+                            id: ke.id || `play-${idx}`,
+                            sequence: idx + 1,
+                            type: { text: ke.type || 'Play' },
+                            text: ke.text || '',
+                            clock: { displayValue: `${ke.clock || 0}'`, value: ke.clock || 0 },
+                            scoringPlay: Boolean(ke.scoringPlay),
+                            team: ke.team || null,
+                            participants: (ke.athletesInvolved || []).map(a => ({ athlete: a }))
+                        }))
+                    });
+                }
+            } catch (lsErr) {}
+
             return res.status(404).json({ error: 'Match not found' });
         }
 

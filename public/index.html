@@ -73,7 +73,7 @@
             </div>
 
             <div class="nav-actions">
-                <button class="nav-link nav-btn-live" type="button" id="header-live-btn"><span class="live-pulse-dot" aria-hidden="true"></span>Live</button>
+                <button class="nav-link nav-btn-live" type="button" id="header-live-btn" title="View live matches in progress"><span class="live-pulse-dot" aria-hidden="true"></span>Live <span class="fs-live-badge" id="header-live-count" style="display:none; font-size:11px; padding:1px 6px; border-radius:10px; margin-left:4px;">0</span></button>
                 <a class="nav-link nav-link-norra" href="https://mynorra.xyz" target="_blank" rel="noopener">Predictions <span class="ext-icon" aria-hidden="true">↗</span></a>
                 <a class="nav-link" href="/pricing">Pricing</a>
                 <a class="nav-link docs-link" href="/docs">Docs</a>
@@ -87,12 +87,46 @@
     <aside id="ad-slot-header" class="ad-slot-container shell" hidden></aside>
 
     <main id="main-content">
-        <!-- Primary Interactive LiveScore Explorer (Score-First, Zero Clutter) -->
-        <section class="explorer shell" aria-label="Live football scores, matches and standings">
-            <!-- Horizontal Top League Ribbon (All, Live, Leagues) -->
-            <div class="quick-leagues-wrapper" id="quick-leagues-bar" aria-label="Popular world competitions">
-                <div class="quick-leagues-list" id="quick-leagues-list"></div>
-            </div>
+        <!-- Desktop Layout Wrap (Sidebar on the left, Main Explorer on the right on desktop) -->
+        <div class="desktop-layout-wrap shell">
+            <!-- Desktop Left Sidebar: Pinned Competitions & Country Directory -->
+            <aside class="desktop-left-sidebar" id="desktop-country-sidebar" aria-label="Country and league directory">
+                <div class="sidebar-sticky-inner">
+                    <!-- Top Competitions Section -->
+                    <div class="sidebar-block">
+                        <div class="sidebar-block-header">
+                            <span class="sidebar-header-icon">🏆</span>
+                            <span class="sidebar-header-title">TOP LEAGUES</span>
+                        </div>
+                        <nav class="sidebar-nav-list" id="sidebar-top-leagues" aria-label="Top world leagues">
+                            <!-- Populated dynamically by app.js -->
+                        </nav>
+                    </div>
+
+                    <!-- Countries & Competitions Accordion Section -->
+                    <div class="sidebar-block">
+                        <div class="sidebar-block-header">
+                            <span class="sidebar-header-icon">🌍</span>
+                            <span class="sidebar-header-title">COUNTRIES</span>
+                        </div>
+                        <div class="sidebar-search-box">
+                            <input type="text" id="sidebar-country-filter" placeholder="Filter country or league..." aria-label="Filter countries">
+                        </div>
+                        <nav class="sidebar-country-list" id="sidebar-country-list" aria-label="Countries and domestic leagues">
+                            <!-- Populated dynamically with country flag, title, badge, and expandable league list -->
+                        </nav>
+                    </div>
+                </div>
+            </aside>
+
+            <!-- Main Content Column (shifted to the right on desktop) -->
+            <div class="main-content-column">
+                <!-- Primary Interactive LiveScore Explorer (Score-First, Zero Clutter) -->
+                <section class="explorer" aria-label="Live football scores, matches and standings">
+                    <!-- Horizontal Top League Ribbon (All, Live, Leagues) -->
+                    <div class="quick-leagues-wrapper" id="quick-leagues-bar" aria-label="Popular world competitions">
+                        <div class="quick-leagues-list" id="quick-leagues-list"></div>
+                    </div>
 
             <!-- Flashscore Scoreboard Control Strip (Status Tabs, Date Ribbon, Search, Live Sync) -->
             <div class="fs-control-strip" aria-label="LiveScore controls and status filters">
@@ -233,10 +267,10 @@
         </section>
 
         <!-- Featured Promos Grid -->
-        <div class="hero-promos-grid shell" id="hero-promos-container" aria-label="Featured sports bookmakers" style="margin-top:24px;"></div>
+        <div class="hero-promos-grid" id="hero-promos-container" aria-label="Featured sports bookmakers" style="margin-top:24px;"></div>
 
         <!-- Universal Bet Booking Code Converter Widget -->
-        <section class="booking-converter-section shell" id="booking-converter-section" aria-label="Universal Bet Booking Code Converter">
+        <section class="booking-converter-section" id="booking-converter-section" aria-label="Universal Bet Booking Code Converter">
             <div class="converter-card">
                 <div class="converter-header">
                     <div class="converter-info">
@@ -290,6 +324,8 @@
                 <div id="converter-result-box" class="converter-result-box" style="display: none;"></div>
             </div>
         </section>
+        </div><!-- /.main-content-column -->
+    </div><!-- /.desktop-layout-wrap -->
 
         <!-- Commercial Sports API & Live Data Pricing (Expanded - Dedicated page at /pricing) -->
         <section class="pricing-page-section shell" id="pricing-page-section" aria-label="Commercial Sports API Plans" style="display: none;">

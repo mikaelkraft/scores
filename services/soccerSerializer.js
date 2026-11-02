@@ -63,13 +63,23 @@ const COUNTRY_OVERRIDE_BY_LEAGUE = {
     'uefa.champions': 'Other'
 };
 
+function cleanLeagueName(name) {
+    if (!name) return '';
+    return String(name)
+        .replace(/^international\s*[-–:/]\s*/i, '')
+        .replace(/^international\s+clubs\s*[-–:/]\s*/i, '')
+        .replace(/^international\s+/i, '')
+        .trim();
+}
+
 function inferLeagueCountry(league) {
     const slug = String(league.slug || '').toLowerCase();
     if (COUNTRY_OVERRIDE_BY_LEAGUE[slug]) return COUNTRY_OVERRIDE_BY_LEAGUE[slug];
-    if (league.country) return league.country;
     const prefix = slug.split('.')[0];
+    if (prefix && COUNTRY_BY_SLUG_PREFIX[prefix]) return COUNTRY_BY_SLUG_PREFIX[prefix];
+    if (league.country && league.country !== 'International' && league.country !== 'Other') return league.country;
     if (INTERNATIONAL_PREFIXES.has(prefix)) return 'International';
-    return COUNTRY_BY_SLUG_PREFIX[prefix] || 'Other';
+    return COUNTRY_BY_SLUG_PREFIX[prefix] || league.country || 'Other';
 }
 
 function toIso(value) {
@@ -96,7 +106,7 @@ function serializeLeague(league) {
     return {
         id: league.source?.source_id || league.slug,
         uid: league.source?.source_id ? `s:600~l:${league.source.source_id}` : undefined,
-        name: league.name,
+        name: cleanLeagueName(league.name),
         abbreviation: league.abbreviation,
         slug: league.slug,
         country: inferLeagueCountry(league),

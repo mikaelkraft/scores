@@ -2177,6 +2177,280 @@ dialog.match-dialog::backdrop {
     object-fit: contain;
 }
 
+/* ==========================================================================
+   Desktop Left Sidebar & Multi-Column Layout
+   ========================================================================== */
+.desktop-layout-wrap {
+    width: 100%;
+    margin-inline: auto;
+    box-sizing: border-box;
+}
+
+@media (min-width: 1024px) {
+    .desktop-layout-wrap {
+        display: grid;
+        grid-template-columns: 260px minmax(0, 1fr);
+        gap: 22px;
+        align-items: start;
+        max-width: 1360px;
+    }
+
+    .desktop-left-sidebar {
+        display: block;
+        position: sticky;
+        top: 72px;
+        max-height: calc(100vh - 88px);
+        overflow-y: auto;
+        overscroll-behavior: contain;
+        background: var(--bg-surface);
+        border: 1px solid var(--border-subtle);
+        border-radius: var(--card-radius, 12px);
+        padding: 14px;
+        box-shadow: 0 4px 20px rgba(0, 0, 0, 0.06);
+        scrollbar-width: thin;
+        scrollbar-color: var(--border-subtle) transparent;
+    }
+
+    .desktop-left-sidebar::-webkit-scrollbar {
+        width: 5px;
+    }
+    .desktop-left-sidebar::-webkit-scrollbar-thumb {
+        background: var(--border-subtle);
+        border-radius: 4px;
+    }
+
+    .main-content-column {
+        min-width: 0;
+        width: 100%;
+    }
+}
+
+@media (max-width: 1023px) {
+    .desktop-left-sidebar {
+        display: none !important;
+    }
+    .main-content-column {
+        width: 100%;
+    }
+}
+
+.sidebar-sticky-inner {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+}
+
+.sidebar-block {
+    display: flex;
+    flex-direction: column;
+}
+
+.sidebar-block-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 11px;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 0.6px;
+    color: var(--text-muted);
+    padding-bottom: 8px;
+    border-bottom: 1px solid var(--border-subtle);
+    margin-bottom: 8px;
+}
+
+.sidebar-header-icon {
+    font-size: 13px;
+    line-height: 1;
+}
+
+.sidebar-nav-list {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.sidebar-nav-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    padding: 7px 10px;
+    border-radius: 6px;
+    color: var(--text-main);
+    text-decoration: none;
+    font-size: 13px;
+    font-weight: 500;
+    transition: all 0.15s ease;
+    cursor: pointer;
+    background: transparent;
+    border: none;
+    width: 100%;
+    text-align: left;
+}
+
+.sidebar-nav-item:hover {
+    background: var(--bg-surface-elevated, rgba(255, 255, 255, 0.05));
+    color: var(--color-primary);
+}
+
+.sidebar-nav-item.active {
+    background: var(--color-primary-subtle, rgba(37, 99, 235, 0.15));
+    color: var(--color-primary);
+    font-weight: 700;
+}
+
+.sidebar-item-left {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+    flex: 1;
+}
+
+.sidebar-item-name {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.sidebar-item-badge {
+    font-size: 10px;
+    font-weight: 700;
+    padding: 2px 6px;
+    border-radius: 10px;
+    background: var(--bg-canvas);
+    color: var(--text-muted);
+    border: 1px solid var(--border-subtle);
+    flex-shrink: 0;
+}
+
+.sidebar-item-badge.live-badge {
+    background: #ef4444;
+    color: #ffffff;
+    border-color: #ef4444;
+}
+
+.sidebar-search-box {
+    margin-bottom: 8px;
+}
+
+.sidebar-search-box input {
+    width: 100%;
+    box-sizing: border-box;
+    padding: 6px 10px;
+    font-size: 12px;
+    border-radius: 6px;
+    border: 1px solid var(--border-subtle);
+    background: var(--bg-canvas);
+    color: var(--text-main);
+    outline: none;
+    font-family: inherit;
+    transition: border-color 0.2s ease;
+}
+
+.sidebar-search-box input:focus {
+    border-color: var(--color-primary);
+}
+
+.sidebar-country-list {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    max-height: 480px;
+    overflow-y: auto;
+    scrollbar-width: thin;
+}
+
+.sidebar-country-item {
+    border-radius: 6px;
+    overflow: hidden;
+}
+
+.sidebar-country-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 6px 10px;
+    border-radius: 6px;
+    font-size: 12.5px;
+    font-weight: 500;
+    color: var(--text-main);
+    cursor: pointer;
+    transition: background 0.15s ease;
+    user-select: none;
+}
+
+.sidebar-country-header:hover {
+    background: var(--bg-surface-elevated, rgba(255, 255, 255, 0.05));
+    color: var(--color-primary);
+}
+
+.sidebar-country-leagues {
+    display: none;
+    flex-direction: column;
+    padding-left: 24px;
+    gap: 2px;
+    margin-top: 2px;
+    margin-bottom: 4px;
+}
+
+.sidebar-country-item.is-expanded .sidebar-country-leagues {
+    display: flex;
+}
+
+.sidebar-country-item.is-expanded .sidebar-chevron {
+    transform: rotate(90deg);
+}
+
+.sidebar-chevron {
+    font-size: 10px;
+    color: var(--text-muted);
+    transition: transform 0.15s ease;
+    margin-left: 6px;
+}
+
+.sidebar-league-link {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 5px 8px;
+    border-radius: 4px;
+    font-size: 12px;
+    color: var(--text-muted);
+    text-decoration: none;
+    cursor: pointer;
+    transition: all 0.15s ease;
+    background: transparent;
+    border: none;
+    width: 100%;
+    text-align: left;
+}
+
+.sidebar-league-link:hover, .sidebar-league-link.active {
+    color: var(--color-primary);
+    background: var(--color-primary-subtle, rgba(37, 99, 235, 0.1));
+}
+
+/* League Avatar & Flag Badges */
+.quick-league-avatar,
+.league-avatar-img,
+.fs-league-flag-img {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    vertical-align: middle;
+}
+
+.quick-league-avatar img,
+.league-avatar-img img,
+.fs-league-flag-img img {
+    border-radius: 3px;
+    max-width: 100%;
+    max-height: 100%;
+}
+
 /* Responsive Media Queries */
 @media (max-width: 900px) {
     .footer-grid {

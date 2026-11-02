@@ -494,7 +494,19 @@ async function sendSummary(req, res) {
             league = await getLeague(match.league_slug);
         }
 
-        if (!match) return res.status(404).json({ error: 'Match not found' });
+        if (!match) {
+            if (/^\d{5,}$/.test(req.eventId)) {
+                try {
+                    const espnUrl = `https://site.api.espn.com/apis/site/v2/sports/soccer/all/summary?event=${encodeURIComponent(req.eventId)}`;
+                    const liveEspnData = await fetchJson(espnUrl);
+                    if (liveEspnData && liveEspnData.header) {
+                        res.set('Cache-Control', 'public, max-age=10');
+                        return res.json(liveEspnData);
+                    }
+                } catch {}
+            }
+            return res.status(404).json({ error: 'Match not found' });
+        }
         if (!league) league = { slug: match.league_slug, name: match.note || 'Competition' };
 
         const targetEspnId = await resolveMatchEspnId(match, req.eventId);
