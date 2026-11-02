@@ -883,48 +883,81 @@ router.get('/predictions-context/:eventId', async (req, res) => {
         const hRegex = makeFlexibleTeamRegex(hName);
         const aRegex = makeFlexibleTeamRegex(aName);
 
+        const homeNameOrId = [];
+        if (homeId) homeNameOrId.push({ 'home.source_id': homeId }, { 'away.source_id': homeId });
+        if (hRegex) homeNameOrId.push({ 'home.name': hRegex }, { 'away.name': hRegex }, { 'home.display_name': hRegex }, { 'away.display_name': hRegex });
+
+        const awayNameOrId = [];
+        if (awayId) awayNameOrId.push({ 'home.source_id': awayId }, { 'away.source_id': awayId });
+        if (aRegex) awayNameOrId.push({ 'home.name': aRegex }, { 'away.name': aRegex }, { 'home.display_name': aRegex }, { 'away.display_name': aRegex });
+
+        const homeSpecificTeamOr = [
+            ...(homeId ? [{ 'home.source_id': homeId }] : []),
+            ...(hRegex ? [{ 'home.name': hRegex }, { 'home.display_name': hRegex }] : [])
+        ];
+        const awaySpecificTeamOr = [
+            ...(awayId ? [{ 'away.source_id': awayId }] : []),
+            ...(aRegex ? [{ 'away.name': aRegex }, { 'away.display_name': aRegex }] : [])
+        ];
+        const homeReversedTeamOr = [
+            ...(awayId ? [{ 'home.source_id': awayId }] : []),
+            ...(aRegex ? [{ 'home.name': aRegex }, { 'home.display_name': aRegex }] : [])
+        ];
+        const awayReversedTeamOr = [
+            ...(homeId ? [{ 'away.source_id': homeId }] : []),
+            ...(hRegex ? [{ 'away.name': hRegex }, { 'away.display_name': hRegex }] : [])
+        ];
+
         const h2hOrClauses = [];
-        if (homeId && awayId) {
-            h2hOrClauses.push(
-                { 'home.source_id': homeId, 'away.source_id': awayId },
-                { 'home.source_id': awayId, 'away.source_id': homeId }
-            );
+        if (homeSpecificTeamOr.length && awaySpecificTeamOr.length) {
+            h2hOrClauses.push({
+                $and: [
+                    { $or: homeSpecificTeamOr },
+                    { $or: awaySpecificTeamOr }
+                ]
+            });
         }
-        if (hRegex && aRegex) {
-            h2hOrClauses.push(
-                { 'home.name': hRegex, 'away.name': aRegex },
-                { 'home.name': aRegex, 'away.name': hRegex },
-                { 'home.display_name': hRegex, 'away.display_name': aRegex },
-                { 'home.display_name': aRegex, 'away.display_name': hRegex }
-            );
+        if (homeReversedTeamOr.length && awayReversedTeamOr.length) {
+            h2hOrClauses.push({
+                $and: [
+                    { $or: homeReversedTeamOr },
+                    { $or: awayReversedTeamOr }
+                ]
+            });
         }
 
-        const homeRecentOrClauses = [];
-        if (homeId) homeRecentOrClauses.push({ 'home.source_id': homeId }, { 'away.source_id': homeId });
-        if (hRegex) homeRecentOrClauses.push({ 'home.name': hRegex }, { 'away.name': hRegex }, { 'home.display_name': hRegex }, { 'away.display_name': hRegex });
-
-        const awayRecentOrClauses = [];
-        if (awayId) awayRecentOrClauses.push({ 'home.source_id': awayId }, { 'away.source_id': awayId });
-        if (aRegex) awayRecentOrClauses.push({ 'home.name': aRegex }, { 'away.name': aRegex }, { 'home.display_name': aRegex }, { 'away.display_name': aRegex });
+        const finishedFilter = {
+            $or: [
+                { 'status.state': { $in: ['post', 'final', 'completed'] } },
+                { 'status.completed': true },
+                { 'status.name': { $in: ['STATUS_FINAL', 'STATUS_FULL_TIME', 'STATUS_AFTER_ET', 'STATUS_AFTER_PK'] } }
+            ]
+        };
 
         // Run parallel queries: H2H, Home Recent Form, Away Recent Form, Standings
         const [h2hMatches, homeRecentMatches, awayRecentMatches, standingsGroup, leagueDoc] = await Promise.all([
             // H2H past meetings - fetch complete lifetime encounters without artificial cap
             h2hOrClauses.length ? SoccerMatch.find({
-                $or: h2hOrClauses,
-                'status.state': 'post'
+                $and: [
+                    { $or: h2hOrClauses },
+                    finishedFilter
+                ]
             }).sort({ date: -1 }).limit(200).lean() : Promise.resolve([]),
 
             // Home team last 6 matches
-            homeRecentOrClauses.length ? SoccerMatch.find({
-                $or: homeRecentOrClauses,
-                'status.state': 'post'
+            homeNameOrId.length ? SoccerMatch.find({
+                $and: [
+                    { $or: homeNameOrId },
+                    finishedFilter
+                ]
             }).sort({ date: -1 }).limit(6).lean() : Promise.resolve([]),
 
             // Away team last 6 matches
-            awayRecentOrClauses.length ? SoccerMatch.find({
-                $or: awayRecentOrClauses,
-                'status.state': 'post'
+            awayNameOrId.length ? SoccerMatch.find({
+                $and: [
+                    { $or: awayNameOrId },
+                    finishedFilter
+                ]
             }).sort({ date: -1 }).limit(6).lean() : Promise.resolve([]),
 
             // League standings
@@ -1155,8 +1188,14 @@ router.get('/predictions-context/:eventId', async (req, res) => {
 
         // Enrich team form with ESPN lastFiveGames if available
         if (Array.isArray(espnSummary?.lastFiveGames) && espnSummary.lastFiveGames.length >= 2) {
-            const hL5 = espnSummary.lastFiveGames.find(g => String(g.team?.id) === homeId) || espnSummary.lastFiveGames[0];
-            const aL5 = espnSummary.lastFiveGames.find(g => String(g.team?.id) === awayId) || espnSummary.lastFiveGames[1];
+            const isMatchClubName = (candName, targetName) => {
+                if (!candName || !targetName) return false;
+                const c = candName.toLowerCase().replace(/[^a-z0-9]/g, '');
+                const t = targetName.toLowerCase().replace(/[^a-z0-9]/g, '');
+                return c.includes(t) || t.includes(c);
+            };
+            const hL5 = espnSummary.lastFiveGames.find(g => String(g.team?.id) === homeId || isMatchClubName(g.team?.displayName || g.team?.name, hName)) || espnSummary.lastFiveGames[0];
+            const aL5 = espnSummary.lastFiveGames.find(g => String(g.team?.id) === awayId || isMatchClubName(g.team?.displayName || g.team?.name, aName)) || espnSummary.lastFiveGames[1];
 
             if (hL5?.events?.length) {
                 const formattedL5 = hL5.events.map(ev => ({

@@ -1910,15 +1910,33 @@
     }
 
     function normalizeMatchEvent(event, index, source, home, away) {
-        const athlete = event.athletesInvolved?.[0] || null;
+        const athlete = event.athletesInvolved?.[0] || event.athlete || null;
         const participants = (event.participants || []).map(participant =>
             participant.athlete || participant).filter(Boolean);
         const kind = matchEventKind(event);
-        const typeText = event.type?.text || event.type?.type || 'Match event';
+        const typeText = (typeof event.type === 'string' ? event.type : (event.type?.text || event.type?.type)) || 'Match event';
         const team = eventTeam(event, home, away);
         const athleteName = athlete?.displayName || athlete?.fullName || athlete?.shortName || '';
-        const text = event.text || event.alternativeText
-            || (athleteName ? `${athleteName} · ${typeText}` : typeText);
+
+        let rawText = event.text;
+        if (rawText && typeof rawText === 'object') {
+            rawText = rawText.text || rawText.displayValue || rawText.description || '';
+        }
+        let altText = event.alternativeText;
+        if (altText && typeof altText === 'object') {
+            altText = altText.text || altText.displayValue || '';
+        }
+
+        let cleanText = (typeof rawText === 'string' && rawText.trim() && !rawText.includes('[object'))
+            ? rawText.trim()
+            : ((typeof altText === 'string' && altText.trim() && !altText.includes('[object'))
+                ? altText.trim()
+                : (athleteName ? `${athleteName} · ${typeText}` : typeText));
+
+        if (cleanText.includes('[object')) {
+            cleanText = athleteName ? `${athleteName} · ${typeText}` : typeText;
+        }
+
         const clockDisplay = typeof event.clock === 'string'
             ? event.clock
             : (event.clock?.displayValue || (event.clockValue ? `${event.clockValue}'` : ''));
@@ -1930,7 +1948,7 @@
             id: event.id || `${source}-${index}`,
             source,
             kind,
-            text,
+            text: cleanText,
             typeText,
             athlete,
             participants,
@@ -1975,20 +1993,21 @@
         const seenIncidents = new Map();
 
         for (const event of [...keyEvents, ...playEvents]) {
-            const teamId = String(event.team?.id || event.team?.source_id || event.team?.displayName || event.team?.name || '').toLowerCase();
+            const teamSide = event.team?.side || (event.team?.id && String(event.team.id) === String(home.team?.id) ? 'home' : (event.team?.id && String(event.team.id) === String(away.team?.id) ? 'away' : ''));
+            const teamId = teamSide || String(event.team?.id || event.team?.source_id || event.team?.displayName || event.team?.name || '').toLowerCase();
             const minute = event.clockValue || (parseInt(event.clock, 10) || 0);
-            
+
             // Format display clock if raw seconds
             if (typeof event.clock === 'string' && /^\d{3,}$/.test(event.clock.trim())) {
                 const num = Number(event.clock.trim());
                 event.clock = `${Math.floor(num / 60)}'`;
             }
 
-            // Deduplicate matching goals, cards, and substitutions occurring in the same minute for the same team
-            const isKeyIncident = event.kind === 'goal' || event.kind === 'red-card' || event.kind === 'yellow-card' || event.kind === 'substitution';
-            const incidentKey = isKeyIncident
-                ? `${event.kind}|${minute}|${teamId}`
-                : `${event.kind}|${minute}|${teamId}|${(event.text || '').replace(/\s+/g, '').toLowerCase().slice(0, 16)}`;
+            // Deduplicate matching goals, cards, and substitutions occurring in the same minute
+            const athleteName = (event.athlete?.displayName || event.athlete?.fullName || '').toLowerCase().trim();
+            const incidentKey = event.kind === 'goal'
+                ? `goal|${minute}|${teamSide || teamId}`
+                : `${event.kind}|${minute}|${teamSide || teamId}|${athleteName || String(event.text || '').slice(0, 16).toLowerCase()}`;
 
             if (seenIncidents.has(incidentKey)) {
                 const existing = seenIncidents.get(incidentKey);
@@ -2196,8 +2215,19 @@
         const homeAnalytics = predictions?.teams?.home?.analytics || {};
         const awayAnalytics = predictions?.teams?.away?.analytics || {};
 
+        function isMatchingClub(teamA, teamB) {
+            if (!teamA || !teamB) return false;
+            const idA = String(teamA.id || teamA.source_id || '');
+            const idB = String(teamB.id || teamB.source_id || '');
+            if (idA && idB && idA === idB) return true;
+            const nameA = (teamA.displayName || teamA.name || teamA.shortDisplayName || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+            const nameB = (teamB.displayName || teamB.name || teamB.shortDisplayName || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+            if (!nameA || !nameB) return false;
+            return nameA.includes(nameB) || nameB.includes(nameA);
+        }
+
         if (!homeAnalytics.recentMatches?.length && summary.lastFiveGames?.length) {
-            const hL5 = summary.lastFiveGames.find(t => String(t.team?.id) === String(home.team?.id) || t.team?.displayName === home.team?.displayName);
+            const hL5 = summary.lastFiveGames.find(t => isMatchingClub(t.team, home.team)) || summary.lastFiveGames[0];
             if (hL5?.events?.length) {
                 homeAnalytics.recentMatches = hL5.events.map(ev => ({
                     date: ev.gameDate,
@@ -2206,10 +2236,17 @@
                     result: ev.gameResult || 'D',
                     venue: ev.atVs === '@' ? 'Away' : 'Home'
                 }));
+                if (!homeAnalytics.formGuide?.length) {
+                    homeAnalytics.formGuide = homeAnalytics.recentMatches.map(m => m.result);
+                }
+                if (!homeAnalytics.winRate && homeAnalytics.recentMatches.length) {
+                    const wins = homeAnalytics.recentMatches.filter(m => m.result === 'W').length;
+                    homeAnalytics.winRate = Math.round((wins / homeAnalytics.recentMatches.length) * 100);
+                }
             }
         }
         if (!awayAnalytics.recentMatches?.length && summary.lastFiveGames?.length) {
-            const aL5 = summary.lastFiveGames.find(t => String(t.team?.id) === String(away.team?.id) || t.team?.displayName === away.team?.displayName);
+            const aL5 = summary.lastFiveGames.find(t => isMatchingClub(t.team, away.team)) || summary.lastFiveGames[1];
             if (aL5?.events?.length) {
                 awayAnalytics.recentMatches = aL5.events.map(ev => ({
                     date: ev.gameDate,
@@ -2218,6 +2255,13 @@
                     result: ev.gameResult || 'D',
                     venue: ev.atVs === '@' ? 'Away' : 'Home'
                 }));
+                if (!awayAnalytics.formGuide?.length) {
+                    awayAnalytics.formGuide = awayAnalytics.recentMatches.map(m => m.result);
+                }
+                if (!awayAnalytics.winRate && awayAnalytics.recentMatches.length) {
+                    const wins = awayAnalytics.recentMatches.filter(m => m.result === 'W').length;
+                    awayAnalytics.winRate = Math.round((wins / awayAnalytics.recentMatches.length) * 100);
+                }
             }
         }
 
@@ -3282,11 +3326,17 @@
         const refreshBtn = document.getElementById('quick-refresh-btn');
         if (refreshBtn) {
             refreshBtn.addEventListener('click', () => {
+                state.lastLiveDigest = null;
                 syncLiveScores();
             });
         }
 
+        let isPolling = false;
         async function syncLiveScores() {
+            // Guard against background tab waste: halt polling if document is hidden to conserve bandwidth
+            if (document.hidden || isPolling) return;
+            isPolling = true;
+
             try {
                 const res = await fetchJson('/api/v1/football/live');
                 const liveMatches = res.live || res.matches || [];
@@ -3303,11 +3353,21 @@
                     fsBadge.style.display = liveMatches.length > 0 ? 'inline-block' : 'none';
                 }
 
-                // If currently viewing live view or matches are live, update smoothly in background without screen flashing
-                // Only update the visible fixture list if the user is currently viewing today (offset 0),
-                // so browsing tomorrow/yesterday fixtures is never wiped out by background live polling!
+                // Compute lightweight live state fingerprint
+                const currentDigest = liveMatches.map(m =>
+                    `${m.id}:${m.home?.score ?? m.home?.score?.value ?? 0}-${m.away?.score ?? m.away?.score?.value ?? 0}:${m.clock?.displayValue || m.status?.displayClock || ''}`
+                ).join('|');
+
+                const digestChanged = currentDigest !== state.lastLiveDigest;
+                const now = Date.now();
+                const timeSinceLastFullSync = now - (state.lastFullFixturesSync || 0);
+
+                // Only update the visible fixture list if viewing today AND (digest changed OR >60s elapsed)
                 const isViewingToday = !state.selectedDayOffset || state.selectedDayOffset === 0;
-                if (isViewingToday) {
+                if (isViewingToday && (digestChanged || timeSinceLastFullSync > 60000)) {
+                    state.lastLiveDigest = currentDigest;
+                    state.lastFullFixturesSync = now;
+
                     if (state.selectedLeagueSlug === 'live' || state.currentStatus === 'live') {
                         loadLiveMatches({ background: true });
                     } else if (state.selectedLeagueSlug === 'all') {
@@ -3318,15 +3378,24 @@
                 }
             } catch (e) {
                 // background poll notice
+            } finally {
+                isPolling = false;
             }
         }
 
-        // Background poll every 8 seconds for rapid in-play score changes
+        // Dynamically throttle polling interval: 15s when active games, 30s when no live games
         window.clearInterval(state.liveSyncTimer);
-        state.liveSyncTimer = window.setInterval(syncLiveScores, 8000);
-        // Immediate check and subsequent check
+        state.liveSyncTimer = window.setInterval(syncLiveScores, 15000);
+
+        // Resume sync immediately when user switches back to this tab
+        document.addEventListener('visibilitychange', () => {
+            if (!document.hidden) {
+                syncLiveScores();
+            }
+        });
+
+        // Immediate check
         syncLiveScores();
-        setTimeout(syncLiveScores, 1500);
     }
 
     let audioCtx = null;
