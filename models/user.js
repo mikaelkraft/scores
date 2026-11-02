@@ -28,12 +28,39 @@ const UserSchema = new mongoose.Schema({
         type: String,
         default: ''
     },
+    username: {
+        type: String,
+        trim: true,
+        lowercase: true,
+        sparse: true,
+        index: true
+    },
     fullName: {
         type: String,
         default: '',
         trim: true
     },
     companyName: {
+        type: String,
+        default: '',
+        trim: true
+    },
+    phone: {
+        type: String,
+        default: '',
+        trim: true
+    },
+    bio: {
+        type: String,
+        default: '',
+        trim: true
+    },
+    website: {
+        type: String,
+        default: '',
+        trim: true
+    },
+    location: {
         type: String,
         default: '',
         trim: true

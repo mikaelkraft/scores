@@ -184,7 +184,13 @@ router.get('/api/admin/keys', requireAdmin, async (req, res) => {
     try {
         const keys = await ApiKey.find().sort({ createdAt: -1 }).lean();
         const masterKey = config.NORRA_INTERNAL_API_KEY || 'norra_live_master_internal_access_2026';
-        return res.json({ keys, norraMasterKey: masterKey });
+        const sanitizedKeys = keys.map(k => ({
+            ...k,
+            rawKey: undefined,
+            keyMasked: k.key ? `norra_${k.key.slice(6, 10)}••••••••••••••••${k.key.slice(-4)}` : '',
+            key: k.key ? `norra_${k.key.slice(6, 10)}••••••••••••••••${k.key.slice(-4)}` : ''
+        }));
+        return res.json({ keys: sanitizedKeys, norraMasterKey: masterKey });
     } catch (err) {
         return res.status(500).json({ error: 'Failed to load API keys.' });
     }
@@ -225,29 +231,51 @@ router.get('/api/admin/norra-integration', requireAdmin, async (req, res) => {
  */
 router.post('/api/admin/keys', requireAdmin, async (req, res) => {
     try {
-        const { name, email, plan = 'pro', rateLimitPerMinute = 1500, isAdFree = true, daysValid = 365 } = req.body;
+        const { name, email, plan = 'pro', daysValid = 365 } = req.body;
         if (!email) {
             return res.status(400).json({ error: 'Customer email is required.' });
         }
 
-        const expiresAt = new Date();
-        expiresAt.setDate(expiresAt.getDate() + Number(daysValid));
+        const planKey = (plan || 'pro').toLowerCase();
+        const defaultLimits = {
+            free: { rateLimit: 120, isAdFree: false },
+            starter: { rateLimit: 600, isAdFree: true },
+            pro: { rateLimit: 1500, isAdFree: true },
+            whitelabel: { rateLimit: 3000, isAdFree: true }
+        };
+        const limits = defaultLimits[planKey] || defaultLimits.pro;
+
+        let expiresAt = null;
+        if (Number(daysValid) > 0) {
+            expiresAt = new Date();
+            expiresAt.setDate(expiresAt.getDate() + Number(daysValid));
+        }
 
         const keyString = ApiKey.generateKey();
         const apiKey = await ApiKey.create({
             key: keyString,
-            name: name || `${plan.toUpperCase()} Enterprise Key`,
+            name: name || `${planKey.toUpperCase()} Enterprise Key`,
             email: email.toLowerCase().trim(),
-            plan,
-            rateLimitPerMinute: Number(rateLimitPerMinute) || 1500,
-            isAdFree: Boolean(isAdFree),
+            plan: planKey,
+            rateLimitPerMinute: req.body.rateLimitPerMinute ? Number(req.body.rateLimitPerMinute) : limits.rateLimit,
+            isAdFree: req.body.isAdFree !== undefined ? Boolean(req.body.isAdFree) : limits.isAdFree,
             expiresAt
         });
 
         return res.status(201).json({
             status: 'success',
             message: 'API key issued successfully.',
-            key: apiKey
+            rawKey: apiKey.key,
+            key: {
+                _id: apiKey._id,
+                name: apiKey.name,
+                email: apiKey.email,
+                plan: apiKey.plan,
+                rateLimitPerMinute: apiKey.rateLimitPerMinute,
+                isAdFree: apiKey.isAdFree,
+                expiresAt: apiKey.expiresAt,
+                keyMasked: `norra_${apiKey.key.slice(6, 10)}••••••••••••••••${apiKey.key.slice(-4)}`
+            }
         });
     } catch (err) {
         return res.status(500).json({ error: 'Failed to issue API key.' });

@@ -280,9 +280,234 @@ function switchPortalTab(tabName) {
         .find(b => b.getAttribute('onclick')?.includes(tabName));
     if (activeBtn) activeBtn.classList.add('active');
 
+    if (tabName === 'profile') populateProfileTab();
     if (tabName === 'upgrade') loadUpgradePlans();
     if (tabName === 'whitelabel') loadWhitelabelSnippets();
     if (tabName === 'invoices') loadInvoices();
+}
+
+function populateProfileTab() {
+    if (!currentUser) return;
+    const nameEl = document.getElementById('profile-display-name');
+    const usernameEl = document.getElementById('profile-display-username');
+    const sinceEl = document.getElementById('profile-member-since');
+    const badgeEl = document.getElementById('profile-verification-badge');
+    const avatarImg = document.getElementById('profile-avatar-img');
+
+    if (nameEl) nameEl.textContent = currentUser.fullName || currentUser.username || 'Developer';
+    if (usernameEl) usernameEl.textContent = `@${currentUser.username || 'user'}`;
+    if (sinceEl) {
+        const dateStr = currentUser.createdAt ? new Date(currentUser.createdAt).toLocaleDateString() : '';
+        sinceEl.textContent = dateStr ? `Member since ${dateStr}` : 'Active Member';
+    }
+    if (avatarImg && currentUser.avatarUrl) {
+        avatarImg.src = currentUser.avatarUrl;
+    }
+    if (badgeEl) {
+        if (currentUser.isEmailVerified) {
+            badgeEl.textContent = '✅ Verified Account';
+            badgeEl.style.background = 'rgba(16, 185, 129, 0.15)';
+            badgeEl.style.color = '#34d399';
+        } else {
+            badgeEl.textContent = '⚠️ Unverified Email';
+            badgeEl.style.background = 'rgba(234, 179, 8, 0.15)';
+            badgeEl.style.color = '#fde047';
+        }
+    }
+
+    const setVal = (id, val) => {
+        const el = document.getElementById(id);
+        if (el) el.value = val || '';
+    };
+
+    setVal('profile-fullname', currentUser.fullName);
+    setVal('profile-username', currentUser.username);
+    setVal('profile-email', currentUser.email);
+    setVal('profile-company', currentUser.companyName);
+    setVal('profile-phone', currentUser.phone);
+    setVal('profile-website', currentUser.website);
+    setVal('profile-location', currentUser.location);
+    setVal('profile-bio', currentUser.bio);
+
+    const groupCurrentPassword = document.getElementById('group-current-password');
+    if (groupCurrentPassword) {
+        if (currentUser.authProvider === 'google' && !currentUser.hasPassword) {
+            groupCurrentPassword.style.display = 'none';
+        } else {
+            groupCurrentPassword.style.display = 'block';
+        }
+    }
+}
+
+async function saveProfileChanges(event) {
+    event.preventDefault();
+    const successAlert = document.getElementById('profile-success-alert');
+    const errorAlert = document.getElementById('profile-error-alert');
+    const btn = document.getElementById('btn-save-profile');
+
+    if (successAlert) successAlert.style.display = 'none';
+    if (errorAlert) errorAlert.style.display = 'none';
+    if (btn) {
+        btn.disabled = true;
+        btn.textContent = 'Saving...';
+    }
+
+    const payload = {
+        fullName: document.getElementById('profile-fullname').value.trim(),
+        username: document.getElementById('profile-username').value.trim(),
+        companyName: document.getElementById('profile-company').value.trim(),
+        phone: document.getElementById('profile-phone').value.trim(),
+        website: document.getElementById('profile-website').value.trim(),
+        location: document.getElementById('profile-location').value.trim(),
+        bio: document.getElementById('profile-bio').value.trim()
+    };
+
+    try {
+        const res = await fetch('/api/account/profile', {
+            method: 'PUT',
+            headers: {
+                'Content-Type': 'application/json',
+                Authorization: `Bearer ${userToken}`
+            },
+            body: JSON.stringify(payload)
+        });
+        const data = await res.json();
+        if (res.ok && data.user) {
+            currentUser = { ...currentUser, ...data.user };
+            populateProfileTab();
+            if (successAlert) {
+                successAlert.textContent = '✅ Profile updated successfully!';
+                successAlert.style.display = 'block';
+                setTimeout(() => { successAlert.style.display = 'none'; }, 4000);
+            }
+        } else {
+            if (errorAlert) {
+                errorAlert.textContent = data.error || 'Failed to update profile.';
+                errorAlert.style.display = 'block';
+            }
+        }
+    } catch (err) {
+        if (errorAlert) {
+            errorAlert.textContent = 'Connection error saving profile.';
+            errorAlert.style.display = 'block';
+        }
+    } finally {
+        if (btn) {
+            btn.disabled = false;
+            btn.textContent = 'Save Profile Changes';
+        }
+    }
+}
+
+async function uploadProfileAvatar(input) {
+    if (!input.files || !input.files[0]) return;
+    const file = input.files[0];
+    const formData = new FormData();
+    formData.append('avatar', file);
+
+    const errorAlert = document.getElementById('profile-error-alert');
+    const successAlert = document.getElementById('profile-success-alert');
+    if (errorAlert) errorAlert.style.display = 'none';
+
+    try {
+        const res = await fetch('/api/account/avatar', {
+            method: 'POST',
+            headers: { Authorization: `Bearer ${userToken}` },
+            body: formData
+        });
+        const data = await res.json();
+        if (res.ok && data.avatarUrl) {
+            currentUser.avatarUrl = data.avatarUrl;
+            const img = document.getElementById('profile-avatar-img');
+            if (img) img.src = data.avatarUrl;
+            if (successAlert) {
+                successAlert.textContent = '✅ Avatar photo uploaded successfully!';
+                successAlert.style.display = 'block';
+                setTimeout(() => { successAlert.style.display = 'none'; }, 4000);
+            }
+        } else {
+            if (errorAlert) {
+                errorAlert.textContent = data.error || 'Failed to upload avatar.';
+                errorAlert.style.display = 'block';
+            }
+        }
+    } catch (err) {
+        if (errorAlert) {
+            errorAlert.textContent = 'Connection error uploading avatar.';
+            errorAlert.style.display = 'block';
+        }
+    }
+}
+
+async function changeAccountPassword(event) {
+    event.preventDefault();
+    const successAlert = document.getElementById('password-success-alert');
+    const errorAlert = document.getElementById('password-error-alert');
+    const btn = document.getElementById('btn-change-password');
+    const currentPassword = document.getElementById('input-current-password').value;
+    const newPassword = document.getElementById('input-new-password').value;
+    const confirmPassword = document.getElementById('input-confirm-password').value;
+
+    if (successAlert) successAlert.style.display = 'none';
+    if (errorAlert) errorAlert.style.display = 'none';
+
+    if (newPassword !== confirmPassword) {
+        if (errorAlert) {
+            errorAlert.textContent = 'New passwords do not match.';
+            errorAlert.style.display = 'block';
+        }
+        return;
+    }
+    if (newPassword.length < 6) {
+        if (errorAlert) {
+            errorAlert.textContent = 'Password must be at least 6 characters.';
+            errorAlert.style.display = 'block';
+        }
+        return;
+    }
+
+    if (btn) {
+        btn.disabled = true;
+        btn.textContent = 'Updating...';
+    }
+
+    try {
+        const res = await fetch('/api/account/change-password', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                Authorization: `Bearer ${userToken}`
+            },
+            body: JSON.stringify({ currentPassword, newPassword })
+        });
+        const data = await res.json();
+        if (res.ok) {
+            if (successAlert) {
+                successAlert.textContent = '✅ ' + (data.message || 'Password updated successfully!');
+                successAlert.style.display = 'block';
+                setTimeout(() => { successAlert.style.display = 'none'; }, 5000);
+            }
+            document.getElementById('password-change-form').reset();
+            if (currentUser) currentUser.hasPassword = true;
+            const groupCurrentPassword = document.getElementById('group-current-password');
+            if (groupCurrentPassword) groupCurrentPassword.style.display = 'block';
+        } else {
+            if (errorAlert) {
+                errorAlert.textContent = data.error || 'Failed to update password.';
+                errorAlert.style.display = 'block';
+            }
+        }
+    } catch (err) {
+        if (errorAlert) {
+            errorAlert.textContent = 'Connection error changing password.';
+            errorAlert.style.display = 'block';
+        }
+    } finally {
+        if (btn) {
+            btn.disabled = false;
+            btn.textContent = 'Update Password';
+        }
+    }
 }
 
 async function loadPortalData() {
@@ -297,9 +522,11 @@ async function loadPortalData() {
 
         document.getElementById('auth-view').style.display = 'none';
         document.getElementById('portal-view').style.display = 'block';
-        document.getElementById('badge-user-plan').textContent = `${currentUser.plan} PLAN`;
+        const planUpper = (currentUser.plan || 'free').toUpperCase();
+        document.getElementById('badge-user-plan').textContent = `${planUpper} PLAN`;
 
         updateEmailBanner();
+        populateProfileTab();
         await loadKeys();
     } catch (err) {
         handleUserLogout();
@@ -312,12 +539,45 @@ async function loadKeys() {
             headers: { Authorization: `Bearer ${userToken}` }
         });
         const data = await res.json();
+        const activeKeyCard = document.getElementById('active-key-card');
+        const btnGenerate = document.getElementById('btn-generate-api-key');
+        const btnRevoke = document.getElementById('btn-revoke-api-key');
+
+        if (currentUser) {
+            const emailEl = document.getElementById('tier-locked-email');
+            if (emailEl) emailEl.textContent = currentUser.email || 'developer';
+        }
+
         if (data.keys && data.keys.length) {
             currentKey = data.keys[0];
-            document.getElementById('display-api-key').textContent = currentKey.key;
-            document.getElementById('stat-rate-limit').textContent = `${currentKey.rateLimitPerMinute} req/min`;
-            document.getElementById('stat-ad-free').textContent = currentKey.isAdFree ? '100% Ad-Free' : 'Ad-Supported';
-            document.getElementById('stat-total-calls').textContent = currentKey.totalRequests || 0;
+            const displayKeyEl = document.getElementById('display-api-key');
+            if (displayKeyEl) displayKeyEl.textContent = currentKey.keyMasked || currentKey.key;
+
+            const statRate = document.getElementById('stat-rate-limit');
+            if (statRate) statRate.textContent = `${currentKey.rateLimitPerMinute} req/min`;
+
+            const statAd = document.getElementById('stat-ad-free');
+            if (statAd) statAd.textContent = currentKey.isAdFree ? '100% Ad-Free' : 'Ad-Supported';
+
+            const statCalls = document.getElementById('stat-total-calls');
+            if (statCalls) statCalls.textContent = currentKey.totalRequests || 0;
+
+            const statScope = document.getElementById('stat-league-scope');
+            if (statScope) {
+                const plan = (currentKey.plan || currentUser?.plan || 'free').toLowerCase();
+                statScope.textContent = plan === 'whitelabel' ? 'All Global & Domestic Leagues + Whitelabel Embeds' :
+                                       (plan === 'pro' ? 'All Tier 1, 2, 3 Leagues + AI Predictions' :
+                                       (plan === 'starter' ? 'Top 25 World Leagues & Live Scores' : 'Top 10 World Leagues'));
+            }
+
+            if (activeKeyCard) activeKeyCard.style.display = 'block';
+            if (btnRevoke) btnRevoke.style.display = 'inline-flex';
+            if (btnGenerate) btnGenerate.textContent = '🔄 Regenerate Key';
+        } else {
+            currentKey = null;
+            if (activeKeyCard) activeKeyCard.style.display = 'none';
+            if (btnRevoke) btnRevoke.style.display = 'none';
+            if (btnGenerate) btnGenerate.textContent = '🔑 Generate API Key';
         }
 
         if (data.norraMasterKey) {
@@ -329,9 +589,99 @@ async function loadKeys() {
     }
 }
 
+async function generateApiKeyForUser() {
+    const btn = document.getElementById('btn-generate-api-key');
+    if (btn) btn.disabled = true;
+
+    try {
+        const res = await fetch('/api/account/keys/generate', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                Authorization: `Bearer ${userToken}`
+            }
+        });
+        const data = await res.json();
+        if (res.ok && data.rawKey) {
+            const revealBox = document.getElementById('new-key-reveal-box');
+            const rawInput = document.getElementById('reveal-raw-key-input');
+            const copyLabel = document.getElementById('copy-btn-label');
+            const copyFeedback = document.getElementById('copy-feedback-text');
+
+            if (rawInput) rawInput.value = data.rawKey;
+            if (copyLabel) copyLabel.textContent = 'Copy Key';
+            if (copyFeedback) copyFeedback.style.display = 'none';
+            if (revealBox) {
+                revealBox.style.display = 'block';
+                revealBox.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            }
+
+            await loadKeys();
+        } else {
+            alert(data.error || 'Failed to generate API key.');
+        }
+    } catch (err) {
+        alert('Connection error generating API key.');
+    } finally {
+        if (btn) btn.disabled = false;
+    }
+}
+
+function copyRevealedApiKey() {
+    const input = document.getElementById('reveal-raw-key-input');
+    if (!input || !input.value) return;
+    navigator.clipboard.writeText(input.value).then(() => {
+        const label = document.getElementById('copy-btn-label');
+        if (label) label.textContent = 'Copied! ✅';
+        const feedback = document.getElementById('copy-feedback-text');
+        if (feedback) feedback.style.display = 'inline-block';
+        setTimeout(() => {
+            if (label) label.textContent = 'Copy Key';
+        }, 3500);
+    }).catch(() => {
+        input.select();
+        document.execCommand('copy');
+        const feedback = document.getElementById('copy-feedback-text');
+        if (feedback) feedback.style.display = 'inline-block';
+    });
+}
+
+function dismissKeyRevealBox() {
+    const box = document.getElementById('new-key-reveal-box');
+    const input = document.getElementById('reveal-raw-key-input');
+    if (box) box.style.display = 'none';
+    if (input) input.value = '';
+}
+
+async function revokeApiKeyForUser() {
+    if (!confirm('Are you sure you want to revoke your API key? All applications using this key will immediately receive 401 Unauthorized.')) return;
+    try {
+        const res = await fetch('/api/account/keys/revoke', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                Authorization: `Bearer ${userToken}`
+            },
+            body: JSON.stringify({ keyId: currentKey?._id })
+        });
+        const data = await res.json();
+        if (res.ok) {
+            dismissKeyRevealBox();
+            currentKey = null;
+            await loadKeys();
+            alert('API key revoked successfully.');
+        } else {
+            alert(data.error || 'Failed to revoke API key.');
+        }
+    } catch (err) {
+        alert('Connection error revoking API key.');
+    }
+}
+
 function copyApiKey() {
     if (!currentKey) return;
-    navigator.clipboard.writeText(currentKey.key).then(() => {
+    const keyToCopy = currentKey.rawKey || currentKey.key;
+    navigator.clipboard.writeText(keyToCopy).then(() => {
         alert('API Key copied to clipboard!');
     });
 }
@@ -345,27 +695,7 @@ function copyMasterApiKey() {
 }
 
 async function regenerateApiKey() {
-    if (!currentKey) return;
-    if (!confirm('Are you sure you want to regenerate your API key? Any applications currently using the old key will stop working.')) return;
-
-    try {
-        const res = await fetch('/api/account/keys/regenerate', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                Authorization: `Bearer ${userToken}`
-            },
-            body: JSON.stringify({ keyId: currentKey._id })
-        });
-        const data = await res.json();
-        if (data.key) {
-            currentKey = data.key;
-            document.getElementById('display-api-key').textContent = currentKey.key;
-            alert('API key regenerated successfully!');
-        }
-    } catch (err) {
-        alert('Failed to regenerate key.');
-    }
+    return generateApiKeyForUser();
 }
 
 async function loadUpgradePlans() {

@@ -290,6 +290,7 @@
 
         <nav class="portal-nav">
             <button class="portal-tab-btn active" onclick="switchPortalTab('keys')">🔑 My API Keys</button>
+            <button class="portal-tab-btn" onclick="switchPortalTab('profile')">👤 My Profile</button>
             <button class="portal-tab-btn" onclick="switchPortalTab('upgrade')">⚡ Upgrade Plans</button>
             <button class="portal-tab-btn" onclick="switchPortalTab('whitelabel')">🖼️ Whitelabel Embeds</button>
             <button class="portal-tab-btn" onclick="switchPortalTab('invoices')">🧾 Receipts</button>
@@ -298,32 +299,97 @@
 
         <!-- Tab 1: Keys -->
         <section id="portal-tab-keys" class="portal-tab-content">
-            <div class="portal-card">
-                <div style="display: flex; justify-content: space-between; align-items: center;">
+            <!-- One-Time API Key Reveal Info Box (Displayed ONLY upon generation/regeneration) -->
+            <div id="new-key-reveal-box" class="portal-card" style="display: none; border: 2px solid #10b981; background: rgba(16, 185, 129, 0.08); box-shadow: 0 0 24px rgba(16, 185, 129, 0.25); margin-bottom: 24px; animation: fadeIn 0.3s ease;">
+                <div style="display: flex; align-items: flex-start; gap: 12px; margin-bottom: 12px;">
+                    <span style="font-size: 28px; line-height: 1;">🔐</span>
                     <div>
-                        <h3 style="margin: 0;">Active Subscription</h3>
-                        <p style="margin: 4px 0 0; color: var(--text-muted); font-size: 13px;">Your current tier and rate allowance</p>
+                        <h3 style="margin: 0; color: #10b981; font-size: 17px; font-weight: 700;">Your API Key Has Been Generated — Copy It Now!</h3>
+                        <p style="margin: 6px 0 0; color: var(--text-muted); font-size: 13px; line-height: 1.5;">
+                            Please copy this key immediately and store it in a secure environment. For security reasons, <strong>you will not be able to view this full secret key again</strong>. If you lose it, you will need to revoke it and generate a new one.
+                        </p>
                     </div>
-                    <span id="badge-user-plan" style="padding: 6px 14px; border-radius: 20px; background: var(--color-primary-subtle); color: var(--color-primary); font-weight: 700; text-transform: uppercase; font-size: 13px;">FREE DEVELOPER</span>
+                </div>
+
+                <div style="display: flex; gap: 10px; align-items: center; background: var(--bg-canvas); border: 1px solid rgba(16, 185, 129, 0.4); border-radius: 8px; padding: 10px 14px; margin: 14px 0; flex-wrap: wrap;">
+                    <input type="text" id="reveal-raw-key-input" readonly value="" style="flex: 1; min-width: 240px; background: transparent; border: none; color: #10b981; font-family: monospace; font-size: 15px; font-weight: 700; outline: none;">
+                    <button type="button" class="btn-primary" id="btn-copy-revealed-key" onclick="copyRevealedApiKey()" style="background: #10b981; padding: 9px 18px; font-size: 13px; display: flex; align-items: center; gap: 6px;">
+                        <span>📋</span> <span id="copy-btn-label">Copy Key</span>
+                    </button>
+                </div>
+
+                <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px; margin-top: 12px; border-top: 1px solid rgba(16, 185, 129, 0.2); padding-top: 12px;">
+                    <span id="copy-feedback-text" style="font-size: 12px; color: #10b981; font-weight: 600; display: none;">✅ Key copied to clipboard! Keep it safe.</span>
+                    <button type="button" class="btn-secondary" onclick="dismissKeyRevealBox()" style="font-size: 12px; margin-left: auto;">
+                        ✓ I Have Copied &amp; Saved My Key (Dismiss)
+                    </button>
                 </div>
             </div>
 
-            <div class="portal-card">
-                <h3>Your API Key</h3>
+            <!-- Flattened / Locked Tier Selection & Account Binding Card -->
+            <div class="portal-card" id="tier-locked-card">
+                <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 15px; flex-wrap: wrap; margin-bottom: 14px;">
+                    <div>
+                        <div style="display: inline-flex; align-items: center; gap: 6px; font-size: 11px; font-weight: 700; text-transform: uppercase; padding: 3px 8px; border-radius: 4px; background: var(--color-primary-subtle); color: var(--color-primary); margin-bottom: 6px;">
+                            <span>🔒 Account-Bound Tier</span>
+                        </div>
+                        <h3 style="margin: 0; font-size: 16px;">API Key Quota &amp; Plan Binding</h3>
+                        <p style="margin: 4px 0 0; color: var(--text-muted); font-size: 13px;">
+                            Your key is bound to account email (<strong id="tier-locked-email" style="color:var(--text-main);"></strong>) and your active verified subscription tier.
+                        </p>
+                    </div>
+                    <span id="badge-user-plan" style="padding: 6px 14px; border-radius: 20px; background: var(--color-primary-subtle); color: var(--color-primary); font-weight: 700; text-transform: uppercase; font-size: 13px;">FREE DEVELOPER</span>
+                </div>
+
+                <!-- Flattened locked specifications grid -->
+                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 12px; background: var(--bg-canvas); padding: 14px; border-radius: 8px; border: 1px solid var(--border-subtle); margin-bottom: 16px; font-size: 13px;">
+                    <div>
+                        <span style="color: var(--text-muted); display: block; font-size: 11px; text-transform: uppercase;">Rate Allowance</span>
+                        <strong id="stat-rate-limit" style="color: var(--text-main); font-size: 15px;">120 req/min</strong>
+                    </div>
+                    <div>
+                        <span style="color: var(--text-muted); display: block; font-size: 11px; text-transform: uppercase;">Competition Scope</span>
+                        <strong id="stat-league-scope" style="color: var(--text-main); font-size: 15px;">Top 10 World Leagues</strong>
+                    </div>
+                    <div>
+                        <span style="color: var(--text-muted); display: block; font-size: 11px; text-transform: uppercase;">Ad Policy</span>
+                        <strong id="stat-ad-free" style="color: var(--text-main); font-size: 15px;">Standard Ad-Supported</strong>
+                    </div>
+                    <div>
+                        <span style="color: var(--text-muted); display: block; font-size: 11px; text-transform: uppercase;">Total Requests Used</span>
+                        <strong id="stat-total-calls" style="color: var(--text-main); font-size: 15px;">0</strong>
+                    </div>
+                </div>
+
+                <!-- Action Button Container (No modal, no tier dropdown exploit) -->
+                <div style="display: flex; gap: 10px; flex-wrap: wrap; align-items: center;">
+                    <button id="btn-generate-api-key" type="button" class="btn-primary" onclick="generateApiKeyForUser()">
+                        🔑 Generate API Key
+                    </button>
+                    <button id="btn-revoke-api-key" type="button" class="btn-secondary" style="color: #ef4444; border-color: rgba(239, 68, 68, 0.35); display: none;" onclick="revokeApiKeyForUser()">
+                        ❌ Revoke Key
+                    </button>
+                    <button type="button" class="btn-secondary" onclick="switchPortalTab('upgrade')" style="margin-left: auto;">
+                        ⚡ Change / Upgrade Tier &rarr;
+                    </button>
+                </div>
+            </div>
+
+            <!-- Active Key Card (with Masked Key) -->
+            <div class="portal-card" id="active-key-card" style="display: none;">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+                    <h3 style="margin: 0;">Active Production API Key</h3>
+                    <span style="font-size: 11px; font-weight: 700; color: #10b981; background: rgba(16, 185, 129, 0.15); padding: 3px 8px; border-radius: 4px;">ACTIVE</span>
+                </div>
                 <p style="color: var(--text-muted); font-size: 13px;">Include this key in your requests via <code>x-api-key: YOUR_KEY</code> header or <code>?api_key=YOUR_KEY</code> query parameter.</p>
                 
                 <div class="key-box">
-                    <span id="display-api-key">norra_••••••••••••••••••••••••</span>
-                    <button class="btn-secondary" onclick="copyApiKey()">Copy Key</button>
+                    <span id="display-api-key" style="letter-spacing: 0.5px;">norra_••••••••••••••••••••••••</span>
+                    <button type="button" class="btn-secondary" onclick="regenerateApiKey()">🔄 Revoke &amp; Generate New Key</button>
                 </div>
-
-                <div style="display: flex; gap: 15px; margin-top: 15px; font-size: 13px; color: var(--text-muted);">
-                    <div>Rate Limit: <strong id="stat-rate-limit" style="color: var(--text-main);">120 req/min</strong></div>
-                    <div>Ad-Free Status: <strong id="stat-ad-free" style="color: var(--text-main);">Standard</strong></div>
-                    <div>Total Calls Made: <strong id="stat-total-calls" style="color: var(--text-main);">0</strong></div>
-                </div>
-
-                <button class="btn-secondary" style="margin-top: 20px; color: #ef4444;" onclick="regenerateApiKey()">Regenerate Key</button>
+                <small style="color: var(--text-muted); font-size: 12px; display: block; margin-top: 6px;">
+                    🔒 For security reasons, full API keys cannot be revealed again once created. If you misplaced your key, click "Revoke &amp; Generate New Key" above.
+                </small>
             </div>
 
             <!-- Norra AI Internal Engine Master Key Card -->
@@ -374,7 +440,106 @@ console.log(`Synced ${live.length} live matches into Norra prediction engine.`);
             </div>
         </section>
 
-        <!-- Tab 2: Upgrade Plans -->
+        <!-- Tab 2: Profile -->
+        <section id="portal-tab-profile" class="portal-tab-content" style="display: none;">
+            <div class="portal-card">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px; flex-wrap: wrap; gap: 16px; border-bottom: 1px solid var(--border-subtle); padding-bottom: 20px;">
+                    <div style="display: flex; align-items: center; gap: 18px;">
+                        <div style="position: relative; display: inline-block;">
+                            <img id="profile-avatar-img" src="/favicon.svg" alt="Avatar" style="width: 76px; height: 76px; border-radius: 50%; object-fit: cover; border: 2px solid var(--color-primary); background: var(--bg-canvas);">
+                            <label for="profile-avatar-file-input" style="position: absolute; bottom: 0; right: 0; background: var(--color-primary); color: #fff; width: 28px; height: 28px; border-radius: 50%; display: flex; align-items: center; justify-content: center; cursor: pointer; font-size: 14px; box-shadow: 0 2px 8px rgba(0,0,0,0.4);" title="Upload custom avatar image">📷</label>
+                            <input type="file" id="profile-avatar-file-input" accept="image/*" style="display: none;" onchange="uploadProfileAvatar(this)">
+                        </div>
+                        <div>
+                            <h3 id="profile-display-name" style="margin: 0; font-size: 20px;">Developer Profile</h3>
+                            <p id="profile-display-username" style="margin: 3px 0 0; color: var(--color-primary); font-size: 14px; font-weight: 600;">@username</p>
+                            <small id="profile-member-since" style="color: var(--text-muted); font-size: 12px;">Member since Nov 2026</small>
+                        </div>
+                    </div>
+                    <div style="display: flex; flex-direction: column; align-items: flex-end; gap: 6px;">
+                        <span id="profile-verification-badge" style="padding: 4px 12px; border-radius: 12px; font-size: 12px; font-weight: 700; background: rgba(16, 185, 129, 0.15); color: #34d399;">VERIFIED DEVELOPER</span>
+                        <span id="profile-auth-provider" style="font-size: 12px; color: var(--text-muted);">Account Type: Email &amp; Password</span>
+                    </div>
+                </div>
+
+                <div id="profile-success-alert" style="display: none; background: rgba(16, 185, 129, 0.12); border: 1px solid #10b981; color: #34d399; padding: 12px 16px; border-radius: 8px; margin-bottom: 20px; font-size: 13px;">
+                    Profile updated successfully!
+                </div>
+                <div id="profile-error-alert" style="display: none; background: rgba(239, 68, 68, 0.12); border: 1px solid #ef4444; color: #f87171; padding: 12px 16px; border-radius: 8px; margin-bottom: 20px; font-size: 13px;"></div>
+
+                <form id="profile-edit-form" onsubmit="saveProfileChanges(event)">
+                    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 16px; margin-bottom: 20px;">
+                        <div class="form-group">
+                            <label style="font-size: 13px; font-weight: 600; color: var(--text-muted);">Full Name</label>
+                            <input type="text" id="profile-fullname" placeholder="e.g. Alex Morgan">
+                        </div>
+                        <div class="form-group">
+                            <label style="font-size: 13px; font-weight: 600; color: var(--text-muted);">Username (@handle)</label>
+                            <input type="text" id="profile-username" placeholder="e.g. alexdev" pattern="[a-zA-Z0-9_.-]{3,30}" title="3-30 letters, numbers, hyphens or underscores">
+                        </div>
+                        <div class="form-group">
+                            <label style="font-size: 13px; font-weight: 600; color: var(--text-muted);">Email Address (Account Identifier)</label>
+                            <input type="email" id="profile-email" readonly style="opacity: 0.75; cursor: not-allowed; background: var(--bg-canvas);">
+                        </div>
+                        <div class="form-group">
+                            <label style="font-size: 13px; font-weight: 600; color: var(--text-muted);">Company / Team Name</label>
+                            <input type="text" id="profile-company" placeholder="e.g. Apex Sports Analytics">
+                        </div>
+                        <div class="form-group">
+                            <label style="font-size: 13px; font-weight: 600; color: var(--text-muted);">Phone Number</label>
+                            <input type="tel" id="profile-phone" placeholder="+1 (555) 019-2834">
+                        </div>
+                        <div class="form-group">
+                            <label style="font-size: 13px; font-weight: 600; color: var(--text-muted);">Website / App URL</label>
+                            <input type="url" id="profile-website" placeholder="https://myfootballapp.com">
+                        </div>
+                        <div class="form-group" style="grid-column: 1 / -1;">
+                            <label style="font-size: 13px; font-weight: 600; color: var(--text-muted);">Location / City, Country</label>
+                            <input type="text" id="profile-location" placeholder="e.g. Lagos, Nigeria / London, UK / New York, USA">
+                        </div>
+                        <div class="form-group" style="grid-column: 1 / -1;">
+                            <label style="font-size: 13px; font-weight: 600; color: var(--text-muted);">Developer Bio / Platform Use Case</label>
+                            <textarea id="profile-bio" rows="3" placeholder="Describe the sports portal, live scores app, betting conversion tool, or AI prediction bot you are building..." style="padding: 10px 14px; border: 1px solid var(--border-subtle); border-radius: 8px; background: var(--bg-canvas); color: var(--text-main); font-family: inherit; font-size: 13px; outline: none;"></textarea>
+                        </div>
+                    </div>
+
+                    <button type="submit" id="btn-save-profile" class="btn-primary" style="padding: 10px 24px;">
+                        Save Profile Changes
+                    </button>
+                </form>
+            </div>
+
+            <!-- Security & Password Management Card -->
+            <div class="portal-card" id="security-password-card">
+                <h3 style="margin: 0 0 6px;">Security &amp; Password Management</h3>
+                <p style="color: var(--text-muted); font-size: 13px; margin: 0 0 16px;">Update your password to ensure maximum security for your developer credentials and API access.</p>
+
+                <div id="password-success-alert" style="display: none; background: rgba(16, 185, 129, 0.12); border: 1px solid #10b981; color: #34d399; padding: 12px 16px; border-radius: 8px; margin-bottom: 16px; font-size: 13px;"></div>
+                <div id="password-error-alert" style="display: none; background: rgba(239, 68, 68, 0.12); border: 1px solid #ef4444; color: #f87171; padding: 12px 16px; border-radius: 8px; margin-bottom: 16px; font-size: 13px;"></div>
+
+                <form id="password-change-form" onsubmit="changeAccountPassword(event)">
+                    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 16px; margin-bottom: 16px;">
+                        <div class="form-group" id="group-current-password">
+                            <label style="font-size: 13px; font-weight: 600; color: var(--text-muted);">Current Password</label>
+                            <input type="password" id="input-current-password" placeholder="••••••••">
+                        </div>
+                        <div class="form-group">
+                            <label style="font-size: 13px; font-weight: 600; color: var(--text-muted);">New Password (min 6 chars)</label>
+                            <input type="password" id="input-new-password" placeholder="••••••••" minlength="6" required>
+                        </div>
+                        <div class="form-group">
+                            <label style="font-size: 13px; font-weight: 600; color: var(--text-muted);">Confirm New Password</label>
+                            <input type="password" id="input-confirm-password" placeholder="••••••••" minlength="6" required>
+                        </div>
+                    </div>
+                    <button type="submit" id="btn-change-password" class="btn-primary" style="background: transparent; border: 1px solid var(--border-subtle); color: var(--text-main);">
+                        Update Password
+                    </button>
+                </form>
+            </div>
+        </section>
+
+        <!-- Tab 3: Upgrade Plans -->
         <section id="portal-tab-upgrade" class="portal-tab-content" style="display: none;">
             <div class="portal-card">
                 <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px; margin-bottom: 8px;">

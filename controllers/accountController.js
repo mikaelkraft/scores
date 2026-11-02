@@ -2,6 +2,9 @@ const express = require('express');
 const router = express.Router();
 const jwt = require('jsonwebtoken');
 const crypto = require('crypto');
+const path = require('path');
+const fs = require('fs');
+const multer = require('multer');
 const User = require('../models/user');
 const ApiKey = require('../models/apiKey');
 const Transaction = require('../models/transaction');
@@ -10,6 +13,48 @@ const emailService = require('../services/emailService');
 const googleAuthService = require('../services/googleAuthService');
 const { requireUser, JWT_SECRET } = require('../middleware/auth');
 const { config } = require('../config/env');
+
+const PLAN_LIMITS = {
+    free: { rateLimit: 120, isAdFree: false },
+    starter: { rateLimit: 600, isAdFree: true },
+    pro: { rateLimit: 1500, isAdFree: true },
+    whitelabel: { rateLimit: 3000, isAdFree: true },
+    admin: { rateLimit: 0, isAdFree: true }
+};
+
+function maskApiKey(key) {
+    if (!key || typeof key !== 'string') return '';
+    if (key.length <= 12) return key.slice(0, 4) + '••••••••';
+    const prefix = key.slice(0, 10);
+    const suffix = key.slice(-4);
+    return `${prefix}••••••••••••••••${suffix}`;
+}
+
+// Configure disk storage for user avatar uploads
+const avatarStorage = multer.diskStorage({
+    destination: (req, file, cb) => {
+        const dest = path.join(__dirname, '..', 'public', 'uploads', 'avatars');
+        fs.mkdirSync(dest, { recursive: true });
+        cb(null, dest);
+    },
+    filename: (req, file, cb) => {
+        const userId = req.user ? String(req.user._id) : 'guest';
+        const ext = path.extname(file.originalname).toLowerCase() || '.png';
+        cb(null, `avatar-${userId}-${Date.now()}${ext}`);
+    }
+});
+
+const avatarUpload = multer({
+    storage: avatarStorage,
+    limits: { fileSize: 4 * 1024 * 1024 }, // 4MB
+    fileFilter: (req, file, cb) => {
+        const allowedTypes = /jpeg|jpg|png|webp|gif|svg\+xml|svg/;
+        const mimeValid = allowedTypes.test(file.mimetype);
+        const extValid = allowedTypes.test(path.extname(file.originalname).toLowerCase().replace('.', ''));
+        if (mimeValid || extValid) return cb(null, true);
+        cb(new Error('Only image files (PNG, JPG, WebP, SVG, GIF) are allowed.'));
+    }
+});
 
 /**
  * GET /api/account/auth-config
@@ -349,7 +394,12 @@ router.post('/api/account/login', async (req, res) => {
             });
         }
 
-        const user = await User.findOne({ email: identifier.toLowerCase() });
+        const user = await User.findOne({
+            $or: [
+                { email: cleanUser },
+                { username: cleanUser }
+            ]
+        });
         if (!user || !user.active) {
             return res.status(401).json({ error: 'Invalid email or password.' });
         }
@@ -375,13 +425,19 @@ router.post('/api/account/login', async (req, res) => {
             user: {
                 id: user._id,
                 email: user.email,
-                fullName: user.fullName,
-                companyName: user.companyName,
-                avatarUrl: user.avatarUrl,
-                plan: user.plan,
+                username: user.username || '',
+                fullName: user.fullName || '',
+                companyName: user.companyName || '',
+                avatarUrl: user.avatarUrl || '',
+                phone: user.phone || '',
+                bio: user.bio || '',
+                website: user.website || '',
+                location: user.location || '',
+                plan: user.plan || 'free',
                 planExpiresAt: user.planExpiresAt,
-                isEmailVerified: user.isEmailVerified,
-                authProvider: user.authProvider
+                isEmailVerified: Boolean(user.isEmailVerified),
+                authProvider: user.authProvider,
+                hasPassword: Boolean(user.passwordHash)
             }
         });
     } catch (err) {
@@ -399,20 +455,153 @@ router.get('/api/account/me', requireUser, async (req, res) => {
         user: {
             id: user._id,
             email: user.email,
-            fullName: user.fullName,
-            companyName: user.companyName,
-            avatarUrl: user.avatarUrl,
-            plan: user.plan,
+            username: user.username || '',
+            fullName: user.fullName || '',
+            companyName: user.companyName || '',
+            avatarUrl: user.avatarUrl || '',
+            phone: user.phone || '',
+            bio: user.bio || '',
+            website: user.website || '',
+            location: user.location || '',
+            plan: user.plan || 'free',
             planExpiresAt: user.planExpiresAt,
-            isEmailVerified: user.isEmailVerified,
+            isEmailVerified: Boolean(user.isEmailVerified),
             authProvider: user.authProvider,
-            createdAt: user.created_at
+            hasPassword: Boolean(user.passwordHash),
+            createdAt: user.createdAt || user.created_at
         }
     });
 });
 
 /**
+ * PUT & POST /api/account/profile
+ * Comprehensive profile editing: full name, username, company, phone, bio, website, location, avatar
+ */
+async function handleProfileUpdate(req, res) {
+    try {
+        const { fullName, username, companyName, phone, bio, website, location, avatarUrl } = req.body;
+        const user = await User.findById(req.user._id);
+        if (!user) return res.status(404).json({ error: 'User not found.' });
+
+        if (username !== undefined) {
+            const cleanUser = String(username).trim().toLowerCase();
+            if (cleanUser && cleanUser !== user.username) {
+                if (!/^[a-z0-9_.-]{3,30}$/.test(cleanUser)) {
+                    return res.status(400).json({ error: 'Username must be 3-30 characters long and can only contain letters, numbers, underscores, and hyphens.' });
+                }
+                const existing = await User.findOne({ username: cleanUser, _id: { $ne: user._id } });
+                if (existing) {
+                    return res.status(400).json({ error: 'This username is already taken by another developer.' });
+                }
+                user.username = cleanUser;
+            } else if (!cleanUser) {
+                user.username = undefined;
+            }
+        }
+
+        if (fullName !== undefined) user.fullName = String(fullName).trim();
+        if (companyName !== undefined) user.companyName = String(companyName).trim();
+        if (phone !== undefined) user.phone = String(phone).trim();
+        if (bio !== undefined) user.bio = String(bio).trim().slice(0, 500);
+        if (website !== undefined) user.website = String(website).trim().slice(0, 200);
+        if (location !== undefined) user.location = String(location).trim().slice(0, 100);
+        if (avatarUrl !== undefined && avatarUrl.trim()) user.avatarUrl = String(avatarUrl).trim();
+
+        await user.save();
+
+        return res.json({
+            status: 'success',
+            message: 'Profile updated successfully!',
+            user: {
+                id: user._id,
+                email: user.email,
+                username: user.username || '',
+                fullName: user.fullName || '',
+                companyName: user.companyName || '',
+                avatarUrl: user.avatarUrl || '',
+                phone: user.phone || '',
+                bio: user.bio || '',
+                website: user.website || '',
+                location: user.location || '',
+                plan: user.plan || 'free',
+                planExpiresAt: user.planExpiresAt,
+                isEmailVerified: Boolean(user.isEmailVerified),
+                authProvider: user.authProvider,
+                hasPassword: Boolean(user.passwordHash),
+                createdAt: user.createdAt || user.created_at
+            }
+        });
+    } catch (err) {
+        console.error('Update profile error:', err.message);
+        return res.status(500).json({ error: 'Failed to update profile: ' + err.message });
+    }
+}
+router.put('/api/account/profile', requireUser, handleProfileUpdate);
+router.post('/api/account/profile', requireUser, handleProfileUpdate);
+
+/**
+ * POST /api/account/avatar
+ * Uploads user profile avatar file
+ */
+router.post('/api/account/avatar', requireUser, avatarUpload.single('avatar'), async (req, res) => {
+    try {
+        if (!req.file) {
+            return res.status(400).json({ error: 'Please choose an image file to upload.' });
+        }
+        const fileUrl = `/uploads/avatars/${req.file.filename}`;
+        const user = await User.findById(req.user._id);
+        if (user) {
+            user.avatarUrl = fileUrl;
+            await user.save();
+        }
+        return res.json({
+            status: 'success',
+            message: 'Avatar updated successfully!',
+            avatarUrl: fileUrl
+        });
+    } catch (err) {
+        return res.status(500).json({ error: err.message || 'Failed to upload avatar.' });
+    }
+});
+
+/**
+ * POST /api/account/change-password
+ */
+router.post('/api/account/change-password', requireUser, async (req, res) => {
+    try {
+        const { currentPassword, newPassword } = req.body;
+        if (!newPassword || newPassword.length < 6) {
+            return res.status(400).json({ error: 'New password must be at least 6 characters long.' });
+        }
+
+        const user = await User.findById(req.user._id);
+        if (!user) return res.status(404).json({ error: 'User not found.' });
+
+        if (user.passwordHash) {
+            if (!currentPassword) {
+                return res.status(400).json({ error: 'Current password is required.' });
+            }
+            const isMatch = await user.verifyPassword(currentPassword);
+            if (!isMatch) {
+                return res.status(400).json({ error: 'Current password does not match.' });
+            }
+        }
+
+        user.passwordHash = await User.hashPassword(newPassword);
+        await user.save();
+
+        return res.json({
+            status: 'success',
+            message: 'Password changed successfully! You can now use your new password.'
+        });
+    } catch (err) {
+        return res.status(500).json({ error: 'Failed to change password.' });
+    }
+});
+
+/**
  * GET /api/account/keys
+ * Returns user keys with masked secret for display security
  */
 router.get('/api/account/keys', requireUser, async (req, res) => {
     try {
@@ -424,9 +613,77 @@ router.get('/api/account/keys', requireUser, async (req, res) => {
         const isNorraAdmin = req.user.role === 'admin' || req.user.email.includes('norra') || req.user.email.includes('admin');
         const norraMasterKey = isNorraAdmin ? (config.NORRA_INTERNAL_API_KEY || 'norra_live_master_internal_access_2026') : null;
 
-        return res.json({ keys, norraMasterKey, isNorraAdmin });
+        const sanitizedKeys = keys.map(k => ({
+            _id: k._id,
+            name: k.name,
+            email: k.email,
+            plan: k.plan,
+            rateLimitPerMinute: k.rateLimitPerMinute,
+            isAdFree: k.isAdFree,
+            totalRequests: k.totalRequests || 0,
+            lastUsedAt: k.lastUsedAt,
+            createdAt: k.createdAt,
+            expiresAt: k.expiresAt,
+            active: k.active,
+            keyMasked: maskApiKey(k.key),
+            key: maskApiKey(k.key)
+        }));
+
+        return res.json({ keys: sanitizedKeys, norraMasterKey, isNorraAdmin });
     } catch (err) {
         return res.status(500).json({ error: 'Failed to retrieve API keys.' });
+    }
+});
+
+/**
+ * POST /api/account/keys/generate
+ * Generates an API key tied strictly to authenticated user's account and plan.
+ * Returns the rawKey once in this response payload for copy into the one-time reveal info box.
+ */
+router.post('/api/account/keys/generate', requireUser, async (req, res) => {
+    try {
+        const user = await User.findById(req.user._id);
+        if (!user) return res.status(404).json({ error: 'User not found.' });
+
+        const plan = user.plan || 'free';
+        const limits = PLAN_LIMITS[plan] || PLAN_LIMITS.free;
+
+        // Deactivate previous active keys for this user
+        await ApiKey.updateMany(
+            { $or: [{ user: user._id }, { email: user.email }], active: true },
+            { $set: { active: false } }
+        );
+
+        const rawKey = ApiKey.generateKey();
+        const apiKey = await ApiKey.create({
+            key: rawKey,
+            user: user._id,
+            name: `${user.companyName || user.fullName || user.username || 'Developer'} ${plan.toUpperCase()} Key`,
+            email: user.email,
+            plan: plan,
+            rateLimitPerMinute: limits.rateLimit,
+            isAdFree: limits.isAdFree,
+            active: true,
+            expiresAt: user.planExpiresAt || null
+        });
+
+        return res.status(201).json({
+            status: 'success',
+            message: 'API key generated successfully! Please copy your key now.',
+            rawKey: apiKey.key,
+            key: {
+                _id: apiKey._id,
+                name: apiKey.name,
+                plan: apiKey.plan,
+                rateLimitPerMinute: apiKey.rateLimitPerMinute,
+                isAdFree: apiKey.isAdFree,
+                createdAt: apiKey.createdAt,
+                keyMasked: maskApiKey(apiKey.key)
+            }
+        });
+    } catch (err) {
+        console.error('Key generation error:', err.message);
+        return res.status(500).json({ error: 'Failed to generate API key.' });
     }
 });
 
@@ -435,27 +692,69 @@ router.get('/api/account/keys', requireUser, async (req, res) => {
  */
 router.post('/api/account/keys/regenerate', requireUser, async (req, res) => {
     try {
-        const { keyId } = req.body;
-        const apiKey = await ApiKey.findOne({
-            _id: keyId,
-            $or: [{ user: req.user._id }, { email: req.user.email }]
+        const user = await User.findById(req.user._id);
+        if (!user) return res.status(404).json({ error: 'User not found.' });
+
+        const plan = user.plan || 'free';
+        const limits = PLAN_LIMITS[plan] || PLAN_LIMITS.free;
+
+        // Deactivate previous active keys
+        await ApiKey.updateMany(
+            { $or: [{ user: user._id }, { email: user.email }], active: true },
+            { $set: { active: false } }
+        );
+
+        const rawKey = ApiKey.generateKey();
+        const apiKey = await ApiKey.create({
+            key: rawKey,
+            user: user._id,
+            name: `${user.companyName || user.fullName || user.username || 'Developer'} ${plan.toUpperCase()} Key`,
+            email: user.email,
+            plan: plan,
+            rateLimitPerMinute: limits.rateLimit,
+            isAdFree: limits.isAdFree,
+            active: true,
+            expiresAt: user.planExpiresAt || null
         });
-
-        if (!apiKey) {
-            return res.status(404).json({ error: 'API key not found.' });
-        }
-
-        const newKey = ApiKey.generateKey();
-        apiKey.key = newKey;
-        await apiKey.save();
 
         return res.json({
             status: 'success',
-            message: 'API key regenerated successfully.',
-            key: apiKey
+            message: 'New API key generated. Previous key was revoked.',
+            rawKey: apiKey.key,
+            key: {
+                _id: apiKey._id,
+                name: apiKey.name,
+                plan: apiKey.plan,
+                rateLimitPerMinute: apiKey.rateLimitPerMinute,
+                isAdFree: apiKey.isAdFree,
+                createdAt: apiKey.createdAt,
+                keyMasked: maskApiKey(apiKey.key)
+            }
         });
     } catch (err) {
         return res.status(500).json({ error: 'Failed to regenerate API key.' });
+    }
+});
+
+/**
+ * POST /api/account/keys/revoke
+ */
+router.post('/api/account/keys/revoke', requireUser, async (req, res) => {
+    try {
+        const { keyId } = req.body;
+        const filter = {
+            $or: [{ user: req.user._id }, { email: req.user.email }],
+            active: true
+        };
+        if (keyId) filter._id = keyId;
+
+        await ApiKey.updateMany(filter, { $set: { active: false } });
+        return res.json({
+            status: 'success',
+            message: 'API key revoked successfully.'
+        });
+    } catch (err) {
+        return res.status(500).json({ error: 'Failed to revoke API key.' });
     }
 });
 

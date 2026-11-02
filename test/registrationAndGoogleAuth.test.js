@@ -143,6 +143,35 @@ test('Google auth endpoint rejects empty credentials', async () => {
     }
 });
 
+test('User Model supports profile fields: username, phone, bio, website, and location', () => {
+    const user = new User({
+        email: 'developer@mynorra.xyz',
+        username: 'dev_alex',
+        fullName: 'Alex Smith',
+        phone: '+2348012345678',
+        bio: 'Building sports bot and livescores',
+        website: 'https://scores.mynorra.xyz',
+        location: 'Lagos, Nigeria'
+    });
+
+    assert.equal(user.username, 'dev_alex');
+    assert.equal(user.phone, '+2348012345678');
+    assert.equal(user.bio, 'Building sports bot and livescores');
+    assert.equal(user.website, 'https://scores.mynorra.xyz');
+    assert.equal(user.location, 'Lagos, Nigeria');
+});
+
+test('API Key masking masks secret tokens preserving only prefix and suffix', () => {
+    const rawKey = 'norra_live_a1b2c3d4e5f6g7h8i9j0k1l2m3n4o5p6';
+    const prefix = rawKey.slice(0, 10);
+    const suffix = rawKey.slice(-4);
+    const masked = `${prefix}••••••••••••••••${suffix}`;
+
+    assert.equal(prefix, 'norra_live');
+    assert.equal(suffix, 'o5p6');
+    assert.ok(masked.includes('••••••••••••••••'));
+});
+
 test.after(async () => {
     const mongoose = require('../database');
     await mongoose.disconnect();

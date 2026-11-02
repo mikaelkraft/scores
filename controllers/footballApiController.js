@@ -1,5 +1,6 @@
 const express = require('express');
 const router = express.Router();
+const mongoose = require('mongoose');
 
 const SoccerLeague = require('../models/soccerLeague');
 const SoccerClub = require('../models/soccerClub');
@@ -1140,10 +1141,18 @@ router.get(['/training-data', '/analytics/training-data'], optionalApiKeyAuth, a
             filter['home.stats'] = { $exists: true, $ne: null };
         }
 
-        const matches = await SoccerMatch.find(filter)
-            .sort({ date: -1 })
-            .limit(limit)
-            .lean();
+        let matches = [];
+        if (mongoose.connection && mongoose.connection.readyState === 1) {
+            try {
+                matches = await SoccerMatch.find(filter)
+                    .sort({ date: -1 })
+                    .limit(limit)
+                    .lean();
+            } catch (dbErr) {
+                console.warn('Training data query warning:', dbErr.message);
+                matches = [];
+            }
+        }
 
         const samples = matches.map(m => {
             const hStats = m.home?.stats instanceof Map ? Object.fromEntries(m.home.stats) : (m.home?.stats || {});

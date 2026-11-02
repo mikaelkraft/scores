@@ -526,9 +526,9 @@ async function loadApiKeysAndUsers() {
         if (keysData.keys && keysData.keys.length) {
             keysBody.innerHTML = keysData.keys.map(k => `
                 <tr>
-                    <td><code>${k.key.slice(0, 12)}...</code></td>
-                    <td><strong>${k.name}</strong><br><small style="color:var(--text-muted);">${k.email}</small></td>
-                    <td><span style="text-transform:uppercase; font-weight:600;">${k.plan}</span></td>
+                    <td><code>${escapeHtml(k.keyMasked || k.key || '••••••••')}</code></td>
+                    <td><strong>${escapeHtml(k.name || 'API Client')}</strong><br><small style="color:var(--text-muted);">${escapeHtml(k.email || '')}</small></td>
+                    <td><span style="text-transform:uppercase; font-weight:600;">${escapeHtml(k.plan || 'pro')}</span></td>
                     <td>${k.rateLimitPerMinute}</td>
                     <td>${k.isAdFree ? '✅ Yes' : '❌ No'}</td>
                     <td>${k.totalRequests || 0}</td>
@@ -577,29 +577,120 @@ async function revokeKey(id) {
     }
 }
 
-function openIssueKeyModal() {
-    const email = prompt('Enter customer / partner email:');
-    if (!email) return;
-    const plan = prompt('Enter plan (starter, pro, whitelabel):', 'pro') || 'pro';
+function toggleIssueKeyPanel(show) {
+    const panel = document.getElementById('admin-issue-key-panel');
+    if (!panel) return;
+    if (typeof show === 'boolean') {
+        panel.style.display = show ? 'block' : 'none';
+    } else {
+        panel.style.display = panel.style.display === 'none' ? 'block' : 'none';
+    }
+    if (panel.style.display === 'block') {
+        panel.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        const emailInput = document.getElementById('admin-key-email');
+        if (emailInput) emailInput.focus();
+    }
+}
 
-    fetch('/api/admin/keys', {
-        method: 'POST',
-        headers: {
-            Authorization: `Bearer ${adminToken}`,
-            'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({ email, plan, name: `${plan.toUpperCase()} Enterprise Partner` })
-    })
-    .then(r => r.json())
-    .then(data => {
-        if (data.status === 'success' && data.key) {
-            alert(`Key issued successfully!\nKey: ${data.key.key}`);
+async function submitAdminIssueKey(event) {
+    event.preventDefault();
+    const email = document.getElementById('admin-key-email').value.trim();
+    const name = document.getElementById('admin-key-name').value.trim();
+    const plan = document.getElementById('admin-key-plan').value;
+    const daysValid = parseInt(document.getElementById('admin-key-days').value, 10) || 0;
+    const errorEl = document.getElementById('admin-issue-key-error');
+    const submitBtn = document.getElementById('btn-admin-submit-key');
+
+    if (errorEl) errorEl.style.display = 'none';
+    if (submitBtn) {
+        submitBtn.disabled = true;
+        submitBtn.textContent = 'Generating...';
+    }
+
+    try {
+        const payload = {
+            email,
+            plan,
+            name: name || `${plan.toUpperCase()} Enterprise Partner`,
+            daysValid
+        };
+
+        const res = await fetch('/api/admin/keys', {
+            method: 'POST',
+            headers: {
+                Authorization: `Bearer ${adminToken}`,
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(payload)
+        });
+        const data = await res.json();
+
+        if (res.ok && data.rawKey) {
+            // Reveal secret raw key in prominent info box (no modal, no prompt!)
+            const revealBox = document.getElementById('admin-new-key-reveal-box');
+            const rawInput = document.getElementById('admin-reveal-raw-key-input');
+            const copyLabel = document.getElementById('admin-copy-btn-label');
+            const copyFeedback = document.getElementById('admin-copy-feedback-text');
+
+            if (rawInput) rawInput.value = data.rawKey;
+            if (copyLabel) copyLabel.textContent = 'Copy Key';
+            if (copyFeedback) copyFeedback.style.display = 'none';
+
+            if (revealBox) {
+                revealBox.style.display = 'block';
+                revealBox.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            }
+
+            toggleIssueKeyPanel(false);
+            document.getElementById('admin-issue-key-form').reset();
             loadApiKeysAndUsers();
         } else {
-            alert(data.error || 'Failed to issue key.');
+            if (errorEl) {
+                errorEl.textContent = data.error || 'Failed to issue API key.';
+                errorEl.style.display = 'block';
+            }
         }
-    })
-    .catch(() => alert('Failed to issue key.'));
+    } catch (err) {
+        if (errorEl) {
+            errorEl.textContent = 'Connection error issuing API key.';
+            errorEl.style.display = 'block';
+        }
+    } finally {
+        if (submitBtn) {
+            submitBtn.disabled = false;
+            submitBtn.textContent = '🔑 Issue API Key';
+        }
+    }
+}
+
+function copyAdminRevealedKey() {
+    const input = document.getElementById('admin-reveal-raw-key-input');
+    if (!input || !input.value) return;
+    navigator.clipboard.writeText(input.value).then(() => {
+        const label = document.getElementById('admin-copy-btn-label');
+        if (label) label.textContent = 'Copied! ✅';
+        const feedback = document.getElementById('admin-copy-feedback-text');
+        if (feedback) feedback.style.display = 'inline-block';
+        setTimeout(() => {
+            if (label) label.textContent = 'Copy Key';
+        }, 3500);
+    }).catch(() => {
+        input.select();
+        document.execCommand('copy');
+        const feedback = document.getElementById('admin-copy-feedback-text');
+        if (feedback) feedback.style.display = 'inline-block';
+    });
+}
+
+function dismissAdminKeyRevealBox() {
+    const box = document.getElementById('admin-new-key-reveal-box');
+    const input = document.getElementById('admin-reveal-raw-key-input');
+    if (box) box.style.display = 'none';
+    if (input) input.value = '';
+}
+
+function openIssueKeyModal() {
+    toggleIssueKeyPanel(true);
 }
 
 async function saveAuthAndEmailSettings() {
