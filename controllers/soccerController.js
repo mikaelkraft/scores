@@ -589,11 +589,14 @@ async function sendSummary(req, res) {
             }
 
             // If neither provider broadcasted granular boxscore telemetry (e.g. youth matches, U17 WC, or lower US divisions)
+            // Only synthesize telemetry if the match is live (in-play) or completed (post-match) — NEVER for pre-match/scheduled games
             const finalHasStats = Boolean(
                 summary.boxscore?.teams?.[0]?.statistics?.length ||
                 summary.boxscore?.teams?.[1]?.statistics?.length
             );
-            if (!finalHasStats) {
+            const compState = match.status?.state || summary.header?.competitions?.[0]?.status?.type?.state;
+            const isLiveOrFinished = compState === 'in' || compState === 'post' || Boolean(match.status?.completed);
+            if (!finalHasStats && isLiveOrFinished) {
                 summary.boxscore = synthesizeMatchTelemetry(match, summary);
             }
 

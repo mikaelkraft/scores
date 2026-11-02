@@ -2032,9 +2032,16 @@
         let awayStats = summary.boxscore?.teams?.find(item => item.homeAway === 'away' || item.id === 'away' || String(item.team?.id) === String(away.team?.id) || item.displayOrder === 2)?.statistics || [];
         const events = matchTimeline(summary, plays, home, away);
 
-        // Comprehensive telemetry synthesizer for lower divisions & youth matches (e.g. US Open, USL, U17 WC)
-        // when raw radar broadcast telemetry was not broadcast by official feeds
-        if ((!homeStats.length && !awayStats.length) || summary.boxscore?.isDerivedTelemetry) {
+        // When a match has not started (scheduled / pre-match), do NOT synthesize fake figures!
+        // Leave it all empty (0) and fetch live statistics once in-play
+        const isPreMatch = status.state === 'scheduled' || (!status.isLive && status.state !== 'live' && status.state !== 'finished');
+        if (isPreMatch) {
+            homeStats = [];
+            awayStats = [];
+            if (summary.boxscore) {
+                summary.boxscore.isDerivedTelemetry = false;
+            }
+        } else if ((!homeStats.length && !awayStats.length) || summary.boxscore?.isDerivedTelemetry) {
             const hScore = Number(home.score ?? 0);
             const aScore = Number(away.score ?? 0);
             let hCards = 0, aCards = 0, hFouls = 0, aFouls = 0;
@@ -2384,40 +2391,49 @@
                 </div>
 
                 <div id="drawer-tab-stats" class="drawer-tab-content" ${activeTab === 'stats' ? '' : 'hidden'}>
-                    <!-- Attacking Momentum & Pressure Gauge -->
-                    <div class="momentum-gauge-card" style="background:var(--bg-canvas); border:1px solid var(--border-subtle); border-radius:10px; padding:16px; margin-bottom:20px;">
-                        <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:6px; margin-bottom:10px;">
-                            <div style="display:flex; align-items:center; gap:6px;">
-                                <span style="font-size:16px;">⚡</span>
-                                <strong style="font-size:12.5px; text-transform:uppercase; color:var(--text-main); letter-spacing:0.5px;">Live Match Momentum &amp; Attacking Pressure</strong>
+                    ${isPreMatch ? `
+                        <div style="text-align:center; padding:36px 18px; background:var(--bg-canvas); border:1px solid var(--border-subtle); border-radius:10px;">
+                            <span class="empty-icon" style="font-size:36px; display:block; margin-bottom:12px;">⏳</span>
+                            <h4 style="margin:0 0 8px; font-size:15px; font-weight:700; color:var(--text-main);">Match Has Not Started</h4>
+                            <p style="margin:0 0 8px; font-size:13px; color:var(--text-muted);">Kickoff scheduled for <strong>${formatTime(competition.date)}</strong> (${formatDate(competition.date, { year: false })}).</p>
+                            <small style="color:var(--text-muted); display:block; max-width:420px; margin:0 auto; line-height:1.5;">Live in-play figures (possession %, shots, corners, cards, and attacking pressure) activate once the match kicks off.</small>
+                        </div>
+                    ` : `
+                        <!-- Attacking Momentum & Pressure Gauge -->
+                        <div class="momentum-gauge-card" style="background:var(--bg-canvas); border:1px solid var(--border-subtle); border-radius:10px; padding:16px; margin-bottom:20px;">
+                            <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:6px; margin-bottom:10px;">
+                                <div style="display:flex; align-items:center; gap:6px;">
+                                    <span style="font-size:16px;">⚡</span>
+                                    <strong style="font-size:12.5px; text-transform:uppercase; color:var(--text-main); letter-spacing:0.5px;">Live Match Momentum &amp; Attacking Pressure</strong>
+                                </div>
+                                <span style="font-size:11.5px; font-weight:700; color:var(--color-primary);">${momentumVerdict}</span>
                             </div>
-                            <span style="font-size:11.5px; font-weight:700; color:var(--color-primary);">${momentumVerdict}</span>
+                            <div style="display:flex; justify-content:space-between; font-size:13px; font-weight:700; margin-bottom:8px;">
+                                <span style="color:#10b981;">${escapeHtml(home.team?.displayName || 'Home')} (${hMomentum}%)</span>
+                                <span style="color:#3b82f6;">(${aMomentum}%) ${escapeHtml(away.team?.displayName || 'Away')}</span>
+                            </div>
+                            <div style="height:12px; background:var(--bg-surface-elevated); border-radius:6px; overflow:hidden; display:flex; box-shadow:inset 0 1px 3px rgba(0,0,0,0.2);">
+                                <div style="width:${hMomentum}%; background:linear-gradient(90deg, #10b981, #059669); transition:width 0.4s ease;"></div>
+                                <div style="width:${aMomentum}%; background:linear-gradient(90deg, #2563eb, #3b82f6); transition:width 0.4s ease;"></div>
+                            </div>
+                            <div style="display:flex; justify-content:space-between; font-size:11px; color:var(--text-muted); margin-top:6px;">
+                                <span>Possession: ${hPoss}% &bull; Shots: ${hShots} &bull; Corners: ${hCorners}</span>
+                                <span>Corners: ${aCorners} &bull; Shots: ${aShots} &bull; Possession: ${aPoss}%</span>
+                            </div>
                         </div>
-                        <div style="display:flex; justify-content:space-between; font-size:13px; font-weight:700; margin-bottom:8px;">
-                            <span style="color:#10b981;">${escapeHtml(home.team?.displayName || 'Home')} (${hMomentum}%)</span>
-                            <span style="color:#3b82f6;">(${aMomentum}%) ${escapeHtml(away.team?.displayName || 'Away')}</span>
-                        </div>
-                        <div style="height:12px; background:var(--bg-surface-elevated); border-radius:6px; overflow:hidden; display:flex; box-shadow:inset 0 1px 3px rgba(0,0,0,0.2);">
-                            <div style="width:${hMomentum}%; background:linear-gradient(90deg, #10b981, #059669); transition:width 0.4s ease;"></div>
-                            <div style="width:${aMomentum}%; background:linear-gradient(90deg, #2563eb, #3b82f6); transition:width 0.4s ease;"></div>
-                        </div>
-                        <div style="display:flex; justify-content:space-between; font-size:11px; color:var(--text-muted); margin-top:6px;">
-                            <span>Possession: ${hPoss}% &bull; Shots: ${hShots} &bull; Corners: ${hCorners}</span>
-                            <span>Corners: ${aCorners} &bull; Shots: ${aShots} &bull; Possession: ${aPoss}%</span>
-                        </div>
-                    </div>
 
-                    <h4 style="margin:0 0 14px; font-size:14px; color:var(--text-main); display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">
-                        <span>In-Play Match Statistics (${escapeHtml(home.team?.displayName || 'Home')} vs ${escapeHtml(away.team?.displayName || 'Away')})</span>
-                        ${summary.boxscore?.isDerivedTelemetry ? `<span style="font-size:10.5px; font-weight:700; color:var(--color-primary); background:var(--color-primary-subtle); padding:2px 8px; border-radius:12px;">⚡ Live Analytics Telemetry</span>` : ''}
-                    </h4>
-                    <div>${statRows || `
-                        <div style="text-align:center; padding:24px 16px; background:var(--bg-canvas); border:1px solid var(--border-subtle); border-radius:8px;">
-                            <span class="empty-icon" style="font-size:24px;">📊</span>
-                            <p style="margin:8px 0 4px; font-weight:600; color:var(--text-main);">No in-play statistics available.</p>
-                            <small style="color:var(--text-muted);">Match statistics (possession %, shots, corners, fouls, cards) activate during live play or after match conclusion.</small>
-                        </div>
-                    `}</div>
+                        <h4 style="margin:0 0 14px; font-size:14px; color:var(--text-main); display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">
+                            <span>In-Play Match Statistics (${escapeHtml(home.team?.displayName || 'Home')} vs ${escapeHtml(away.team?.displayName || 'Away')})</span>
+                            ${summary.boxscore?.isDerivedTelemetry ? `<span style="font-size:10.5px; font-weight:700; color:var(--color-primary); background:var(--color-primary-subtle); padding:2px 8px; border-radius:12px;">⚡ Live Analytics Telemetry</span>` : ''}
+                        </h4>
+                        <div>${statRows || `
+                            <div style="text-align:center; padding:24px 16px; background:var(--bg-canvas); border:1px solid var(--border-subtle); border-radius:8px;">
+                                <span class="empty-icon" style="font-size:24px;">📊</span>
+                                <p style="margin:8px 0 4px; font-weight:600; color:var(--text-main);">No in-play statistics available.</p>
+                                <small style="color:var(--text-muted);">Match statistics (possession %, shots, corners, fouls, cards) activate during live play or after match conclusion.</small>
+                            </div>
+                        `}</div>
+                    `}
                 </div>
 
                 <div id="drawer-tab-h2h" class="drawer-tab-content" ${activeTab === 'h2h' ? '' : 'hidden'}>

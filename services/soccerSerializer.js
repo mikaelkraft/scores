@@ -385,10 +385,25 @@ function serializeStandingGroup(group) {
 }
 
 function synthesizeMatchTelemetry(match, summary = {}) {
+    const compState = match?.status?.state || summary.header?.competitions?.[0]?.status?.type?.state;
+    const isCompleted = Boolean(match?.status?.completed || summary.header?.competitions?.[0]?.status?.type?.completed);
+    const isLive = compState === 'in' || summary.header?.competitions?.[0]?.status?.type?.name === 'STATUS_IN_PROGRESS';
+
     const homeComp = summary.header?.competitions?.[0]?.competitors?.find(c => c.homeAway === 'home')
         || { team: summary.boxscore?.teams?.[0]?.team || match.home };
     const awayComp = summary.header?.competitions?.[0]?.competitors?.find(c => c.homeAway === 'away')
         || { team: summary.boxscore?.teams?.[1]?.team || match.away };
+
+    // When games have not started, do not synthesize fake figures (shots 4:4, possession 50%-50%); return empty statistics
+    if (!isLive && !isCompleted && compState === 'pre') {
+        return {
+            isDerivedTelemetry: false,
+            teams: [
+                { id: 'home', homeAway: 'home', team: homeComp.team, statistics: [] },
+                { id: 'away', homeAway: 'away', team: awayComp.team, statistics: [] }
+            ]
+        };
+    }
 
     const homeScore = parseInt(homeComp.score ?? match.home?.score ?? 0, 10) || 0;
     const awayScore = parseInt(awayComp.score ?? match.away?.score ?? 0, 10) || 0;
