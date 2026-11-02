@@ -18,7 +18,7 @@ const {
     sanitizeLogoUrl,
     synthesizeMatchTelemetry
 } = require('../services/soccerSerializer');
-const { normalizeTeamName, getTeamCategory, resolveMatchEspnId } = require('../services/soccerSyncService');
+const { normalizeTeamName, getTeamCategory, resolveMatchEspnId, resolveLeagueSlug, formatLiveScoreLogo } = require('../services/soccerSyncService');
 
 function formatDateKey(d = new Date()) {
     const y = d.getUTCFullYear();
@@ -163,89 +163,229 @@ function makeFlexibleTeamRegex(rawName) {
 // Apply optional API key authentication on all football endpoints
 router.use(optionalApiKeyAuth);
 
-async function getFormattedLiveMatches(league, isFreeRestricted) {
+// High-speed in-memory cache for worldwide live in-play scores (15-second TTL)
+let liveFeedMemoryCache = {
+    timestamp: 0,
+    matches: [],
+    inFlightPromise: null
+};
+
+function fetchUpstreamJsonFast(url, timeoutMs = 3500) {
+    return new Promise((resolve) => {
+        const https = require('https');
+        const zlib = require('zlib');
+        const req = https.get(url, {
+            headers: { 'User-Agent': 'NorraScores/2.1', 'Accept-Encoding': 'gzip, deflate' },
+            timeout: timeoutMs
+        }, res => {
+            if (res.statusCode !== 200) return resolve(null);
+            let stream = res;
+            if (res.headers['content-encoding'] === 'gzip') stream = res.pipe(zlib.createGunzip());
+            else if (res.headers['content-encoding'] === 'deflate') stream = res.pipe(zlib.createInflate());
+            let d = '';
+            stream.on('data', c => d += c);
+            stream.on('end', () => {
+                try { resolve(JSON.parse(d)); } catch { resolve(null); }
+            });
+        });
+        req.on('error', () => resolve(null));
+        req.on('timeout', () => { req.destroy(); resolve(null); });
+    });
+}
+
+async function fetchFreshWorldwideLiveMatches() {
     const sixHoursAgo = new Date(Date.now() - 6 * 3600 * 1000);
     const liveFilter = {
         'status.state': 'in',
         date: { $gte: sixHoursAgo }
     };
 
-    if (isFreeRestricted) {
-        if (league && league !== 'all') {
-            const requestedSlug = String(league).toLowerCase();
-            if (!FREE_TIER_ALLOWED_LEAGUES.includes(requestedSlug)) {
-                return { restricted: true, requestedSlug };
+    // Parallel fetch from upstream LiveScore worldwide feed, ESPN scoreboard, and MongoDB
+    const [liveScoreData, espnScoreboard, dbLiveMatches, storedLeagues] = await Promise.all([
+        fetchUpstreamJsonFast('https://prod-public-api.livescore.com/v1/api/app/live/soccer/0', 3200),
+        fetchUpstreamJsonFast('https://site.api.espn.com/apis/site/v2/sports/soccer/all/scoreboard', 3200),
+        SoccerMatch.find(liveFilter).maxTimeMS(2500).sort({ date: 1 }).lean().catch(() => []),
+        SoccerLeague.find({ active: true }).maxTimeMS(2500).lean().catch(() => [])
+    ]);
+
+    const leagueMap = new Map((storedLeagues || []).map(l => [l.slug, l]));
+    const candidateMatches = [];
+
+    // 1. Ingest all in-play matches from LiveScore worldwide in-play feed
+    if (liveScoreData && Array.isArray(liveScoreData.Stages)) {
+        for (const stage of liveScoreData.Stages) {
+            const country = stage.Cnm || stage.Sdn || 'International';
+            const leagueName = stage.Snm || 'Football Competition';
+            const slug = resolveLeagueSlug(leagueName, country, stage.Scd || '') || 'intl.other';
+            const lg = leagueMap.get(slug) || {};
+
+            for (const ev of (stage.Events || [])) {
+                const eid = String(ev.Eid);
+                const h = ev.T1?.[0] || {};
+                const a = ev.T2?.[0] || {};
+                const hScore = parseInt(ev.Tr1 || 0, 10);
+                const aScore = parseInt(ev.Tr2 || 0, 10);
+                const rawClock = String(ev.Eps || ev.Epr || "45'");
+                const clock = rawClock === 'HT' ? 'HT' : (rawClock.includes("'") ? rawClock : `${rawClock}'`);
+
+                candidateMatches.push({
+                    id: eid,
+                    uid: `ls:${eid}`,
+                    league: {
+                        slug,
+                        name: lg.name || leagueName,
+                        abbreviation: lg.abbreviation || leagueName.slice(0, 16),
+                        country: lg.country || country,
+                        logo: lg.logo || ''
+                    },
+                    date: ev.Esd ? new Date(ev.Esd) : new Date(),
+                    status: {
+                        state: 'in',
+                        name: 'STATUS_IN_PROGRESS',
+                        description: 'In Progress',
+                        clock: clock,
+                        detail: clock,
+                        period: ev.Epr || 1,
+                        completed: false,
+                        isLive: true
+                    },
+                    home: {
+                        id: h.ID ? String(h.ID) : undefined,
+                        name: h.Nm || 'Home',
+                        displayName: h.Nm || 'Home',
+                        abbreviation: h.Abr || '',
+                        logo: formatLiveScoreLogo(h.Img),
+                        score: isNaN(hScore) ? 0 : hScore,
+                        winner: false
+                    },
+                    away: {
+                        id: a.ID ? String(a.ID) : undefined,
+                        name: a.Nm || 'Away',
+                        displayName: a.Nm || 'Away',
+                        abbreviation: a.Abr || '',
+                        logo: formatLiveScoreLogo(a.Img),
+                        score: isNaN(aScore) ? 0 : aScore,
+                        winner: false
+                    },
+                    source: { provider: 'livescore', livescore_id: eid, event_id: eid }
+                });
             }
-            liveFilter.league_slug = requestedSlug;
-        } else {
-            liveFilter.league_slug = { $in: FREE_TIER_ALLOWED_LEAGUES };
         }
-    } else if (league && league !== 'all') {
-        liveFilter.league_slug = String(league).toLowerCase();
     }
 
-    let liveMatches = await SoccerMatch.find(liveFilter).sort({ date: 1 }).lean();
-    if (liveMatches.length === 0) {
-        try {
-            const { syncLiveScoreInPlay } = require('../services/soccerSyncService');
-            await syncLiveScoreInPlay();
-            liveMatches = await SoccerMatch.find(liveFilter).sort({ date: 1 }).lean();
-        } catch {}
+    // 2. Ingest in-play matches from ESPN scoreboard
+    if (espnScoreboard && Array.isArray(espnScoreboard.events)) {
+        for (const ev of espnScoreboard.events) {
+            const comp = ev.competitions?.[0];
+            if (!comp) continue;
+            const state = ev.status?.type?.state;
+            if (state !== 'in') continue; // only in-play
+
+            const competitors = comp.competitors || [];
+            const homeComp = competitors.find(c => c.homeAway === 'home') || competitors[0] || {};
+            const awayComp = competitors.find(c => c.homeAway === 'away') || competitors[1] || {};
+            const targetSlug = resolveLeagueSlug(comp.altGameNote || '', comp.notes?.[0]?.headline || '', ev.uid || '') || 'intl.other';
+            const lg = leagueMap.get(targetSlug) || {};
+            const clock = ev.status?.displayClock || ev.status?.type?.detail || "45'";
+
+            candidateMatches.push({
+                id: String(ev.id),
+                uid: ev.uid || String(ev.id),
+                league: {
+                    slug: targetSlug,
+                    name: lg.name || comp.altGameNote || targetSlug,
+                    abbreviation: lg.abbreviation || targetSlug,
+                    country: lg.country || 'International',
+                    logo: lg.logo || ''
+                },
+                date: ev.date ? new Date(ev.date) : new Date(),
+                status: {
+                    state: 'in',
+                    name: 'STATUS_IN_PROGRESS',
+                    description: 'In Progress',
+                    clock: clock,
+                    detail: clock,
+                    period: ev.status?.period || 1,
+                    completed: false,
+                    isLive: true
+                },
+                home: {
+                    id: homeComp.team?.id,
+                    name: homeComp.team?.name || homeComp.team?.displayName || 'Home',
+                    displayName: homeComp.team?.displayName || homeComp.team?.name || 'Home',
+                    abbreviation: homeComp.team?.abbreviation || '',
+                    logo: sanitizeLogoUrl(homeComp.team?.logo || ''),
+                    score: parseInt(homeComp.score || 0, 10),
+                    winner: Boolean(homeComp.winner)
+                },
+                away: {
+                    id: awayComp.team?.id,
+                    name: awayComp.team?.name || awayComp.team?.displayName || 'Away',
+                    displayName: awayComp.team?.displayName || awayComp.team?.name || 'Away',
+                    abbreviation: awayComp.team?.abbreviation || '',
+                    logo: sanitizeLogoUrl(awayComp.team?.logo || ''),
+                    score: parseInt(awayComp.score || 0, 10),
+                    winner: Boolean(awayComp.winner)
+                },
+                source: { provider: 'espn', espn_id: String(ev.id), event_id: String(ev.id) }
+            });
+        }
     }
-    const storedLeagues = await SoccerLeague.find({ active: true }).lean();
-    const leagueMap = new Map(storedLeagues.map(l => [l.slug, l]));
 
-    const formattedLive = liveMatches.map(m => {
-        const lg = leagueMap.get(m.league_slug) || {};
-        return {
-            id: m.source?.event_id || String(m._id),
-            uid: m.source?.uid || '',
-            league: {
-                slug: m.league_slug,
-                name: lg.name || m.note || m.league_slug,
-                abbreviation: lg.abbreviation || m.league_slug,
-                country: lg.country || inferMatchCountry(m),
-                logo: lg.logo || ''
-            },
-            date: m.date,
-            status: {
-                state: m.status?.state || 'in',
-                name: m.status?.name || 'STATUS_IN_PROGRESS',
-                description: m.status?.description || 'In Progress',
-                clock: m.status?.clock || m.status?.detail || "45'",
-                period: m.status?.period || 1,
-                completed: false,
-                isLive: true
-            },
-            home: {
-                id: m.home?.source_id,
-                name: m.home?.name || m.home?.display_name,
-                displayName: m.home?.display_name || m.home?.name,
-                abbreviation: m.home?.abbreviation || '',
-                logo: sanitizeLogoUrl(m.home?.logo || ''),
-                score: m.home?.score ?? 0,
-                winner: m.home?.winner || false,
-                stats: m.home?.stats || {}
-            },
-            away: {
-                id: m.away?.source_id,
-                name: m.away?.name || m.away?.display_name,
-                displayName: m.away?.display_name || m.away?.name,
-                abbreviation: m.away?.abbreviation || '',
-                logo: sanitizeLogoUrl(m.away?.logo || ''),
-                score: m.away?.score ?? 0,
-                winner: m.away?.winner || false,
-                stats: m.away?.stats || {}
-            },
-            venue: m.venue || null,
-            recentEvents: m.key_events || [],
-            source: m.source || {}
-        };
-    });
+    // 3. Ingest in-play matches from MongoDB
+    if (Array.isArray(dbLiveMatches)) {
+        for (const m of dbLiveMatches) {
+            const lg = leagueMap.get(m.league_slug) || {};
+            candidateMatches.push({
+                id: m.source?.event_id || String(m._id),
+                uid: m.source?.uid || '',
+                league: {
+                    slug: m.league_slug,
+                    name: lg.name || m.note || m.league_slug,
+                    abbreviation: lg.abbreviation || m.league_slug,
+                    country: lg.country || inferMatchCountry(m),
+                    logo: lg.logo || ''
+                },
+                date: m.date,
+                status: {
+                    state: 'in',
+                    name: m.status?.name || 'STATUS_IN_PROGRESS',
+                    description: m.status?.description || 'In Progress',
+                    clock: m.status?.clock || m.status?.detail || "45'",
+                    period: m.status?.period || 1,
+                    completed: false,
+                    isLive: true
+                },
+                home: {
+                    id: m.home?.source_id,
+                    name: m.home?.name || m.home?.display_name,
+                    displayName: m.home?.display_name || m.home?.name,
+                    abbreviation: m.home?.abbreviation || '',
+                    logo: sanitizeLogoUrl(m.home?.logo || ''),
+                    score: m.home?.score ?? 0,
+                    winner: m.home?.winner || false,
+                    stats: m.home?.stats || {}
+                },
+                away: {
+                    id: m.away?.source_id,
+                    name: m.away?.name || m.away?.display_name,
+                    displayName: m.away?.display_name || m.away?.name,
+                    abbreviation: m.away?.abbreviation || '',
+                    logo: sanitizeLogoUrl(m.away?.logo || ''),
+                    score: m.away?.score ?? 0,
+                    winner: m.away?.winner || false,
+                    stats: m.away?.stats || {}
+                },
+                venue: m.venue || null,
+                recentEvents: m.key_events || [],
+                source: m.source || {}
+            });
+        }
+    }
 
-    // Multi-tier in-memory deduplication across providers with canonical scoring & live telemetry merge
+    // 4. Deduplicate across feeds into canonical matches
     const seenLiveMap = new Map();
-    for (const m of formattedLive) {
+    for (const m of candidateMatches) {
         const hName = m.home?.displayName || m.home?.name || '';
         const aName = m.away?.displayName || m.away?.name || '';
         const hNorm = normalizeTeamName(hName);
@@ -254,7 +394,6 @@ async function getFormattedLiveMatches(league, isFreeRestricted) {
         const catA = getTeamCategory(aName);
         const sig = [hNorm, aNorm].sort().join('_vs_') + '_' + (catH.isWomen || catA.isWomen ? 'w' : 'm') + '_' + (catH.isYouth || catA.isYouth ? 'y' : 's');
 
-        // Canonical score: ESPN matches carry official names, crests, and event_id; LiveScore carries ticks
         const mScore = (m.home?.logo?.includes('espncdn') ? 4 : 0) +
                        (m.source?.provider === 'espn' || (m.id && /^\d{6,}$/.test(m.id)) ? 3 : 0) +
                        (m.recentEvents && m.recentEvents.length > 0 ? 2 : 0) +
@@ -267,16 +406,12 @@ async function getFormattedLiveMatches(league, isFreeRestricted) {
             const winner = mScore > existing.score ? m : existing.match;
             const secondary = mScore > existing.score ? existing.match : m;
 
-            // Merge in-play clock, scores, detail, and LiveScore ID into winner
-            if (secondary.status?.isLive || secondary.status?.state === 'in') {
-                if (secondary.status?.clock && secondary.status.clock !== "45'") {
-                    winner.status.clock = secondary.status.clock;
-                }
-                if (secondary.status?.detail) winner.status.detail = secondary.status.detail;
-                if (secondary.status?.period) winner.status.period = secondary.status.period;
-                if (secondary.home?.score !== undefined) winner.home.score = secondary.home.score;
-                if (secondary.away?.score !== undefined) winner.away.score = secondary.away.score;
+            if (secondary.status?.clock && secondary.status.clock !== "45'") {
+                winner.status.clock = secondary.status.clock;
             }
+            if (secondary.status?.detail) winner.status.detail = secondary.status.detail;
+            if (secondary.home?.score !== undefined) winner.home.score = secondary.home.score;
+            if (secondary.away?.score !== undefined) winner.away.score = secondary.away.score;
             if (secondary.source?.livescore_id && !winner.source?.livescore_id) {
                 if (!winner.source) winner.source = {};
                 winner.source.livescore_id = secondary.source.livescore_id;
@@ -285,15 +420,77 @@ async function getFormattedLiveMatches(league, isFreeRestricted) {
                 if (!winner.source) winner.source = {};
                 winner.source.espn_id = secondary.source.espn_id;
             }
-            if ((!winner.recentEvents || winner.recentEvents.length === 0) && (secondary.recentEvents && secondary.recentEvents.length > 0)) {
-                winner.recentEvents = secondary.recentEvents;
-            }
             seenLiveMap.set(sig, { match: winner, score: Math.max(existing.score, mScore) });
         }
     }
 
     const dedupedLive = Array.from(seenLiveMap.values()).map(e => e.match);
-    return { matches: dedupedLive };
+
+    // Asynchronously update MongoDB with live in-play without blocking this return
+    setImmediate(() => {
+        try {
+            const { syncLiveScoreInPlay } = require('../services/soccerSyncService');
+            syncLiveScoreInPlay().catch(() => {});
+        } catch {}
+    });
+
+    return dedupedLive;
+}
+
+function filterLiveMatchesResponse(matches, league, isFreeRestricted) {
+    let result = matches || [];
+    if (isFreeRestricted) {
+        if (league && league !== 'all') {
+            const requestedSlug = String(league).toLowerCase();
+            if (!FREE_TIER_ALLOWED_LEAGUES.includes(requestedSlug)) {
+                return { restricted: true, requestedSlug, matches: [] };
+            }
+            result = result.filter(m => m.league?.slug === requestedSlug);
+        } else {
+            result = result.filter(m => FREE_TIER_ALLOWED_LEAGUES.includes(m.league?.slug));
+        }
+    } else if (league && league !== 'all') {
+        const requestedSlug = String(league).toLowerCase();
+        result = result.filter(m => m.league?.slug === requestedSlug);
+    }
+    return { matches: result };
+}
+
+async function getFormattedLiveMatches(league, isFreeRestricted) {
+    const now = Date.now();
+    const CACHE_TTL_MS = 15000; // 15 seconds
+
+    // If cache is fresh, filter and return immediately (sub-millisecond)
+    if (now - liveFeedMemoryCache.timestamp < CACHE_TTL_MS && liveFeedMemoryCache.matches.length > 0) {
+        return filterLiveMatchesResponse(liveFeedMemoryCache.matches, league, isFreeRestricted);
+    }
+
+    // If a fetch is already in flight, reuse it
+    if (liveFeedMemoryCache.inFlightPromise) {
+        try {
+            await liveFeedMemoryCache.inFlightPromise;
+            return filterLiveMatchesResponse(liveFeedMemoryCache.matches, league, isFreeRestricted);
+        } catch {}
+    }
+
+    // Refresh live feed
+    liveFeedMemoryCache.inFlightPromise = (async () => {
+        try {
+            const matches = await fetchFreshWorldwideLiveMatches();
+            if (matches && matches.length > 0) {
+                liveFeedMemoryCache.matches = matches;
+                liveFeedMemoryCache.timestamp = Date.now();
+            }
+        } finally {
+            liveFeedMemoryCache.inFlightPromise = null;
+        }
+    })();
+
+    try {
+        await liveFeedMemoryCache.inFlightPromise;
+    } catch {}
+
+    return filterLiveMatchesResponse(liveFeedMemoryCache.matches, league, isFreeRestricted);
 }
 
 /**
@@ -325,11 +522,12 @@ router.get(['/live', '/livescores'], async (req, res) => {
                 timestamp: new Date().toISOString(),
                 isAdFree: Boolean(req.isAdFree)
             },
-            live: result.matches
+            live: result.matches,
+            matches: result.matches
         });
     } catch (err) {
         console.error('Error fetching live scores:', err.message);
-        return res.status(500).json({ error: 'Failed to retrieve live scores: ' + err.message });
+        return res.status(500).json({ error: 'Failed to retrieve live scores: ' + err.message, live: [], matches: [] });
     }
 });
 
@@ -430,6 +628,8 @@ router.get('/fixtures', async (req, res) => {
             ];
         } else if (date) {
             filter.scoreboard_date = parseDateParam(date);
+        } else if (isQueryingToday) {
+            filter.scoreboard_date = parseDateParam('today');
         } else if (from || to) {
             filter.scoreboard_date = {};
             if (from) filter.scoreboard_date.$gte = parseDateParam(from);
@@ -462,9 +662,9 @@ router.get('/fixtures', async (req, res) => {
             filter.date = { $gte: sixHoursAgo };
             delete filter.scoreboard_date;
         } else if (status === 'scheduled') {
-            filter['status.state'] = 'pre';
+            filter['status.state'] = { $in: ['pre', 'scheduled'] };
         } else if (status === 'finished') {
-            filter['status.state'] = 'post';
+            filter['status.state'] = { $in: ['post', 'final', 'completed'] };
         }
 
         // Team search
@@ -481,61 +681,76 @@ router.get('/fixtures', async (req, res) => {
         }
 
         let [totalCount, matches, storedLeagues] = await Promise.all([
-            SoccerMatch.countDocuments(filter),
+            SoccerMatch.countDocuments(filter).maxTimeMS(3000).catch(() => 0),
             SoccerMatch.find(filter)
                 .sort({ date: 1 })
                 .skip((page - 1) * limit)
                 .limit(limit)
-                .lean(),
-            SoccerLeague.find({ active: true }).lean()
+                .lean()
+                .catch(() => []),
+            SoccerLeague.find({ active: true }).maxTimeMS(3000).lean().catch(() => [])
         ]);
 
         if (matches.length === 0 && isQueryingToday) {
-            try {
-                const { syncLiveScoreboards, syncLiveScoreInPlay } = require('../services/soccerSyncService');
-                await Promise.allSettled([syncLiveScoreboards(), syncLiveScoreInPlay()]);
-                matches = await SoccerMatch.find(filter)
-                    .sort({ date: 1 })
-                    .skip((page - 1) * limit)
-                    .limit(limit)
-                    .lean();
-                totalCount = matches.length;
-            } catch {}
+            // Asynchronously trigger background synchronization so future requests find matches in DB
+            setImmediate(() => {
+                try {
+                    const { syncLiveScoreboards, syncLiveScoreInPlay } = require('../services/soccerSyncService');
+                    Promise.allSettled([syncLiveScoreboards(), syncLiveScoreInPlay()]).catch(() => {});
+                } catch {}
+            });
+
+            // Fast fallback to in-memory live matches if available
+            if (liveFeedMemoryCache.matches && liveFeedMemoryCache.matches.length > 0) {
+                let fallback = liveFeedMemoryCache.matches;
+                if (league && league !== 'all') {
+                    const requestedSlug = String(league).toLowerCase();
+                    fallback = fallback.filter(m => (m.league?.slug || m.league_slug) === requestedSlug);
+                }
+                if (status === 'live') {
+                    fallback = fallback.filter(m => m.status?.isLive || m.status?.state === 'in');
+                }
+                if (fallback.length > 0) {
+                    matches = fallback;
+                    totalCount = fallback.length;
+                }
+            }
         }
 
-        const leagueMap = new Map(storedLeagues.map(l => [l.slug, l]));
+        const leagueMap = new Map((storedLeagues || []).map(l => [l.slug, l]));
 
         const formattedMatches = matches.map(m => {
-            const lg = leagueMap.get(m.league_slug) || {};
+            const leagueSlug = m.league_slug || m.league?.slug;
+            const lg = leagueMap.get(leagueSlug) || m.league || {};
             return {
-                id: m.source?.event_id || String(m._id),
-                uid: m.source?.uid || '',
+                id: m.source?.event_id || m.id || String(m._id),
+                uid: m.source?.uid || m.uid || '',
                 league: {
-                    slug: m.league_slug,
-                    name: lg.name || m.note || m.league_slug,
-                    abbreviation: lg.abbreviation || m.league_slug,
+                    slug: leagueSlug,
+                    name: lg.name || m.note || leagueSlug,
+                    abbreviation: lg.abbreviation || leagueSlug,
                     country: lg.country || inferMatchCountry(m),
                     logo: lg.logo || ''
                 },
-                scoreboardDate: m.scoreboard_date,
+                scoreboardDate: m.scoreboard_date || m.scoreboardDate,
                 date: m.date,
-                name: m.name,
-                shortName: m.short_name,
+                name: m.name || `${m.home?.name || m.home?.displayName || 'Home'} vs ${m.away?.name || m.away?.displayName || 'Away'}`,
+                shortName: m.short_name || m.shortName,
                 status: {
                     state: m.status?.state || 'pre',
                     name: m.status?.name || 'STATUS_SCHEDULED',
                     description: m.status?.description || 'Scheduled',
                     detail: m.status?.detail || '',
-                    shortDetail: m.status?.short_detail || '',
+                    shortDetail: m.status?.short_detail || m.status?.shortDetail || '',
                     clock: m.status?.clock || '',
                     period: m.status?.period || 0,
                     completed: Boolean(m.status?.completed),
-                    isLive: m.status?.state === 'in'
+                    isLive: m.status?.state === 'in' || Boolean(m.status?.isLive)
                 },
                 home: {
-                    id: m.home?.source_id,
-                    name: m.home?.name || m.home?.display_name,
-                    displayName: m.home?.display_name || m.home?.name,
+                    id: m.home?.source_id || m.home?.id,
+                    name: m.home?.name || m.home?.displayName,
+                    displayName: m.home?.display_name || m.home?.displayName || m.home?.name,
                     abbreviation: m.home?.abbreviation || '',
                     logo: sanitizeLogoUrl(m.home?.logo || ''),
                     score: m.home?.score,
@@ -543,9 +758,9 @@ router.get('/fixtures', async (req, res) => {
                     form: m.home?.form || ''
                 },
                 away: {
-                    id: m.away?.source_id,
-                    name: m.away?.name || m.away?.display_name,
-                    displayName: m.away?.display_name || m.away?.name,
+                    id: m.away?.source_id || m.away?.id,
+                    name: m.away?.name || m.away?.displayName,
+                    displayName: m.away?.display_name || m.away?.displayName || m.away?.name,
                     abbreviation: m.away?.abbreviation || '',
                     logo: sanitizeLogoUrl(m.away?.logo || ''),
                     score: m.away?.score,
@@ -624,7 +839,8 @@ router.get('/fixtures', async (req, res) => {
                 filters: { date, from, to, league, status, team },
                 isAdFree: Boolean(req.isAdFree)
             },
-            matches: dedupedMatches
+            matches: dedupedMatches,
+            fixtures: dedupedMatches
         });
     } catch (err) {
         console.error('Error fetching fixtures:', err.message);

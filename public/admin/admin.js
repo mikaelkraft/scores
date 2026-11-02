@@ -60,6 +60,7 @@ function switchAdminTab(tabName) {
     if (activeBtn) activeBtn.classList.add('active');
 
     if (tabName === 'keys') loadApiKeysAndUsers();
+    if (tabName === 'transactions') loadTransactions();
 }
 
 async function loadDashboardData() {
@@ -513,51 +514,182 @@ async function updateSettingsPayload(payload, successMsg) {
 }
 
 async function loadApiKeysAndUsers() {
+    const keysBody = document.getElementById('api-keys-body');
+    const usersBody = document.getElementById('users-body');
+    if (keysBody) keysBody.innerHTML = '<tr><td colspan="8" style="text-align:center;">Loading API keys...</td></tr>';
+    if (usersBody) usersBody.innerHTML = '<tr><td colspan="5" style="text-align:center;">Loading users...</td></tr>';
+
     try {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 6000);
+
         const [keysRes, usersRes] = await Promise.all([
-            fetch('/api/admin/keys', { headers: { Authorization: `Bearer ${adminToken}` } }),
-            fetch('/api/admin/users', { headers: { Authorization: `Bearer ${adminToken}` } })
+            fetch('/api/admin/keys', { headers: { Authorization: `Bearer ${adminToken}` }, signal: controller.signal }),
+            fetch('/api/admin/users', { headers: { Authorization: `Bearer ${adminToken}` }, signal: controller.signal })
         ]);
+        clearTimeout(timeoutId);
 
-        const keysData = await keysRes.json();
-        const usersData = await usersRes.json();
-
-        const keysBody = document.getElementById('api-keys-body');
-        if (keysData.keys && keysData.keys.length) {
-            keysBody.innerHTML = keysData.keys.map(k => `
-                <tr>
-                    <td><code>${escapeHtml(k.keyMasked || k.key || '••••••••')}</code></td>
-                    <td><strong>${escapeHtml(k.name || 'API Client')}</strong><br><small style="color:var(--text-muted);">${escapeHtml(k.email || '')}</small></td>
-                    <td><span style="text-transform:uppercase; font-weight:600;">${escapeHtml(k.plan || 'pro')}</span></td>
-                    <td>${k.rateLimitPerMinute}</td>
-                    <td>${k.isAdFree ? '✅ Yes' : '❌ No'}</td>
-                    <td>${k.totalRequests || 0}</td>
-                    <td>${k.expiresAt ? new Date(k.expiresAt).toLocaleDateString() : 'Never'}</td>
-                    <td>
-                        <button class="btn-secondary" style="color: #ef4444; padding: 4px 8px; font-size: 11px;" onclick="revokeKey('${k._id}')">Revoke</button>
-                    </td>
-                </tr>
-            `).join('');
-        } else {
-            keysBody.innerHTML = '<tr><td colspan="8" style="text-align:center;">No API keys issued yet.</td></tr>';
+        if (keysRes.status === 401 || keysRes.status === 403 || usersRes.status === 401 || usersRes.status === 403) {
+            alert('Your admin session has expired. Please sign in again.');
+            return handleLogout();
         }
 
-        const usersBody = document.getElementById('users-body');
-        if (usersData.users && usersData.users.length) {
-            usersBody.innerHTML = usersData.users.map(u => `
-                <tr>
-                    <td><strong>${u.email}</strong></td>
-                    <td>${u.fullName || '—'} ${u.companyName ? `(${u.companyName})` : ''}</td>
-                    <td><span style="text-transform:uppercase; font-weight:600;">${u.plan}</span></td>
-                    <td>${new Date(u.created_at).toLocaleDateString()}</td>
-                    <td>${u.role}</td>
-                </tr>
-            `).join('');
-        } else {
-            usersBody.innerHTML = '<tr><td colspan="5" style="text-align:center;">No developer accounts registered yet.</td></tr>';
+        const keysData = await keysRes.json().catch(() => ({ keys: [] }));
+        const usersData = await usersRes.json().catch(() => ({ users: [] }));
+
+        if (keysBody) {
+            if (keysData.keys && keysData.keys.length) {
+                keysBody.innerHTML = keysData.keys.map(k => `
+                    <tr>
+                        <td><code>${escapeHtml(k.keyMasked || k.key || '••••••••')}</code></td>
+                        <td><strong>${escapeHtml(k.name || 'API Client')}</strong><br><small style="color:var(--text-muted);">${escapeHtml(k.email || '')}</small></td>
+                        <td><span style="text-transform:uppercase; font-weight:600;">${escapeHtml(k.plan || 'pro')}</span></td>
+                        <td>${k.rateLimitPerMinute}</td>
+                        <td>${k.isAdFree ? '✅ Yes' : '❌ No'}</td>
+                        <td>${k.totalRequests || 0}</td>
+                        <td>${k.expiresAt ? new Date(k.expiresAt).toLocaleDateString() : 'Never'}</td>
+                        <td>
+                            <button class="btn-secondary" style="color: #ef4444; padding: 4px 8px; font-size: 11px;" onclick="revokeKey('${k._id}')">Revoke</button>
+                        </td>
+                    </tr>
+                `).join('');
+            } else if (keysData.error) {
+                keysBody.innerHTML = `<tr><td colspan="8" style="text-align:center; color:#ef4444;">${escapeHtml(keysData.error)} <button class="btn-secondary" style="margin-left:8px; padding:2px 8px; font-size:11px;" onclick="loadApiKeysAndUsers()">Retry</button></td></tr>`;
+            } else {
+                keysBody.innerHTML = '<tr><td colspan="8" style="text-align:center;">No API keys issued yet.</td></tr>';
+            }
+        }
+
+        if (usersBody) {
+            if (usersData.users && usersData.users.length) {
+                usersBody.innerHTML = usersData.users.map(u => `
+                    <tr>
+                        <td><strong>${escapeHtml(u.email || '')}</strong></td>
+                        <td>${escapeHtml(u.fullName || '—')} ${u.companyName ? `(${escapeHtml(u.companyName)})` : ''}</td>
+                        <td><span style="text-transform:uppercase; font-weight:600;">${escapeHtml(u.plan || 'free')}</span></td>
+                        <td>${new Date(u.createdAt || u.created_at || Date.now()).toLocaleDateString()}</td>
+                        <td>${escapeHtml(u.role || 'user')}</td>
+                    </tr>
+                `).join('');
+            } else if (usersData.error) {
+                usersBody.innerHTML = `<tr><td colspan="5" style="text-align:center; color:#ef4444;">${escapeHtml(usersData.error)} <button class="btn-secondary" style="margin-left:8px; padding:2px 8px; font-size:11px;" onclick="loadApiKeysAndUsers()">Retry</button></td></tr>`;
+            } else {
+                usersBody.innerHTML = '<tr><td colspan="5" style="text-align:center;">No developer accounts registered yet.</td></tr>';
+            }
         }
     } catch (err) {
         console.error('Failed to load keys & users:', err);
+        if (keysBody) {
+            keysBody.innerHTML = `<tr><td colspan="8" style="text-align:center; color:#ef4444;">Failed to load API keys: ${escapeHtml(err.message || 'Request timeout')} <button class="btn-secondary" style="margin-left:8px; padding:2px 8px; font-size:11px;" onclick="loadApiKeysAndUsers()">Retry</button></td></tr>`;
+        }
+        if (usersBody) {
+            usersBody.innerHTML = `<tr><td colspan="5" style="text-align:center; color:#ef4444;">Failed to load developers: ${escapeHtml(err.message || 'Request timeout')} <button class="btn-secondary" style="margin-left:8px; padding:2px 8px; font-size:11px;" onclick="loadApiKeysAndUsers()">Retry</button></td></tr>`;
+        }
+    }
+}
+
+let currentTxPage = 1;
+let currentTxStatus = 'all';
+let currentTxSearch = '';
+
+async function loadTransactions(page = 1) {
+    currentTxPage = page;
+    const body = document.getElementById('tx-management-body');
+    if (body) body.innerHTML = '<tr><td colspan="8" style="text-align:center;">Loading transactions...</td></tr>';
+
+    try {
+        const statusSelect = document.getElementById('tx-filter-status');
+        const searchInput = document.getElementById('tx-search-input');
+        if (statusSelect) currentTxStatus = statusSelect.value;
+        if (searchInput) currentTxSearch = searchInput.value.trim();
+
+        let url = `/api/admin/transactions?page=${page}&limit=25`;
+        if (currentTxStatus && currentTxStatus !== 'all') url += `&status=${encodeURIComponent(currentTxStatus)}`;
+        if (currentTxSearch) url += `&search=${encodeURIComponent(currentTxSearch)}`;
+
+        const res = await fetch(url, { headers: { Authorization: `Bearer ${adminToken}` } });
+        if (res.status === 401 || res.status === 403) return handleLogout();
+
+        const data = await res.json();
+        const summary = data.summary || {};
+        if (document.getElementById('tx-summary-volume')) document.getElementById('tx-summary-volume').textContent = `$${(summary.totalVolume || 0).toLocaleString()}`;
+        if (document.getElementById('tx-summary-successful')) document.getElementById('tx-summary-successful').textContent = summary.successfulCount || 0;
+        if (document.getElementById('tx-summary-pending')) document.getElementById('tx-summary-pending').textContent = summary.pendingCount || 0;
+        if (document.getElementById('tx-summary-failed')) document.getElementById('tx-summary-failed').textContent = summary.failedCount || 0;
+
+        if (body) {
+            const list = data.transactions || [];
+            if (list.length) {
+                body.innerHTML = list.map(tx => {
+                    const statusColor = tx.status === 'successful' ? '#16a34a' : (tx.status === 'pending' ? '#ea580c' : '#ef4444');
+                    const statusBg = tx.status === 'successful' ? 'rgba(22, 163, 74, 0.1)' : (tx.status === 'pending' ? 'rgba(234, 88, 12, 0.1)' : 'rgba(239, 68, 68, 0.1)');
+                    const hasKey = Boolean(tx.api_key_issued);
+                    return `
+                        <tr>
+                            <td><span style="font-size:12px; color:var(--text-muted);">${new Date(tx.createdAt || tx.created_at || Date.now()).toLocaleString()}</span></td>
+                            <td><code>${escapeHtml(tx.tx_ref || '')}</code></td>
+                            <td><strong>${escapeHtml(tx.customer_email || '')}</strong>${tx.customer_name ? `<br><small style="color:var(--text-muted);">${escapeHtml(tx.customer_name)}</small>` : ''}</td>
+                            <td><span style="text-transform:uppercase; font-weight:700; font-size:11px; padding:2px 6px; border-radius:4px; background:var(--bg-canvas); border:1px solid var(--border-subtle);">${escapeHtml(tx.plan || 'starter')}</span></td>
+                            <td><strong>$${tx.amount} ${escapeHtml(tx.currency || 'USD')}</strong><br><small style="color:var(--text-muted);">${escapeHtml(tx.gateway || 'direct')}</small></td>
+                            <td><span style="color:${statusColor}; background:${statusBg}; padding:3px 8px; border-radius:12px; font-weight:700; font-size:11px; text-transform:uppercase;">${escapeHtml(tx.status || 'pending')}</span></td>
+                            <td>${hasKey ? `<code style="font-size:10px;">${escapeHtml(tx.api_key_issued.slice(0, 14))}...</code>` : '<span style="color:var(--text-muted); font-size:11px;">None</span>'}</td>
+                            <td>
+                                <div style="display:flex; gap:6px; flex-wrap:wrap;">
+                                    ${tx.status !== 'successful' ? `<button class="btn-primary" style="padding:3px 8px; font-size:11px;" onclick="updateTxStatus('${tx._id}', 'successful')">Approve</button>` : ''}
+                                    ${!hasKey ? `<button class="btn-secondary" style="padding:3px 8px; font-size:11px;" onclick="issueTxKey('${tx._id}')">Issue Key</button>` : ''}
+                                    ${tx.status !== 'cancelled' ? `<button class="btn-secondary" style="padding:3px 8px; font-size:11px; color:#ef4444;" onclick="updateTxStatus('${tx._id}', 'cancelled')">Cancel</button>` : ''}
+                                </div>
+                            </td>
+                        </tr>
+                    `;
+                }).join('');
+            } else {
+                body.innerHTML = '<tr><td colspan="8" style="text-align:center; padding:24px;">No transactions found matching criteria.</td></tr>';
+            }
+        }
+    } catch (err) {
+        if (body) body.innerHTML = `<tr><td colspan="8" style="text-align:center; color:#ef4444;">Error loading transactions: ${escapeHtml(err.message)} <button class="btn-secondary" onclick="loadTransactions()">Retry</button></td></tr>`;
+    }
+}
+
+async function updateTxStatus(id, newStatus) {
+    if (!confirm(`Are you sure you want to change transaction status to "${newStatus}"?`)) return;
+    try {
+        const res = await fetch(`/api/admin/transactions/${id}/status`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${adminToken}` },
+            body: JSON.stringify({ status: newStatus })
+        });
+        const data = await res.json();
+        if (res.ok) {
+            alert(data.message || 'Transaction updated.');
+            loadTransactions(currentTxPage);
+            loadDashboardData();
+        } else {
+            alert(data.error || 'Failed to update transaction.');
+        }
+    } catch (err) {
+        alert('Network error while updating transaction.');
+    }
+}
+
+async function issueTxKey(id) {
+    if (!confirm('Generate and bind a new API key for this transaction?')) return;
+    try {
+        const res = await fetch(`/api/admin/transactions/${id}/issue-key`, {
+            method: 'POST',
+            headers: { Authorization: `Bearer ${adminToken}` }
+        });
+        const data = await res.json();
+        if (res.ok) {
+            alert(`Key Generated Successfully:\n${data.key}\n\n(Key bound to customer account)`);
+            loadTransactions(currentTxPage);
+            loadApiKeysAndUsers();
+        } else {
+            alert(data.error || 'Failed to issue key.');
+        }
+    } catch (err) {
+        alert('Network error while issuing key.');
     }
 }
 

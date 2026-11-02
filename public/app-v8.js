@@ -320,8 +320,8 @@
             });
             if (state.selectedLeagueSlug === 'live') {
                 state.selectedLeagueSlug = 'all';
-                const leaguePills = document.querySelectorAll('.quick-league-pill');
-                leaguePills.forEach(p => p.classList.toggle('active', p.dataset.slug === 'all'));
+                renderQuickLeaguePills('all');
+                renderDesktopSidebar('all');
             }
         }
 
@@ -653,12 +653,13 @@
         const logoUrl = safeUrl(league.logo);
         const countryCode = getLeagueCountryCode(league);
         const flagFallbackUrl = countryCode ? `https://flagcdn.com/w40/${countryCode}.png` : '';
-        const emojiFallback = LEAGUE_FLAGS[slug] || (slug.startsWith('uefa') || slug.startsWith('caf') || slug.startsWith('fifa') || slug.startsWith('conmebol') ? '🏆' : '⚽');
+        const isContinental = slug.startsWith('uefa') || slug.startsWith('caf') || slug.startsWith('fifa') || slug.startsWith('conmebol') || slug.startsWith('afc') || (league.name && /champions|cup|afc|uefa|caf|copa/i.test(league.name));
+        const emojiFallback = LEAGUE_FLAGS[slug] || (isContinental ? '🏆' : '⚽');
 
         if (logoUrl) {
             return `
                 <span class="${className}" style="width:${size}px; height:${size}px; display:inline-flex; align-items:center; justify-content:center; flex-shrink:0;">
-                    <img src="${logoUrl}" alt="${name}" loading="lazy" style="width:100%; height:100%; object-fit:contain; border-radius:3px;" onerror="this.onerror=function(){this.style.display='none';if(this.nextElementSibling)this.nextElementSibling.style.display='inline-flex';}; ${flagFallbackUrl ? `this.src='${flagFallbackUrl}'; this.style.objectFit='cover';` : `this.style.display='none'; if(this.nextElementSibling) this.nextElementSibling.style.display='inline-flex';`}">
+                    <img src="${logoUrl}" alt="${name}" loading="lazy" style="width:100%; height:100%; object-fit:contain; border-radius:3px;" onerror="this.onerror=function(){this.style.display='none';if(this.nextElementSibling)this.nextElementSibling.style.display='inline-flex';}; if('${flagFallbackUrl}'){this.src='${flagFallbackUrl}'; this.style.objectFit='cover';} else {this.style.display='none'; if(this.nextElementSibling) this.nextElementSibling.style.display='inline-flex';}">
                     <span class="avatar-fallback" style="display:none; font-size:${Math.round(size * 0.8)}px; line-height:1;">${emojiFallback}</span>
                 </span>
             `;
@@ -984,7 +985,7 @@
 
         try {
             const data = await fetchJson('/api/v1/football/live');
-            const liveMatches = data.live || [];
+            const liveMatches = data.live || data.matches || [];
 
             // Deduplicate live matches globally across all feeds / providers
             const dedupedLive = deduplicateMatchesList(liveMatches);
@@ -1220,32 +1221,58 @@
                 url += `&status=${encodeURIComponent(statusParam)}`;
             }
 
-            const data = await fetchJson(url);
-            let matches = data.matches || [];
+            let matches = [];
 
             if (isFavorites) {
-                matches = matches.filter(m => state.pinnedMatches.includes(String(m.id)));
+                // Fetch fixtures and live matches in parallel so pinned matches from both feeds are found
+                const [fixturesRes, liveRes] = await Promise.allSettled([
+                    fetchJson(url),
+                    fetchJson('/api/v1/football/live')
+                ]);
+                const fixturesMatches = fixturesRes.status === 'fulfilled' ? (fixturesRes.value?.matches || fixturesRes.value?.fixtures || []) : [];
+                const liveMatches = liveRes.status === 'fulfilled' ? (liveRes.value?.live || liveRes.value?.matches || []) : [];
+                const allAvailable = deduplicateMatchesList([...liveMatches, ...fixturesMatches]);
+                matches = allAvailable.filter(m => state.pinnedMatches.includes(String(m.id)));
+
                 if (!matches.length) {
                     if (elements['fixtures-empty']) {
                         elements['fixtures-empty'].hidden = false;
                         elements['fixtures-empty'].innerHTML = `
-                            <span class="empty-icon">⭐</span>
-                            <p style="font-size:15px; font-weight:700; color:var(--text-main); margin-bottom:6px;">No Pinned Games</p>
-                            <p style="font-size:13px; color:var(--text-muted); margin:0;">Click the ★ star icon next to any match to pin it here to My Games for instant tracking.</p>
+                            <div class="empty-state-card" style="text-align:center; padding:28px 16px;">
+                                <span class="empty-icon" style="font-size:32px; display:block; margin-bottom:10px;">⭐</span>
+                                <p style="font-size:15px; font-weight:700; color:var(--text-main); margin-bottom:6px;">No Pinned Games</p>
+                                <p style="font-size:13px; color:var(--text-muted); margin:0 0 16px;">Click the ★ star icon next to any match in All or Live view to pin it to My Games for instant tracking.</p>
+                                <button class="btn-primary" type="button" id="fav-view-all-btn" style="display:inline-flex; align-items:center; gap:6px; padding:8px 18px; border-radius:6px; font-size:13px; font-weight:600; cursor:pointer;">
+                                    <span>🌐</span> <span>Browse All Games</span>
+                                </button>
+                            </div>
                         `;
+                        const browseBtn = document.getElementById('fav-view-all-btn');
+                        if (browseBtn) {
+                            browseBtn.addEventListener('click', (e) => {
+                                e.preventDefault();
+                                selectAllLeagues();
+                            });
+                        }
                     }
+                    if (elements['fixture-count']) elements['fixture-count'].textContent = '0';
                     if (elements['fixtures-list']) elements['fixtures-list'].innerHTML = '';
                     return;
                 }
+            } else {
+                const data = await fetchJson(url);
+                matches = data.matches || data.fixtures || [];
             }
 
             if (!matches.length) {
-                // If today's scheduled match query returned empty, query live matches before giving up
-                if (dateParam === 'today' && !isFavorites) {
+                // ONLY fall back to checking live matches if user was viewing today on ALL view
+                // NEVER fall back if user explicitly clicked 'finished' or 'scheduled'
+                if (dateParam === 'today' && !isFavorites && statusParam === 'all') {
                     try {
                         const liveData = await fetchJson('/api/v1/football/live');
-                        if (liveData?.matches?.length) {
-                            state.liveMatchCount = liveData.matches.length;
+                        const liveList = liveData?.live || liveData?.matches || [];
+                        if (liveList.length) {
+                            state.liveMatchCount = liveList.length;
                             await loadLiveMatches({ background });
                             return;
                         }
@@ -1421,12 +1448,32 @@
                 const dayLabel = (!state.selectedDayOffset || state.selectedDayOffset === 0)
                     ? "today"
                     : (state.selectedDayOffset === 1 ? "tomorrow" : state.selectedDayOffset === -1 ? "yesterday" : "on this date");
+
+                let emptyMsg = `There are no games ${dayLabel}.`;
+                let emptySub = "Check Tomorrow or pick an upcoming date to browse world match schedules.";
+                let emptyIcon = "⚽";
+
+                if (state.currentStatus === 'finished') {
+                    emptyIcon = "🏁";
+                    emptyMsg = `No finished games ${dayLabel}.`;
+                    emptySub = (!state.selectedDayOffset || state.selectedDayOffset === 0)
+                        ? "Completed results will appear here as games finish. You can also view Yesterday's finished scores."
+                        : "No completed match results found for this date.";
+                } else if (state.currentStatus === 'scheduled') {
+                    emptyIcon = "📅";
+                    emptyMsg = `No scheduled kickoffs ${dayLabel}.`;
+                    emptySub = "Check upcoming dates on the date ribbon above to browse match schedules.";
+                }
+
                 elements['fixtures-empty'].innerHTML = `
-                    <span class="empty-icon">⚽</span>
-                    <p style="font-size:15px; font-weight:600; color:var(--text-main); margin-bottom:6px;">There's no games ${dayLabel}.</p>
-                    <p style="font-size:13px; color:var(--text-muted); margin:0;">Check Tomorrow or pick an upcoming date to browse world match schedules.</p>
+                    <div class="empty-state-card" style="text-align:center; padding:28px 16px;">
+                        <span class="empty-icon" style="font-size:32px; display:block; margin-bottom:10px;">${emptyIcon}</span>
+                        <p style="font-size:15px; font-weight:700; color:var(--text-main); margin-bottom:6px;">${emptyMsg}</p>
+                        <p style="font-size:13px; color:var(--text-muted); margin:0;">${emptySub}</p>
+                    </div>
                 `;
             }
+            if (elements['fixture-count']) elements['fixture-count'].textContent = '0';
             elements['fixtures-list'].innerHTML = '';
         } else {
             if (elements['fixtures-empty']) elements['fixtures-empty'].hidden = true;
@@ -2993,12 +3040,56 @@
                 if (status === 'live') {
                     selectLiveMatches();
                 } else if (status === 'favorites') {
-                    state.selectedLeagueSlug = 'all';
+                    if (state.selectedLeagueSlug === 'live') {
+                        state.selectedLeagueSlug = 'all';
+                        renderQuickLeaguePills('all');
+                        renderDesktopSidebar('all');
+                    }
+                    if (elements['dashboard-country']) elements['dashboard-country'].textContent = 'Favorites';
+                    if (elements['dashboard-title']) elements['dashboard-title'].textContent = '⭐ My Pinned Games';
                     loadAllLeagueFixtures({ favoritesOnly: true });
-                } else if (state.selectedLeagueSlug === 'all') {
-                    loadAllLeagueFixtures();
-                } else if (state.league) {
-                    loadFixtures();
+                } else if (status === 'finished') {
+                    if (state.selectedLeagueSlug === 'live') {
+                        state.selectedLeagueSlug = 'all';
+                        renderQuickLeaguePills('all');
+                        renderDesktopSidebar('all');
+                    }
+                    if (elements['dashboard-country']) elements['dashboard-country'].textContent = state.league ? localCountryName(state.league.country) : 'World Football';
+                    if (elements['dashboard-title']) elements['dashboard-title'].textContent = state.league ? `${state.league.name} · Finished` : '🏁 Finished Matches';
+                    if (state.league && state.selectedLeagueSlug !== 'all') {
+                        loadFixtures();
+                    } else {
+                        state.selectedLeagueSlug = 'all';
+                        loadAllLeagueFixtures();
+                    }
+                } else if (status === 'scheduled') {
+                    if (state.selectedLeagueSlug === 'live') {
+                        state.selectedLeagueSlug = 'all';
+                        renderQuickLeaguePills('all');
+                        renderDesktopSidebar('all');
+                    }
+                    if (elements['dashboard-country']) elements['dashboard-country'].textContent = state.league ? localCountryName(state.league.country) : 'World Football';
+                    if (elements['dashboard-title']) elements['dashboard-title'].textContent = state.league ? `${state.league.name} · Scheduled` : '📅 Scheduled Matches';
+                    if (state.league && state.selectedLeagueSlug !== 'all') {
+                        loadFixtures();
+                    } else {
+                        state.selectedLeagueSlug = 'all';
+                        loadAllLeagueFixtures();
+                    }
+                } else {
+                    // status === 'all'
+                    if (state.selectedLeagueSlug === 'live') {
+                        selectAllLeagues();
+                    } else {
+                        if (elements['dashboard-country']) elements['dashboard-country'].textContent = state.league ? localCountryName(state.league.country) : 'World Football';
+                        if (elements['dashboard-title']) elements['dashboard-title'].textContent = state.league ? state.league.name : 'All Live Matches & Fixtures';
+                        if (state.league && state.selectedLeagueSlug !== 'all') {
+                            loadFixtures();
+                        } else {
+                            state.selectedLeagueSlug = 'all';
+                            loadAllLeagueFixtures();
+                        }
+                    }
                 }
             });
         });
@@ -3182,7 +3273,7 @@
         async function syncLiveScores() {
             try {
                 const res = await fetchJson('/api/v1/football/live');
-                const liveMatches = res.live || [];
+                const liveMatches = res.live || res.matches || [];
                 state.liveMatchCount = liveMatches.length;
 
                 const badge = document.getElementById('live-count-badge');

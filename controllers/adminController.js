@@ -4,9 +4,11 @@ const jwt = require('jsonwebtoken');
 const path = require('path');
 const fs = require('fs');
 const multer = require('multer');
+const mongoose = require('../database');
 
 const { config } = require('../config/env');
 const { requireAdmin, JWT_SECRET } = require('../middleware/auth');
+const { runInTransaction } = require('../services/transactionService');
 const SiteSetting = require('../models/siteSetting');
 const User = require('../models/user');
 const ApiKey = require('../models/apiKey');
@@ -170,10 +172,17 @@ router.post('/api/admin/upload-logo', requireAdmin, upload.single('logo'), async
  */
 router.get('/api/admin/users', requireAdmin, async (req, res) => {
     try {
-        const users = await User.find().sort({ createdAt: -1 }).lean();
-        return res.json({ users });
+        const users = await User.find()
+            .maxTimeMS(4000)
+            .sort({ createdAt: -1 })
+            .lean()
+            .catch(err => {
+                console.warn('[Admin] User fetch warning:', err.message);
+                return [];
+            });
+        return res.json({ users: users || [] });
     } catch (err) {
-        return res.status(500).json({ error: 'Failed to load users.' });
+        return res.status(500).json({ error: 'Failed to load users: ' + err.message, users: [] });
     }
 });
 
@@ -182,9 +191,16 @@ router.get('/api/admin/users', requireAdmin, async (req, res) => {
  */
 router.get('/api/admin/keys', requireAdmin, async (req, res) => {
     try {
-        const keys = await ApiKey.find().sort({ createdAt: -1 }).lean();
+        const keys = await ApiKey.find()
+            .maxTimeMS(4000)
+            .sort({ createdAt: -1 })
+            .lean()
+            .catch(err => {
+                console.warn('[Admin] ApiKey fetch warning:', err.message);
+                return [];
+            });
         const masterKey = config.NORRA_INTERNAL_API_KEY || 'norra_live_master_internal_access_2026';
-        const sanitizedKeys = keys.map(k => ({
+        const sanitizedKeys = (keys || []).map(k => ({
             ...k,
             rawKey: undefined,
             keyMasked: k.key ? `norra_${k.key.slice(6, 10)}••••••••••••••••${k.key.slice(-4)}` : '',
@@ -192,7 +208,7 @@ router.get('/api/admin/keys', requireAdmin, async (req, res) => {
         }));
         return res.json({ keys: sanitizedKeys, norraMasterKey: masterKey });
     } catch (err) {
-        return res.status(500).json({ error: 'Failed to load API keys.' });
+        return res.status(500).json({ error: 'Failed to load API keys: ' + err.message, keys: [] });
     }
 });
 
@@ -291,6 +307,195 @@ router.delete('/api/admin/keys/:id', requireAdmin, async (req, res) => {
         return res.json({ status: 'success', message: 'API key revoked.' });
     } catch (err) {
         return res.status(500).json({ error: 'Failed to revoke API key.' });
+    }
+});
+
+/**
+ * GET /api/admin/transactions
+ * Lists all subscription transactions with optional filtering by status and search.
+ */
+router.get('/api/admin/transactions', requireAdmin, async (req, res) => {
+    try {
+        const page = Math.max(1, parseInt(req.query.page, 10) || 1);
+        const limit = Math.min(100, Math.max(1, parseInt(req.query.limit, 10) || 30));
+        const status = req.query.status && req.query.status !== 'all' ? req.query.status : null;
+        const search = req.query.search ? String(req.query.search).trim() : null;
+
+        const filter = {};
+        if (status) {
+            filter.status = status;
+        }
+        if (search) {
+            const rx = new RegExp(search, 'i');
+            filter.$or = [
+                { tx_ref: rx },
+                { customer_email: rx },
+                { customer_name: rx },
+                { gateway_ref: rx },
+                { plan: rx }
+            ];
+        }
+
+        const [totalCount, transactions, stats] = await Promise.all([
+            Transaction.countDocuments(filter).maxTimeMS(4000).catch(() => 0),
+            Transaction.find(filter)
+                .maxTimeMS(4000)
+                .sort({ createdAt: -1 })
+                .skip((page - 1) * limit)
+                .limit(limit)
+                .populate('user', 'email fullName companyName plan')
+                .lean()
+                .catch(() => []),
+            Transaction.aggregate([
+                {
+                    $group: {
+                        _id: '$status',
+                        count: { $sum: 1 },
+                        totalAmount: { $sum: '$amount' }
+                    }
+                }
+            ]).catch(() => [])
+        ]);
+
+        let totalVolume = 0;
+        let successfulCount = 0;
+        let pendingCount = 0;
+        let failedCount = 0;
+
+        for (const s of (stats || [])) {
+            if (s._id === 'successful') {
+                totalVolume = s.totalAmount || 0;
+                successfulCount = s.count || 0;
+            } else if (s._id === 'pending') {
+                pendingCount = s.count || 0;
+            } else {
+                failedCount += s.count || 0;
+            }
+        }
+
+        return res.json({
+            transactions: transactions || [],
+            totalCount,
+            page,
+            totalPages: Math.ceil(totalCount / limit) || 1,
+            summary: {
+                totalVolume: Math.round(totalVolume * 100) / 100,
+                successfulCount,
+                pendingCount,
+                failedCount
+            }
+        });
+    } catch (err) {
+        return res.status(500).json({ error: 'Failed to load transactions: ' + err.message, transactions: [] });
+    }
+});
+
+/**
+ * PUT /api/admin/transactions/:id/status
+ * Manually updates transaction status using transaction management with atomic plan upgrade.
+ */
+router.put('/api/admin/transactions/:id/status', requireAdmin, async (req, res) => {
+    try {
+        const { status, note } = req.body;
+        if (!['successful', 'pending', 'failed', 'cancelled'].includes(status)) {
+            return res.status(400).json({ error: 'Invalid transaction status.' });
+        }
+
+        const tx = await Transaction.findById(req.params.id);
+        if (!tx) {
+            return res.status(404).json({ error: 'Transaction not found.' });
+        }
+
+        const prevStatus = tx.status;
+        tx.status = status;
+
+        await runInTransaction(async (session) => {
+            const opts = session ? { session } : {};
+            await tx.save(opts);
+
+            // If marked successful and was not successful before, upgrade user and generate key
+            if (status === 'successful' && prevStatus !== 'successful') {
+                const targetEmail = tx.customer_email;
+                if (targetEmail) {
+                    const user = session 
+                        ? await User.findOne({ email: targetEmail }).session(session)
+                        : await User.findOne({ email: targetEmail });
+                    if (user) {
+                        user.plan = tx.plan;
+                        await user.save(opts);
+                    }
+
+                    // Check if an API key needs to be issued
+                    if (!tx.api_key_issued) {
+                        const crypto = require('crypto');
+                        const rawKey = `norra_${tx.plan}_${crypto.randomBytes(16).toString('hex')}`;
+                        const rateLimits = { starter: 120, pro: 300, whitelabel: 1200 };
+                        const limit = rateLimits[tx.plan] || 120;
+
+                        const newKey = new ApiKey({
+                            key: rawKey,
+                            name: `${tx.customer_name || targetEmail} (${tx.plan.toUpperCase()})`,
+                            email: targetEmail,
+                            plan: tx.plan,
+                            rateLimitPerMinute: limit,
+                            isAdFree: tx.plan === 'pro' || tx.plan === 'whitelabel',
+                            active: true,
+                            expiresAt: new Date(Date.now() + 365 * 24 * 3600 * 1000)
+                        });
+
+                        await newKey.save(opts);
+                        tx.api_key_issued = rawKey;
+                        await tx.save(opts);
+                    }
+                }
+            }
+        });
+
+        return res.json({ status: 'success', message: `Transaction status updated to ${status}.`, transaction: tx });
+    } catch (err) {
+        return res.status(500).json({ error: 'Failed to update transaction status: ' + err.message });
+    }
+});
+
+/**
+ * POST /api/admin/transactions/:id/issue-key
+ * Manually issues an API key tied to this transaction.
+ */
+router.post('/api/admin/transactions/:id/issue-key', requireAdmin, async (req, res) => {
+    try {
+        const tx = await Transaction.findById(req.params.id);
+        if (!tx) {
+            return res.status(404).json({ error: 'Transaction not found.' });
+        }
+
+        const crypto = require('crypto');
+        const rawKey = `norra_${tx.plan}_${crypto.randomBytes(16).toString('hex')}`;
+        const rateLimits = { starter: 120, pro: 300, whitelabel: 1200 };
+        const limit = rateLimits[tx.plan] || 120;
+
+        const newKey = new ApiKey({
+            key: rawKey,
+            name: `${tx.customer_name || tx.customer_email} (${tx.plan.toUpperCase()})`,
+            email: tx.customer_email,
+            plan: tx.plan,
+            rateLimitPerMinute: limit,
+            isAdFree: tx.plan === 'pro' || tx.plan === 'whitelabel',
+            active: true,
+            expiresAt: new Date(Date.now() + 365 * 24 * 3600 * 1000)
+        });
+
+        await newKey.save();
+        tx.api_key_issued = rawKey;
+        await tx.save();
+
+        return res.json({
+            status: 'success',
+            message: 'API key successfully generated and linked to transaction.',
+            key: rawKey,
+            keyMasked: `norra_${rawKey.slice(6, 10)}••••••••••••••••${rawKey.slice(-4)}`
+        });
+    } catch (err) {
+        return res.status(500).json({ error: 'Failed to issue key: ' + err.message });
     }
 });
 
