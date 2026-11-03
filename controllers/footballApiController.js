@@ -853,6 +853,11 @@ router.get('/fixtures', async (req, res) => {
         const formattedMatches = matches.map(m => {
             const leagueSlug = m.league_slug || m.league?.slug;
             const lg = leagueMap.get(leagueSlug) || m.league || {};
+            const isLive = m.status?.state === 'in' || Boolean(m.status?.isLive);
+            const concreteClock = formatMatchClock(m.status);
+            const displayClock = isConcreteClock(concreteClock) ? concreteClock : (isLive ? 'Live' : '');
+            const detail = isConcreteClock(m.status?.detail) ? m.status.detail : (displayClock || (isLive ? 'Live' : (m.status?.completed ? 'FT' : 'Scheduled')));
+
             return {
                 id: m.source?.event_id || m.id || String(m._id),
                 uid: m.source?.uid || m.uid || '',
@@ -867,11 +872,6 @@ router.get('/fixtures', async (req, res) => {
                 date: m.date,
                 name: m.name || `${m.home?.name || m.home?.displayName || 'Home'} vs ${m.away?.name || m.away?.displayName || 'Away'}`,
                 shortName: m.short_name || m.shortName,
-                const isLive = m.status?.state === 'in' || Boolean(m.status?.isLive);
-                const concreteClock = formatMatchClock(m.status);
-                const displayClock = isConcreteClock(concreteClock) ? concreteClock : (isLive ? 'Live' : '');
-                const detail = isConcreteClock(m.status?.detail) ? m.status.detail : (displayClock || (isLive ? 'Live' : (m.status?.completed ? 'FT' : 'Scheduled')));
-
                 status: {
                     state: m.status?.state || (isLive ? 'in' : 'pre'),
                     name: m.status?.name || (isLive ? 'STATUS_IN_PROGRESS' : 'STATUS_SCHEDULED'),
