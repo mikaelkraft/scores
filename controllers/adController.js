@@ -33,6 +33,8 @@ router.get(['/api/v1/ads', '/api/ads/active', '/api/v1/settings/public'], option
                     footer: { enabled: false }
                 },
                 infeedSettings: settings.infeedSettings || {},
+                bookingSettings: settings.bookingSettings || { hookEnabled: true },
+                plans: settings.plans || {},
                 bookiePromos: [],
                 bookmakerPromos: [],
                 socialLinks: settings.socialLinks || {}
@@ -57,6 +59,8 @@ router.get(['/api/v1/ads', '/api/ads/active', '/api/v1/settings/public'], option
                 footer: settings.ads?.footer || { enabled: false }
             },
             infeedSettings: settings.infeedSettings || {},
+            bookingSettings: settings.bookingSettings || { hookEnabled: true },
+            plans: settings.plans || {},
             bookiePromos: activePromos,
             bookmakerPromos: activePromos.map(p => ({
                 provider: p.bookmaker,

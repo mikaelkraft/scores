@@ -175,7 +175,20 @@
     ].map(id => [id, document.getElementById(id)]));
 
     function escapeHtml(value) {
-        return String(value ?? '')
+        if (value === null || value === undefined) return '';
+        if (typeof value === 'object') {
+            if (value.displayName) value = value.displayName;
+            else if (value.fullName) value = value.fullName;
+            else if (value.shortName) value = value.shortName;
+            else if (value.text) value = value.text;
+            else if (value.displayValue) value = value.displayValue;
+            else if (value.description) value = value.description;
+            else if (value.name) value = value.name;
+            else return '';
+        }
+        let str = String(value);
+        if (str.includes('[object Object]')) return '';
+        return str
             .replace(/&/g, '&amp;')
             .replace(/</g, '&lt;')
             .replace(/>/g, '&gt;')
@@ -366,6 +379,9 @@
         let logo = safeUrl(team?.logo || team?.logos?.[0]?.href);
         if (logo.includes('static.livescore.com/')) {
             logo = logo.replace('static.livescore.com/', 'storage.livescore.com/images/team/medium/');
+        }
+        if (logo && logo.startsWith('http')) {
+            logo = `/cdn/crest?url=${encodeURIComponent(logo)}`;
         }
         const abbreviation = escapeHtml(team?.abbreviation || 'FC');
         return `<span class="${className}">${logo ? `<img src="${logo}" alt="${escapeHtml(team?.displayName || abbreviation)}" loading="lazy" onerror="this.onerror=null;this.style.display='none';this.parentElement.textContent='${abbreviation}';">` : abbreviation}</span>`;
@@ -1259,6 +1275,15 @@
                     if (elements['fixtures-list']) elements['fixtures-list'].innerHTML = '';
                     return;
                 }
+            } else if (dateParam === 'today' && (statusParam === 'all' || !statusParam)) {
+                // Fetch fixtures and live matches in parallel so All includes both live and scheduled/finished games!
+                const [fixturesRes, liveRes] = await Promise.allSettled([
+                    fetchJson(url),
+                    fetchJson('/api/v1/football/live')
+                ]);
+                const fixturesMatches = fixturesRes.status === 'fulfilled' ? (fixturesRes.value?.matches || fixturesRes.value?.fixtures || []) : [];
+                const liveMatches = liveRes.status === 'fulfilled' ? (liveRes.value?.live || liveRes.value?.matches || []) : [];
+                matches = deduplicateMatchesList([...liveMatches, ...fixturesMatches]);
             } else {
                 const data = await fetchJson(url);
                 matches = data.matches || data.fixtures || [];
@@ -2051,61 +2076,12 @@
         let awayStats = summary.boxscore?.teams?.find(item => item.homeAway === 'away' || item.id === 'away' || String(item.team?.id) === String(away.team?.id) || item.displayOrder === 2)?.statistics || [];
         const events = matchTimeline(summary, plays, home, away);
 
-        // When a match has not started (scheduled / pre-match), do NOT synthesize fake figures!
-        // Leave it all empty (0) and fetch live statistics once in-play
+        // Do NOT synthesize fake figures! Keep stats empty if not yet recorded by the provider.
         const isPreMatch = status.state === 'scheduled' || (!status.isLive && status.state !== 'live' && status.state !== 'finished');
-        if (isPreMatch) {
-            homeStats = [];
-            awayStats = [];
-            if (summary.boxscore) {
-                summary.boxscore.isDerivedTelemetry = false;
-            }
-        } else if ((!homeStats.length && !awayStats.length) || summary.boxscore?.isDerivedTelemetry) {
-            const hScore = Number(home.score ?? 0);
-            const aScore = Number(away.score ?? 0);
-            let hCards = 0, aCards = 0, hFouls = 0, aFouls = 0;
-            events.forEach(e => {
-                const isH = String(e.team?.id) === String(home.team?.id) || e.team?.side === 'home';
-                if (e.kind === 'yellow-card') { if (isH) hCards++; else aCards++; }
-                if (e.kind === 'red-card') { if (isH) hCards += 2; else aCards += 2; }
-            });
-
-            const diff = hScore - aScore;
-            let hPoss = Math.min(65, Math.max(35, 50 + (diff * 3)));
-            const aPoss = 100 - hPoss;
-
-            const hShotsOn = Math.max(hScore, Math.round(hScore * 1.5) + (hPoss > 50 ? 2 : 1));
-            const aShotsOn = Math.max(aScore, Math.round(aScore * 1.5) + (aPoss > 50 ? 2 : 1));
-            const hTotal = hShotsOn + Math.max(2, Math.round((hPoss / 100) * 8));
-            const aTotal = aShotsOn + Math.max(2, Math.round((aPoss / 100) * 8));
-            const hCorn = Math.max(1, Math.round((hPoss / 100) * 7));
-            const aCorn = Math.max(1, Math.round((aPoss / 100) * 7));
-            const hFl = Math.max(hFouls || 8, Math.round(11 + (aPoss > 50 ? 2 : -1)));
-            const aFl = Math.max(aFouls || 8, Math.round(11 + (hPoss > 50 ? 2 : -1)));
-            const hSav = Math.max(0, aShotsOn - aScore);
-            const aSav = Math.max(0, hShotsOn - hScore);
-
-            homeStats = [
-                { name: 'possessionPct', displayValue: `${hPoss}%`, value: hPoss },
-                { name: 'totalShots', displayValue: `${hTotal}`, value: hTotal },
-                { name: 'shotsOnTarget', displayValue: `${hShotsOn}`, value: hShotsOn },
-                { name: 'wonCorners', displayValue: `${hCorn}`, value: hCorn },
-                { name: 'foulsCommitted', displayValue: `${hFl}`, value: hFl },
-                { name: 'yellowCards', displayValue: `${hCards}`, value: hCards },
-                { name: 'saves', displayValue: `${hSav}`, value: hSav }
-            ];
-            awayStats = [
-                { name: 'possessionPct', displayValue: `${aPoss}%`, value: aPoss },
-                { name: 'totalShots', displayValue: `${aTotal}`, value: aTotal },
-                { name: 'shotsOnTarget', displayValue: `${aShotsOn}`, value: aShotsOn },
-                { name: 'wonCorners', displayValue: `${aCorn}`, value: aCorn },
-                { name: 'foulsCommitted', displayValue: `${aFl}`, value: aFl },
-                { name: 'yellowCards', displayValue: `${aCards}`, value: aCards },
-                { name: 'saves', displayValue: `${aSav}`, value: aSav }
-            ];
-            summary.boxscore = summary.boxscore || {};
-            summary.boxscore.isDerivedTelemetry = true;
+        if (summary.boxscore) {
+            summary.boxscore.isDerivedTelemetry = false;
         }
+        const hasStats = Boolean(homeStats.length || awayStats.length);
         const scorers = events.filter(event => event.scoringPlay);
         const substitutions = events.filter(event => event.kind === 'substitution').map(event => ({
             ...event,
@@ -2435,12 +2411,12 @@
                 </div>
 
                 <div id="drawer-tab-stats" class="drawer-tab-content" ${activeTab === 'stats' ? '' : 'hidden'}>
-                    ${isPreMatch ? `
+                    ${(!hasStats || isPreMatch) ? `
                         <div style="text-align:center; padding:36px 18px; background:var(--bg-canvas); border:1px solid var(--border-subtle); border-radius:10px;">
-                            <span class="empty-icon" style="font-size:36px; display:block; margin-bottom:12px;">⏳</span>
-                            <h4 style="margin:0 0 8px; font-size:15px; font-weight:700; color:var(--text-main);">Match Has Not Started</h4>
-                            <p style="margin:0 0 8px; font-size:13px; color:var(--text-muted);">Kickoff scheduled for <strong>${formatTime(competition.date)}</strong> (${formatDate(competition.date, { year: false })}).</p>
-                            <small style="color:var(--text-muted); display:block; max-width:420px; margin:0 auto; line-height:1.5;">Live in-play figures (possession %, shots, corners, cards, and attacking pressure) activate once the match kicks off.</small>
+                            <span class="empty-icon" style="font-size:36px; display:block; margin-bottom:12px;">${isPreMatch ? '⏳' : '📊'}</span>
+                            <h4 style="margin:0 0 8px; font-size:15px; font-weight:700; color:var(--text-main);">${isPreMatch ? 'Match Has Not Started' : 'Match Statistics Pending'}</h4>
+                            <p style="margin:0 0 8px; font-size:13px; color:var(--text-muted);">${isPreMatch ? `Kickoff scheduled for <strong>${formatTime(competition.date)}</strong> (${formatDate(competition.date, { year: false })}).` : 'Official match statistics (possession %, shots, corners, cards) have not been recorded yet.'}</p>
+                            <small style="color:var(--text-muted); display:block; max-width:420px; margin:0 auto; line-height:1.5;">${isPreMatch ? 'Live in-play figures activate once the match kicks off.' : 'Live telemetry displays once official match statistics are reported.'}</small>
                         </div>
                     ` : `
                         <!-- Attacking Momentum & Pressure Gauge -->
@@ -2905,11 +2881,51 @@
             renderAdSlot('ad-slot-drawer', res.ads?.drawer);
             renderAdSlot('ad-slot-footer', res.ads?.footer);
 
+            // Universal Bet Booking Code Converter visibility (respects Admin toggle)
+            const bookingConverterSection = document.getElementById('booking-converter-section');
+            if (bookingConverterSection) {
+                const hookEnabled = res.bookingSettings?.hookEnabled !== false;
+                bookingConverterSection.style.display = hookEnabled ? 'block' : 'none';
+            }
+
+            // Sync dynamic pricing plans from admin settings
+            if (res.plans) {
+                syncDynamicPricingPlans(res.plans);
+            }
+
             // Dynamic Social Community Links
             renderSocialLinks(res.socialLinks);
 
         } catch (err) {
             console.warn('Ad/Promo load error:', err);
+        }
+    }
+
+    function syncDynamicPricingPlans(plans) {
+        if (!plans) return;
+        if (plans.starter) {
+            const p = document.getElementById('price-starter-val');
+            if (p && plans.starter.priceUsd !== undefined) p.textContent = plans.starter.priceUsd;
+            const l = document.getElementById('limit-starter-val');
+            if (l && plans.starter.rateLimitPerMinute !== undefined) l.textContent = Number(plans.starter.rateLimitPerMinute).toLocaleString();
+            const est = document.getElementById('estimate-starter-val');
+            if (est && plans.starter.priceUsd !== undefined) est.innerHTML = `~₦${(plans.starter.priceUsd * 1600).toLocaleString()} /mo &bull; Billed monthly`;
+        }
+        if (plans.pro) {
+            const p = document.getElementById('price-pro-val');
+            if (p && plans.pro.priceUsd !== undefined) p.textContent = plans.pro.priceUsd;
+            const l = document.getElementById('limit-pro-val');
+            if (l && plans.pro.rateLimitPerMinute !== undefined) l.textContent = Number(plans.pro.rateLimitPerMinute).toLocaleString();
+            const est = document.getElementById('estimate-pro-val');
+            if (est && plans.pro.priceUsd !== undefined) est.innerHTML = `~₦${(plans.pro.priceUsd * 1600).toLocaleString()} /mo &bull; Billed monthly`;
+        }
+        if (plans.whitelabel) {
+            const p = document.getElementById('price-whitelabel-val');
+            if (p && plans.whitelabel.priceUsd !== undefined) p.textContent = plans.whitelabel.priceUsd;
+            const l = document.getElementById('limit-whitelabel-val');
+            if (l && plans.whitelabel.rateLimitPerMinute !== undefined) l.textContent = Number(plans.whitelabel.rateLimitPerMinute).toLocaleString();
+            const est = document.getElementById('estimate-whitelabel-val');
+            if (est && plans.whitelabel.priceUsd !== undefined) est.innerHTML = `~₦${(plans.whitelabel.priceUsd * 1600).toLocaleString()} /mo &bull; Billed monthly`;
         }
     }
 

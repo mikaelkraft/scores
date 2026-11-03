@@ -64,7 +64,7 @@ function switchAdminTab(tabName) {
 }
 
 async function loadDashboardData() {
-    await Promise.all([loadStats(), loadSettings()]);
+    await Promise.all([loadStats(), loadSettings(), loadApiKeysAndUsers()]);
 }
 
 async function loadStats() {
@@ -521,7 +521,7 @@ async function loadApiKeysAndUsers() {
 
     try {
         const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 6000);
+        const timeoutId = setTimeout(() => controller.abort(), 25000);
 
         const [keysRes, usersRes] = await Promise.all([
             fetch('/api/admin/keys', { headers: { Authorization: `Bearer ${adminToken}` }, signal: controller.signal }),
@@ -857,6 +857,33 @@ async function saveAuthAndEmailSettings() {
         }
     } catch (err) {
         alert('Connection error saving settings.');
+    }
+}
+
+async function sendTestSmtpEmail() {
+    const resEl = document.getElementById('test-smtp-result');
+    const btn = document.getElementById('btn-test-smtp');
+    if (resEl) resEl.innerHTML = '<span style="color:var(--text-muted);">Dispatching test email...</span>';
+    if (btn) btn.disabled = true;
+
+    try {
+        const res = await fetch('/api/admin/test-smtp', {
+            method: 'POST',
+            headers: {
+                Authorization: `Bearer ${adminToken}`,
+                'Content-Type': 'application/json'
+            }
+        });
+        const data = await res.json();
+        if (res.ok && data.success) {
+            if (resEl) resEl.innerHTML = `<span style="color:#10b981; font-weight:600;">✅ ${escapeHtml(data.message || 'Test email dispatched successfully!')}</span>`;
+        } else {
+            if (resEl) resEl.innerHTML = `<span style="color:#ef4444; font-weight:600;">❌ ${escapeHtml(data.error || 'Failed to send test email')}</span>`;
+        }
+    } catch (err) {
+        if (resEl) resEl.innerHTML = `<span style="color:#ef4444;">Network error: ${escapeHtml(err.message)}</span>`;
+    } finally {
+        if (btn) btn.disabled = false;
     }
 }
 

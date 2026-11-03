@@ -64,6 +64,9 @@ test('resolveLeagueSlug correctly differentiates youth, reserves, and lower tier
     assert.equal(resolveLeagueSlug('Premier League 2 Division One', 'England', 'eng.u21'), 'eng.u21');
     assert.equal(resolveLeagueSlug('U21 Premier League Cup', 'England', ''), 'eng.u21');
     assert.equal(resolveLeagueSlug('Campionato Primavera 1', 'Italy', 'ita.primavera'), 'ita.primavera');
+    assert.equal(resolveLeagueSlug('UEFA Youth League', 'International', 'uefa.youth'), 'uefa.youth');
+    assert.equal(resolveLeagueSlug('UEFA Youth League - Group Stage', 'Europe', ''), 'uefa.youth');
+    assert.equal(resolveLeagueSlug('FIFA U-20 World Cup', 'International', 'fifa.u20'), 'fifa.u20');
 
     // English Tier 5-8 non-league competitions with "Premier" in their names
     assert.equal(resolveLeagueSlug('Northern Premier League Premier Division', 'England', 'eng.northern'), 'eng.northern');

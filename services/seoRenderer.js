@@ -228,14 +228,74 @@ function renderLeagueCards(leagues, baseUrl) {
         return '<p class="seo-empty">Competition pages will appear as verified league data becomes available.</p>';
     }
 
-    return `<div class="competition-grid">${leagues.map(league => {
-        const name = leagueName(league);
-        const country = league.country || 'International';
-        return `<a class="competition-link" href="${escapeHtml(leagueUrl(baseUrl, league))}">
-            <span>${escapeHtml(country)}</span>
-            <h3>${escapeHtml(name)}</h3>
-            <p>Live scores, fixtures and results${league.hasStandings ? ', plus the current table' : ''}</p>
-        </a>`;
+    // Group leagues by country so subdivisions appear under a toggle without repetitive cards
+    const countryMap = new Map();
+    for (const l of leagues) {
+        const country = l.country || 'International';
+        if (!countryMap.has(country)) {
+            countryMap.set(country, []);
+        }
+        countryMap.get(country).push(l);
+    }
+
+    const COUNTRY_CODES = {
+        'england': 'gb-eng', 'spain': 'es', 'italy': 'it', 'germany': 'de', 'france': 'fr',
+        'nigeria': 'ng', 'netherlands': 'nl', 'portugal': 'pt', 'brazil': 'br', 'argentina': 'ar',
+        'south africa': 'za', 'egypt': 'eg', 'morocco': 'ma', 'kenya': 'ke', 'ghana': 'gh',
+        'usa': 'us', 'saudi arabia': 'sa', 'turkey': 'tr', 'belgium': 'be', 'scotland': 'gb-sct'
+    };
+
+    const PRIORITY = ['England', 'Spain', 'Italy', 'Germany', 'France', 'International', 'Europe', 'Nigeria', 'South Africa', 'Saudi Arabia', 'USA', 'Brazil', 'Argentina'];
+    const sortedCountries = Array.from(countryMap.keys()).sort((a, b) => {
+        const aP = PRIORITY.indexOf(a);
+        const bP = PRIORITY.indexOf(b);
+        if (aP !== -1 && bP !== -1) return aP - bP;
+        if (aP !== -1) return -1;
+        if (bP !== -1) return 1;
+        return a.localeCompare(b, 'en');
+    });
+
+    return `<div class="country-accordion-grid">${sortedCountries.map(country => {
+        const cLeagues = countryMap.get(country) || [];
+        const code = COUNTRY_CODES[country.toLowerCase()] || '';
+        const flagHtml = code
+            ? `<img src="https://flagcdn.com/w40/${code}.png" alt="${escapeHtml(country)}" loading="lazy" style="width:20px; height:15px; object-fit:cover; border-radius:2px; flex-shrink:0;">`
+            : `<span style="font-size:16px; flex-shrink:0;">🌐</span>`;
+
+        if (cLeagues.length === 1) {
+            const l = cLeagues[0];
+            return `
+                <div class="country-league-accordion-card single-league-card">
+                    <a class="country-accordion-header" href="${escapeHtml(leagueUrl(baseUrl, l))}" style="text-decoration:none;">
+                        <div style="display:flex; align-items:center; gap:8px;">
+                            ${flagHtml}
+                            <strong style="font-size:13.5px; color:var(--text-main);">${escapeHtml(country)} · ${escapeHtml(leagueName(l))}</strong>
+                        </div>
+                        <span class="country-league-count-badge">View &rarr;</span>
+                    </a>
+                </div>
+            `;
+        }
+
+        return `
+            <details class="country-league-accordion-card">
+                <summary class="country-accordion-header">
+                    <div style="display:flex; align-items:center; gap:8px;">
+                        ${flagHtml}
+                        <strong style="font-size:13.5px; color:var(--text-main);">${escapeHtml(country)}</strong>
+                    </div>
+                    <span class="country-league-count-badge">${cLeagues.length} competitions ▾</span>
+                </summary>
+                <div class="country-accordion-content">
+                    ${cLeagues.map(l => `
+                        <a class="country-subleague-link" href="${escapeHtml(leagueUrl(baseUrl, l))}">
+                            <span>⚽ ${escapeHtml(leagueName(l))}</span>
+                            <small style="color:var(--text-muted); font-size:11px;">${l.hasStandings ? 'Table &amp; Fixtures' : 'Fixtures'}</small>
+                        </a>
+                    `).join('')}
+                </div>
+            </details>
+        `;
     }).join('')}</div>`;
 }
 

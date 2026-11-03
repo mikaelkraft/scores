@@ -118,6 +118,14 @@ router.put('/api/admin/settings', requireAdmin, async (req, res) => {
         delete updateData._id;
         delete updateData.key;
 
+        // Preserve existing SMTP password if none provided on save
+        if (updateData.smtpSettings) {
+            const existing = await SiteSetting.findOne({ key: 'global' }).lean();
+            if (!updateData.smtpSettings.pass && existing?.smtpSettings?.pass) {
+                updateData.smtpSettings.pass = existing.smtpSettings.pass;
+            }
+        }
+
         const settings = await SiteSetting.findOneAndUpdate(
             { key: 'global' },
             { $set: updateData },
@@ -132,6 +140,42 @@ router.put('/api/admin/settings', requireAdmin, async (req, res) => {
     } catch (err) {
         console.error('Settings update error:', err.message);
         return res.status(500).json({ error: 'Failed to update settings.' });
+    }
+});
+
+/**
+ * POST /api/admin/test-smtp
+ * Verifies live SMTP credentials and dispatches a test email
+ */
+router.post('/api/admin/test-smtp', requireAdmin, async (req, res) => {
+    try {
+        const { toEmail } = req.body;
+        const target = toEmail || req.admin?.email || 'admin@mynorra.xyz';
+        const emailService = require('../services/emailService');
+        const { transporter, from, isMock } = await emailService.getTransporter();
+
+        if (isMock || !transporter) {
+            return res.status(400).json({ error: 'Live SMTP is not enabled or credentials (host, username, password) are missing.' });
+        }
+
+        await transporter.verify();
+        await transporter.sendMail({
+            from,
+            to: target,
+            subject: '✅ SMTP Configuration Test — Scores by Norra AI',
+            html: `
+                <div style="font-family:sans-serif; padding:20px; color:#1e293b;">
+                    <h2 style="color:#10b981;">🎉 SMTP Dispatch Connected Successfully!</h2>
+                    <p>This test email confirms that your SMTP server settings are correctly configured in the Norra AI Admin Console and capable of delivering developer confirmation emails.</p>
+                    <hr style="border:none; border-top:1px solid #e2e8f0; margin:20px 0;">
+                    <p style="font-size:12px; color:#64748b;">Timestamp: ${new Date().toISOString()}</p>
+                </div>
+            `
+        });
+
+        return res.json({ status: 'success', message: `Test email successfully delivered to ${target}!` });
+    } catch (err) {
+        return res.status(500).json({ error: 'SMTP connection failed: ' + err.message });
     }
 });
 

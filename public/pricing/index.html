@@ -526,6 +526,33 @@
             }, { passive: true });
             topBtn.addEventListener('click', () => window.scrollTo({ top: 0, behavior: 'smooth' }));
         }
+
+        // Fetch dynamic pricing settings
+        fetch('/api/v1/ads')
+            .then(res => res.json())
+            .then(data => {
+                if (!data || !data.plans) return;
+                const plans = data.plans;
+                if (plans.starter && plans.starter.priceUsd !== undefined) {
+                    const el = document.getElementById('amt-starter');
+                    if (el) el.textContent = plans.starter.priceUsd;
+                    const est = document.getElementById('est-starter');
+                    if (est) est.innerHTML = `~₦${(plans.starter.priceUsd * 1600).toLocaleString()} /mo &bull; Billed monthly`;
+                }
+                if (plans.pro && plans.pro.priceUsd !== undefined) {
+                    const el = document.getElementById('amt-pro');
+                    if (el) el.textContent = plans.pro.priceUsd;
+                    const est = document.getElementById('est-pro');
+                    if (est) est.innerHTML = `~₦${(plans.pro.priceUsd * 1600).toLocaleString()} /mo &bull; Billed monthly`;
+                }
+                if (plans.whitelabel && plans.whitelabel.priceUsd !== undefined) {
+                    const el = document.getElementById('amt-whitelabel');
+                    if (el) el.textContent = plans.whitelabel.priceUsd;
+                    const est = document.getElementById('est-whitelabel');
+                    if (est) est.innerHTML = `~₦${(plans.whitelabel.priceUsd * 1600).toLocaleString()} /mo &bull; Billed monthly`;
+                }
+            })
+            .catch(() => {});
     </script>
 </body>
 </html>

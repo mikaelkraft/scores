@@ -81,8 +81,11 @@ const TARGET_LEAGUES = [
     { slug: 'bra.2', name: 'Brasileirão Série B', abbreviation: 'Série B', country: 'Brazil', kind: 'club', sort_order: 63 },
     { slug: 'arg.copa', name: 'Copa Argentina', abbreviation: 'Copa Argentina', country: 'Argentina', kind: 'cup', sort_order: 64 },
     { slug: 'bol.copa', name: 'Copa Bolivia', abbreviation: 'Copa Bolivia', country: 'Bolivia', kind: 'cup', sort_order: 65 },
-    { slug: 'fifa.youth', name: 'FIFA Youth World Cup', abbreviation: 'FIFA Youth', country: 'International', kind: 'international', sort_order: 66 },
-    { slug: 'club.friendly', name: 'Club Friendlies', abbreviation: 'Friendlies', country: 'International', kind: 'club', sort_order: 67 },
+    { slug: 'uefa.youth', name: 'UEFA Youth League', abbreviation: 'Youth League', country: 'Europe', kind: 'club', sort_order: 66 },
+    { slug: 'fifa.u20', name: 'FIFA U-20 World Cup', abbreviation: 'U20 World Cup', country: 'International', kind: 'international', sort_order: 67 },
+    { slug: 'fifa.u17', name: 'FIFA U-17 World Cup', abbreviation: 'U17 World Cup', country: 'International', kind: 'international', sort_order: 68 },
+    { slug: 'conmebol.u20', name: 'U-20 Copa Libertadores', abbreviation: 'Libertadores U20', country: 'South America', kind: 'club', sort_order: 69 },
+    { slug: 'club.friendly', name: 'Club Friendlies', abbreviation: 'Friendlies', country: 'International', kind: 'club', sort_order: 70 },
     { slug: 'idn.1', name: 'Indonesian Super League', abbreviation: 'Liga 1', country: 'Indonesia', kind: 'club', sort_order: 68 },
     { slug: 'tha.1', name: 'Thai League 1', abbreviation: 'Thai League 1', country: 'Thailand', kind: 'club', sort_order: 69 },
     { slug: 'mys.1', name: 'Malaysian Super League', abbreviation: 'Super League', country: 'Malaysia', kind: 'club', sort_order: 70 },
@@ -661,7 +664,19 @@ function resolveLeagueSlug(altGameNote = '', compDesc = '', uid = '') {
         if (text.includes('primavera') || (text.includes('ita') && text.includes('youth'))) {
             return 'ita.primavera';
         }
-        return 'fifa.youth';
+        if (text.includes('uefa') || text.includes('champions') || (text.includes('youth') && (text.includes('league') || text.includes('cup') || text.includes('u19') || text.includes('u-19')))) {
+            return 'uefa.youth';
+        }
+        if (text.includes('libertadores') || text.includes('conmebol')) {
+            return 'conmebol.u20';
+        }
+        if (text.includes('u20') || text.includes('u-20')) {
+            return 'fifa.u20';
+        }
+        if (text.includes('u17') || text.includes('u-17')) {
+            return 'fifa.u17';
+        }
+        return 'uefa.youth';
     }
 
     // 4. English Lower Divisions & Cups (prevents Northern/Southern Premier matching senior Premier League)
@@ -1414,6 +1429,27 @@ async function cleanupStuckMatchesAndPurgeNcaa() {
         }
         await SoccerLeague.deleteOne({ slug: 'w.other' }).catch(() => {});
 
+        // 4c. Re-classify matches mistakenly categorized under 'fifa.youth'
+        await SoccerMatch.updateMany(
+            { league_slug: 'fifa.youth' },
+            { $set: { league_slug: 'uefa.youth' } }
+        );
+        await SoccerLeague.updateOne(
+            { slug: 'uefa.youth' },
+            {
+                $set: {
+                    name: 'UEFA Youth League',
+                    abbreviation: 'Youth League',
+                    country: 'Europe',
+                    kind: 'club',
+                    active: true,
+                    sort_order: 66
+                }
+            },
+            { upsert: true }
+        );
+        await SoccerLeague.deleteOne({ slug: 'fifa.youth' }).catch(() => {});
+
         // 5. Purge duplicate match documents across the past 7 days
         const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 3600 * 1000);
         const recentMatches = await SoccerMatch.find({ date: { $gte: sevenDaysAgo } }).sort({ date: 1, _id: 1 }).lean();
@@ -1598,12 +1634,12 @@ async function syncLiveScoreInPlay() {
                 const awayScore = parseInt(ev.Tr2 || 0, 10);
                 const rawClock = String(ev.Eps || ev.Epr || 'NS');
 
-                const isNotStarted = rawClock === 'NS' || rawClock === 'Upcoming' || rawClock.includes(':');
+                const isNotStarted = rawClock === 'NS' || rawClock === 'Upcoming' || rawClock === '' || rawClock === 'Sched' || rawClock.includes(':');
                 const isFinished = rawClock === 'FT' || rawClock === 'AET' || rawClock === 'AP';
                 const isPostponed = rawClock.includes('Postp') || rawClock.includes('Canc');
-                const isInPlay = !isNotStarted && !isFinished && !isPostponed && (rawClock.includes("'") || rawClock === 'HT' || rawClock === 'Live' || (!isNaN(parseInt(rawClock, 10)) && rawClock !== 'FT'));
+                const isInPlay = !isNotStarted && !isFinished && !isPostponed;
                 const state = isInPlay ? 'in' : (isFinished || isPostponed) ? 'post' : 'pre';
-                const displayClock = isFinished ? 'FT' : isPostponed ? 'Postp.' : (isInPlay ? rawClock : 'NS');
+                const displayClock = isFinished ? 'FT' : isPostponed ? 'Postp.' : (isInPlay ? (rawClock === 'HT' ? 'HT' : (rawClock.includes("'") ? rawClock : `${rawClock}'`)) : 'NS');
 
                 let matchDate = now;
                 if (ev.Esd && String(ev.Esd).length >= 12) {

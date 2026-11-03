@@ -799,7 +799,11 @@
                     <label>Sender Address (From)</label>
                     <input type="text" id="setting-smtp-from" placeholder="Norra AI &lt;support@mynorra.xyz&gt;">
                 </div>
-                <button class="btn-primary" style="margin-top: 20px;" onclick="saveAuthAndEmailSettings()">Save Auth &amp; Email Settings</button>
+                <div style="display: flex; align-items: center; gap: 12px; margin-top: 20px; flex-wrap: wrap;">
+                    <button class="btn-primary" onclick="saveAuthAndEmailSettings()">Save Auth &amp; Email Settings</button>
+                    <button class="btn-secondary" id="btn-test-smtp" type="button" onclick="sendTestSmtpEmail()">✉️ Send Test Email</button>
+                    <span id="test-smtp-result" style="font-size: 13px;"></span>
+                </div>
             </div>
         </section>
     </div>

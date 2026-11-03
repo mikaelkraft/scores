@@ -8,18 +8,19 @@ class EmailService {
         const smtp = settings?.smtpSettings || {};
 
         const host = smtp.host || config.SMTP_HOST;
-        const port = smtp.port || config.SMTP_PORT || 587;
-        const secure = smtp.secure !== undefined ? smtp.secure : config.SMTP_SECURE;
+        const port = parseInt(smtp.port || config.SMTP_PORT || 587, 10);
+        const secure = smtp.secure !== undefined ? Boolean(smtp.secure) : (port === 465);
         const user = smtp.user || config.SMTP_USER;
         const pass = smtp.pass || config.SMTP_PASS;
 
-        if (host && user && pass) {
+        if (smtp.enabled !== false && host && user && pass) {
             return {
                 transporter: nodemailer.createTransport({
                     host,
                     port,
                     secure,
-                    auth: { user, pass }
+                    auth: { user, pass },
+                    tls: { rejectUnauthorized: false }
                 }),
                 from: smtp.fromEmail || config.SMTP_FROM || 'Norra AI <support@mynorra.xyz>',
                 isMock: false

@@ -3,6 +3,7 @@ const router = express.Router();
 const bookingHookService = require('../services/bookingHookService');
 const { extractApiKey } = require('../middleware/apiKeyAuth');
 const ApiKey = require('../models/apiKey');
+const SiteSetting = require('../models/siteSetting');
 
 // In-memory daily quota store for IP addresses & keys (for web demo / free tier protection)
 const quotaCache = new Map();
@@ -70,6 +71,11 @@ router.post('/api/v1/booking/generate', async (req, res) => {
  */
 router.post('/api/v1/booking/convert', async (req, res) => {
     try {
+        const settings = await SiteSetting.getGlobalSettings().catch(() => null);
+        if (settings?.bookingSettings?.hookEnabled === false) {
+            return res.status(403).json({ error: 'Universal Bet Booking Code Converter is currently disabled by administrator.' });
+        }
+
         const rawKey = extractApiKey(req);
         let tier = 'web_free';
         let quota = null;

@@ -9,7 +9,7 @@
     <meta name="robots" content="{{SEO_ROBOTS}}">
     <meta name="theme-color" content="#0b0f19">
     <link rel="canonical" href="{{SEO_CANONICAL}}">
-    <link rel="stylesheet" href="/assets/styles-v9.css?v=9.5">
+    <link rel="stylesheet" href="/assets/styles-v9.css?v=9.7">
     <script>
         (function() {
             var theme = localStorage.getItem('norra_theme') || localStorage.getItem('theme') || 'dark';
@@ -269,8 +269,8 @@
         <!-- Featured Promos Grid -->
         <div class="hero-promos-grid" id="hero-promos-container" aria-label="Featured sports bookmakers" style="margin-top:24px;"></div>
 
-        <!-- Universal Bet Booking Code Converter Widget -->
-        <section class="booking-converter-section" id="booking-converter-section" aria-label="Universal Bet Booking Code Converter">
+        <!-- Universal Bet Booking Code Converter Widget (hidden by default, toggled via admin settings) -->
+        <section class="booking-converter-section" id="booking-converter-section" aria-label="Universal Bet Booking Code Converter" style="display:none;">
             <div class="converter-card">
                 <div class="converter-header">
                     <div class="converter-info">
@@ -368,12 +368,12 @@
                         <p class="pricing-tier-desc">For growing sports blogs, livescore sites, and tipster bots.</p>
                         <div class="pricing-tier-price">
                             <span class="currency">$</span>
-                            <span class="amount">10</span>
+                            <span class="amount" id="price-starter-val">10</span>
                             <span class="interval">/month</span>
                         </div>
-                        <div class="pricing-local-estimate">~₦16,000 /mo &bull; Billed monthly</div>
+                        <div class="pricing-local-estimate" id="estimate-starter-val">~₦16,000 /mo &bull; Billed monthly</div>
                         <ul class="pricing-feature-list">
-                            <li>500 requests / minute</li>
+                            <li><span id="limit-starter-val">500</span> requests / minute</li>
                             <li>All 100+ world competitions</li>
                             <li>Universal Bet Booking Code Converter</li>
                             <li>Ad-free clean JSON payloads</li>
@@ -392,12 +392,12 @@
                         <p class="pricing-tier-desc">For serious commercial apps, betting syndicates, and media portals.</p>
                         <div class="pricing-tier-price">
                             <span class="currency">$</span>
-                            <span class="amount">29</span>
+                            <span class="amount" id="price-pro-val">29</span>
                             <span class="interval">/month</span>
                         </div>
-                        <div class="pricing-local-estimate">~₦46,000 /mo &bull; Billed monthly</div>
+                        <div class="pricing-local-estimate" id="estimate-pro-val">~₦46,000 /mo &bull; Billed monthly</div>
                         <ul class="pricing-feature-list">
-                            <li>1,500 requests / minute</li>
+                            <li><span id="limit-pro-val">1,500</span> requests / minute</li>
                             <li>Sub-second real-time score updates</li>
                             <li>Full timeline plays, goals &amp; cards</li>
                             <li>Universal Booking Code API hook</li>
@@ -415,12 +415,12 @@
                         <p class="pricing-tier-desc">Complete whitelabel sports data engine &amp; predictions integration.</p>
                         <div class="pricing-tier-price">
                             <span class="currency">$</span>
-                            <span class="amount">79</span>
+                            <span class="amount" id="price-whitelabel-val">79</span>
                             <span class="interval">/month</span>
                         </div>
-                        <div class="pricing-local-estimate">~₦126,000 /mo &bull; Billed monthly</div>
+                        <div class="pricing-local-estimate" id="estimate-whitelabel-val">~₦126,000 /mo &bull; Billed monthly</div>
                         <ul class="pricing-feature-list">
-                            <li>5,000 requests / minute (High Throughput)</li>
+                            <li><span id="limit-whitelabel-val">5,000</span> requests / minute (High Throughput)</li>
                             <li>Custom whitelabel branded match centers</li>
                             <li>Direct Norra AI Prediction Engine access</li>
                             <li>Multi-bookmaker odds &amp; slip conversion</li>
@@ -631,6 +631,6 @@
             }
         })();
     </script>
-    <script src="/assets/app-v9.js?v=9.6" defer></script>
+    <script src="/assets/app-v9.js?v=9.7" defer></script>
 </body>
 </html>

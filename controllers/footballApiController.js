@@ -1,3 +1,6 @@
+const path = require('path');
+const fs = require('fs');
+const crypto = require('crypto');
 const express = require('express');
 const router = express.Router();
 const mongoose = require('mongoose');
@@ -225,7 +228,16 @@ async function fetchFreshWorldwideLiveMatches() {
                 const a = ev.T2?.[0] || {};
                 const hScore = parseInt(ev.Tr1 || 0, 10);
                 const aScore = parseInt(ev.Tr2 || 0, 10);
-                const rawClock = String(ev.Eps || ev.Epr || "45'");
+                const rawClock = String(ev.Eps || ev.Epr || 'NS').trim();
+
+                const isNotStarted = rawClock === 'NS' || rawClock === 'Upcoming' || rawClock === '' || rawClock === 'Sched' || rawClock.includes(':');
+                const isFinished = rawClock === 'FT' || rawClock === 'AET' || rawClock === 'AP';
+                const isPostponed = rawClock.includes('Postp') || rawClock.includes('Canc');
+                const isInPlay = !isNotStarted && !isFinished && !isPostponed;
+
+                // For the dedicated in-play feed, only collect active live matches
+                if (!isInPlay) continue;
+
                 const clock = rawClock === 'HT' ? 'HT' : (rawClock.includes("'") ? rawClock : `${rawClock}'`);
 
                 candidateMatches.push({
@@ -458,33 +470,41 @@ function filterLiveMatchesResponse(matches, league, isFreeRestricted) {
 
 async function getFormattedLiveMatches(league, isFreeRestricted) {
     const now = Date.now();
-    const CACHE_TTL_MS = 15000; // 15 seconds
+    const CACHE_TTL_MS = 10000; // 10 seconds
 
-    // If cache is fresh, filter and return immediately (sub-millisecond)
-    if (now - liveFeedMemoryCache.timestamp < CACHE_TTL_MS && liveFeedMemoryCache.matches.length > 0) {
+    // Stale-While-Revalidate: If we have live matches in memory, return immediately (< 5ms)
+    // and trigger background refresh if cache is older than TTL
+    if (liveFeedMemoryCache.matches.length > 0) {
+        if (now - liveFeedMemoryCache.timestamp >= CACHE_TTL_MS && !liveFeedMemoryCache.inFlightPromise) {
+            liveFeedMemoryCache.inFlightPromise = (async () => {
+                try {
+                    const matches = await fetchFreshWorldwideLiveMatches();
+                    if (matches && matches.length > 0) {
+                        liveFeedMemoryCache.matches = matches;
+                        liveFeedMemoryCache.timestamp = Date.now();
+                    }
+                } finally {
+                    liveFeedMemoryCache.inFlightPromise = null;
+                }
+            })();
+        }
         return filterLiveMatchesResponse(liveFeedMemoryCache.matches, league, isFreeRestricted);
     }
 
-    // If a fetch is already in flight, reuse it
-    if (liveFeedMemoryCache.inFlightPromise) {
-        try {
-            await liveFeedMemoryCache.inFlightPromise;
-            return filterLiveMatchesResponse(liveFeedMemoryCache.matches, league, isFreeRestricted);
-        } catch {}
-    }
-
-    // Refresh live feed
-    liveFeedMemoryCache.inFlightPromise = (async () => {
-        try {
-            const matches = await fetchFreshWorldwideLiveMatches();
-            if (matches && matches.length > 0) {
-                liveFeedMemoryCache.matches = matches;
-                liveFeedMemoryCache.timestamp = Date.now();
+    // Only on initial cold boot with empty cache do we wait
+    if (!liveFeedMemoryCache.inFlightPromise) {
+        liveFeedMemoryCache.inFlightPromise = (async () => {
+            try {
+                const matches = await fetchFreshWorldwideLiveMatches();
+                if (matches && matches.length > 0) {
+                    liveFeedMemoryCache.matches = matches;
+                    liveFeedMemoryCache.timestamp = Date.now();
+                }
+            } finally {
+                liveFeedMemoryCache.inFlightPromise = null;
             }
-        } finally {
-            liveFeedMemoryCache.inFlightPromise = null;
-        }
-    })();
+        })();
+    }
 
     try {
         await liveFeedMemoryCache.inFlightPromise;
@@ -492,6 +512,25 @@ async function getFormattedLiveMatches(league, isFreeRestricted) {
 
     return filterLiveMatchesResponse(liveFeedMemoryCache.matches, league, isFreeRestricted);
 }
+
+// Proactive background cache warming & continuous refresh loop
+setTimeout(() => {
+    fetchFreshWorldwideLiveMatches().then(m => {
+        if (m && m.length > 0) {
+            liveFeedMemoryCache.matches = m;
+            liveFeedMemoryCache.timestamp = Date.now();
+        }
+    }).catch(() => {});
+}, 800);
+
+setInterval(() => {
+    fetchFreshWorldwideLiveMatches().then(m => {
+        if (m && m.length > 0) {
+            liveFeedMemoryCache.matches = m;
+            liveFeedMemoryCache.timestamp = Date.now();
+        }
+    }).catch(() => {});
+}, 12000);
 
 /**
  * GET /api/v1/football/live & /api/v1/football/livescores
@@ -691,29 +730,68 @@ router.get('/fixtures', async (req, res) => {
             SoccerLeague.find({ active: true }).maxTimeMS(3000).lean().catch(() => [])
         ]);
 
-        if (matches.length === 0 && isQueryingToday) {
-            // Asynchronously trigger background synchronization so future requests find matches in DB
-            setImmediate(() => {
-                try {
-                    const { syncLiveScoreboards, syncLiveScoreInPlay } = require('../services/soccerSyncService');
-                    Promise.allSettled([syncLiveScoreboards(), syncLiveScoreInPlay()]).catch(() => {});
-                } catch {}
-            });
-
-            // Fast fallback to in-memory live matches if available
+        // If querying today, always merge real-time live in-play matches into the fixture results
+        if (isQueryingToday && (status === 'all' || status === 'live')) {
             if (liveFeedMemoryCache.matches && liveFeedMemoryCache.matches.length > 0) {
-                let fallback = liveFeedMemoryCache.matches;
+                let liveCandidates = liveFeedMemoryCache.matches;
                 if (league && league !== 'all') {
                     const requestedSlug = String(league).toLowerCase();
-                    fallback = fallback.filter(m => (m.league?.slug || m.league_slug) === requestedSlug);
+                    liveCandidates = liveCandidates.filter(m => (m.league?.slug || m.league_slug) === requestedSlug);
                 }
                 if (status === 'live') {
-                    fallback = fallback.filter(m => m.status?.isLive || m.status?.state === 'in');
+                    liveCandidates = liveCandidates.filter(m => m.status?.isLive || m.status?.state === 'in');
                 }
-                if (fallback.length > 0) {
-                    matches = fallback;
-                    totalCount = fallback.length;
+
+                if (liveCandidates.length > 0) {
+                    const seenSignatures = new Set();
+                    matches.forEach(m => {
+                        const h = (m.home?.name || m.home?.displayName || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+                        const a = (m.away?.name || m.away?.displayName || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+                        const id = String(m.source?.event_id || m.id || m._id || '');
+                        if (id) seenSignatures.add(id);
+                        if (h && a) seenSignatures.add(`${h}_vs_${a}`);
+                    });
+
+                    const liveToPrepend = [];
+                    for (const lm of liveCandidates) {
+                        const h = (lm.home?.name || lm.home?.displayName || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+                        const a = (lm.away?.name || lm.away?.displayName || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+                        const id = String(lm.source?.event_id || lm.id || lm._id || '');
+                        const sig = `${h}_vs_${a}`;
+
+                        if ((id && seenSignatures.has(id)) || (h && a && seenSignatures.has(sig))) {
+                            // Update existing match in array if it was found as scheduled but is now live
+                            const idx = matches.findIndex(m => {
+                                const mh = (m.home?.name || m.home?.displayName || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+                                const ma = (m.away?.name || m.away?.displayName || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+                                const mid = String(m.source?.event_id || m.id || m._id || '');
+                                return (id && mid === id) || (h && a && mh === h && ma === a);
+                            });
+                            if (idx !== -1) {
+                                matches[idx] = { ...matches[idx], ...lm, status: lm.status, home: lm.home, away: lm.away };
+                            }
+                        } else {
+                            if (id) seenSignatures.add(id);
+                            if (h && a) seenSignatures.add(sig);
+                            liveToPrepend.push(lm);
+                        }
+                    }
+
+                    if (liveToPrepend.length > 0) {
+                        matches = [...liveToPrepend, ...matches];
+                    }
+                    totalCount = matches.length;
                 }
+            }
+
+            if (matches.length === 0) {
+                // Asynchronously trigger background synchronization so future requests find matches in DB
+                setImmediate(() => {
+                    try {
+                        const { syncLiveScoreboards, syncLiveScoreInPlay } = require('../services/soccerSyncService');
+                        Promise.allSettled([syncLiveScoreboards(), syncLiveScoreInPlay()]).catch(() => {});
+                    } catch {}
+                });
             }
         }
 
@@ -930,7 +1008,8 @@ router.get('/predictions-context/:eventId', async (req, res) => {
             $or: [
                 { 'status.state': { $in: ['post', 'final', 'completed'] } },
                 { 'status.completed': true },
-                { 'status.name': { $in: ['STATUS_FINAL', 'STATUS_FULL_TIME', 'STATUS_AFTER_ET', 'STATUS_AFTER_PK'] } }
+                { 'status.name': { $in: ['STATUS_FINAL', 'STATUS_FULL_TIME', 'STATUS_AFTER_ET', 'STATUS_AFTER_PK', 'FT', 'AET', 'AP'] } },
+                { date: { $lt: new Date(Date.now() - 3 * 3600 * 1000) } }
             ]
         };
 
@@ -1001,9 +1080,9 @@ router.get('/predictions-context/:eventId', async (req, res) => {
                 const https = require('https');
                 const zlib = require('zlib');
                 espnSummary = await new Promise((resolve) => {
-                    const req = https.get(`https://site.api.espn.com/apis/site/v2/sports/soccer/${match.league_slug || 'all'}/summary?event=${encodeURIComponent(queryEspnId)}`, {
+                    const req = https.get(`https://site.api.espn.com/apis/site/v2/sports/soccer/all/summary?event=${encodeURIComponent(queryEspnId)}`, {
                         headers: { 'User-Agent': 'NorraScores/2.1', 'Accept-Encoding': 'gzip, deflate' },
-                        timeout: 3000
+                        timeout: 6000
                     }, res => {
                         if (res.statusCode !== 200) return resolve(null);
                         let stream = res.headers['content-encoding'] === 'gzip' ? res.pipe(zlib.createGunzip()) : res;
@@ -1970,6 +2049,60 @@ router.get('/teams/:teamId', async (req, res) => {
     }
 });
 
+const CREST_DIR = path.join(__dirname, '..', 'public', 'crests');
+try { fs.mkdirSync(CREST_DIR, { recursive: true }); } catch {}
+
+async function handleCrestProxy(req, res) {
+    const rawUrl = req.query.url;
+    if (!rawUrl || typeof rawUrl !== 'string' || !rawUrl.startsWith('http')) {
+        return res.status(400).send('Valid url parameter required');
+    }
+    try {
+        const hash = crypto.createHash('md5').update(rawUrl).digest('hex');
+        const extMatch = rawUrl.match(/\.(png|jpg|jpeg|svg|webp)/i);
+        const ext = extMatch ? extMatch[1].toLowerCase() : 'png';
+        const filename = `${hash}.${ext}`;
+        const localPath = path.join(CREST_DIR, filename);
+
+        res.set('Cache-Control', 'public, max-age=31536000, immutable');
+
+        if (fs.existsSync(localPath)) {
+            return res.sendFile(localPath);
+        }
+
+        const client = rawUrl.startsWith('https') ? require('https') : require('http');
+        const fileStream = fs.createWriteStream(localPath);
+        const upstreamReq = client.get(rawUrl, {
+            headers: { 'User-Agent': 'NorraScores/2.1' },
+            timeout: 5000
+        }, (upstreamRes) => {
+            if (upstreamRes.statusCode === 200) {
+                upstreamRes.pipe(fileStream);
+                fileStream.on('finish', () => {
+                    res.sendFile(localPath);
+                });
+            } else {
+                fs.unlink(localPath, () => {});
+                return res.redirect(rawUrl);
+            }
+        });
+        upstreamReq.on('error', () => {
+            fs.unlink(localPath, () => {});
+            return res.redirect(rawUrl);
+        });
+        upstreamReq.on('timeout', () => {
+            upstreamReq.destroy();
+            fs.unlink(localPath, () => {});
+            return res.redirect(rawUrl);
+        });
+    } catch {
+        return res.redirect(rawUrl);
+    }
+}
+
+router.get('/crest-proxy', handleCrestProxy);
+
 module.exports = app => {
     app.use('/api/v1/football', router);
+    app.get('/cdn/crest', handleCrestProxy);
 };
