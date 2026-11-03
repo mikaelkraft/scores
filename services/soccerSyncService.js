@@ -139,7 +139,35 @@ const TARGET_LEAGUES = [
     { slug: 'kwt.1', name: 'Kuwait Premier League', abbreviation: 'Kuwait PL', country: 'Kuwait', kind: 'club', sort_order: 109 },
     { slug: 'rus.1', name: 'Russian Premier League', abbreviation: 'Russian PL', country: 'Russia', kind: 'club', sort_order: 110 },
     { slug: 'ukr.1', name: 'Ukrainian Premier League', abbreviation: 'Ukrainian PL', country: 'Ukraine', kind: 'club', sort_order: 111 },
-    { slug: 'nzl.1', name: 'New Zealand National League', abbreviation: 'NZ National', country: 'New Zealand', kind: 'club', sort_order: 112 }
+    { slug: 'nzl.1', name: 'New Zealand National League', abbreviation: 'NZ National', country: 'New Zealand', kind: 'club', sort_order: 112 },
+    { slug: 'tza.1', name: 'Tanzanian Premier League', abbreviation: 'NBC Premier League', country: 'Tanzania', kind: 'club', sort_order: 113 },
+    { slug: 'zmb.1', name: 'Zambian Super League', abbreviation: 'Zambia SL', country: 'Zambia', kind: 'club', sort_order: 114 },
+    { slug: 'zwe.1', name: 'Zimbabwe Premier Soccer League', abbreviation: 'Zimbabwe PSL', country: 'Zimbabwe', kind: 'club', sort_order: 115 },
+    { slug: 'eth.1', name: 'Ethiopian Premier League', abbreviation: 'Ethiopian PL', country: 'Ethiopia', kind: 'club', sort_order: 116 },
+    { slug: 'rwa.1', name: 'Rwanda Premier League', abbreviation: 'Rwanda PL', country: 'Rwanda', kind: 'club', sort_order: 117 },
+    { slug: 'cod.1', name: 'DR Congo Linafoot', abbreviation: 'Linafoot', country: 'DR Congo', kind: 'club', sort_order: 118 },
+    { slug: 'cmr.1', name: 'Cameroon Elite One', abbreviation: 'Elite One', country: 'Cameroon', kind: 'club', sort_order: 119 },
+    { slug: 'civ.1', name: 'Ivory Coast Ligue 1', abbreviation: 'Ligue 1 CIV', country: 'Ivory Coast', kind: 'club', sort_order: 120 },
+    { slug: 'dza.1', name: 'Algerian Ligue 1', abbreviation: 'Ligue 1 Algeria', country: 'Algeria', kind: 'club', sort_order: 121 },
+    { slug: 'tun.1', name: 'Tunisian Ligue Professionnelle 1', abbreviation: 'Ligue 1 Tunisia', country: 'Tunisia', kind: 'club', sort_order: 122 },
+    { slug: 'sdn.1', name: 'Sudan Premier League', abbreviation: 'Sudan PL', country: 'Sudan', kind: 'club', sort_order: 123 },
+    { slug: 'ago.1', name: 'Angola Girabola', abbreviation: 'Girabola', country: 'Angola', kind: 'club', sort_order: 124 },
+    { slug: 'bwa.1', name: 'Botswana Premier League', abbreviation: 'Botswana PL', country: 'Botswana', kind: 'club', sort_order: 125 },
+    { slug: 'mwi.1', name: 'Malawi Super League', abbreviation: 'Malawi SL', country: 'Malawi', kind: 'club', sort_order: 126 },
+    { slug: 'jam.1', name: 'Jamaica Premier League', abbreviation: 'Jamaica PL', country: 'Jamaica', kind: 'club', sort_order: 127 },
+    { slug: 'lby.1', name: 'Libyan Premier League', abbreviation: 'Libya PL', country: 'Libya', kind: 'club', sort_order: 128 },
+    { slug: 'isr.1', name: 'Israeli Premier League', abbreviation: 'Israeli PL', country: 'Israel', kind: 'club', sort_order: 129 },
+    { slug: 'aze.1', name: 'Azerbaijan Premier League', abbreviation: 'Azerbaijan PL', country: 'Azerbaijan', kind: 'club', sort_order: 130 },
+    { slug: 'blr.1', name: 'Belarusian Premier League', abbreviation: 'Belarus PL', country: 'Belarus', kind: 'club', sort_order: 131 },
+    { slug: 'arm.1', name: 'Armenian Premier League', abbreviation: 'Armenia PL', country: 'Armenia', kind: 'club', sort_order: 132 },
+    { slug: 'bih.1', name: 'Bosnian Premier League', abbreviation: 'Premijer Liga BiH', country: 'Bosnia and Herzegovina', kind: 'club', sort_order: 133 },
+    { slug: 'nir.1', name: 'NIFL Premiership', abbreviation: 'NIFL Premiership', country: 'Northern Ireland', kind: 'club', sort_order: 134 },
+    { slug: 'wal.1', name: 'Cymru Premier', abbreviation: 'Cymru Premier', country: 'Wales', kind: 'club', sort_order: 135 },
+    { slug: 'irl.1', name: 'League of Ireland Premier Division', abbreviation: 'LOI Premier', country: 'Ireland', kind: 'club', sort_order: 136 },
+    { slug: 'hkg.1', name: 'Hong Kong Premier League', abbreviation: 'HKPL', country: 'Hong Kong', kind: 'club', sort_order: 137 },
+    { slug: 'bgd.1', name: 'Bangladesh Premier League', abbreviation: 'BPL', country: 'Bangladesh', kind: 'club', sort_order: 138 },
+    { slug: 'mlt.1', name: 'Maltese Premier League', abbreviation: 'Malta PL', country: 'Malta', kind: 'club', sort_order: 139 },
+    { slug: 'kaz.1', name: 'Kazakhstan Premier League', abbreviation: 'KPL', country: 'Kazakhstan', kind: 'club', sort_order: 140 }
 ];
 
 function fetchJson(url) {
@@ -692,19 +720,47 @@ function resolveLeagueSlug(altGameNote = '', compDesc = '', uid = '') {
     if (text.includes('carabao') || text.includes('efl cup') || (text.includes('league cup') && !text.includes('scot') && !text.includes('thai')) || text.includes('eng.league_cup')) return 'eng.league_cup';
 
     // 5. Foreign Domestic Leagues that contain "Premier League" or "Premiership" (MUST BE EVALUATED BEFORE SENIOR EPL!)
+    if (text.includes('tanzan') || text.includes('tza.1') || text.includes('ligi kuu') || text.includes('nbc premier') || text.includes('mbeya') || text.includes('singida') || text.includes('simba') || text.includes('young africans') || text.includes('yanga') || text.includes('azam') || text.includes('mashujaa') || text.includes('namungo') || text.includes('fountain gate') || text.includes('kagera sugar') || text.includes('pamba') || text.includes('tra united')) return 'tza.1';
     if (text.includes('egypt') || text.includes('egy.1')) return 'egy.1';
     if (text.includes('npfl') || text.includes('nigeria') || text.includes('nga.1') || text.includes('nigerian')) return 'nga.1';
     if (text.includes('kenya') || text.includes('fkf') || text.includes('ken.1')) return 'ken.1';
-    if (text.includes('ghana') || text.includes('gha.1')) return 'gha.1';
+    if (text.includes('ghana') || text.includes('gha.1') || text.includes('aduana') || text.includes('asante kotoko') || text.includes('hearts of oak')) return 'gha.1';
     if (text.includes('uganda') || text.includes('uga.1')) return 'uga.1';
     if (text.includes('south africa') || text.includes('psl') || text.includes('betway premiership') || text.includes('rsa.1')) return 'rsa.1';
     if (text.includes('botola') || (text.includes('morocco') && text.includes('league')) || text.includes('mar.1')) return 'mar.1';
+    if (text.includes('zamb') || text.includes('zmb.1')) return 'zmb.1';
+    if (text.includes('zimbab') || text.includes('zwe.1')) return 'zwe.1';
+    if (text.includes('ethiop') || text.includes('eth.1')) return 'eth.1';
+    if (text.includes('rwand') || text.includes('rwa.1')) return 'rwa.1';
+    if (text.includes('dr congo') || text.includes('congo dr') || text.includes('linafoot') || text.includes('cod.1')) return 'cod.1';
+    if (text.includes('cameroon') || text.includes('elite one') || text.includes('cmr.1')) return 'cmr.1';
+    if (text.includes('ivory coast') || text.includes('côte d\'ivoire') || text.includes('cote d\'ivoire') || text.includes('civ.1')) return 'civ.1';
+    if (text.includes('algeria') || text.includes('dza.1')) return 'dza.1';
+    if (text.includes('tunisia') || text.includes('tun.1')) return 'tun.1';
+    if (text.includes('sudan') || text.includes('sdn.1')) return 'sdn.1';
+    if (text.includes('angola') || text.includes('girabola') || text.includes('ago.1')) return 'ago.1';
+    if (text.includes('botswana') || text.includes('bwa.1') || text.includes('township rollers')) return 'bwa.1';
+    if (text.includes('malawi') || text.includes('mwi.1')) return 'mwi.1';
+    if (text.includes('libya') || text.includes('lby.1') || text.includes('al-ahli tripoli')) return 'lby.1';
+    if (text.includes('israel') || text.includes('isr.1') || text.includes('maccabi') || text.includes('hapoel') || text.includes('beitar')) return 'isr.1';
+    if (text.includes('azerbaijan') || text.includes('aze.1') || text.includes('sumqayit') || text.includes('qarabag') || text.includes('neftchi')) return 'aze.1';
+    if (text.includes('belarus') || text.includes('blr.1') || text.includes('torpedo zhodino') || text.includes('belshina') || text.includes('dinamo minsk')) return 'blr.1';
+    if (text.includes('armenia') || text.includes('arm.1') || text.includes('ararat') || text.includes('gandzasar') || text.includes('pyunik')) return 'arm.1';
+    if (text.includes('bosnia') || text.includes('herzegovina') || text.includes('bih.1') || text.includes('premijer liga')) return 'bih.1';
+    if (text.includes('jamaica') || text.includes('jam.1') || text.includes('tivoli') || text.includes('portmore') || text.includes('montego bay')) return 'jam.1';
+    if (text.includes('northern ireland') || text.includes('nifl') || text.includes('nir.1')) return 'nir.1';
+    if (text.includes('wales') || text.includes('cymru') || text.includes('wal.1')) return 'wal.1';
+    if (text.includes('ireland') || text.includes('loi premier') || text.includes('irl.1')) return 'irl.1';
+    if (text.includes('hong kong') || text.includes('hkg.1')) return 'hkg.1';
+    if (text.includes('bangladesh') || text.includes('bgd.1')) return 'bgd.1';
+    if (text.includes('malta') || text.includes('mlt.1')) return 'mlt.1';
+    if (text.includes('kazakh') || text.includes('kaz.1')) return 'kaz.1';
     if (text.includes('singapore') || text.includes('spl') || text.includes('sgp.1')) return 'sgp.1';
     if (text.includes('bahrain') || text.includes('bhr.1')) return 'bhr.1';
     if (text.includes('canadian premier') || text.includes('cpl') || text.includes('can.1') || (text.includes('canada') && text.includes('premier'))) return 'can.1';
     if (text.includes('scottish') || text.includes('premiership') || text.includes('sco.1')) return 'sco.1';
     if (text.includes('saudi') || text.includes('roshn') || text.includes('ksa.1')) return 'ksa.1';
-    if (text.includes('kuwait') || text.includes('kwt.1')) return 'kwt.1';
+    if (text.includes('kuwait') || text.includes('kwt.1') || text.includes('al-qadsia') || text.includes('al-arabi')) return 'kwt.1';
     if (text.includes('russia') || text.includes('rus.1')) return 'rus.1';
     if (text.includes('ukrain') || text.includes('ukr.1')) return 'ukr.1';
     if (text.includes('new zealand') || text.includes('nzl.1')) return 'nzl.1';
@@ -764,8 +820,8 @@ function resolveLeagueSlug(altGameNote = '', compDesc = '', uid = '') {
     if (text.includes('club friendly') || text.includes('friendly')) return 'club.friendly';
 
     // 9. Senior English Premier League (Only match if it is strictly English EPL and not foreign)
-    if (text.includes('english premier league') || text.includes('premier league') || text.includes('epl') || text.includes('eng.1')) {
-        const foreignIndicators = ['egypt', 'ghana', 'kenya', 'uganda', 'singapore', 'bahrain', 'canada', 'scotland', 'russia', 'ukraine', 'kuwait', 'new zealand', 'ireland', 'wales', 'jamaica', 'india', 'nigeria', 'south africa'];
+    if (text.includes('english premier league') || text.includes('epl') || uid.includes('eng.1') || (text.includes('premier league') && (text.includes('england') || text.includes('english')))) {
+        const foreignIndicators = ['egypt', 'ghana', 'kenya', 'uganda', 'singapore', 'bahrain', 'canada', 'scotland', 'russia', 'ukraine', 'kuwait', 'new zealand', 'ireland', 'wales', 'jamaica', 'india', 'nigeria', 'south africa', 'tanzania', 'zambia', 'zimbabwe', 'ethiopia', 'rwanda', 'congo', 'cameroon', 'ivory', 'algeria', 'tunisia', 'sudan', 'angola', 'botswana', 'malawi', 'bangladesh', 'hong kong', 'malta', 'israel', 'kazakhstan', 'northern ireland', 'armenia', 'azerbaijan', 'georgia', 'belarus', 'trinidad', 'barbados', 'bermuda', 'libya', 'somalia', 'syria', 'yemen', 'oman', 'lebanon', 'palestine', 'nbc', 'ligi kuu'];
         const hasForeign = foreignIndicators.some(country => text.includes(country));
         if (!hasForeign) {
             return 'eng.1';
@@ -1405,10 +1461,10 @@ async function cleanupStuckMatchesAndPurgeNcaa() {
         const misclassifiedEngMatches = await SoccerMatch.find({
             league_slug: 'eng.1',
             $or: [
-                { note: /egypt|kenya|ghana|uganda|singapore|bahrain|canada|scotland|saudi|kuwait|russia|ukraine|new zealand|women|wsl|nwsl|u21|u-21|u23|northern|southern|isthmian|national league/i },
-                { name: /women|ladies|femenin|frauen|u21|u-21|u23|u19|u18|u17|pl2/i },
-                { 'home.name': /women|ladies|femenin|frauen|u21|u-21|u23|u19|u18|u17/i },
-                { 'away.name': /women|ladies|femenin|frauen|u21|u-21|u23|u19|u18|u17/i }
+                { note: /tanzan|mbeya|singida|simba|young africans|yanga|azam|mashujaa|namungo|fountain gate|kagera|pamba|ghana|aduana|berekum|ashanti|asante kotoko|medeama|hearts of oak|bechem|dreams fc|samartex|bibiani|karela|botswana|township rollers|tonota|enesia|israel|maccabi|hapoel|beitar|kuwait|al-qadsia|al-arabi|al-jahra|fahaheel|jamaica|montego bay|portmore|tivoli|arnett|tru-juice|chapelton|racing united|dunbeholden|humble lions|azerbaijan|sumqayit|shafa|belarus|torpedo zhodino|belshina|minsk|maxline|armenia|ararat|gandzasar|libya|al-ahli tripoli|al khmes|egypt|kenya|ghana|uganda|singapore|bahrain|canada|scotland|saudi|kuwait|russia|ukraine|new zealand|women|wsl|nwsl|u21|u-21|u23|northern|southern|isthmian|national league/i },
+                { name: /tanzan|mbeya|singida|simba|young africans|yanga|azam|mashujaa|namungo|fountain gate|kagera|pamba|ghana|aduana|berekum|ashanti|asante kotoko|medeama|hearts of oak|bechem|dreams fc|samartex|bibiani|karela|botswana|township rollers|tonota|enesia|israel|maccabi|hapoel|beitar|kuwait|al-qadsia|al-arabi|al-jahra|fahaheel|jamaica|montego bay|portmore|tivoli|arnett|tru-juice|chapelton|racing united|dunbeholden|humble lions|azerbaijan|sumqayit|shafa|belarus|torpedo zhodino|belshina|minsk|maxline|armenia|ararat|gandzasar|libya|al-ahli tripoli|al khmes|women|ladies|femenin|frauen|u21|u-21|u23|u19|u18|u17|pl2/i },
+                { 'home.name': /tanzan|mbeya|singida|simba|young africans|yanga|azam|mashujaa|namungo|fountain gate|kagera|pamba|ghana|aduana|berekum|ashanti|asante kotoko|medeama|hearts of oak|bechem|dreams fc|samartex|bibiani|karela|botswana|township rollers|tonota|enesia|israel|maccabi|hapoel|beitar|kuwait|al-qadsia|al-arabi|al-jahra|fahaheel|jamaica|montego bay|portmore|tivoli|arnett|tru-juice|chapelton|racing united|dunbeholden|humble lions|azerbaijan|sumqayit|shafa|belarus|torpedo zhodino|belshina|minsk|maxline|armenia|ararat|gandzasar|libya|al-ahli tripoli|al khmes|women|ladies|femenin|frauen|u21|u-21|u23|u19|u18|u17/i },
+                { 'away.name': /tanzan|mbeya|singida|simba|young africans|yanga|azam|mashujaa|namungo|fountain gate|kagera|pamba|ghana|aduana|berekum|ashanti|asante kotoko|medeama|hearts of oak|bechem|dreams fc|samartex|bibiani|karela|botswana|township rollers|tonota|enesia|israel|maccabi|hapoel|beitar|kuwait|al-qadsia|al-arabi|al-jahra|fahaheel|jamaica|montego bay|portmore|tivoli|arnett|tru-juice|chapelton|racing united|dunbeholden|humble lions|azerbaijan|sumqayit|shafa|belarus|torpedo zhodino|belshina|minsk|maxline|armenia|ararat|gandzasar|libya|al-ahli tripoli|al khmes|women|ladies|femenin|frauen|u21|u-21|u23|u19|u18|u17/i }
             ]
         }).lean();
 
@@ -1542,7 +1598,29 @@ async function syncLiveScoreInPlay() {
 
             let targetSlug = resolveLeagueSlug(leagueName, country, stage.Scd || '');
             if (!targetSlug) {
-                if (cLower.includes('indonesia')) targetSlug = 'idn.1';
+                if (cLower.includes('tanzania')) targetSlug = 'tza.1';
+                else if (cLower.includes('botswana')) targetSlug = 'bwa.1';
+                else if (cLower.includes('jamaica')) targetSlug = 'jam.1';
+                else if (cLower.includes('israel')) targetSlug = 'isr.1';
+                else if (cLower.includes('belarus')) targetSlug = 'blr.1';
+                else if (cLower.includes('azerbaijan')) targetSlug = 'aze.1';
+                else if (cLower.includes('armenia')) targetSlug = 'arm.1';
+                else if (cLower.includes('libya')) targetSlug = 'lby.1';
+                else if (cLower.includes('zambia')) targetSlug = 'zmb.1';
+                else if (cLower.includes('zimbabwe')) targetSlug = 'zwe.1';
+                else if (cLower.includes('rwanda')) targetSlug = 'rwa.1';
+                else if (cLower.includes('congo')) targetSlug = 'cod.1';
+                else if (cLower.includes('cameroon')) targetSlug = 'cmr.1';
+                else if (cLower.includes('ivory') || cLower.includes('côte')) targetSlug = 'civ.1';
+                else if (cLower.includes('algeria')) targetSlug = 'dza.1';
+                else if (cLower.includes('tunisia')) targetSlug = 'tun.1';
+                else if (cLower.includes('sudan')) targetSlug = 'sdn.1';
+                else if (cLower.includes('angola')) targetSlug = 'ago.1';
+                else if (cLower.includes('malawi')) targetSlug = 'mwi.1';
+                else if (cLower.includes('bosnia')) targetSlug = 'bih.1';
+                else if (cLower.includes('wales')) targetSlug = 'wal.1';
+                else if (cLower.includes('ireland')) targetSlug = 'irl.1';
+                else if (cLower.includes('indonesia')) targetSlug = 'idn.1';
                 else if (cLower.includes('vietnam')) targetSlug = 'vie.1';
                 else if (cLower.includes('thailand')) targetSlug = 'tha.1';
                 else if (cLower.includes('malaysia')) targetSlug = 'mys.1';

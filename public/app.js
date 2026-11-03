@@ -558,6 +558,52 @@
             if (!slug || slug === 'w.other' || slug === 'other') slug = 'bel.w.1';
         }
 
+        // 1b. Correct foreign matches mistakenly labeled as 'eng.1'
+        if (slug === 'eng.1') {
+            const evText = `${ev?.name || ''} ${ev?.home?.name || ''} ${ev?.away?.name || ''} ${name || ''}`.toLowerCase();
+            if (evText.includes('mbeya') || evText.includes('singida') || evText.includes('simba') || evText.includes('young africans') || evText.includes('yanga') || evText.includes('azam') || evText.includes('mashujaa') || evText.includes('namungo') || evText.includes('fountain gate') || evText.includes('kagera') || evText.includes('pamba') || evText.includes('tanzan')) {
+                slug = 'tza.1';
+                name = 'Tanzanian Premier League';
+                country = 'Tanzania';
+            } else if (evText.includes('aduana') || evText.includes('berekum') || evText.includes('asante kotoko') || evText.includes('medeama') || evText.includes('hearts of oak') || evText.includes('bechem') || evText.includes('dreams fc') || evText.includes('samartex') || evText.includes('bibiani') || evText.includes('karela') || evText.includes('ghana')) {
+                slug = 'gha.1';
+                name = 'Ghana Premier League';
+                country = 'Ghana';
+            } else if (evText.includes('township rollers') || evText.includes('bdf xi') || evText.includes('tonota') || evText.includes('enesia') || evText.includes('botswana')) {
+                slug = 'bwa.1';
+                name = 'Botswana Premier League';
+                country = 'Botswana';
+            } else if (evText.includes('maccabi') || evText.includes('hapoel') || evText.includes('beitar') || evText.includes('israel')) {
+                slug = 'isr.1';
+                name = 'Israeli Premier League';
+                country = 'Israel';
+            } else if (evText.includes('al-qadsia') || evText.includes('al-arabi') || evText.includes('al-jahra') || evText.includes('al fahaheel') || evText.includes('kuwait')) {
+                slug = 'kwt.1';
+                name = 'Kuwait Premier League';
+                country = 'Kuwait';
+            } else if (evText.includes('montego bay') || evText.includes('portmore') || evText.includes('tivoli') || evText.includes('arnett') || evText.includes('tru-juice') || evText.includes('chapelton') || evText.includes('racing united') || evText.includes('dunbeholden') || evText.includes('humble lions') || evText.includes('jamaica')) {
+                slug = 'jam.1';
+                name = 'Jamaica Premier League';
+                country = 'Jamaica';
+            } else if (evText.includes('sumqayit') || evText.includes('shafa') || evText.includes('qarabag') || evText.includes('neftchi') || evText.includes('azerbaijan')) {
+                slug = 'aze.1';
+                name = 'Azerbaijan Premier League';
+                country = 'Azerbaijan';
+            } else if (evText.includes('torpedo zhodino') || evText.includes('belshina') || evText.includes('minsk') || evText.includes('maxline') || evText.includes('belarus')) {
+                slug = 'blr.1';
+                name = 'Belarusian Premier League';
+                country = 'Belarus';
+            } else if (evText.includes('ararat') || evText.includes('gandzasar') || evText.includes('pyunik') || evText.includes('armenia')) {
+                slug = 'arm.1';
+                name = 'Armenian Premier League';
+                country = 'Armenia';
+            } else if (evText.includes('al-ahli tripoli') || evText.includes('al khmes') || evText.includes('libya')) {
+                slug = 'lby.1';
+                name = 'Libyan Premier League';
+                country = 'Libya';
+            }
+        }
+
         // 2. Infer country from slug prefix if country is missing or generic 'International'
         if (!country || country.toLowerCase() === 'international') {
             const prefix = slug.split('.')[0];
@@ -570,7 +616,15 @@
                 bra: 'Brazil', arg: 'Argentina', col: 'Colombia', chi: 'Chile',
                 mex: 'Mexico', usa: 'USA', aus: 'Australia', jpn: 'Japan',
                 chn: 'China', kor: 'South Korea', ksa: 'Saudi Arabia',
-                egy: 'Egypt', rsa: 'South Africa', nga: 'Nigeria', mar: 'Morocco'
+                egy: 'Egypt', rsa: 'South Africa', nga: 'Nigeria', mar: 'Morocco',
+                tza: 'Tanzania', zmb: 'Zambia', zwe: 'Zimbabwe', eth: 'Ethiopia',
+                rwa: 'Rwanda', cod: 'DR Congo', cmr: 'Cameroon', civ: 'Ivory Coast',
+                dza: 'Algeria', tun: 'Tunisia', sdn: 'Sudan', ago: 'Angola',
+                bwa: 'Botswana', mwi: 'Malawi', jam: 'Jamaica', lby: 'Libya',
+                isr: 'Israel', aze: 'Azerbaijan', blr: 'Belarus', arm: 'Armenia',
+                bih: 'Bosnia and Herzegovina', nir: 'Northern Ireland', wal: 'Wales',
+                irl: 'Ireland', hkg: 'Hong Kong', bgd: 'Bangladesh', mlt: 'Malta',
+                kaz: 'Kazakhstan'
             };
             if (countryMap[prefix]) {
                 country = countryMap[prefix];
@@ -614,7 +668,11 @@
         malaysia: 'my', singapore: 'sg', vietnam: 'vn', nigeria: 'ng', 'south africa': 'za',
         egypt: 'eg', morocco: 'ma', algeria: 'dz', tunisia: 'tn', ghana: 'gh',
         kenya: 'ke', uganda: 'ug', cameroon: 'cm', senegal: 'sn', tanzania: 'tz',
-        zambia: 'zm', 'new zealand': 'nz'
+        zambia: 'zm', 'new zealand': 'nz', botswana: 'bw', jamaica: 'jm', israel: 'il',
+        belarus: 'by', azerbaijan: 'az', armenia: 'am', libya: 'ly', zimbabwe: 'zw',
+        ethiopia: 'et', rwanda: 'rw', 'dr congo': 'cd', 'ivory coast': 'ci', sudan: 'sd',
+        angola: 'ao', malawi: 'mw', bosnia: 'ba', 'northern ireland': 'gb-nir', 'hong kong': 'hk',
+        bangladesh: 'bd', malta: 'mt', kazakhstan: 'kz'
     };
 
     function getLeagueCountryCode(league) {

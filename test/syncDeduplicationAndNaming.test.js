@@ -24,6 +24,10 @@ test('resolveLeagueSlug correctly resolves African continental and domestic prem
 
 test('resolveLeagueSlug prevents non-English Premier Leagues from colliding with eng.1', () => {
     // Other nations with "Premier League" in their title must NEVER resolve to eng.1
+    assert.equal(resolveLeagueSlug('Tanzanian Premier League', 'Tanzania', 'tza.1'), 'tza.1');
+    assert.equal(resolveLeagueSlug('Premier League', 'Tanzania', '26057'), 'tza.1');
+    assert.equal(resolveLeagueSlug('Mbeya City vs Singida Black Stars', 'Premier League', ''), 'tza.1');
+    assert.equal(resolveLeagueSlug('NBC Premier League', 'Tanzania', ''), 'tza.1');
     assert.equal(resolveLeagueSlug('Singapore Premier League', 'Singapore', 'sgp.1'), 'sgp.1');
     assert.equal(resolveLeagueSlug('Canadian Premier League', 'Canada', 'can.1'), 'can.1');
     assert.equal(resolveLeagueSlug('Bahraini Premier League', 'Bahrain', 'bhr.1'), 'bhr.1');
@@ -31,6 +35,9 @@ test('resolveLeagueSlug prevents non-English Premier Leagues from colliding with
     assert.equal(resolveLeagueSlug('Kuwait Premier League', 'Kuwait', 'kwt.1'), 'kwt.1');
     assert.equal(resolveLeagueSlug('Russian Premier League', 'Russia', 'rus.1'), 'rus.1');
     assert.equal(resolveLeagueSlug('Ukrainian Premier League', 'Ukraine', 'ukr.1'), 'ukr.1');
+    assert.equal(resolveLeagueSlug('Botswana Premier League', 'Botswana', 'bwa.1'), 'bwa.1');
+    assert.equal(resolveLeagueSlug('Jamaica Premier League', 'Jamaica', 'jam.1'), 'jam.1');
+    assert.equal(resolveLeagueSlug('Israeli Premier League', 'Israel', 'isr.1'), 'isr.1');
 });
 
 test('resolveLeagueSlug correctly separates Women competitions', () => {
