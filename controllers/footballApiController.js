@@ -233,7 +233,8 @@ async function fetchFreshWorldwideLiveMatches() {
         for (const stage of liveScoreData.Stages) {
             const country = stage.Cnm || stage.Sdn || 'International';
             const leagueName = stage.Snm || 'Football Competition';
-            const slug = resolveLeagueSlug(leagueName, country, stage.Scd || '') || 'intl.other';
+            const slug = resolveLeagueSlug(leagueName, country, stage.Scd || '');
+            if (!slug || slug === 'usa.ncaa') continue;
             const lg = leagueMap.get(slug) || {};
 
             for (const ev of (stage.Events || [])) {
@@ -310,7 +311,9 @@ async function fetchFreshWorldwideLiveMatches() {
             const competitors = comp.competitors || [];
             const homeComp = competitors.find(c => c.homeAway === 'home') || competitors[0] || {};
             const awayComp = competitors.find(c => c.homeAway === 'away') || competitors[1] || {};
-            const targetSlug = resolveLeagueSlug(comp.altGameNote || '', comp.notes?.[0]?.headline || '', ev.uid || '') || 'intl.other';
+            if (/ncaa|college basketball/i.test(`${comp.altGameNote || ''} ${ev.name || ''} ${ev.uid || ''}`)) continue;
+            const targetSlug = resolveLeagueSlug(comp.altGameNote || '', comp.notes?.[0]?.headline || '', ev.uid || '');
+            if (!targetSlug || targetSlug === 'usa.ncaa') continue;
             const lg = leagueMap.get(targetSlug) || {};
             const clock = ev.status?.displayClock || ev.status?.type?.detail || "45'";
 
