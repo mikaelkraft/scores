@@ -140,6 +140,24 @@ test('areTeamNamesMatching accurately deduplicates teams between ESPN and LiveSc
     // Non-matching teams do not collide
     assert.equal(areTeamNamesMatching('Chelsea', 'Arsenal'), false);
     assert.equal(areTeamNamesMatching('Real Madrid', 'Barcelona'), false);
+
+    // QPR vs Queens Park Rangers
+    assert.equal(areTeamNamesMatching('QPR', 'Queens Park Rangers'), true);
+    assert.equal(areTeamNamesMatching('QPR', 'Burnley'), false);
+
+    // Bodoe/Glimt vs Bodo/Glimt
+    assert.equal(areTeamNamesMatching('Bodoe/Glimt', 'Bodo/Glimt'), true);
+});
+
+test('resolveLeagueSlug correctly resolves youth tournaments and AFC Champions League Two', () => {
+    // AFC Champions League Two must NEVER resolve to English League Two (eng.4)
+    assert.equal(resolveLeagueSlug('AFC Champions League Two: Group D', 'Asia', 'afc-champions-league-two-group-d'), 'afc.cup');
+    assert.equal(resolveLeagueSlug('ACL Two Group Stage', 'Asia', ''), 'afc.cup');
+
+    // UEFA Youth League stages must NEVER resolve to FIFA U-20 World Cup (fifa.u20)
+    assert.equal(resolveLeagueSlug('UEFA Youth League - Champions League Path', 'Europe', 'champions-league-path-2024'), 'uefa.youth');
+    assert.equal(resolveLeagueSlug('UEFA Youth League - Domestic Champions Path', 'Europe', 'domestic-champions-path-2024'), 'uefa.youth');
+    assert.equal(resolveLeagueSlug('Premier League U18', 'England', ''), 'eng.u18');
 });
 
 test('normalizeTeamName accurately strips foundation years and club noise', () => {
@@ -150,4 +168,20 @@ test('normalizeTeamName accurately strips foundation years and club noise', () =
     assert.equal(normalizeTeamName('Hannover 96'), 'hannover');
     assert.equal(normalizeTeamName('Como Calcio 1907'), 'como');
     assert.equal(normalizeTeamName('AC Milan'), 'acmilan');
+    assert.equal(normalizeTeamName('QPR'), 'queensparkrangers');
+    assert.equal(normalizeTeamName('Queens Park Rangers'), 'queensparkrangers');
+    assert.equal(normalizeTeamName('Bodoe/Glimt'), 'bodoglimt');
+    assert.equal(normalizeTeamName('Bodo/Glimt'), 'bodoglimt');
+});
+
+test('synthesizeMatchTelemetry returns authentic empty statistics without synthesizing dummy stats', () => {
+    const { synthesizeMatchTelemetry } = require('../services/soccerSerializer');
+    const result = synthesizeMatchTelemetry({
+        home: { name: 'Galatasaray' },
+        away: { name: 'VfB Stuttgart' },
+        status: { state: 'in' }
+    });
+    assert.equal(result.isDerivedTelemetry, false);
+    assert.equal(result.teams[0].statistics.length, 0);
+    assert.equal(result.teams[1].statistics.length, 0);
 });

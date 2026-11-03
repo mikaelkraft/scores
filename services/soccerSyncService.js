@@ -604,13 +604,18 @@ async function syncLeague(leagueDef) {
 async function syncAllLeagues() {
     console.log(`⚡ [LiveSync] Ingesting match rounds and standings across ${TARGET_LEAGUES.length} premier leagues...`);
     const results = [];
-    for (const l of TARGET_LEAGUES) {
-        try {
-            const res = await syncLeague(l);
-            console.log(`✅ [LiveSync] ${l.name} (${l.slug}): ${res.matchesSynced} matches, ${res.standingsSynced} tables.`);
-            results.push(res);
-        } catch (e) {
-            console.error(`❌ [LiveSync] ${l.slug} sync error: ${e.message}`);
+    const CONCURRENCY = 5;
+    for (let i = 0; i < TARGET_LEAGUES.length; i += CONCURRENCY) {
+        const batch = TARGET_LEAGUES.slice(i, i + CONCURRENCY);
+        const batchResults = await Promise.allSettled(batch.map(l => syncLeague(l)));
+        for (let j = 0; j < batch.length; j++) {
+            const l = batch[j];
+            const r = batchResults[j];
+            if (r.status === 'fulfilled') {
+                results.push(r.value);
+            } else {
+                console.warn(`[LiveSync] ${l.slug} sync error: ${r.reason?.message}`);
+            }
         }
     }
     return results;
@@ -689,32 +694,43 @@ function resolveLeagueSlug(altGameNote = '', compDesc = '', uid = '') {
         if (text.includes('pl2') || text.includes('premier league 2') || text.includes('eng.u21') || ((text.includes('premier league') || text.includes('development')) && (text.includes('u21') || text.includes('u-21') || text.includes('u23') || text.includes('u-23')))) {
             return 'eng.u21';
         }
+        if (text.includes('premier league u18') || text.includes('u18 premier') || text.includes('eng.u18')) {
+            return 'eng.u18';
+        }
         if (text.includes('primavera') || (text.includes('ita') && text.includes('youth'))) {
             return 'ita.primavera';
         }
-        if (text.includes('uefa') || text.includes('champions') || (text.includes('youth') && (text.includes('league') || text.includes('cup') || text.includes('u19') || text.includes('u-19')))) {
+        if (text.includes('uefa') || text.includes('champions') || text.includes('youth league') || (text.includes('youth') && (text.includes('league') || text.includes('path') || text.includes('u19') || text.includes('u-19')))) {
             return 'uefa.youth';
         }
         if (text.includes('libertadores') || text.includes('conmebol')) {
             return 'conmebol.u20';
         }
-        if (text.includes('u20') || text.includes('u-20')) {
+        // FIFA World Cup youth national teams only (never club youth)
+        if ((text.includes('fifa') || text.includes('world cup')) && (text.includes('u20') || text.includes('u-20'))) {
             return 'fifa.u20';
         }
-        if (text.includes('u17') || text.includes('u-17')) {
+        if ((text.includes('fifa') || text.includes('world cup')) && (text.includes('u17') || text.includes('u-17'))) {
             return 'fifa.u17';
         }
         return 'uefa.youth';
     }
 
-    // 4. English Lower Divisions & Cups (prevents Northern/Southern Premier matching senior Premier League)
+    // 4. Continental Tournaments evaluated early (prevents "AFC Champions League Two" matching English "League Two")
+    if (text.includes('afc champions league two') || text.includes('acl two') || text.includes('afc.cup')) return 'afc.cup';
+    if (text.includes('afc champions') || text.includes('afc.champions') || (text.includes('afc') && text.includes('champions'))) return 'afc.champions';
+    if (text.includes('caf champions') || text.includes('caf.champions') || text.includes('totalenergies caf cl') || (text.includes('caf') && text.includes('champions'))) return 'caf.champions';
+    if (text.includes('caf confederation') || text.includes('caf confed') || text.includes('caf.confed') || (text.includes('caf') && text.includes('confed'))) return 'caf.confed';
+    if (text.includes('concacaf') || text.includes('concacaf.champions')) return 'concacaf.champions';
+
+    // 5. English Lower Divisions & Cups (prevents Northern/Southern Premier matching senior Premier League)
     if (text.includes('northern premier') || text.includes('eng.northern')) return 'eng.northern';
     if (text.includes('southern premier') || text.includes('eng.southern') || text.includes('southern football league')) return 'eng.southern';
     if (text.includes('isthmian') || text.includes('eng.isthmian')) return 'eng.isthmian';
     if (text.includes('national league north') || text.includes('national league south') || text.includes('eng.6')) return 'eng.6';
     if (text.includes('national league') || text.includes('eng.5')) return 'eng.5';
-    if (text.includes('league two') || text.includes('league 2') || text.includes('eng.4')) return 'eng.4';
-    if (text.includes('league one') || text.includes('league 1') || text.includes('eng.3')) return 'eng.3';
+    if (text.includes('eng.4') || ((text.includes('league two') || text.includes('league 2')) && !text.includes('afc'))) return 'eng.4';
+    if (text.includes('eng.3') || ((text.includes('league one') || text.includes('league 1')) && !text.includes('ligue 1') && !text.includes('fra.1') && !text.includes('tha.1'))) return 'eng.3';
     if (text.includes('efl championship') || text.includes('english championship') || (text.includes('championship') && (text.includes('eng') || text.includes('efl') || text.includes('sky bet'))) || text.includes('eng.2')) return 'eng.2';
     if (text.includes('fa cup') || text.includes('eng.fa')) return 'eng.fa';
     if (text.includes('carabao') || text.includes('efl cup') || (text.includes('league cup') && !text.includes('scot') && !text.includes('thai')) || text.includes('eng.league_cup')) return 'eng.league_cup';
@@ -1294,6 +1310,27 @@ function normalizeTeamName(name = '') {
         .replace(/\bnewcastle\s+united\b/g, 'newcastle')
         .replace(/\bwest\s+ham\s+united\b/g, 'westham')
         .replace(/\bbrighton\s+(and|&)\s+hove\s+albion\b/g, 'brighton')
+        .replace(/\bqpr\b|\bqueens\s+park\s+rangers\b/g, 'queensparkrangers')
+        .replace(/\bbodoe\b|\bbodo\b/g, 'bodo')
+        .replace(/\bblackburn\s+rovers\b/g, 'blackburn')
+        .replace(/\bbolton\s+wanderers\b/g, 'bolton')
+        .replace(/\bstoke\s+city\b/g, 'stoke')
+        .replace(/\bswansea\s+city\b/g, 'swansea')
+        .replace(/\bnorwich\s+city\b/g, 'norwich')
+        .replace(/\bderby\s+county\b/g, 'derby')
+        .replace(/\bpreston\s+north\s+end\b/g, 'preston')
+        .replace(/\bsheffield\s+united\b/g, 'sheffieldunited')
+        .replace(/\bsheffield\s+wednesday\b/g, 'sheffieldwednesday')
+        .replace(/\bwest\s+brom\b|\bwest\s+bromwich\s+albion\b/g, 'westbrom')
+        .replace(/\bbirmingham\s+city\b/g, 'birmingham')
+        .replace(/\bcharlton\s+athletic\b/g, 'charlton')
+        .replace(/\basante\s+kotoko\b/g, 'asantekotoko')
+        .replace(/\baduana\s+stars\b/g, 'aduanastars')
+        .replace(/\bhearts\s+of\s+oak\b/g, 'heartsofoak')
+        .replace(/\byoung\s+africans\b|\byanga\b/g, 'youngafricans')
+        .replace(/\bsimba\s+sc\b|\bsimba\b/g, 'simba')
+        .replace(/\bmbeya\s+city\b/g, 'mbeyacity')
+        .replace(/\bsingida\s+black\s+stars\b|\bsingida\s+bs\b/g, 'singidablackstars')
         // Strip common non-distinct club markers like FC, CF, etc. and foundation years (e.g. Como 1907 -> como)
         .replace(/\b(fc|cf|sc|ac|cd|afc|fk|sk|sv|ssc|as|rc|ud|rb|calcio)\b/gi, '')
         .replace(/\b(18\d{2}|19\d{2}|20\d{2})\b/g, '')
@@ -1919,14 +1956,22 @@ async function syncLiveScoreInPlay() {
     return updatedCount;
 }
 
-const REGIONAL_SCOREBOARD_FEEDS = [
+const CORE_AND_REGIONAL_SCOREBOARD_FEEDS = [
+    // Prime UEFA Continental & Youth
+    'uefa.champions', 'uefa.europa', 'uefa.europa.conf', 'uefa.youth',
+    // English tiers & domestic cups
+    'eng.1', 'eng.2', 'eng.3', 'eng.4', 'eng.league_cup', 'eng.fa',
+    // Top European domestic leagues & cups
+    'esp.1', 'esp.copa_del_rey', 'ita.1', 'ita.coppa_italia', 'ger.1', 'ger.dfb_pokal', 'fra.1',
+    'por.1', 'ned.1', 'tur.1', 'bel.1', 'sco.1',
     // African continental and domestic premier leagues
     'caf.champions', 'caf.confed', 'caf.nations', 'caf.championship', 'caf.cosafa',
-    'nga.1', 'rsa.1', 'mar.1', 'egy.1', 'ken.1', 'gha.1', 'uga.1',
+    'nga.1', 'rsa.1', 'mar.1', 'egy.1', 'ken.1', 'gha.1', 'uga.1', 'tza.1',
     // Asian & Oceanic
-    'afc.champions', 'afc.cup', 'idn.1', 'tha.1', 'mys.1', 'sgp.1', 'ind.1', 'ind.2',
+    'afc.champions', 'afc.cup', 'idn.1', 'tha.1', 'mys.1', 'sgp.1', 'ind.1', 'ind.2', 'ksa.1',
     // Americas & International
-    'concacaf.champions', 'per.1', 'bol.1', 'ecu.1', 'par.1', 'ven.1', 'uru.1', 'col.1', 'mex.2'
+    'concacaf.champions', 'conmebol.libertadores', 'conmebol.sudamericana',
+    'bra.1', 'arg.1', 'usa.1', 'mex.1', 'col.1', 'per.1', 'bol.1', 'ecu.1', 'par.1', 'ven.1', 'uru.1', 'mex.2'
 ];
 
 async function syncLiveScoreboards() {
@@ -1936,18 +1981,21 @@ async function syncLiveScoreboards() {
         const todayStr = formatDateToScoreboard(now);
         const allUrl = `https://site.api.espn.com/apis/site/v2/sports/soccer/all/scoreboard?dates=${todayStr}&limit=300`;
 
-        const scoreboardFetches = [
-            fetchJson(allUrl).catch(() => ({ events: [] })),
-            ...REGIONAL_SCOREBOARD_FEEDS.map(slug =>
-                fetchJson(`https://site.api.espn.com/apis/site/v2/sports/soccer/${slug}/scoreboard`)
-                    .then(data => ({
-                        events: (data.events || []).map(e => ({ ...e, _forcedLeagueSlug: slug }))
-                    }))
-                    .catch(() => ({ events: [] }))
-            )
-        ];
-
-        const feedResults = await Promise.all(scoreboardFetches);
+        const feedResults = [await fetchJson(allUrl).catch(() => ({ events: [] }))];
+        const batchSize = 10;
+        for (let i = 0; i < CORE_AND_REGIONAL_SCOREBOARD_FEEDS.length; i += batchSize) {
+            const batch = CORE_AND_REGIONAL_SCOREBOARD_FEEDS.slice(i, i + batchSize);
+            const batchRes = await Promise.all(
+                batch.map(slug =>
+                    fetchJson(`https://site.api.espn.com/apis/site/v2/sports/soccer/${slug}/scoreboard`)
+                        .then(data => ({
+                            events: (data.events || []).map(e => ({ ...e, _forcedLeagueSlug: slug }))
+                        }))
+                        .catch(() => ({ events: [] }))
+                )
+            );
+            feedResults.push(...batchRes);
+        }
         const events = [];
         const seenEvIds = new Set();
         for (const res of feedResults) {

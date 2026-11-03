@@ -466,8 +466,11 @@
 
     function getEventDedupSignature(ev) {
         const { home, away } = competitorsFromEvent(ev);
-        const hName = cleanTeamNameForDedup(home.team?.displayName || home.team?.name || ev.name?.split(' vs ')?.[0] || '');
-        const aName = cleanTeamNameForDedup(away.team?.displayName || away.team?.name || ev.name?.split(' vs ')?.[1] || '');
+        const hName = cleanTeamNameForDedup(home.team?.displayName || home.team?.name || ev.home?.name || '');
+        const aName = cleanTeamNameForDedup(away.team?.displayName || away.team?.name || ev.away?.name || '');
+        if (!hName && !aName) {
+            return String(ev.id || Math.random());
+        }
         const dKey = ev.scoreboardDate || (ev.date ? String(ev.date).slice(0, 10) : '');
         return [hName, aName].sort().join('_vs_') + '_' + dKey;
     }
@@ -1404,10 +1407,12 @@
         for (const grp of groupedData) {
             for (const ev of (grp.events || [])) {
                 if (state.pinnedMatches.includes(String(ev.id))) {
-                    const comp = ev.competitions?.[0] || {};
-                    const hName = comp.competitors?.find(c => c.homeAway === 'home')?.team?.displayName || ev.name?.split(' vs ')?.[0] || '';
-                    const aName = comp.competitors?.find(c => c.homeAway === 'away')?.team?.displayName || ev.name?.split(' vs ')?.[1] || '';
-                    const sig = [hName.toLowerCase().replace(/[^a-z0-9]/g, ''), aName.toLowerCase().replace(/[^a-z0-9]/g, '')].sort().join('_vs_');
+                    const { home, away } = competitorsFromEvent(ev);
+                    const hName = home.team?.displayName || home.team?.name || ev.home?.name || '';
+                    const aName = away.team?.displayName || away.team?.name || ev.away?.name || '';
+                    const cleanH = cleanTeamNameForDedup(hName);
+                    const cleanA = cleanTeamNameForDedup(aName);
+                    const sig = (cleanH && cleanA) ? [cleanH, cleanA].sort().join('_vs_') : String(ev.id);
                     if (!seenPinnedSig.has(sig)) {
                         seenPinnedSig.add(sig);
                         pinnedEvents.push({ event: ev, league: grp.league });
@@ -1439,15 +1444,15 @@
         const globalSeenMatchSig = new Map();
         for (const { league, events } of groupedData) {
             for (const ev of (events || [])) {
-                const comp = ev.competitions?.[0] || {};
-                const hName = comp.competitors?.find(c => c.homeAway === 'home')?.team?.displayName || ev.name?.split(' vs ')?.[0] || '';
-                const aName = comp.competitors?.find(c => c.homeAway === 'away')?.team?.displayName || ev.name?.split(' vs ')?.[1] || '';
+                const { home, away } = competitorsFromEvent(ev);
+                const hName = home.team?.displayName || home.team?.name || ev.home?.name || '';
+                const aName = away.team?.displayName || away.team?.name || ev.away?.name || '';
                 const cleanH = cleanTeamNameForDedup(hName);
                 const cleanA = cleanTeamNameForDedup(aName);
                 if (!cleanH || !cleanA) continue;
                 const sig = [cleanH, cleanA].sort().join('_vs_');
 
-                const hLogo = comp.competitors?.find(c => c.homeAway === 'home')?.team?.logo || '';
+                const hLogo = home.team?.logo || ev.home?.logo || '';
                 const isEspn = hLogo.includes('espncdn') || /^\d{6,}$/.test(String(ev.id));
                 const isSpecificLeague = league?.slug && league.slug !== 'other' && league.slug !== 'w.other';
                 const evScore = (isEspn ? 4 : 0) + (isSpecificLeague ? 2 : 0) + (ev.status?.clock ? 1 : 0);
@@ -1469,9 +1474,9 @@
             // Deduplicate events within this league and filter out inferior duplicates
             const seenMatchSig = new Map();
             for (const ev of events) {
-                const comp = ev.competitions?.[0] || {};
-                const hName = comp.competitors?.find(c => c.homeAway === 'home')?.team?.displayName || ev.name?.split(' vs ')?.[0] || '';
-                const aName = comp.competitors?.find(c => c.homeAway === 'away')?.team?.displayName || ev.name?.split(' vs ')?.[1] || '';
+                const { home, away } = competitorsFromEvent(ev);
+                const hName = home.team?.displayName || home.team?.name || ev.home?.name || '';
+                const aName = away.team?.displayName || away.team?.name || ev.away?.name || '';
                 const cleanH = cleanTeamNameForDedup(hName);
                 const cleanA = cleanTeamNameForDedup(aName);
                 if (!cleanH || !cleanA) continue;
@@ -1482,10 +1487,10 @@
                     if (canonical.id !== ev.id) continue; // Skip inferior cross-league duplicate
                 }
 
-                const dKey = ev.date ? String(ev.date).slice(0, 10) : '';
+                const dKey = ev.scoreboardDate || (ev.date ? String(ev.date).slice(0, 10) : '');
                 const innerSig = sig + '_' + dKey;
 
-                const hLogo = comp.competitors?.find(c => c.homeAway === 'home')?.team?.logo || '';
+                const hLogo = home.team?.logo || ev.home?.logo || '';
                 const evScore = (hLogo.includes('espncdn') ? 3 : 0) + (/^\d{6,}$/.test(String(ev.id)) ? 2 : 0);
 
                 if (!seenMatchSig.has(innerSig)) {
@@ -1896,6 +1901,7 @@
     }
 
     let lastWindowScrollY = 0;
+    const matchDetailsClientCache = new Map();
 
     async function openMatch(eventId, leagueSlug = '') {
         state.currentEventId = eventId;
@@ -1910,6 +1916,16 @@
             window.scrollTo({ top: lastWindowScrollY, behavior: 'instant' });
             document.body.classList.add('dialog-open');
         }
+
+        // Instant render from client cache if available
+        const cached = matchDetailsClientCache.get(String(eventId));
+        if (cached && (Date.now() - cached.ts < 60000)) {
+            renderMatchDetails(cached.summary, cached.plays, cached.predictions, false);
+            // Re-fetch in background silently to ensure fresh clock/incidents
+            loadMatchDetails(eventId, true, leagueSlug);
+            return;
+        }
+
         await loadMatchDetails(eventId, false, leagueSlug);
     }
 
@@ -1926,7 +1942,7 @@
                 elements['dialog-status'].className = 'minute-pill pre';
             }
             if (elements['dialog-date']) elements['dialog-date'].textContent = '—';
-            elements['dialog-content'].innerHTML = '<div class="content-state"><span class="loader"></span><p>Loading match details…</p></div>';
+            elements['dialog-content'].innerHTML = '<div class="content-state"><span class="loader"></span><p>Loading match telemetry…</p></div>';
         }
 
         const base = `/get/soccer/${encodeURIComponent(slug)}/events/${encodeURIComponent(eventId)}`;
@@ -1960,6 +1976,15 @@
             plays = summary.timeline;
         }
         const predictions = predResult.status === 'fulfilled' ? predResult.value : null;
+
+        // Cache for instant back/forth modal opening
+        matchDetailsClientCache.set(String(eventId), {
+            summary,
+            plays,
+            predictions,
+            ts: Date.now()
+        });
+
         renderMatchDetails(summary, plays, predictions, silent);
 
         const competition = summary.header?.competitions?.[0] || {};

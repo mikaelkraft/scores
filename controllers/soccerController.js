@@ -474,8 +474,16 @@ router.get('/:league/fixtures', validateLeague, async(req, res) => {
     }
 });
 
+const summaryServerCache = new Map();
+
 async function sendSummary(req, res) {
     try {
+        const cached = summaryServerCache.get(req.eventId);
+        if (cached && Date.now() < cached.expiresAt) {
+            res.set('Cache-Control', `public, max-age=${cached.ttl}`);
+            return res.json(cached.data);
+        }
+
         const isMongoId = /^[0-9a-fA-F]{24}$/.test(req.eventId);
         let [league, match] = await Promise.all([
             getLeague(req.params.league),
@@ -588,19 +596,27 @@ async function sendSummary(req, res) {
                 } catch {}
             }
 
-            // If neither provider broadcasted granular boxscore telemetry (e.g. youth matches, U17 WC, or lower US divisions)
-            // Only synthesize telemetry if the match is live (in-play) or completed (post-match) — NEVER for pre-match/scheduled games
-            const finalHasStats = Boolean(
-                summary.boxscore?.teams?.[0]?.statistics?.length ||
-                summary.boxscore?.teams?.[1]?.statistics?.length
-            );
-            const compState = match.status?.state || summary.header?.competitions?.[0]?.status?.type?.state;
-            const isLiveOrFinished = compState === 'in' || compState === 'post' || Boolean(match.status?.completed);
-            if (!finalHasStats && isLiveOrFinished) {
-                summary.boxscore = synthesizeMatchTelemetry(match, summary);
+            // If neither provider broadcasted granular boxscore telemetry (e.g. youth matches, U17 WC, or lower domestic divisions),
+            // preserve authentic empty statistics rather than synthesizing dummy figures (possession %, shots, corners)
+            if (!summary.boxscore) {
+                summary.boxscore = {
+                    isDerivedTelemetry: false,
+                    teams: [
+                        { id: 'home', homeAway: 'home', team: match.home, statistics: [] },
+                        { id: 'away', homeAway: 'away', team: match.away, statistics: [] }
+                    ]
+                };
             }
 
-        res.set('Cache-Control', `public, max-age=${match.status?.state === 'in' ? 4 : 30}`);
+        const isLive = match.status?.state === 'in';
+        const ttl = isLive ? 5 : 60;
+        summaryServerCache.set(req.eventId, {
+            data: summary,
+            expiresAt: Date.now() + ttl * 1000,
+            ttl
+        });
+
+        res.set('Cache-Control', `public, max-age=${ttl}`);
         return res.json(summary);
     } catch (error) {
         return sendError(res, error);

@@ -342,14 +342,14 @@ app.listen(PORT, () => {
                 await cleanupStuckMatchesAndPurgeNcaa();
             }
 
-            // Immediate live scoreboard tick on boot
-            await syncLiveScoreboards();
+            // Immediate live scoreboard and in-play ticks on boot
+            await Promise.allSettled([
+                syncLiveScoreboards(),
+                syncLiveScoreInPlay()
+            ]);
             
-            const count = await SoccerLeague.countDocuments({ active: true });
-            if (count < TARGET_LEAGUES.length) {
-                console.log(`⚡ [LiveSync] Stored leagues (${count}) fewer than target (${TARGET_LEAGUES.length}). Starting comprehensive league sync...`);
-                await syncAllLeagues();
-            }
+            // Progressively sync all target leagues and multi-date upcoming schedules in the background
+            syncAllLeagues().catch(e => console.warn('[LiveSync] Background league sync notice:', e.message));
         } catch (e) {
             console.warn('Initial live sync notice:', e.message);
         }
