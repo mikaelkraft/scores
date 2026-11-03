@@ -156,18 +156,85 @@ function serializeClub(club) {
     };
 }
 
+function isConcreteClock(str) {
+    if (!str || typeof str !== 'string') return false;
+    const clean = str.trim();
+    if (!clean) return false;
+    if (/^(live|in\s*progress|status_in_progress|scheduled|upcoming|pre|in|post)$/i.test(clean)) {
+        return false;
+    }
+    if (/\d/.test(clean)) return true;
+    if (/^(ht|half\s*time|halftime|et|aet|pen\.?|penalties|break)$/i.test(clean)) return true;
+    return false;
+}
+
+function formatClockString(val) {
+    if (val === undefined || val === null) return '';
+    const s = String(val).trim();
+    if (!s) return '';
+    // Raw seconds (e.g. 2700 -> 45', 5400 -> 90')
+    if (/^\d{3,}$/.test(s)) {
+        const num = Number(s);
+        if (!isNaN(num) && num > 120) {
+            return `${Math.floor(num / 60)}'`;
+        }
+    }
+    // Number without apostrophe (e.g. "64" -> "64'")
+    if (/^\d{1,3}$/.test(s)) {
+        const num = Number(s);
+        if (!isNaN(num) && num > 0 && num <= 130) {
+            return `${num}'`;
+        }
+    }
+    return s;
+}
+
+function formatMatchClock(status = {}, type = {}) {
+    const candidates = [
+        status?.displayClock,
+        status?.clock,
+        status?.short_detail,
+        status?.shortDetail,
+        type?.shortDetail,
+        status?.detail,
+        type?.detail,
+        type?.clock
+    ];
+
+    for (const cand of candidates) {
+        const formatted = formatClockString(cand);
+        if (isConcreteClock(formatted)) {
+            return formatted;
+        }
+    }
+
+    const clockSec = Number(status?.clock_seconds);
+    if (!isNaN(clockSec) && clockSec > 0) {
+        return `${Math.floor(clockSec / 60)}'`;
+    }
+
+    return 'Live';
+}
+
 function serializeStatus(status = {}) {
+    const isLive = status.state === 'in' || Boolean(status.isLive);
+    const concreteClock = formatMatchClock(status, status.type);
+    const displayClock = isConcreteClock(concreteClock) ? concreteClock : (status.clock || '');
+    const shortDetail = isConcreteClock(displayClock)
+        ? displayClock
+        : (status.short_detail || status.detail || (isLive ? 'Live' : (status.completed ? 'FT' : 'Scheduled')));
+
     return {
-        clock: status.clock_seconds ?? 0,
-        displayClock: status.clock || '',
+        clock: status.clock_seconds ?? (status.clock && !isNaN(parseInt(status.clock, 10)) ? parseInt(status.clock, 10) * 60 : 0),
+        displayClock,
         period: status.period ?? 0,
         type: {
-            name: status.name || 'STATUS_UNKNOWN',
-            state: status.state || 'unknown',
+            name: status.name || (isLive ? 'STATUS_IN_PROGRESS' : (status.completed ? 'STATUS_FINAL' : 'STATUS_SCHEDULED')),
+            state: status.state || (isLive ? 'in' : (status.completed ? 'post' : 'pre')),
             completed: Boolean(status.completed),
-            description: status.description || '',
-            detail: status.detail || '',
-            shortDetail: status.short_detail || status.detail || ''
+            description: status.description || (isLive ? 'In Progress' : (status.completed ? 'Full Time' : 'Scheduled')),
+            detail: isConcreteClock(status.detail) ? status.detail : (displayClock || status.detail || (isLive ? 'Live' : 'Scheduled')),
+            shortDetail
         }
     };
 }
@@ -410,5 +477,7 @@ module.exports = {
     serializeSummary,
     synthesizeMatchTelemetry,
     statsToArray,
-    sanitizeLogoUrl
+    sanitizeLogoUrl,
+    isConcreteClock,
+    formatMatchClock
 };

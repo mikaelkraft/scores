@@ -19,7 +19,9 @@ const {
     serializeStandingGroup,
     serializeClub,
     sanitizeLogoUrl,
-    synthesizeMatchTelemetry
+    synthesizeMatchTelemetry,
+    isConcreteClock,
+    formatMatchClock
 } = require('../services/soccerSerializer');
 const { normalizeTeamName, getTeamCategory, getMatchTier, resolveMatchEspnId, resolveLeagueSlug, formatLiveScoreLogo } = require('../services/soccerSyncService');
 
@@ -435,10 +437,17 @@ async function fetchFreshWorldwideLiveMatches() {
             const winner = mScore > existing.score ? m : existing.match;
             const secondary = mScore > existing.score ? existing.match : m;
 
-            if (secondary.status?.clock && secondary.status.clock !== "45'") {
-                winner.status.clock = secondary.status.clock;
+            const secClock = secondary.status?.clock;
+            const secDetail = secondary.status?.detail;
+            if (secClock && isConcreteClock(secClock) && secClock !== "45'") {
+                winner.status.clock = secClock;
+                if (secDetail && isConcreteClock(secDetail)) {
+                    winner.status.detail = secDetail;
+                }
+            } else if (!isConcreteClock(winner.status?.clock)) {
+                if (secClock && secClock !== "45'") winner.status.clock = secClock;
+                if (secDetail) winner.status.detail = secDetail;
             }
-            if (secondary.status?.detail) winner.status.detail = secondary.status.detail;
             if (secondary.home?.score !== undefined) winner.home.score = secondary.home.score;
             if (secondary.away?.score !== undefined) winner.away.score = secondary.away.score;
             if (secondary.source?.livescore_id && !winner.source?.livescore_id) {
@@ -805,7 +814,24 @@ router.get('/fixtures', async (req, res) => {
                                 return (id && mid === id) || (h && a && mh === h && ma === a && mTier === tier);
                             });
                             if (idx !== -1) {
-                                matches[idx] = { ...matches[idx], ...lm, status: lm.status, home: lm.home, away: lm.away };
+                                const existingClock = matches[idx].status?.clock || matches[idx].status?.detail;
+                                const incomingClock = lm.status?.clock || lm.status?.detail;
+                                const bestClock = isConcreteClock(incomingClock) ? incomingClock : (isConcreteClock(existingClock) ? existingClock : (incomingClock || 'Live'));
+
+                                matches[idx] = {
+                                    ...matches[idx],
+                                    ...lm,
+                                    status: {
+                                        ...matches[idx].status,
+                                        ...lm.status,
+                                        clock: bestClock,
+                                        detail: bestClock,
+                                        displayClock: bestClock,
+                                        shortDetail: bestClock
+                                    },
+                                    home: lm.home,
+                                    away: lm.away
+                                };
                             }
                         } else {
                             if (id) seenSignatures.add(id);
@@ -841,16 +867,22 @@ router.get('/fixtures', async (req, res) => {
                 date: m.date,
                 name: m.name || `${m.home?.name || m.home?.displayName || 'Home'} vs ${m.away?.name || m.away?.displayName || 'Away'}`,
                 shortName: m.short_name || m.shortName,
+                const isLive = m.status?.state === 'in' || Boolean(m.status?.isLive);
+                const concreteClock = formatMatchClock(m.status);
+                const displayClock = isConcreteClock(concreteClock) ? concreteClock : (isLive ? 'Live' : '');
+                const detail = isConcreteClock(m.status?.detail) ? m.status.detail : (displayClock || (isLive ? 'Live' : (m.status?.completed ? 'FT' : 'Scheduled')));
+
                 status: {
-                    state: m.status?.state || 'pre',
-                    name: m.status?.name || 'STATUS_SCHEDULED',
-                    description: m.status?.description || 'Scheduled',
-                    detail: m.status?.detail || '',
-                    shortDetail: m.status?.short_detail || m.status?.shortDetail || '',
-                    clock: m.status?.clock || '',
+                    state: m.status?.state || (isLive ? 'in' : 'pre'),
+                    name: m.status?.name || (isLive ? 'STATUS_IN_PROGRESS' : 'STATUS_SCHEDULED'),
+                    description: m.status?.description || (isLive ? 'In Progress' : 'Scheduled'),
+                    detail,
+                    shortDetail: displayClock || detail,
+                    clock: displayClock,
+                    displayClock: displayClock,
                     period: m.status?.period || 0,
                     completed: Boolean(m.status?.completed),
-                    isLive: m.status?.state === 'in' || Boolean(m.status?.isLive)
+                    isLive: isLive
                 },
                 home: {
                     id: m.home?.source_id || m.home?.id,
@@ -903,10 +935,17 @@ router.get('/fixtures', async (req, res) => {
                 const secondary = mScore > existing.score ? existing.match : m;
 
                 if (secondary.status?.isLive || secondary.status?.state === 'in') {
-                    if (secondary.status?.clock && secondary.status.clock !== "45'") {
-                        winner.status.clock = secondary.status.clock;
+                    const secClock = secondary.status?.clock;
+                    const secDetail = secondary.status?.detail;
+                    if (secClock && isConcreteClock(secClock) && secClock !== "45'") {
+                        winner.status.clock = secClock;
+                        if (secDetail && isConcreteClock(secDetail)) {
+                            winner.status.detail = secDetail;
+                        }
+                    } else if (!isConcreteClock(winner.status?.clock)) {
+                        if (secClock && secClock !== "45'") winner.status.clock = secClock;
+                        if (secDetail) winner.status.detail = secDetail;
                     }
-                    if (secondary.status?.detail) winner.status.detail = secondary.status.detail;
                     if (secondary.status?.period) winner.status.period = secondary.status.period;
                     if (secondary.home?.score !== undefined) winner.home.score = secondary.home.score;
                     if (secondary.away?.score !== undefined) winner.away.score = secondary.away.score;

@@ -7,7 +7,9 @@ const {
     serializeScoreboardEvent,
     serializeStandingGroup,
     serializeSummary,
-    statsToArray
+    statsToArray,
+    isConcreteClock,
+    formatMatchClock
 } = require('../services/soccerSerializer');
 
 const league = {
@@ -215,4 +217,39 @@ test('stats serializer accepts Mongoose-style maps', () => {
         abbreviation: 'SHOT',
         displayValue: '5'
     }]);
+});
+
+test('isConcreteClock and formatMatchClock never allow Live text to override the match clock', () => {
+    // 1. isConcreteClock validation
+    assert.equal(isConcreteClock("64'"), true);
+    assert.equal(isConcreteClock("45+2'"), true);
+    assert.equal(isConcreteClock("HT"), true);
+    assert.equal(isConcreteClock("Half Time"), true);
+    assert.equal(isConcreteClock("72"), true);
+    assert.equal(isConcreteClock("12'"), true);
+
+    // Generic statuses are not concrete clocks
+    assert.equal(isConcreteClock("Live"), false);
+    assert.equal(isConcreteClock("LIVE"), false);
+    assert.equal(isConcreteClock("In Progress"), false);
+    assert.equal(isConcreteClock("STATUS_IN_PROGRESS"), false);
+    assert.equal(isConcreteClock("Scheduled"), false);
+    assert.equal(isConcreteClock(""), false);
+    assert.equal(isConcreteClock(null), false);
+
+    // 2. formatMatchClock priority: clock string with apostrophe is preserved
+    assert.equal(formatMatchClock({ clock: "64'", detail: "Live" }), "64'");
+    assert.equal(formatMatchClock({ clock: "HT", detail: "In Progress" }), "HT");
+    assert.equal(formatMatchClock({ clock: "45+2'", detail: "Live" }), "45+2'");
+
+    // 3. formatMatchClock priority: raw numeric minutes get formatted
+    assert.equal(formatMatchClock({ clock: 72 }), "72'");
+    assert.equal(formatMatchClock({ clock_seconds: 3840 }), "64'");
+
+    // 4. formatMatchClock priority: detail with concrete clock is used if clock property is missing
+    assert.equal(formatMatchClock({ detail: "64'" }), "64'");
+
+    // 5. formatMatchClock fallback: Live is returned ONLY when no clock information exists
+    assert.equal(formatMatchClock({ detail: "Live" }), "Live");
+    assert.equal(formatMatchClock({}), "Live");
 });

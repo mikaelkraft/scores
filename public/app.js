@@ -405,40 +405,74 @@
         };
     }
 
-    function formatMatchClock(status, type = {}) {
-        const detail = String(status?.displayClock || type?.shortDetail || type?.detail || '').trim();
-        // If detail is not a raw multi-digit number in seconds (e.g. '45'', 'HT', 'FT', '45+2''), return it
-        if (detail && !/^\d{3,}$/.test(detail)) {
-            return detail;
+    function isConcreteClock(str) {
+        if (!str || typeof str !== 'string') return false;
+        const clean = str.trim();
+        if (!clean) return false;
+        if (/^(live|in\s*progress|status_in_progress|scheduled|upcoming|pre|in|post)$/i.test(clean)) {
+            return false;
         }
-        const raw = status?.clock ?? type?.clock;
-        if (raw !== undefined && raw !== null && raw !== '') {
-            const num = Number(raw);
-            if (!isNaN(num)) {
-                if (num > 120) {
-                    // Raw seconds (e.g. 2700 -> 45', 5400 -> 90')
-                    const mins = Math.floor(num / 60);
-                    return `${mins}'`;
-                }
-                if (num > 0) {
-                    return `${num}'`;
-                }
-            }
-        }
-        if (detail) {
-            const num = Number(detail);
+        if (/\d/.test(clean)) return true;
+        if (/^(ht|half\s*time|halftime|et|aet|pen\.?|penalties|break)$/i.test(clean)) return true;
+        return false;
+    }
+
+    function formatClockString(val) {
+        if (val === undefined || val === null) return '';
+        const s = String(val).trim();
+        if (!s) return '';
+        // If raw seconds (e.g. 2700 -> 45', 5400 -> 90')
+        if (/^\d{3,}$/.test(s)) {
+            const num = Number(s);
             if (!isNaN(num) && num > 120) {
                 return `${Math.floor(num / 60)}'`;
             }
-            return detail;
         }
-        return type?.state === 'in' ? 'Live' : (type?.shortDetail || 'Live');
+        // If number without apostrophe (e.g. "64" -> "64'")
+        if (/^\d{1,3}$/.test(s)) {
+            const num = Number(s);
+            if (!isNaN(num) && num > 0 && num <= 130) {
+                return `${num}'`;
+            }
+        }
+        return s;
+    }
+
+    function formatMatchClock(status, type = {}) {
+        // Collect all potential clock sources in priority order:
+        const candidates = [
+            status?.displayClock,
+            status?.clock,
+            status?.short_detail,
+            status?.shortDetail,
+            type?.shortDetail,
+            status?.detail,
+            type?.detail,
+            type?.clock
+        ];
+
+        // 1. First priority: Find the first CONCRETE clock (contains digits, HT, etc., NOT generic 'Live')
+        for (const cand of candidates) {
+            const formatted = formatClockString(cand);
+            if (isConcreteClock(formatted)) {
+                return formatted;
+            }
+        }
+
+        // 2. Second priority: If status has numeric clock_seconds
+        const clockSec = Number(status?.clock_seconds);
+        if (!isNaN(clockSec) && clockSec > 0) {
+            return `${Math.floor(clockSec / 60)}'`;
+        }
+
+        // 3. Fallback: If no concrete clock exists anywhere, return 'Live'
+        return 'Live';
     }
 
     function statusInfo(event) {
         const status = event?.status || competitionFromEvent(event).status || {};
         const type = status.type || {};
-        const stateName = status.state || type.state || 'unknown';
+        const stateName = status.state || type.state || (status.isLive ? 'in' : 'unknown');
         if (stateName === 'in' || status.isLive) {
             const clock = formatMatchClock(status, type);
             return { state: 'live', label: clock, pillClass: 'in-play' };
@@ -1152,13 +1186,17 @@
                     status: {
                         type: {
                             state: 'in',
-                            name: m.status?.name,
-                            description: m.status?.description,
-                            detail: m.status?.clock
+                            name: m.status?.name || 'STATUS_IN_PROGRESS',
+                            description: m.status?.description || 'In Progress',
+                            detail: m.status?.clock || m.status?.detail || 'Live',
+                            shortDetail: m.status?.clock || m.status?.detail || 'Live'
                         },
-                        clock: m.status?.clock,
-                        displayClock: m.status?.clock,
-                        period: m.status?.period
+                        clock: m.status?.clock || m.status?.detail || '',
+                        displayClock: m.status?.clock || m.status?.detail || '',
+                        detail: m.status?.clock || m.status?.detail || '',
+                        short_detail: m.status?.clock || m.status?.detail || '',
+                        period: m.status?.period || 1,
+                        isLive: true
                     },
                     competitions: [{
                         id: m.id,
@@ -3470,7 +3508,7 @@
 
                 // Compute lightweight live state fingerprint
                 const currentDigest = liveMatches.map(m =>
-                    `${m.id}:${m.home?.score ?? m.home?.score?.value ?? 0}-${m.away?.score ?? m.away?.score?.value ?? 0}:${m.clock?.displayValue || m.status?.displayClock || ''}`
+                    `${m.id}:${m.home?.score ?? 0}-${m.away?.score ?? 0}:${m.status?.clock || m.status?.detail || m.status?.displayClock || m.clock?.displayValue || ''}`
                 ).join('|');
 
                 const digestChanged = currentDigest !== state.lastLiveDigest;
@@ -3654,8 +3692,12 @@
             if (scoreDigits[1]) scoreDigits[1].textContent = newAwayScore;
 
             const clockEl = matchRow.querySelector('.fs-status-live');
-            if (clockEl && update.status?.clock) {
-                clockEl.textContent = update.status.clock;
+            if (clockEl) {
+                const newClock = formatMatchClock(update.status, update.status?.type);
+                // Never allow generic 'Live' text to override an existing concrete match clock!
+                if (isConcreteClock(newClock) || !isConcreteClock(clockEl.textContent)) {
+                    clockEl.textContent = newClock;
+                }
             }
 
             if (prevHomeScore !== null && (newHomeScore > prevHomeScore || newAwayScore > prevAwayScore)) {
@@ -3672,8 +3714,11 @@
                 scoreDigits.textContent = `${update.home?.score ?? 0} - ${update.away?.score ?? 0}`;
             }
             const minutePill = elements['dialog-content'].querySelector('.minute-pill');
-            if (minutePill && update.status?.clock) {
-                minutePill.textContent = update.status.clock;
+            if (minutePill) {
+                const newClock = formatMatchClock(update.status, update.status?.type);
+                if (isConcreteClock(newClock) || !isConcreteClock(minutePill.textContent)) {
+                    minutePill.textContent = newClock;
+                }
             }
         }
     }
