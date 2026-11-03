@@ -147,6 +147,22 @@ SoccerMatchSchema.index(
     { name: 'soccer_match_scoreboard' }
 );
 SoccerMatchSchema.index(
+    { scoreboard_date: 1, date: 1 },
+    { name: 'soccer_match_date' }
+);
+SoccerMatchSchema.index(
+    { 'status.state': 1, date: 1 },
+    { name: 'soccer_match_status_date' }
+);
+SoccerMatchSchema.index(
+    { league_slug: 1 },
+    { name: 'soccer_match_league_slug' }
+);
+SoccerMatchSchema.index(
+    { date: -1 },
+    { name: 'soccer_match_date_desc' }
+);
+SoccerMatchSchema.index(
     { league_slug: 1, 'status.state': 1, date: 1 },
     { name: 'soccer_match_live_state' }
 );

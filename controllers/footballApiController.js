@@ -451,15 +451,6 @@ async function fetchFreshWorldwideLiveMatches() {
     }
 
     const dedupedLive = Array.from(seenLiveMap.values()).map(e => e.match);
-
-    // Asynchronously update MongoDB with live in-play without blocking this return
-    setImmediate(() => {
-        try {
-            const { syncLiveScoreInPlay } = require('../services/soccerSyncService');
-            syncLiveScoreInPlay().catch(() => {});
-        } catch {}
-    });
-
     return dedupedLive;
 }
 
@@ -659,11 +650,33 @@ router.get('/live/stream', async (req, res) => {
     }
 });
 
+const fixturesResponseCache = new Map();
+const FIXTURES_CACHE_MAX_SIZE = 100;
+
 /**
  * GET /api/v1/football/fixtures
  * Multi-league fixtures schedule query with date, league, team, and status filters.
  */
 router.get('/fixtures', async (req, res) => {
+    const cacheKey = req.originalUrl || `/fixtures?${new URLSearchParams(req.query).toString()}`;
+    const now = Date.now();
+    const cached = fixturesResponseCache.get(cacheKey);
+
+    // Stale-While-Revalidate TTL: 10s for today/live queries; 120s for past or future dates
+    const isQueryingToday = Boolean((req.query.date && parseDateParam(req.query.date) === parseDateParam('today')) || (!req.query.date && !req.query.from && !req.query.to));
+    const isLiveFilter = req.query.status === 'live';
+    const cacheTtlMs = (isQueryingToday || isLiveFilter) ? 10000 : 120000;
+
+    if (cached && (now - cached.timestamp < cacheTtlMs)) {
+        if (cached.hasLive || isLiveFilter) {
+            res.set('Cache-Control', 'no-cache, no-store, must-revalidate');
+            res.set('Pragma', 'no-cache');
+        } else {
+            res.set('Cache-Control', 'public, max-age=30');
+        }
+        return res.json(cached.body);
+    }
+
     try {
         const { date, from, to, league, status = 'all', team } = req.query;
         const page = parseNumber(req.query.page, 1, 1000);
@@ -672,7 +685,6 @@ router.get('/fixtures', async (req, res) => {
         const filter = {};
 
         // Date filtering
-        const isQueryingToday = Boolean((date && parseDateParam(date) === parseDateParam('today')) || (!date && !from && !to));
         const sixHoursAgo = new Date(Date.now() - 6 * 3600 * 1000);
         if (isQueryingToday && status === 'all') {
             filter.$or = [
@@ -734,14 +746,16 @@ router.get('/fixtures', async (req, res) => {
         }
 
         let [totalCount, matches, storedLeagues] = await Promise.all([
-            SoccerMatch.countDocuments(filter).maxTimeMS(3000).catch(() => 0),
+            SoccerMatch.countDocuments(filter).maxTimeMS(2500).catch(() => 0),
             SoccerMatch.find(filter)
+                .select('source league_slug name short_name date scoreboard_date status home away note venue broadcasts attendance odds')
                 .sort({ date: 1 })
                 .skip((page - 1) * limit)
                 .limit(limit)
+                .maxTimeMS(2500)
                 .lean()
                 .catch(() => []),
-            SoccerLeague.find({ active: true }).maxTimeMS(3000).lean().catch(() => [])
+            SoccerLeague.find({ active: true }).select('slug name abbreviation country logo').maxTimeMS(2500).lean().catch(() => [])
         ]);
 
         // If querying today, always merge real-time live in-play matches into the fixture results
@@ -796,16 +810,6 @@ router.get('/fixtures', async (req, res) => {
                     }
                     totalCount = matches.length;
                 }
-            }
-
-            if (matches.length === 0) {
-                // Asynchronously trigger background synchronization so future requests find matches in DB
-                setImmediate(() => {
-                    try {
-                        const { syncLiveScoreboards, syncLiveScoreInPlay } = require('../services/soccerSyncService');
-                        Promise.allSettled([syncLiveScoreboards(), syncLiveScoreInPlay()]).catch(() => {});
-                    } catch {}
-                });
             }
         }
 
@@ -920,7 +924,7 @@ router.get('/fixtures', async (req, res) => {
             res.set('Cache-Control', 'public, max-age=30');
         }
 
-        return res.json({
+        const responsePayload = {
             status: 'success',
             meta: {
                 totalMatches: dedupedMatches.length,
@@ -933,10 +937,39 @@ router.get('/fixtures', async (req, res) => {
             },
             matches: dedupedMatches,
             fixtures: dedupedMatches
+        };
+
+        // Cache successful response in memory
+        fixturesResponseCache.set(cacheKey, {
+            timestamp: Date.now(),
+            hasLive,
+            body: responsePayload
         });
+        if (fixturesResponseCache.size > FIXTURES_CACHE_MAX_SIZE) {
+            const oldestKey = fixturesResponseCache.keys().next().value;
+            fixturesResponseCache.delete(oldestKey);
+        }
+
+        return res.json(responsePayload);
     } catch (err) {
         console.error('Error fetching fixtures:', err.message);
-        return res.status(500).json({ error: 'Failed to retrieve fixtures: ' + err.message });
+        if (cached && cached.body) {
+            return res.json(cached.body);
+        }
+        return res.json({
+            status: 'success',
+            meta: {
+                totalMatches: 0,
+                count: 0,
+                page: 1,
+                pageSize: 200,
+                totalPages: 1,
+                filters: req.query,
+                notice: 'Serving offline fallback'
+            },
+            matches: [],
+            fixtures: []
+        });
     }
 });
 

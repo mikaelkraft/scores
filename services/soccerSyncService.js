@@ -506,8 +506,8 @@ async function syncLeague(leagueDef) {
         }
 
         if (targetDates.size > 0) {
-            // Sync up to 6 match dates per league
-            const dateList = Array.from(targetDates).slice(0, 6);
+            // Sync up to 2 active match dates per league (current + upcoming round)
+            const dateList = Array.from(targetDates).slice(0, 2);
             for (const dateKey of dateList) {
                 try {
                     const dateUrl = `https://site.api.espn.com/apis/site/v2/sports/soccer/${slug}/scoreboard?dates=${dateKey}`;
@@ -601,24 +601,34 @@ async function syncLeague(leagueDef) {
     }
 }
 
+let isAllLeaguesSyncing = false;
 async function syncAllLeagues() {
-    console.log(`⚡ [LiveSync] Ingesting match rounds and standings across ${TARGET_LEAGUES.length} premier leagues...`);
-    const results = [];
-    const CONCURRENCY = 5;
-    for (let i = 0; i < TARGET_LEAGUES.length; i += CONCURRENCY) {
-        const batch = TARGET_LEAGUES.slice(i, i + CONCURRENCY);
-        const batchResults = await Promise.allSettled(batch.map(l => syncLeague(l)));
-        for (let j = 0; j < batch.length; j++) {
-            const l = batch[j];
-            const r = batchResults[j];
-            if (r.status === 'fulfilled') {
-                results.push(r.value);
-            } else {
-                console.warn(`[LiveSync] ${l.slug} sync error: ${r.reason?.message}`);
+    if (isAllLeaguesSyncing) {
+        console.log('⚡ [LiveSync] syncAllLeagues already in progress, skipping duplicate invocation.');
+        return [];
+    }
+    isAllLeaguesSyncing = true;
+    try {
+        console.log(`⚡ [LiveSync] Ingesting match rounds and standings across ${TARGET_LEAGUES.length} premier leagues...`);
+        const results = [];
+        const CONCURRENCY = 2; // Throttle concurrency to prevent socket & SNAT exhaustion
+        for (let i = 0; i < TARGET_LEAGUES.length; i += CONCURRENCY) {
+            const batch = TARGET_LEAGUES.slice(i, i + CONCURRENCY);
+            const batchResults = await Promise.allSettled(batch.map(l => syncLeague(l)));
+            for (let j = 0; j < batch.length; j++) {
+                const l = batch[j];
+                const r = batchResults[j];
+                if (r.status === 'fulfilled') {
+                    results.push(r.value);
+                } else {
+                    console.warn(`[LiveSync] ${l.slug} sync error: ${r.reason?.message}`);
+                }
             }
         }
+        return results;
+    } finally {
+        isAllLeaguesSyncing = false;
     }
-    return results;
 }
 
 function resolveLeagueSlug(altGameNote = '', compDesc = '', uid = '') {
@@ -1440,11 +1450,15 @@ async function resolveMatchEspnId(match, rawEventId = '') {
     return null;
 }
 
+let isCleanupSyncing = false;
+
 /**
  * Auto-finalizes stuck matches older than 3 hours, re-classifies miscategorized games,
  * purges duplicate match documents, and removes accidental NCAA basketball entries
  */
 async function cleanupStuckMatchesAndPurgeNcaa() {
+    if (isCleanupSyncing) return;
+    isCleanupSyncing = true;
     try {
         // 1. Purge NCAA basketball and non-soccer records completely
         await SoccerMatch.deleteMany({
@@ -1505,12 +1519,21 @@ async function cleanupStuckMatchesAndPurgeNcaa() {
             ]
         }).lean();
 
+        const reclassOps = [];
         for (const m of misclassifiedEngMatches) {
             const rawHint = `${m.note || ''} ${m.name || ''} ${m.home?.name || ''} ${m.away?.name || ''}`;
             const newSlug = resolveLeagueSlug(rawHint, m.venue?.country || '', m.source?.uid || '');
             if (newSlug && newSlug !== 'eng.1') {
-                await SoccerMatch.updateOne({ _id: m._id }, { $set: { league_slug: newSlug } });
+                reclassOps.push({
+                    updateOne: {
+                        filter: { _id: m._id },
+                        update: { $set: { league_slug: newSlug } }
+                    }
+                });
             }
+        }
+        if (reclassOps.length > 0) {
+            await SoccerMatch.bulkWrite(reclassOps, { ordered: false });
         }
 
         // 4b. Re-classify matches mistakenly categorized under 'w.other'
@@ -1603,7 +1626,11 @@ async function cleanupStuckMatchesAndPurgeNcaa() {
     }
 }
 
+let isLiveScoreInPlaySyncing = false;
+
 async function syncLiveScoreInPlay() {
+    if (isLiveScoreInPlaySyncing) return 0;
+    isLiveScoreInPlaySyncing = true;
     const now = new Date();
     let updatedCount = 0;
     try {
@@ -1619,14 +1646,27 @@ async function syncLiveScoreInPlay() {
 
         if (stages.length === 0) return 0;
 
-        const activeLiveEventIds = new Set();
-        if (liveData && Array.isArray(liveData.Stages)) {
-            for (const stage of liveData.Stages) {
-                for (const ev of (stage.Events || [])) {
-                    if (ev.Eid) activeLiveEventIds.add(String(ev.Eid));
-                }
+        // Preload all today's existing matches from database once to eliminate N+1 DB lookups
+        const existingList = await SoccerMatch.find({ scoreboard_date: todayStr })
+            .select('_id source league_slug name short_name date status home away venue')
+            .lean()
+            .catch(() => []);
+
+        const byEventId = new Map();
+        const bySig = new Map();
+        for (const m of existingList) {
+            if (m.source?.event_id) byEventId.set(String(m.source.event_id), m);
+            if (m.source?.livescore_id) byEventId.set(String(m.source.livescore_id), m);
+            if (m.source?.espn_id) byEventId.set(String(m.source.espn_id), m);
+            const h = normalizeTeamName(m.home?.name || m.home?.display_name || '');
+            const a = normalizeTeamName(m.away?.name || m.away?.display_name || '');
+            if (h && a) {
+                bySig.set(`${h}_vs_${a}`, m);
             }
         }
+
+        const matchBulkOps = [];
+        const seenMatchesInBatch = new Set();
 
         for (const stage of stages) {
             const country = stage.Cnm || stage.Sdn || 'International';
@@ -1705,7 +1745,6 @@ async function syncLiveScoreInPlay() {
                 }
             }
 
-            // Normalizing league display name: DO NOT prepend "International" or duplicate country
             let displayName = leagueName;
             if (cLower !== 'international' && cLower !== 'world') {
                 if (!leagueName.toLowerCase().startsWith(cLower)) {
@@ -1723,24 +1762,11 @@ async function syncLiveScoreInPlay() {
                 kind: 'club'
             };
 
-            await SoccerLeague.updateOne(
-                { slug: targetSlug },
-                {
-                    $setOnInsert: {
-                        slug: targetSlug,
-                        name: leagueDef.name,
-                        abbreviation: leagueDef.abbreviation || leagueName.slice(0, 16),
-                        country: leagueDef.country || country,
-                        kind: 'club',
-                        active: true,
-                        sort_order: 90
-                    }
-                },
-                { upsert: true }
-            ).catch(() => {});
-
             for (const ev of (stage.Events || [])) {
                 const eid = String(ev.Eid);
+                if (seenMatchesInBatch.has(eid)) continue;
+                seenMatchesInBatch.add(eid);
+
                 const h = ev.T1?.[0] || {};
                 const a = ev.T2?.[0] || {};
                 const homeName = h.Nm || 'Home Club';
@@ -1771,46 +1797,43 @@ async function syncLiveScoreInPlay() {
                 const homeCrest = formatLiveScoreLogo(h.Img);
                 const awayCrest = formatLiveScoreLogo(a.Img);
 
-                const existingMatch = await findExistingMatch({
-                    eventId: eid,
-                    homeName,
-                    awayName,
-                    matchDate,
-                    scoreboardDate
-                });
+                // Zero-latency in-memory lookup
+                const hNorm = normalizeTeamName(homeName);
+                const aNorm = normalizeTeamName(awayName);
+                const sig = `${hNorm}_vs_${aNorm}`;
+                const existingMatch = byEventId.get(eid) || bySig.get(sig);
 
                 const finalHomeLogo = existingMatch?.home?.logo || homeCrest || '';
                 const finalAwayLogo = existingMatch?.away?.logo || awayCrest || '';
-                const finalHomeName = existingMatch?.home?.name || homeName;
-                const finalAwayName = existingMatch?.away?.name || awayName;
-                const finalLeagueSlug = existingMatch?.league_slug || targetSlug;
 
                 if (existingMatch) {
-                    await SoccerMatch.updateOne(
-                        { _id: existingMatch._id },
-                        {
-                            $set: {
-                                'source.livescore_id': eid,
-                                'status.state': state,
-                                'status.name': state === 'in' ? 'STATUS_IN_PROGRESS' : state === 'post' ? 'STATUS_FINAL' : 'STATUS_SCHEDULED',
-                                'status.description': state === 'in' ? 'In Progress' : state === 'post' ? (isPostponed ? 'Postponed' : 'Full Time') : 'Scheduled',
-                                'status.detail': displayClock,
-                                'status.short_detail': displayClock,
-                                'status.clock': displayClock,
-                                'status.clock_seconds': parseInt(displayClock, 10) ? parseInt(displayClock, 10) * 60 : (displayClock === 'HT' ? 2700 : 0),
-                                'status.period': ev.Epr || (displayClock === 'HT' ? 1 : 2),
-                                'status.completed': isFinished,
-                                'status.suspended': isPostponed,
-                                'home.score': isNaN(homeScore) ? (existingMatch.home?.score ?? 0) : homeScore,
-                                'away.score': isNaN(awayScore) ? (existingMatch.away?.score ?? 0) : awayScore,
-                                'home.winner': isFinished && homeScore > awayScore,
-                                'away.winner': isFinished && awayScore > homeScore,
-                                'home.logo': finalHomeLogo,
-                                'away.logo': finalAwayLogo,
-                                last_synced_at: now
+                    matchBulkOps.push({
+                        updateOne: {
+                            filter: { _id: existingMatch._id },
+                            update: {
+                                $set: {
+                                    'source.livescore_id': eid,
+                                    'status.state': state,
+                                    'status.name': state === 'in' ? 'STATUS_IN_PROGRESS' : state === 'post' ? 'STATUS_FINAL' : 'STATUS_SCHEDULED',
+                                    'status.description': state === 'in' ? 'In Progress' : state === 'post' ? (isPostponed ? 'Postponed' : 'Full Time') : 'Scheduled',
+                                    'status.detail': displayClock,
+                                    'status.short_detail': displayClock,
+                                    'status.clock': displayClock,
+                                    'status.clock_seconds': parseInt(displayClock, 10) ? parseInt(displayClock, 10) * 60 : (displayClock === 'HT' ? 2700 : 0),
+                                    'status.period': ev.Epr || (displayClock === 'HT' ? 1 : 2),
+                                    'status.completed': isFinished,
+                                    'status.suspended': isPostponed,
+                                    'home.score': isNaN(homeScore) ? (existingMatch.home?.score ?? 0) : homeScore,
+                                    'away.score': isNaN(awayScore) ? (existingMatch.away?.score ?? 0) : awayScore,
+                                    'home.winner': isFinished && homeScore > awayScore,
+                                    'away.winner': isFinished && awayScore > homeScore,
+                                    'home.logo': finalHomeLogo,
+                                    'away.logo': finalAwayLogo,
+                                    last_synced_at: now
+                                }
                             }
                         }
-                    );
+                    });
                 } else {
                     const matchDoc = {
                         source: {
@@ -1878,57 +1901,20 @@ async function syncLiveScoreInPlay() {
                         last_synced_at: now
                     };
 
-                    await SoccerMatch.create(matchDoc).catch(() => {});
+                    matchBulkOps.push({
+                        updateOne: {
+                            filter: { 'source.provider': 'livescore', 'source.event_id': eid, league_slug: targetSlug },
+                            update: { $set: matchDoc, $setOnInsert: { created_at: now } },
+                            upsert: true
+                        }
+                    });
                 }
-
-                const homeClubSet = {
-                    name: homeName,
-                    display_name: homeName,
-                    abbreviation: h.Abr || homeName.slice(0, 3).toUpperCase(),
-                    country,
-                    active: true,
-                    last_synced_at: now
-                };
-                if (finalHomeLogo) homeClubSet.logo = finalHomeLogo;
-
-                await SoccerClub.updateOne(
-                    { source_id: String(h.ID || homeName.toLowerCase().replace(/[^a-z0-9]+/g, '-')) },
-                    {
-                        $set: homeClubSet,
-                        $addToSet: { league_slugs: finalLeagueSlug },
-                        $setOnInsert: {
-                            slug: homeName.toLowerCase().replace(/[^a-z0-9]+/g, '-'),
-                            created_at: now
-                        }
-                    },
-                    { upsert: true }
-                ).catch(() => {});
-
-                const awayClubSet = {
-                    name: awayName,
-                    display_name: awayName,
-                    abbreviation: a.Abr || awayName.slice(0, 3).toUpperCase(),
-                    country,
-                    active: true,
-                    last_synced_at: now
-                };
-                if (finalAwayLogo) awayClubSet.logo = finalAwayLogo;
-
-                await SoccerClub.updateOne(
-                    { source_id: String(a.ID || awayName.toLowerCase().replace(/[^a-z0-9]+/g, '-')) },
-                    {
-                        $set: awayClubSet,
-                        $addToSet: { league_slugs: finalLeagueSlug },
-                        $setOnInsert: {
-                            slug: awayName.toLowerCase().replace(/[^a-z0-9]+/g, '-'),
-                            created_at: now
-                        }
-                    },
-                    { upsert: true }
-                ).catch(() => {});
-
                 updatedCount++;
             }
+        }
+
+        if (matchBulkOps.length > 0) {
+            await SoccerMatch.bulkWrite(matchBulkOps, { ordered: false }).catch(e => console.warn('[LiveSync] bulkWrite matches notice:', e.message));
         }
 
         // Auto-finalize ANY stuck in-play matches that have concluded (started > 180 minutes ago)
@@ -1949,9 +1935,11 @@ async function syncLiveScoreInPlay() {
                     'status.completed': true
                 }
             }
-        );
+        ).catch(() => {});
     } catch (err) {
         console.warn('[LiveSync] LiveScore in-play ingest notice:', err.message);
+    } finally {
+        isLiveScoreInPlaySyncing = false;
     }
     return updatedCount;
 }
@@ -1960,21 +1948,20 @@ const CORE_AND_REGIONAL_SCOREBOARD_FEEDS = [
     // Prime UEFA Continental & Youth
     'uefa.champions', 'uefa.europa', 'uefa.europa.conf', 'uefa.youth',
     // English tiers & domestic cups
-    'eng.1', 'eng.2', 'eng.3', 'eng.4', 'eng.league_cup', 'eng.fa',
-    // Top European domestic leagues & cups
-    'esp.1', 'esp.copa_del_rey', 'ita.1', 'ita.coppa_italia', 'ger.1', 'ger.dfb_pokal', 'fra.1',
-    'por.1', 'ned.1', 'tur.1', 'bel.1', 'sco.1',
-    // African continental and domestic premier leagues
-    'caf.champions', 'caf.confed', 'caf.nations', 'caf.championship', 'caf.cosafa',
-    'nga.1', 'rsa.1', 'mar.1', 'egy.1', 'ken.1', 'gha.1', 'uga.1', 'tza.1',
-    // Asian & Oceanic
-    'afc.champions', 'afc.cup', 'idn.1', 'tha.1', 'mys.1', 'sgp.1', 'ind.1', 'ind.2', 'ksa.1',
-    // Americas & International
-    'concacaf.champions', 'conmebol.libertadores', 'conmebol.sudamericana',
-    'bra.1', 'arg.1', 'usa.1', 'mex.1', 'col.1', 'per.1', 'bol.1', 'ecu.1', 'par.1', 'ven.1', 'uru.1', 'mex.2'
+    'eng.1', 'eng.2',
+    // Top European domestic leagues
+    'esp.1', 'ita.1', 'ger.1', 'fra.1',
+    // African & Asian continental
+    'caf.champions', 'afc.champions', 'afc.cup',
+    // Americas
+    'conmebol.libertadores'
 ];
 
+let isScoreboardSyncing = false;
+
 async function syncLiveScoreboards() {
+    if (isScoreboardSyncing) return 0;
+    isScoreboardSyncing = true;
     const now = new Date();
     let updatedCount = 0;
     try {
@@ -1982,7 +1969,7 @@ async function syncLiveScoreboards() {
         const allUrl = `https://site.api.espn.com/apis/site/v2/sports/soccer/all/scoreboard?dates=${todayStr}&limit=300`;
 
         const feedResults = [await fetchJson(allUrl).catch(() => ({ events: [] }))];
-        const batchSize = 10;
+        const batchSize = 5;
         for (let i = 0; i < CORE_AND_REGIONAL_SCOREBOARD_FEEDS.length; i += batchSize) {
             const batch = CORE_AND_REGIONAL_SCOREBOARD_FEEDS.slice(i, i + batchSize);
             const batchRes = await Promise.all(
@@ -2006,6 +1993,26 @@ async function syncLiveScoreboards() {
                 }
             }
         }
+
+        // Preload all today's existing matches from database once to eliminate N+1 DB lookups
+        const existingScoreboardMatches = await SoccerMatch.find({ scoreboard_date: todayStr })
+            .select('_id source league_slug name short_name date status home away venue')
+            .lean()
+            .catch(() => []);
+        const byEvId = new Map();
+        const byNormSig = new Map();
+        for (const m of existingScoreboardMatches) {
+            if (m.source?.event_id) byEvId.set(String(m.source.event_id), m);
+            if (m.source?.espn_id) byEvId.set(String(m.source.espn_id), m);
+            if (m.source?.livescore_id) byEvId.set(String(m.source.livescore_id), m);
+            const h = normalizeTeamName(m.home?.name || m.home?.display_name || '');
+            const a = normalizeTeamName(m.away?.name || m.away?.display_name || '');
+            if (h && a) {
+                byNormSig.set(`${h}_vs_${a}`, m);
+            }
+        }
+
+        const sbMatchOps = [];
 
         for (const ev of events) {
             const comp = ev.competitions?.[0];
@@ -2031,13 +2038,11 @@ async function syncLiveScoreboards() {
             const eventDate = ev.date ? new Date(ev.date) : now;
             const scoreboardDate = formatDateToScoreboard(eventDate);
 
-            const existingMatch = await findExistingMatch({
-                eventId: String(ev.id),
-                homeName: homeCompName,
-                awayName: awayCompName,
-                matchDate: eventDate,
-                scoreboardDate
-            });
+            // Zero-latency in-memory lookup
+            const hNorm = normalizeTeamName(homeCompName);
+            const aNorm = normalizeTeamName(awayCompName);
+            const sig = `${hNorm}_vs_${aNorm}`;
+            const existingMatch = byEvId.get(String(ev.id)) || byNormSig.get(sig);
 
             if (!targetSlug && existingMatch?.league_slug) {
                 targetSlug = existingMatch.league_slug;
@@ -2050,24 +2055,6 @@ async function syncLiveScoreboards() {
                 country: 'International',
                 kind: 'club'
             };
-
-            if (!TARGET_LEAGUES.some(l => l.slug === targetSlug)) {
-                await SoccerLeague.updateOne(
-                    { slug: targetSlug },
-                    {
-                        $setOnInsert: {
-                            slug: targetSlug,
-                            name: leagueDef.name,
-                            abbreviation: leagueDef.abbreviation || leagueDef.name.slice(0, 16),
-                            country: leagueDef.country || 'International',
-                            kind: 'club',
-                            active: true,
-                            sort_order: 99
-                        }
-                    },
-                    { upsert: true }
-                ).catch(() => {});
-            }
 
             const updateFields = {
                 league_slug: targetSlug,
@@ -2088,23 +2075,103 @@ async function syncLiveScoreboards() {
             };
 
             if (existingMatch) {
-                await SoccerMatch.updateOne(
-                    { _id: existingMatch._id },
-                    {
-                        $set: {
-                            ...updateFields,
-                            'source.espn_id': String(ev.id),
-                            'home.logo': homeComp.team?.logo || existingMatch.home?.logo || '',
-                            'away.logo': awayComp.team?.logo || existingMatch.away?.logo || '',
-                            'home.display_name': homeCompName || existingMatch.home?.display_name || '',
-                            'away.display_name': awayCompName || existingMatch.away?.display_name || ''
+                sbMatchOps.push({
+                    updateOne: {
+                        filter: { _id: existingMatch._id },
+                        update: {
+                            $set: {
+                                ...updateFields,
+                                'source.espn_id': String(ev.id),
+                                'home.logo': homeComp.team?.logo || existingMatch.home?.logo || '',
+                                'away.logo': awayComp.team?.logo || existingMatch.away?.logo || '',
+                                'home.display_name': homeCompName || existingMatch.home?.display_name || '',
+                                'away.display_name': awayCompName || existingMatch.away?.display_name || ''
+                            }
                         }
                     }
-                );
+                });
             } else {
-                await processEvents([ev], targetSlug, leagueDef, ev.season || {}, now);
+                const matchDoc = {
+                    source: {
+                        provider: 'upstream',
+                        event_id: String(ev.id),
+                        espn_id: String(ev.id),
+                        competition_id: String(comp.id || ev.id),
+                        uid: ev.uid || comp.uid || '',
+                        modified_at: now
+                    },
+                    league_slug: targetSlug,
+                    scoreboard_date: scoreboardDate,
+                    date: eventDate,
+                    name: ev.name || `${homeCompName} vs ${awayCompName}`,
+                    short_name: ev.shortName || `${homeComp.team?.abbreviation || 'HOM'} vs ${awayComp.team?.abbreviation || 'AWY'}`,
+                    season: {
+                        year: eventDate.getUTCFullYear(),
+                        type_id: '1',
+                        slug: 'regular-season',
+                        name: `${leagueDef.name} ${eventDate.getUTCFullYear()}`
+                    },
+                    status: {
+                        state,
+                        name: updateFields['status.name'],
+                        description: updateFields['status.description'],
+                        detail: updateFields['status.detail'],
+                        short_detail: updateFields['status.short_detail'],
+                        clock: updateFields['status.clock'],
+                        clock_seconds: updateFields['status.clock_seconds'],
+                        period: updateFields['status.period'],
+                        completed: updateFields['status.completed'],
+                        suspended: false
+                    },
+                    home: {
+                        source_id: String(homeComp.team?.id || '1'),
+                        name: homeCompName,
+                        display_name: homeCompName,
+                        abbreviation: homeComp.team?.abbreviation || '',
+                        logo: homeComp.team?.logo || '',
+                        score: updateFields['home.score'],
+                        winner: updateFields['home.winner'],
+                        form: homeComp.form || ''
+                    },
+                    away: {
+                        source_id: String(awayComp.team?.id || '2'),
+                        name: awayCompName,
+                        display_name: awayCompName,
+                        abbreviation: awayComp.team?.abbreviation || '',
+                        logo: awayComp.team?.logo || '',
+                        score: updateFields['away.score'],
+                        winner: updateFields['away.winner'],
+                        form: awayComp.form || ''
+                    },
+                    venue: {
+                        name: comp.venue?.fullName || 'Stadium',
+                        city: comp.venue?.address?.city || '',
+                        country: comp.venue?.address?.country || leagueDef.country
+                    },
+                    attendance: comp.attendance || 0,
+                    note: leagueDef.name,
+                    play_by_play_available: true,
+                    broadcasts: (comp.broadcasts || []).map(b => ({
+                        market: b.market || 'National',
+                        names: b.names || []
+                    })),
+                    key_events: [],
+                    last_synced_at: now
+                };
+
+                sbMatchOps.push({
+                    updateOne: {
+                        filter: { 'source.provider': 'upstream', 'source.event_id': String(ev.id) },
+                        update: { $set: matchDoc, $setOnInsert: { created_at: now } },
+                        upsert: true
+                    }
+                });
             }
             updatedCount++;
+        }
+
+        if (sbMatchOps.length > 0) {
+            await SoccerMatch.bulkWrite(sbMatchOps, { ordered: false }).catch(e => console.warn('[LiveSync] bulkWrite scoreboard notice:', e.message));
         }
 
         // Auto-finalize any in-play matches that have concluded (started > 180 minutes ago)
@@ -2124,13 +2191,11 @@ async function syncLiveScoreboards() {
                     'status.completed': true
                 }
             }
-        );
-
-        // Ingest real-time in-play matches across Asian, African, and European regional leagues
-        const liveInPlayCount = await syncLiveScoreInPlay();
-        updatedCount += liveInPlayCount;
+        ).catch(() => {});
     } catch (err) {
         console.warn('[LiveSync] Real-time scoreboard tick warning:', err.message);
+    } finally {
+        isScoreboardSyncing = false;
     }
     return updatedCount;
 }

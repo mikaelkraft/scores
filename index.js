@@ -332,57 +332,53 @@ app.listen(PORT, () => {
     }, 2000);
 
     // Auto-sync live scores and world leagues in background
-    const { syncAllLeagues, syncLiveScoreboards, cleanupStuckMatchesAndPurgeNcaa, TARGET_LEAGUES } = require('./services/soccerSyncService');
-    const SoccerLeague = require('./models/soccerLeague');
+    const { syncAllLeagues, syncLiveScoreboards, syncLiveScoreInPlay, syncInGameStats, cleanupStuckMatchesAndPurgeNcaa } = require('./services/soccerSyncService');
 
+    // Initial live scoreboard and in-play ingestion on boot (5 seconds after server is accepting traffic)
     setTimeout(async () => {
         try {
-            // Clean stuck matches and purge any NCAA/non-soccer records on startup
-            if (typeof cleanupStuckMatchesAndPurgeNcaa === 'function') {
-                await cleanupStuckMatchesAndPurgeNcaa();
-            }
-
-            // Immediate live scoreboard and in-play ticks on boot
             await Promise.allSettled([
                 syncLiveScoreboards(),
                 syncLiveScoreInPlay()
             ]);
-            
-            // Progressively sync all target leagues and multi-date upcoming schedules in the background
-            syncAllLeagues().catch(e => console.warn('[LiveSync] Background league sync notice:', e.message));
+            console.log('⚡ [LiveSync] Initial live scoreboard ingestion complete.');
         } catch (e) {
             console.warn('Initial live sync notice:', e.message);
         }
-    }, 3000);
+    }, 5000);
 
-    // Fast in-play scoreboard, match infeed, and in-game telemetry refresh every 45 seconds (ESPN + LiveScore worldwide)
-    const { syncLiveScoreInPlay, syncInGameStats } = require('./services/soccerSyncService');
+    // Run database cleanup and auto-finalize in background 30 seconds after boot
+    setTimeout(() => {
+        if (typeof cleanupStuckMatchesAndPurgeNcaa === 'function') {
+            cleanupStuckMatchesAndPurgeNcaa().catch(e => console.warn('Cleanup notice:', e.message));
+        }
+    }, 30000);
+
+    // Fast in-play scoreboard and live match infeed refresh every 60 seconds
     const liveScoreInterval = setInterval(() => {
         Promise.allSettled([
             syncLiveScoreboards(),
             syncLiveScoreInPlay()
         ]).then(() => {
-            // Continuously update live in-play stats for all ongoing matches
-            return syncInGameStats({ limit: 40, onlyLive: true });
+            return syncInGameStats({ limit: 20, onlyLive: true });
         }).catch(e => console.warn('Live infeed sync notice:', e.message));
-    }, 45 * 1000);
+    }, 60 * 1000);
     if (liveScoreInterval && typeof liveScoreInterval.unref === 'function') {
         liveScoreInterval.unref();
     }
 
-    // Comprehensive schedule, standings, and completed match in-game telemetry refresh every 15 minutes
-    const syncInterval = setInterval(() => {
+    // Initial deep league schedules sync after 5 minutes of server uptime, then every 6 hours
+    setTimeout(() => {
+        syncAllLeagues().catch(e => console.warn('[LiveSync] Background league sync notice:', e.message));
+    }, 5 * 60 * 1000);
+
+    const deepSyncInterval = setInterval(() => {
         Promise.allSettled([
             syncAllLeagues(),
-            syncInGameStats({ limit: 120, onlyLive: false })
-        ]).catch(e => console.warn('Interval sync notice:', e.message));
-    }, 15 * 60 * 1000);
-    if (syncInterval && typeof syncInterval.unref === 'function') {
-        syncInterval.unref();
+            syncInGameStats({ limit: 60, onlyLive: false })
+        ]).catch(e => console.warn('Deep sync notice:', e.message));
+    }, 6 * 60 * 60 * 1000);
+    if (deepSyncInterval && typeof deepSyncInterval.unref === 'function') {
+        deepSyncInterval.unref();
     }
-
-    // Initial background in-game stats backfill after boot
-    setTimeout(() => {
-        syncInGameStats({ limit: 60, onlyLive: false }).catch(() => {});
-    }, 8000);
 });

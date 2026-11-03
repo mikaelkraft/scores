@@ -59,19 +59,44 @@ async function activeLeagues() {
     return leagues.map(league => ({ ...league, country: inferLeagueCountry(league) }));
 }
 
+let availableLeaguesCache = { data: null, expiresAt: 0, inFlight: null };
+
 async function availableLeagues() {
-    const minimumSeason = new Date().getUTCFullYear() - 1;
-    const [catalog, leagueSlugsWithMatches, leagueSlugsWithStandings] = await Promise.all([
-        activeLeagues(),
-        SoccerMatch.distinct('league_slug'),
-        SoccerStanding.distinct('league_slug', { season_year: { $gte: minimumSeason } })
-    ]);
-    const availableSlugs = new Set(leagueSlugsWithMatches);
-    const standingSlugs = new Set(leagueSlugsWithStandings);
-    return catalog
-        .filter(league => availableSlugs.has(league.slug))
-        .filter(league => !league.season?.year || Number(league.season.year) >= minimumSeason)
-        .map(league => ({ ...league, hasStandings: standingSlugs.has(league.slug) }));
+    const now = Date.now();
+    if (availableLeaguesCache.data && now < availableLeaguesCache.expiresAt) {
+        return availableLeaguesCache.data;
+    }
+    if (availableLeaguesCache.inFlight) {
+        return availableLeaguesCache.inFlight;
+    }
+
+    availableLeaguesCache.inFlight = (async () => {
+        try {
+            const minimumSeason = new Date().getUTCFullYear() - 1;
+            const [catalog, leagueSlugsWithMatches, leagueSlugsWithStandings] = await Promise.all([
+                activeLeagues().catch(() => []),
+                SoccerMatch.distinct('league_slug').maxTimeMS(2500).catch(() => []),
+                SoccerStanding.distinct('league_slug', { season_year: { $gte: minimumSeason } }).maxTimeMS(2500).catch(() => [])
+            ]);
+            const availableSlugs = new Set(leagueSlugsWithMatches);
+            const standingSlugs = new Set(leagueSlugsWithStandings);
+            const result = catalog
+                .filter(league => availableSlugs.size === 0 || availableSlugs.has(league.slug))
+                .filter(league => !league.season?.year || Number(league.season.year) >= minimumSeason)
+                .map(league => ({ ...league, hasStandings: standingSlugs.has(league.slug) }));
+            if (result.length > 0) {
+                availableLeaguesCache.data = result;
+                availableLeaguesCache.expiresAt = Date.now() + 5 * 60 * 1000;
+            }
+            return result.length > 0 ? result : (availableLeaguesCache.data || catalog);
+        } catch (e) {
+            return availableLeaguesCache.data || [];
+        } finally {
+            availableLeaguesCache.inFlight = null;
+        }
+    })();
+
+    return availableLeaguesCache.inFlight;
 }
 
 function attachLeagueNames(matches, leagues) {
@@ -90,7 +115,9 @@ async function currentMatchContent(leagues) {
         })
             .sort({ date: 1 })
             .select('league_slug source date status home away last_synced_at')
-            .lean(),
+            .maxTimeMS(2500)
+            .lean()
+            .catch(() => []),
         SoccerMatch.find({
             league_slug: { $in: slugs },
             'status.state': 'post'
@@ -98,7 +125,9 @@ async function currentMatchContent(leagues) {
             .sort({ date: -1 })
             .limit(12)
             .select('league_slug source date status home away last_synced_at')
+            .maxTimeMS(2500)
             .lean()
+            .catch(() => [])
     ]);
 
     return {
@@ -250,6 +279,8 @@ function redirectToCanonical(req, res, canonicalPath) {
     return false;
 }
 
+const homeHtmlCache = { html: null, expiresAt: 0, inFlight: null };
+
 module.exports = app => {
     app.get('/', async(req, res) => {
         const legacyLeague = String(req.query.league || '').toLowerCase();
@@ -257,19 +288,40 @@ module.exports = app => {
             return res.redirect(301, `/football/${encodeURIComponent(legacyLeague)}`);
         }
 
+        const now = Date.now();
+        if (homeHtmlCache.html && now < homeHtmlCache.expiresAt) {
+            res.type('html');
+            res.set('Cache-Control', 'public, max-age=60, stale-while-revalidate=300');
+            return res.send(homeHtmlCache.html);
+        }
+
         try {
             const leagues = await availableLeagues();
             const matches = await currentMatchContent(leagues);
-            return renderResponse(res, {
+            const renderedHtml = renderSeoPage(PAGE_TEMPLATE, {
                 kind: 'home',
                 baseUrl: siteUrl(req),
                 leagues,
                 ...matches,
                 generatedAt: new Date()
             });
+
+            homeHtmlCache.html = renderedHtml;
+            homeHtmlCache.expiresAt = Date.now() + 45 * 1000;
+
+            res.type('html');
+            res.set('Cache-Control', 'public, max-age=60, stale-while-revalidate=300');
+            return res.send(renderedHtml);
         } catch (error) {
             console.warn('Unable to load SEO league directory:', error.message);
-            return renderUnavailable(req, res);
+            if (homeHtmlCache.html) {
+                res.type('html');
+                res.set('Cache-Control', 'public, max-age=60, stale-while-revalidate=300');
+                return res.send(homeHtmlCache.html);
+            }
+            res.type('html');
+            res.set('Cache-Control', 'no-cache');
+            return res.send(PAGE_TEMPLATE);
         }
     });
 
