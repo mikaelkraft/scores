@@ -365,7 +365,8 @@ async function processEvents(events, slug, leagueDef, season, now) {
             homeName: homeTeam.displayName || homeTeam.name,
             awayName: awayTeam.displayName || awayTeam.name,
             matchDate,
-            scoreboardDate
+            scoreboardDate,
+            leagueSlug: matchDoc.league_slug
         });
 
         if (existingMatch) {
@@ -1285,11 +1286,25 @@ async function syncInGameStats({ limit = 150, onlyLive = false, forceAll = false
 /**
  * Detects team category (gender and age/reserves tier)
  */
-function getTeamCategory(name = '') {
-    const s = String(name).toLowerCase();
-    const isWomen = /\b(women|woman|ladies|femenin[oa]?|frauen|damen|vrouwen|fem|wfc)\b|\(w\)/i.test(s);
-    const isYouth = /\b(u-?23|u-?21|u-?20|u-?19|u-?18|u-?17|u-?16|u-?15|youth|reserves?|development)\b|\b(ii|b)\b$/i.test(s);
+function getTeamCategory(name = '', leagueSlug = '') {
+    const s = `${name} ${leagueSlug}`.toLowerCase();
+    const isWomen = /\b(women|woman|ladies|femenin[oa]?|frauen|damen|vrouwen|fem|wfc)\b|\(w\)/i.test(s) ||
+                    s.includes('.w.') || s.startsWith('w.') || s.endsWith('.w');
+    const isYouth = /\b(u-?23|u-?21|u-?20|u-?19|u-?18|u-?17|u-?16|u-?15|youth|primavera|reserves?|development)\b|\b(ii|b)\b$/i.test(s) ||
+                    s.includes('youth') || s.includes('u21') || s.includes('u23') || s.includes('u20') || s.includes('u19') || s.includes('u18') || s.includes('u17') || s.includes('primavera');
     return { isWomen, isYouth };
+}
+
+/**
+ * Computes canonical match tier: 'w' (women) vs 'm' (men), and 'y' (youth/reserves) vs 's' (senior).
+ * Returns e.g. 'm_s' (Men's Senior), 'm_y' (Men's Youth), 'w_s' (Women's Senior), 'w_y' (Women's Youth)
+ */
+function getMatchTier(homeName = '', awayName = '', leagueSlug = '') {
+    const catH = getTeamCategory(homeName, leagueSlug);
+    const catA = getTeamCategory(awayName, leagueSlug);
+    const isWomen = catH.isWomen || catA.isWomen;
+    const isYouth = catH.isYouth || catA.isYouth;
+    return `${isWomen ? 'w' : 'm'}_${isYouth ? 'y' : 's'}`;
 }
 
 /**
@@ -1350,10 +1365,10 @@ function normalizeTeamName(name = '') {
     return s;
 }
 
-function areTeamNamesMatching(nameA = '', nameB = '') {
+function areTeamNamesMatching(nameA = '', nameB = '', leagueSlugA = '', leagueSlugB = '') {
     if (!nameA || !nameB) return false;
-    const catA = getTeamCategory(nameA);
-    const catB = getTeamCategory(nameB);
+    const catA = getTeamCategory(nameA, leagueSlugA);
+    const catB = getTeamCategory(nameB, leagueSlugB);
     // Women vs Men teams must NEVER match
     if (catA.isWomen !== catB.isWomen) return false;
     // Youth/Reserves vs Senior teams must NEVER match
@@ -1372,7 +1387,7 @@ function areTeamNamesMatching(nameA = '', nameB = '') {
 /**
  * Searches for an existing match across providers by ID, date window, and team names
  */
-async function findExistingMatch({ eventId, homeName, awayName, matchDate, scoreboardDate }) {
+async function findExistingMatch({ eventId, homeName, awayName, matchDate, scoreboardDate, leagueSlug = '' }) {
     if (eventId) {
         const idMatch = await SoccerMatch.findOne({
             $or: [
@@ -1402,7 +1417,8 @@ async function findExistingMatch({ eventId, homeName, awayName, matchDate, score
     for (const cand of candidates) {
         const candHome = cand.home?.name || cand.home?.display_name || '';
         const candAway = cand.away?.name || cand.away?.display_name || '';
-        if (areTeamNamesMatching(candHome, homeName) && areTeamNamesMatching(candAway, awayName)) {
+        if (areTeamNamesMatching(candHome, homeName, cand.league_slug, leagueSlug) &&
+            areTeamNamesMatching(candAway, awayName, cand.league_slug, leagueSlug)) {
             return cand;
         }
     }
@@ -1661,7 +1677,8 @@ async function syncLiveScoreInPlay() {
             const h = normalizeTeamName(m.home?.name || m.home?.display_name || '');
             const a = normalizeTeamName(m.away?.name || m.away?.display_name || '');
             if (h && a) {
-                bySig.set(`${h}_vs_${a}`, m);
+                const tier = getMatchTier(m.home?.name || m.home?.display_name, m.away?.name || m.away?.display_name, m.league_slug);
+                bySig.set(`${h}_vs_${a}_${tier}`, m);
             }
         }
 
@@ -1800,7 +1817,8 @@ async function syncLiveScoreInPlay() {
                 // Zero-latency in-memory lookup
                 const hNorm = normalizeTeamName(homeName);
                 const aNorm = normalizeTeamName(awayName);
-                const sig = `${hNorm}_vs_${aNorm}`;
+                const tier = getMatchTier(homeName, awayName, targetSlug);
+                const sig = `${hNorm}_vs_${aNorm}_${tier}`;
                 const existingMatch = byEventId.get(eid) || bySig.get(sig);
 
                 const finalHomeLogo = existingMatch?.home?.logo || homeCrest || '';
@@ -2008,7 +2026,8 @@ async function syncLiveScoreboards() {
             const h = normalizeTeamName(m.home?.name || m.home?.display_name || '');
             const a = normalizeTeamName(m.away?.name || m.away?.display_name || '');
             if (h && a) {
-                byNormSig.set(`${h}_vs_${a}`, m);
+                const tier = getMatchTier(m.home?.name || m.home?.display_name, m.away?.name || m.away?.display_name, m.league_slug);
+                byNormSig.set(`${h}_vs_${a}_${tier}`, m);
             }
         }
 
@@ -2041,7 +2060,8 @@ async function syncLiveScoreboards() {
             // Zero-latency in-memory lookup
             const hNorm = normalizeTeamName(homeCompName);
             const aNorm = normalizeTeamName(awayCompName);
-            const sig = `${hNorm}_vs_${aNorm}`;
+            const tier = getMatchTier(homeCompName, awayCompName, targetSlug);
+            const sig = `${hNorm}_vs_${aNorm}_${tier}`;
             const existingMatch = byEvId.get(String(ev.id)) || byNormSig.get(sig);
 
             if (!targetSlug && existingMatch?.league_slug) {
@@ -2208,6 +2228,7 @@ module.exports = {
     syncInGameStats,
     cleanupStuckMatchesAndPurgeNcaa,
     getTeamCategory,
+    getMatchTier,
     normalizeTeamName,
     areTeamNamesMatching,
     fetchLiveScoreMatchDetails,

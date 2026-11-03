@@ -1,6 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { resolveLeagueSlug, normalizeTeamName, areTeamNamesMatching, getTeamCategory } = require('../services/soccerSyncService');
+const { resolveLeagueSlug, normalizeTeamName, areTeamNamesMatching, getTeamCategory, getMatchTier } = require('../services/soccerSyncService');
 
 test('resolveLeagueSlug explicitly rejects NCAA basketball and college non-soccer events', () => {
     assert.equal(resolveLeagueSlug('NCAA Men\'s Basketball', 'College Basketball', 's:40~l:41'), null);
@@ -184,4 +184,43 @@ test('synthesizeMatchTelemetry returns authentic empty statistics without synthe
     assert.equal(result.isDerivedTelemetry, false);
     assert.equal(result.teams[0].statistics.length, 0);
     assert.equal(result.teams[1].statistics.length, 0);
+});
+
+test('Senior Champions League matches NEVER collide or overwrite Youth League matches', () => {
+    // 1. Validate getMatchTier differentiates senior vs youth competitions even if club names are stripped
+    const seniorGalaTier = getMatchTier('Galatasaray', 'VfB Stuttgart', 'uefa.champions');
+    const youthGalaTier = getMatchTier('Galatasaray U19', 'VfB Stuttgart U19', 'uefa.youth');
+    const youthGalaStrippedTier = getMatchTier('Galatasaray', 'VfB Stuttgart', 'uefa.youth');
+
+    assert.equal(seniorGalaTier, 'm_s');
+    assert.equal(youthGalaTier, 'm_y');
+    assert.equal(youthGalaStrippedTier, 'm_y');
+
+    const seniorSportingTier = getMatchTier('Shakhtar Donetsk', 'Sporting CP', 'uefa.champions');
+    const youthSportingTier = getMatchTier('Shakhtar Donetsk U19', 'Sporting CP U19', 'uefa.youth');
+
+    assert.equal(seniorSportingTier, 'm_s');
+    assert.equal(youthSportingTier, 'm_y');
+
+    // 2. Validate deduplication signatures in sync and API controllers never collide
+    const dKey = '20261103';
+    const seniorGalaSig = [normalizeTeamName('Galatasaray'), normalizeTeamName('VfB Stuttgart')].sort().join('_vs_') + '_' + dKey + '_' + seniorGalaTier;
+    const youthGalaSig = [normalizeTeamName('Galatasaray U19'), normalizeTeamName('VfB Stuttgart U19')].sort().join('_vs_') + '_' + dKey + '_' + youthGalaTier;
+
+    assert.notEqual(seniorGalaSig, youthGalaSig);
+    assert.equal(seniorGalaSig, 'galatasaray_vs_vfbstuttgart_20261103_m_s');
+    assert.equal(youthGalaSig, 'galatasaray_vs_vfbstuttgart_20261103_m_y');
+
+    const seniorSportingSig = [normalizeTeamName('Shakhtar Donetsk'), normalizeTeamName('Sporting CP')].sort().join('_vs_') + '_' + dKey + '_' + seniorSportingTier;
+    const youthSportingSig = [normalizeTeamName('Shakhtar Donetsk U19'), normalizeTeamName('Sporting CP U19')].sort().join('_vs_') + '_' + dKey + '_' + youthSportingTier;
+
+    assert.notEqual(seniorSportingSig, youthSportingSig);
+    assert.equal(seniorSportingSig, 'shakhtardonetsk_vs_sportingcp_20261103_m_s');
+    assert.equal(youthSportingSig, 'shakhtardonetsk_vs_sportingcp_20261103_m_y');
+
+    // 3. areTeamNamesMatching with competition context rejects cross-tier matches
+    assert.equal(areTeamNamesMatching('Galatasaray', 'Galatasaray U19'), false);
+    assert.equal(areTeamNamesMatching('Galatasaray', 'Galatasaray', 'uefa.champions', 'uefa.youth'), false);
+    assert.equal(areTeamNamesMatching('Sporting CP', 'Sporting CP', 'uefa.champions', 'uefa.youth'), false);
+    assert.equal(areTeamNamesMatching('Shakhtar Donetsk', 'Shakhtar Donetsk U19', 'uefa.champions', 'uefa.youth'), false);
 });

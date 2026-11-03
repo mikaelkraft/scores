@@ -464,6 +464,21 @@
             .replace(/[^a-z0-9]/g, '');
     }
 
+    function getEventMatchTierClient(ev) {
+        const { home, away } = competitorsFromEvent(ev);
+        const hName = home.team?.displayName || home.team?.name || ev.home?.name || '';
+        const aName = away.team?.displayName || away.team?.name || ev.away?.name || '';
+        const slug = ev.league?.slug || ev.league_slug || '';
+        const leagueName = ev.league?.name || ev.note || '';
+        const s = `${hName} ${aName} ${slug} ${leagueName}`.toLowerCase();
+
+        const isWomen = /\b(women|woman|ladies|femenin[oa]?|frauen|damen|vrouwen|fem|wfc)\b|\(w\)/i.test(s) ||
+                        s.includes('.w.') || s.startsWith('w.') || s.endsWith('.w');
+        const isYouth = /\b(u-?23|u-?21|u-?20|u-?19|u-?18|u-?17|u-?16|u-?15|youth|primavera|reserves?|development)\b/i.test(s) ||
+                        s.includes('youth') || s.includes('u21') || s.includes('u23') || s.includes('u20') || s.includes('u19') || s.includes('u18') || s.includes('u17') || s.includes('primavera');
+        return `${isWomen ? 'w' : 'm'}_${isYouth ? 'y' : 's'}`;
+    }
+
     function getEventDedupSignature(ev) {
         const { home, away } = competitorsFromEvent(ev);
         const hName = cleanTeamNameForDedup(home.team?.displayName || home.team?.name || ev.home?.name || '');
@@ -472,7 +487,8 @@
             return String(ev.id || Math.random());
         }
         const dKey = ev.scoreboardDate || (ev.date ? String(ev.date).slice(0, 10) : '');
-        return [hName, aName].sort().join('_vs_') + '_' + dKey;
+        const tier = getEventMatchTierClient(ev);
+        return [hName, aName].sort().join('_vs_') + '_' + dKey + '_' + tier;
     }
 
     function getEventQualityScore(ev) {

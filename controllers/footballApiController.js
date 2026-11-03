@@ -21,7 +21,7 @@ const {
     sanitizeLogoUrl,
     synthesizeMatchTelemetry
 } = require('../services/soccerSerializer');
-const { normalizeTeamName, getTeamCategory, resolveMatchEspnId, resolveLeagueSlug, formatLiveScoreLogo } = require('../services/soccerSyncService');
+const { normalizeTeamName, getTeamCategory, getMatchTier, resolveMatchEspnId, resolveLeagueSlug, formatLiveScoreLogo } = require('../services/soccerSyncService');
 
 function formatDateKey(d = new Date()) {
     const y = d.getUTCFullYear();
@@ -419,9 +419,9 @@ async function fetchFreshWorldwideLiveMatches() {
         const aName = m.away?.displayName || m.away?.name || '';
         const hNorm = normalizeTeamName(hName);
         const aNorm = normalizeTeamName(aName);
-        const catH = getTeamCategory(hName);
-        const catA = getTeamCategory(aName);
-        const sig = [hNorm, aNorm].sort().join('_vs_') + '_' + (catH.isWomen || catA.isWomen ? 'w' : 'm') + '_' + (catH.isYouth || catA.isYouth ? 'y' : 's');
+        const slug = m.league_slug || m.league?.slug || '';
+        const tier = getMatchTier(hName, aName, slug);
+        const sig = [hNorm, aNorm].sort().join('_vs_') + '_' + tier;
 
         const mScore = (m.home?.logo?.includes('espncdn') ? 4 : 0) +
                        (m.source?.provider === 'espn' || (m.id && /^\d{6,}$/.test(m.id)) ? 3 : 0) +
@@ -779,8 +779,10 @@ router.get('/fixtures', async (req, res) => {
                         const h = (m.home?.name || m.home?.displayName || '').toLowerCase().replace(/[^a-z0-9]/g, '');
                         const a = (m.away?.name || m.away?.displayName || '').toLowerCase().replace(/[^a-z0-9]/g, '');
                         const id = String(m.source?.event_id || m.id || m._id || '');
+                        const slug = m.league?.slug || m.league_slug || '';
+                        const tier = getMatchTier(m.home?.name || m.home?.displayName || '', m.away?.name || m.away?.displayName || '', slug);
                         if (id) seenSignatures.add(id);
-                        if (h && a) seenSignatures.add(`${h}_vs_${a}`);
+                        if (h && a) seenSignatures.add(`${h}_vs_${a}_${tier}`);
                     });
 
                     const liveToPrepend = [];
@@ -788,7 +790,9 @@ router.get('/fixtures', async (req, res) => {
                         const h = (lm.home?.name || lm.home?.displayName || '').toLowerCase().replace(/[^a-z0-9]/g, '');
                         const a = (lm.away?.name || lm.away?.displayName || '').toLowerCase().replace(/[^a-z0-9]/g, '');
                         const id = String(lm.source?.event_id || lm.id || lm._id || '');
-                        const sig = `${h}_vs_${a}`;
+                        const slug = lm.league?.slug || lm.league_slug || '';
+                        const tier = getMatchTier(lm.home?.name || lm.home?.displayName || '', lm.away?.name || lm.away?.displayName || '', slug);
+                        const sig = `${h}_vs_${a}_${tier}`;
 
                         if ((id && seenSignatures.has(id)) || (h && a && seenSignatures.has(sig))) {
                             // Update existing match in array if it was found as scheduled but is now live
@@ -796,7 +800,9 @@ router.get('/fixtures', async (req, res) => {
                                 const mh = (m.home?.name || m.home?.displayName || '').toLowerCase().replace(/[^a-z0-9]/g, '');
                                 const ma = (m.away?.name || m.away?.displayName || '').toLowerCase().replace(/[^a-z0-9]/g, '');
                                 const mid = String(m.source?.event_id || m.id || m._id || '');
-                                return (id && mid === id) || (h && a && mh === h && ma === a);
+                                const mSlug = m.league?.slug || m.league_slug || '';
+                                const mTier = getMatchTier(m.home?.name || m.home?.displayName || '', m.away?.name || m.away?.displayName || '', mSlug);
+                                return (id && mid === id) || (h && a && mh === h && ma === a && mTier === tier);
                             });
                             if (idx !== -1) {
                                 matches[idx] = { ...matches[idx], ...lm, status: lm.status, home: lm.home, away: lm.away };
@@ -879,10 +885,10 @@ router.get('/fixtures', async (req, res) => {
             const aName = m.away?.displayName || m.away?.name || '';
             const hNorm = normalizeTeamName(hName);
             const aNorm = normalizeTeamName(aName);
-            const catH = getTeamCategory(hName);
-            const catA = getTeamCategory(aName);
+            const slug = m.league?.slug || m.league_slug || '';
+            const tier = getMatchTier(hName, aName, slug);
             const dKey = m.scoreboardDate || (m.date ? new Date(m.date).toISOString().slice(0, 10) : '');
-            const sig = [hNorm, aNorm].sort().join('_vs_') + '_' + dKey + '_' + (catH.isWomen || catA.isWomen ? 'w' : 'm') + '_' + (catH.isYouth || catA.isYouth ? 'y' : 's');
+            const sig = [hNorm, aNorm].sort().join('_vs_') + '_' + dKey + '_' + tier;
 
             const mScore = (m.home?.logo?.includes('espncdn') ? 4 : 0) +
                            (m.source?.provider === 'espn' || (m.id && /^\d{6,}$/.test(m.id)) ? 3 : 0) +
