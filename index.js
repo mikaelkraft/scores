@@ -303,7 +303,7 @@ app.use((error, req, res, next) => {
     })
 });
 
-app.listen(PORT, () => {
+app.listen(PORT, '0.0.0.0', () => {
     console.log(`Server started on port ${PORT}`);
 
     // Seed / Ensure Norra AI Master Admin Key exists in database

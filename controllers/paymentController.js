@@ -8,12 +8,7 @@ const flutterwaveService = require('../services/flutterwaveService');
 const paypalService = require('../services/paypalService');
 const { config } = require('../config/env');
 
-const PLAN_LIMITS = {
-    free: { rateLimit: 120, isAdFree: false },
-    starter: { rateLimit: 500, isAdFree: true },
-    pro: { rateLimit: 1500, isAdFree: true },
-    whitelabel: { rateLimit: 5000, isAdFree: true }
-};
+const { PLAN_LIMITS } = require('../middleware/apiKeyAuth');
 
 /**
  * GET /api/plans or /api/v1/payments/plans
