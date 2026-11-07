@@ -56,7 +56,8 @@ router.get('/api/v1/booking/providers', (req, res) => {
  * POST /api/v1/booking/generate
  * Hook to book selections and return booking slip
  */
-router.post('/api/v1/booking/generate', async (req, res) => {
+router.post('/api/v1/booking/generate', optionalApiKeyAuth, async (req, res) => {
+    if (!requireFeature(req, res, 'bookingCodes', 'Betting code generation')) return;
     try {
         const result = await bookingHookService.generateBookingCode(req.body);
         return res.json(result);
@@ -69,7 +70,8 @@ router.post('/api/v1/booking/generate', async (req, res) => {
  * POST /api/v1/booking/convert
  * Hook to convert code between bookmakers with fair-use tier quota enforcement
  */
-router.post('/api/v1/booking/convert', async (req, res) => {
+router.post('/api/v1/booking/convert', optionalApiKeyAuth, async (req, res) => {
+    if (!requireFeature(req, res, 'bookingCodes', 'Betting code conversion')) return;
     try {
         const settings = await SiteSetting.getGlobalSettings().catch(() => null);
         if (settings?.bookingSettings?.hookEnabled === false) {

@@ -10,7 +10,7 @@ const SoccerClub = require('../models/soccerClub');
 const SoccerMatch = require('../models/soccerMatch');
 const SoccerMatchEvent = require('../models/soccerMatchEvent');
 const SoccerStanding = require('../models/soccerStanding');
-const { optionalApiKeyAuth, assertLeagueAccess, getAllowedLeaguesForKey, PLAN_LIMITS } = require('../middleware/apiKeyAuth');
+const { optionalApiKeyAuth, assertLeagueAccess, getAllowedLeaguesForKey, PLAN_LIMITS, hasFeature, requireFeature, getPlanConfig } = require('../middleware/apiKeyAuth');
 
 /** Reject free-tier keys when they request leagues outside their allowlist */
 function enforceLeaguePlan(req, res, leagueSlug) {
@@ -1057,7 +1057,8 @@ router.get('/fixtures', optionalApiKeyAuth, async (req, res) => {
  * Supplies head-to-head records, last-5 form guide, goals averages,
  * league standing comparison, and pre-match odds in one high-speed payload.
  */
-router.get('/predictions-context/:eventId', async (req, res) => {
+router.get('/predictions-context/:eventId', optionalApiKeyAuth, async (req, res) => {
+    if (!requireFeature(req, res, 'predictions', 'Predictions context')) return;
     try {
         const eventId = String(req.params.eventId).trim();
         const isMongoId = /^[0-9a-fA-F]{24}$/.test(eventId);
@@ -1754,7 +1755,8 @@ router.get(['/training-data', '/analytics/training-data'], optionalApiKeyAuth, a
  * GET /api/v1/football/h2h/:team1Id/:team2Id
  * Direct Head-to-Head analytics between any two team IDs.
  */
-router.get('/h2h/:team1Id/:team2Id', async (req, res) => {
+router.get('/h2h/:team1Id/:team2Id', optionalApiKeyAuth, async (req, res) => {
+    if (!requireFeature(req, res, 'h2h', 'Head-to-head statistics')) return;
     try {
         const { team1Id, team2Id } = req.params;
         const matches = await SoccerMatch.find({
@@ -1891,7 +1893,8 @@ router.get(['/standings', '/standings/:league'], async (req, res) => {
  */
 const apiMatchDetailsCache = new Map();
 
-router.get('/matches/:eventId', async (req, res) => {
+router.get('/matches/:eventId', optionalApiKeyAuth, async (req, res) => {
+    if (!requireFeature(req, res, 'matchSummary', 'Match details')) return;
     try {
         const eventId = String(req.params.eventId).trim();
         const cached = apiMatchDetailsCache.get(eventId);
