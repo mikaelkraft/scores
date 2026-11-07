@@ -234,18 +234,21 @@
             <hr style="flex: 1; border: none; border-top: 1px solid var(--border-subtle); margin: 0;">
         </div>
 
-        <form id="auth-form" onsubmit="handleAuthSubmit(event)">
+        <form id="auth-form" onsubmit="handleAuthSubmit(event)" autocomplete="on">
             <div id="name-group" class="form-group" style="display: none;">
                 <label>Company / Full Name</label>
-                <input type="text" id="auth-name" placeholder="Acme Sports Ltd">
+                <input type="text" id="auth-name" name="name" autocomplete="name" placeholder="Acme Sports Ltd">
             </div>
             <div class="form-group">
                 <label id="auth-email-label">Email Address or Admin Username</label>
-                <input type="text" id="auth-email" required placeholder="developer@example.com or admin">
+                <input type="text" id="auth-email" name="username" autocomplete="username" autocapitalize="off" autocorrect="off" spellcheck="false" required placeholder="developer@example.com or admin">
             </div>
             <div class="form-group">
                 <label>Password</label>
-                <input type="password" id="auth-password" required placeholder="••••••••">
+                <div style="position: relative; display: flex; align-items: center;">
+                    <input type="password" id="auth-password" name="password" autocomplete="current-password" autocapitalize="off" autocorrect="off" spellcheck="false" required placeholder="••••••••" style="padding-right: 42px; width: 100%;">
+                    <button type="button" onclick="togglePasswordVisibility('auth-password', this)" style="position: absolute; right: 8px; background: transparent; border: none; color: var(--text-muted); cursor: pointer; font-size: 16px; padding: 4px;" aria-label="Toggle password visibility">👁️</button>
+                </div>
             </div>
             <button type="submit" id="auth-submit-btn" class="btn-primary" style="width: 100%; margin-top: 10px;">Sign In</button>
             <div id="auth-error" style="color: #ef4444; font-size: 13px; margin-top: 12px; display: none;"></div>

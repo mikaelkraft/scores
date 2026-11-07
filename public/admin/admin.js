@@ -3,6 +3,15 @@
 let adminToken = localStorage.getItem('norra_admin_token') || localStorage.getItem('admin_token') || '';
 let globalSettings = null;
 
+function togglePasswordVisibility(inputId, btnEl) {
+    const input = document.getElementById(inputId);
+    if (!input) return;
+    const isPw = input.type === 'password';
+    input.type = isPw ? 'text' : 'password';
+    if (btnEl) btnEl.textContent = isPw ? '🙈' : '👁️';
+}
+window.togglePasswordVisibility = togglePasswordVisibility;
+
 function checkAuth() {
     const authOverlay = document.getElementById('auth-overlay');
     if (!adminToken) {
@@ -14,12 +23,17 @@ function checkAuth() {
 }
 
 async function handleAdminLogin(event) {
-    event.preventDefault();
-    const username = document.getElementById('login-username').value.trim();
-    const password = document.getElementById('login-password').value;
+    if (event) {
+        event.preventDefault();
+        event.stopPropagation();
+    }
+    const usernameInput = document.getElementById('login-username');
+    const passwordInput = document.getElementById('login-password');
+    const username = (usernameInput?.value || '').trim();
+    const password = passwordInput?.value || '';
     const errorEl = document.getElementById('login-error');
 
-    errorEl.style.display = 'none';
+    if (errorEl) errorEl.style.display = 'none';
     try {
         const res = await fetch('/api/admin/login', {
             method: 'POST',
@@ -30,21 +44,27 @@ async function handleAdminLogin(event) {
         if (res.ok && data.token) {
             adminToken = data.token;
             localStorage.setItem('norra_admin_token', adminToken);
+            localStorage.setItem('admin_token', adminToken);
             document.getElementById('auth-overlay').style.display = 'none';
             loadDashboardData();
         } else {
-            errorEl.textContent = data.error || 'Invalid username or password.';
-            errorEl.style.display = 'block';
+            if (errorEl) {
+                errorEl.textContent = data.error || 'Invalid username or password.';
+                errorEl.style.display = 'block';
+            }
         }
     } catch (err) {
-        errorEl.textContent = 'Connection error. Please try again.';
-        errorEl.style.display = 'block';
+        if (errorEl) {
+            errorEl.textContent = 'Connection error. Please try again.';
+            errorEl.style.display = 'block';
+        }
     }
 }
 
 function handleLogout() {
     adminToken = '';
     localStorage.removeItem('norra_admin_token');
+    localStorage.removeItem('admin_token');
     document.getElementById('auth-overlay').style.display = 'grid';
 }
 

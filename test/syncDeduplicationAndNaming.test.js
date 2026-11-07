@@ -224,3 +224,31 @@ test('Senior Champions League matches NEVER collide or overwrite Youth League ma
     assert.equal(areTeamNamesMatching('Sporting CP', 'Sporting CP', 'uefa.champions', 'uefa.youth'), false);
     assert.equal(areTeamNamesMatching('Shakhtar Donetsk', 'Shakhtar Donetsk U19', 'uefa.champions', 'uefa.youth'), false);
 });
+
+test('resolveLeagueSlug correctly resolves Latin American and African domestic leagues without European collisions', () => {
+    // Brazil Série A and B
+    assert.equal(resolveLeagueSlug('Brasileiro Serie A', 'Brazil'), 'bra.1');
+    assert.equal(resolveLeagueSlug('Serie A', 'Brazil'), 'bra.1');
+    assert.equal(resolveLeagueSlug('Serie B', 'Brazil'), 'bra.2');
+    assert.equal(resolveLeagueSlug('Copa do Brasil', 'Brazil'), 'bra.copa');
+
+    // Guatemala Liga Nacional (prevents "guatemaLA LIGA" matching esp.1)
+    assert.equal(resolveLeagueSlug('Liga Nacional', 'Guatemala'), 'gua.1');
+    assert.equal(resolveLeagueSlug('Liga Guat - Clausura', 'Guatemala'), 'gua.1');
+
+    // Mexico Liga MX (prevents matching Spanish Primera)
+    assert.equal(resolveLeagueSlug('Liga MX', 'Mexico'), 'mex.1');
+    assert.equal(resolveLeagueSlug('Liga de Expansión MX', 'Mexico'), 'mex.2');
+
+    // Ecuador LigaPro / Serie A (prevents matching Italian Serie A)
+    assert.equal(resolveLeagueSlug('Serie A', 'Ecuador'), 'ecu.1');
+    assert.equal(resolveLeagueSlug('LigaPro Serie A', 'Ecuador'), 'ecu.1');
+
+    // Egypt Cup / League Cup (prevents matching English League Cup / Carabao Cup)
+    assert.equal(resolveLeagueSlug('Egypt Cup', 'Egypt'), 'egy.cup');
+    assert.equal(resolveLeagueSlug('Egyptian League Cup', 'Egypt'), 'egy.cup');
+    assert.equal(resolveLeagueSlug('Premier League', 'Egypt'), 'egy.1');
+
+    // Colombia
+    assert.equal(resolveLeagueSlug('Primera A', 'Colombia'), 'col.1');
+});

@@ -345,16 +345,35 @@
         }
     }
 
-    async function fetchJson(path) {
-        const response = await fetch(path, { headers: { Accept: 'application/json' } });
-        const body = await response.json().catch(() => ({}));
-        if (!response.ok) {
-            const message = typeof body.error === 'string'
-                ? body.error
-                : body.error?.message || `HTTP ${response.status}`;
-            throw new Error(message);
+    const inFlightFetchMap = new Map();
+
+    async function fetchJson(path, options = {}) {
+        const isGet = !options.method || options.method === 'GET';
+        if (isGet && inFlightFetchMap.has(path)) {
+            return inFlightFetchMap.get(path);
         }
-        return body;
+
+        const fetchPromise = (async () => {
+            try {
+                const response = await fetch(path, { headers: { Accept: 'application/json' }, ...options });
+                const body = await response.json().catch(() => ({}));
+                if (!response.ok) {
+                    const message = typeof body.error === 'string'
+                        ? body.error
+                        : body.error?.message || `HTTP ${response.status}`;
+                    throw new Error(message);
+                }
+                return body;
+            } finally {
+                inFlightFetchMap.delete(path);
+            }
+        })();
+
+        if (isGet) {
+            inFlightFetchMap.set(path, fetchPromise);
+        }
+
+        return fetchPromise;
     }
 
     function showToast(message) {
@@ -580,6 +599,66 @@
             }
         }
         return Array.from(seenMap.values()).map(v => v.item);
+    }
+
+    const CLIENT_LEAGUE_PRIORITY = {
+        'uefa.champions': 100,
+        'eng.1': 99,
+        'esp.1': 98,
+        'ita.1': 97,
+        'ger.1': 96,
+        'fra.1': 95,
+        'uefa.europa': 94,
+        'uefa.europa.conf': 93,
+        'eng.fa': 92,
+        'esp.copa_del_rey': 91,
+        'ita.coppa_italia': 90,
+        'ger.dfb_pokal': 89,
+        'eng.league_cup': 88,
+        'eng.2': 87,
+        'ned.1': 86,
+        'por.1': 85,
+        'bra.1': 84,
+        'arg.1': 83,
+        'nga.1': 82,
+        'sau.1': 81,
+        'mex.1': 80,
+        'col.1': 79,
+        'tur.1': 78,
+        'bel.1': 77,
+        'sco.1': 76,
+        'caf.champions': 75,
+        'afc.champions': 74,
+        'usa.1': 73,
+        'conmebol.libertadores': 72,
+        'conmebol.sudamericana': 71,
+        'aut.1': 70,
+        'sui.1': 69,
+        'den.1': 68,
+        'swe.1': 67,
+        'nor.1': 66,
+        'gre.1': 65,
+        'egy.1': 64,
+        'rsa.1': 63,
+        'mar.1': 62,
+        'gha.1': 61,
+        'ken.1': 60,
+        'tza.1': 59,
+        'jpn.1': 58,
+        'kor.1': 57,
+        'aus.1': 56
+    };
+
+    function getLeaguePriorityClient(slug = '') {
+        if (!slug) return 30;
+        const cleanSlug = String(slug).toLowerCase().trim();
+        if (CLIENT_LEAGUE_PRIORITY[cleanSlug]) return CLIENT_LEAGUE_PRIORITY[cleanSlug];
+        if (cleanSlug.includes('youth') || cleanSlug.includes('u21') || cleanSlug.includes('u19') || cleanSlug.includes('u23')) return 20;
+        if (cleanSlug.includes('friendly') || cleanSlug === 'club.friendly') return 10;
+        if (cleanSlug.endsWith('.1')) return 55;
+        if (cleanSlug.endsWith('.2')) return 45;
+        if (cleanSlug.endsWith('.3') || cleanSlug.endsWith('.4')) return 35;
+        return 40;
     }
 
     function enrichLeagueMeta(league, ev = null) {
@@ -1127,15 +1206,18 @@
         await loadLiveMatches();
     }
 
-    async function loadLiveMatches({ background = false } = {}) {
+    async function loadLiveMatches({ background = false, initialLive = null } = {}) {
         if (!background) {
             setLoading('fixtures', true);
             if (elements['fixtures-list']) elements['fixtures-list'].replaceChildren();
         }
 
         try {
-            const data = await fetchJson('/api/v1/football/live');
-            const liveMatches = data.live || data.matches || [];
+            let liveMatches = initialLive;
+            if (!liveMatches) {
+                const data = await fetchJson('/api/v1/football/live');
+                liveMatches = data.live || data.matches || [];
+            }
 
             // Deduplicate live matches globally across all feeds / providers
             const dedupedLive = deduplicateMatchesList(liveMatches);
@@ -1414,14 +1496,9 @@
                     return;
                 }
             } else if (dateParam === 'today' && (statusParam === 'all' || !statusParam)) {
-                // Fetch fixtures and live matches in parallel so All includes both live and scheduled/finished games!
-                const [fixturesRes, liveRes] = await Promise.allSettled([
-                    fetchJson(url),
-                    fetchJson('/api/v1/football/live')
-                ]);
-                const fixturesMatches = fixturesRes.status === 'fulfilled' ? (fixturesRes.value?.matches || fixturesRes.value?.fixtures || []) : [];
-                const liveMatches = liveRes.status === 'fulfilled' ? (liveRes.value?.live || liveRes.value?.matches || []) : [];
-                matches = deduplicateMatchesList([...liveMatches, ...fixturesMatches]);
+                // Fetch fixtures (which already includes in-play live matches from backend in one unified response)
+                const fixturesRes = await fetchJson(url);
+                matches = fixturesRes.matches || fixturesRes.fixtures || [];
             } else {
                 const data = await fetchJson(url);
                 matches = data.matches || data.fixtures || [];
@@ -1476,20 +1553,29 @@
     function renderAllLeaguesGrouped(groupedData) {
         if (!elements['fixtures-list']) return;
 
+        const prevScrollY = window.scrollY || window.pageYOffset || document.documentElement.scrollTop || 0;
+        const fixturesContainer = elements['fixtures-list'];
+        if (fixturesContainer && prevScrollY > 60) {
+            fixturesContainer.style.minHeight = fixturesContainer.offsetHeight + 'px';
+        }
+
         let totalCount = 0;
+
+        // Sort grouped leagues by top leagues priority (UCL, EPL, La Liga, Serie A, etc. on top)
+        const sortedGroups = [...groupedData].sort((a, b) => {
+            const pA = getLeaguePriorityClient(a.league?.slug);
+            const pB = getLeaguePriorityClient(b.league?.slug);
+            if (pB !== pA) return pB - pA;
+            return (a.league?.name || '').localeCompare(b.league?.name || '');
+        });
 
         // Pinned Matches Section at the top (deduplicated)
         const pinnedEvents = [];
         const seenPinnedSig = new Set();
-        for (const grp of groupedData) {
+        for (const grp of sortedGroups) {
             for (const ev of (grp.events || [])) {
                 if (state.pinnedMatches.includes(String(ev.id))) {
-                    const { home, away } = competitorsFromEvent(ev);
-                    const hName = home.team?.displayName || home.team?.name || ev.home?.name || '';
-                    const aName = away.team?.displayName || away.team?.name || ev.away?.name || '';
-                    const cleanH = cleanTeamNameForDedup(hName);
-                    const cleanA = cleanTeamNameForDedup(aName);
-                    const sig = (cleanH && cleanA) ? [cleanH, cleanA].sort().join('_vs_') : String(ev.id);
+                    const sig = getEventDedupSignature(ev) || String(ev.id);
                     if (!seenPinnedSig.has(sig)) {
                         seenPinnedSig.add(sig);
                         pinnedEvents.push({ event: ev, league: grp.league });
@@ -1517,18 +1603,14 @@
         }
 
         // 1. First pass: Globally identify canonical matches across all leagues
-        // Ensures cross-league duplicates (e.g. ESPN Como vs LiveScore Como 1907) never appear twice
+        // Uses getEventDedupSignature(ev) which preserves tier and prevents Youth vs Senior match collision!
         const globalSeenMatchSig = new Map();
-        for (const { league, events } of groupedData) {
+        for (const { league, events } of sortedGroups) {
             for (const ev of (events || [])) {
-                const { home, away } = competitorsFromEvent(ev);
-                const hName = home.team?.displayName || home.team?.name || ev.home?.name || '';
-                const aName = away.team?.displayName || away.team?.name || ev.away?.name || '';
-                const cleanH = cleanTeamNameForDedup(hName);
-                const cleanA = cleanTeamNameForDedup(aName);
-                if (!cleanH || !cleanA) continue;
-                const sig = [cleanH, cleanA].sort().join('_vs_');
+                const sig = getEventDedupSignature(ev);
+                if (!sig || sig === '_vs_') continue;
 
+                const { home } = competitorsFromEvent(ev);
                 const hLogo = home.team?.logo || ev.home?.logo || '';
                 const isEspn = hLogo.includes('espncdn') || /^\d{6,}$/.test(String(ev.id));
                 const isSpecificLeague = league?.slug && league.slug !== 'other' && league.slug !== 'w.other';
@@ -1545,37 +1627,30 @@
             }
         }
 
-        const html = groupedData.map(({ league, events }) => {
+        const html = sortedGroups.map(({ league, events }) => {
             if (!events || !events.length) return '';
 
-            // Deduplicate events within this league and filter out inferior duplicates
+            // Deduplicate events within this league using full tier-aware signature
             const seenMatchSig = new Map();
             for (const ev of events) {
-                const { home, away } = competitorsFromEvent(ev);
-                const hName = home.team?.displayName || home.team?.name || ev.home?.name || '';
-                const aName = away.team?.displayName || away.team?.name || ev.away?.name || '';
-                const cleanH = cleanTeamNameForDedup(hName);
-                const cleanA = cleanTeamNameForDedup(aName);
-                if (!cleanH || !cleanA) continue;
-                const sig = [cleanH, cleanA].sort().join('_vs_');
+                const sig = getEventDedupSignature(ev);
+                if (!sig || sig === '_vs_') continue;
 
                 if (globalSeenMatchSig.has(sig)) {
                     const canonical = globalSeenMatchSig.get(sig);
-                    if (canonical.id !== ev.id) continue; // Skip inferior cross-league duplicate
+                    if (canonical.id !== ev.id) continue; // Skip inferior duplicate
                 }
 
-                const dKey = ev.scoreboardDate || (ev.date ? String(ev.date).slice(0, 10) : '');
-                const innerSig = sig + '_' + dKey;
-
+                const { home } = competitorsFromEvent(ev);
                 const hLogo = home.team?.logo || ev.home?.logo || '';
                 const evScore = (hLogo.includes('espncdn') ? 3 : 0) + (/^\d{6,}$/.test(String(ev.id)) ? 2 : 0);
 
-                if (!seenMatchSig.has(innerSig)) {
-                    seenMatchSig.set(innerSig, { event: ev, score: evScore });
+                if (!seenMatchSig.has(sig)) {
+                    seenMatchSig.set(sig, { event: ev, score: evScore });
                 } else {
-                    const existing = seenMatchSig.get(innerSig);
+                    const existing = seenMatchSig.get(sig);
                     if (evScore > existing.score) {
-                        seenMatchSig.set(innerSig, { event: ev, score: evScore });
+                        seenMatchSig.set(sig, { event: ev, score: evScore });
                     }
                 }
             }
@@ -1643,6 +1718,13 @@
         } else {
             if (elements['fixtures-empty']) elements['fixtures-empty'].hidden = true;
             elements['fixtures-list'].innerHTML = pinnedHtml + html;
+
+            if (prevScrollY > 60) {
+                window.scrollTo({ top: prevScrollY, behavior: 'instant' });
+                requestAnimationFrame(() => {
+                    if (fixturesContainer) fixturesContainer.style.minHeight = '';
+                });
+            }
 
             elements['fixtures-list'].querySelectorAll('.fs-league-view-btn').forEach(btn => {
                 btn.addEventListener('click', (e) => {
@@ -1803,6 +1885,12 @@
 
     function renderFixtures(fixtures) {
         if (!elements['fixtures-list']) return;
+        const prevScrollY = window.scrollY || window.pageYOffset || document.documentElement.scrollTop || 0;
+        const fixturesContainer = elements['fixtures-list'];
+        if (fixturesContainer && prevScrollY > 60) {
+            fixturesContainer.style.minHeight = fixturesContainer.offsetHeight + 'px';
+        }
+
         const hasFixtures = Boolean(fixtures && fixtures.length > 0);
         if (elements['fixtures-empty']) {
             elements['fixtures-empty'].hidden = hasFixtures;
@@ -1846,6 +1934,13 @@
                 </div>
             </div>
         `;
+
+        if (prevScrollY > 60) {
+            window.scrollTo({ top: prevScrollY, behavior: 'instant' });
+            requestAnimationFrame(() => {
+                if (fixturesContainer) fixturesContainer.style.minHeight = '';
+            });
+        }
     }
 
     function renderFlashscoreMatchRow(event, league = null) {
@@ -2441,7 +2536,57 @@
                 }).join('') + `</div>`;
         }
 
-        const totalLifetimeMeetings = Number(h2h.totalMeetings || recentH2h.length || 0);
+        // Calculate WDW records for both teams in their head-to-head encounters
+        let calculatedHomeWins = Number(h2h.homeWins);
+        let calculatedAwayWins = Number(h2h.awayWins);
+        let calculatedDraws = Number(h2h.draws);
+        let homeH2hForm = Array.isArray(h2h.h2hFormHome) ? [...h2h.h2hFormHome] : [];
+        let awayH2hForm = Array.isArray(h2h.h2hFormAway) ? [...h2h.h2hFormAway] : [];
+
+        const hasPrecomputedWins = Number.isFinite(calculatedHomeWins) && Number.isFinite(calculatedAwayWins) && Number.isFinite(calculatedDraws) && (calculatedHomeWins > 0 || calculatedAwayWins > 0 || calculatedDraws > 0);
+
+        if (!hasPrecomputedWins && recentH2h.length) {
+            calculatedHomeWins = 0;
+            calculatedAwayWins = 0;
+            calculatedDraws = 0;
+            homeH2hForm = [];
+            awayH2hForm = [];
+
+            const hClean = cleanTeamNameForDedup(home.team?.displayName || home.team?.name || '');
+            const aClean = cleanTeamNameForDedup(away.team?.displayName || away.team?.name || '');
+
+            for (const meeting of recentH2h) {
+                const pastHClean = cleanTeamNameForDedup(meeting.homeTeam || '');
+                const pastAClean = cleanTeamNameForDedup(meeting.awayTeam || '');
+                const scoreParts = String(meeting.score || '').split('-').map(s => parseInt(s.trim(), 10));
+                const s1 = isNaN(scoreParts[0]) ? 0 : scoreParts[0];
+                const s2 = isNaN(scoreParts[1]) ? 0 : scoreParts[1];
+
+                const isHomeSideH = pastHClean === hClean || pastHClean.includes(hClean) || hClean.includes(pastHClean);
+                const teamHomeGoals = isHomeSideH ? s1 : s2;
+                const teamAwayGoals = isHomeSideH ? s2 : s1;
+
+                if (teamHomeGoals > teamAwayGoals) {
+                    calculatedHomeWins++;
+                    homeH2hForm.push('W');
+                    awayH2hForm.push('L');
+                } else if (teamAwayGoals > teamHomeGoals) {
+                    calculatedAwayWins++;
+                    homeH2hForm.push('L');
+                    awayH2hForm.push('W');
+                } else {
+                    calculatedDraws++;
+                    homeH2hForm.push('D');
+                    awayH2hForm.push('D');
+                }
+            }
+        }
+
+        const totalLifetimeMeetings = Math.max(
+            Number(h2h.totalMeetings || 0),
+            recentH2h.length,
+            (calculatedHomeWins || 0) + (calculatedAwayWins || 0) + (calculatedDraws || 0)
+        );
         const hasPastMeetings = totalLifetimeMeetings > 0;
 
         const h2hMeetingsRows = recentH2h.length ? recentH2h.slice(0, 5).map(m => `
@@ -2626,32 +2771,36 @@
                             <div style="background:var(--bg-canvas); border:1px solid var(--border-subtle); border-radius:8px; padding:12px; text-align:center;">
                                 <span style="font-size:11px; text-transform:uppercase; color:var(--text-muted); display:block;">${totalLifetimeMeetings > 5 ? 'Lifetime Encounters' : 'Recorded Meetings'}</span>
                                 <strong style="font-size:22px; color:var(--text-main);">${totalLifetimeMeetings}</strong>
+                                <div style="font-size:10.5px; color:var(--text-muted); margin-top:4px;">Total Clashes</div>
                             </div>
                             <div style="background:var(--bg-canvas); border:1px solid var(--border-subtle); border-radius:8px; padding:12px; text-align:center;">
                                 <span style="font-size:11px; text-transform:uppercase; color:var(--text-muted); display:block;">${escapeHtml(home.team?.displayName || 'Home')} Wins</span>
-                                <strong style="font-size:22px; color:#10b981;">${h2h.homeWins || 0}</strong>
+                                <strong style="font-size:22px; color:#10b981;">${calculatedHomeWins || 0}</strong>
+                                ${homeH2hForm.length ? `<div style="display:flex; justify-content:center; gap:3px; margin-top:6px;">${homeH2hForm.slice(0, 5).map(res => `<span style="display:inline-flex; align-items:center; justify-content:center; width:16px; height:16px; border-radius:3px; background:${res === 'W' ? '#10b981' : res === 'D' ? '#6b7280' : '#ef4444'}; color:#ffffff; font-weight:700; font-size:9.5px;">${res}</span>`).join('')}</div>` : ''}
                             </div>
                             <div style="background:var(--bg-canvas); border:1px solid var(--border-subtle); border-radius:8px; padding:12px; text-align:center;">
                                 <span style="font-size:11px; text-transform:uppercase; color:var(--text-muted); display:block;">${totalLifetimeMeetings > 5 ? 'All-Time Draws' : 'Recorded Draws'}</span>
-                                <strong style="font-size:22px; color:var(--text-muted);">${h2h.draws || 0}</strong>
+                                <strong style="font-size:22px; color:var(--text-muted);">${calculatedDraws || 0}</strong>
+                                ${calculatedDraws > 0 ? `<div style="display:flex; justify-content:center; gap:3px; margin-top:6px;">${Array(Math.min(5, calculatedDraws)).fill('D').map(() => `<span style="display:inline-flex; align-items:center; justify-content:center; width:16px; height:16px; border-radius:3px; background:#6b7280; color:#ffffff; font-weight:700; font-size:9.5px;">D</span>`).join('')}</div>` : ''}
                             </div>
                             <div style="background:var(--bg-canvas); border:1px solid var(--border-subtle); border-radius:8px; padding:12px; text-align:center;">
                                 <span style="font-size:11px; text-transform:uppercase; color:var(--text-muted); display:block;">${escapeHtml(away.team?.displayName || 'Away')} Wins</span>
-                                <strong style="font-size:22px; color:#3b82f6;">${h2h.awayWins || 0}</strong>
+                                <strong style="font-size:22px; color:#3b82f6;">${calculatedAwayWins || 0}</strong>
+                                ${awayH2hForm.length ? `<div style="display:flex; justify-content:center; gap:3px; margin-top:6px;">${awayH2hForm.slice(0, 5).map(res => `<span style="display:inline-flex; align-items:center; justify-content:center; width:16px; height:16px; border-radius:3px; background:${res === 'W' ? '#10b981' : res === 'D' ? '#6b7280' : '#ef4444'}; color:#ffffff; font-weight:700; font-size:9.5px;">${res}</span>`).join('')}</div>` : ''}
                             </div>
                         </div>
 
                         <!-- Ratio Bar & Quick Rates -->
                         <div style="background:var(--bg-canvas); border:1px solid var(--border-subtle); border-radius:8px; padding:12px 14px; margin-bottom:20px;">
                             <div style="display:flex; justify-content:space-between; font-size:11.5px; color:var(--text-muted); margin-bottom:6px; font-weight:600;">
-                                <span style="color:#10b981;">${escapeHtml(home.team?.abbreviation || home.team?.displayName || 'Home')} ${totalLifetimeMeetings > 0 ? Math.round(((h2h.homeWins || 0) / totalLifetimeMeetings) * 100) : 0}%</span>
-                                <span>Draws ${totalLifetimeMeetings > 0 ? Math.round(((h2h.draws || 0) / totalLifetimeMeetings) * 100) : 0}%</span>
-                                <span style="color:#3b82f6;">${escapeHtml(away.team?.abbreviation || away.team?.displayName || 'Away')} ${totalLifetimeMeetings > 0 ? Math.round(((h2h.awayWins || 0) / totalLifetimeMeetings) * 100) : 0}%</span>
+                                <span style="color:#10b981;">${escapeHtml(home.team?.abbreviation || home.team?.displayName || 'Home')} ${totalLifetimeMeetings > 0 ? Math.round(((calculatedHomeWins || 0) / totalLifetimeMeetings) * 100) : 0}%</span>
+                                <span>Draws ${totalLifetimeMeetings > 0 ? Math.round(((calculatedDraws || 0) / totalLifetimeMeetings) * 100) : 0}%</span>
+                                <span style="color:#3b82f6;">${escapeHtml(away.team?.abbreviation || away.team?.displayName || 'Away')} ${totalLifetimeMeetings > 0 ? Math.round(((calculatedAwayWins || 0) / totalLifetimeMeetings) * 100) : 0}%</span>
                             </div>
                             <div style="display:flex; height:8px; border-radius:4px; overflow:hidden; background:var(--bg-surface-elevated);">
-                                <div style="width:${totalLifetimeMeetings > 0 ? ((h2h.homeWins || 0) / totalLifetimeMeetings) * 100 : 0}%; background:#10b981;"></div>
-                                <div style="width:${totalLifetimeMeetings > 0 ? ((h2h.draws || 0) / totalLifetimeMeetings) * 100 : 0}%; background:#9ca3af;"></div>
-                                <div style="width:${totalLifetimeMeetings > 0 ? ((h2h.awayWins || 0) / totalLifetimeMeetings) * 100 : 0}%; background:#3b82f6;"></div>
+                                <div style="width:${totalLifetimeMeetings > 0 ? ((calculatedHomeWins || 0) / totalLifetimeMeetings) * 100 : 0}%; background:#10b981;"></div>
+                                <div style="width:${totalLifetimeMeetings > 0 ? ((calculatedDraws || 0) / totalLifetimeMeetings) * 100 : 0}%; background:#9ca3af;"></div>
+                                <div style="width:${totalLifetimeMeetings > 0 ? ((calculatedAwayWins || 0) / totalLifetimeMeetings) * 100 : 0}%; background:#3b82f6;"></div>
                             </div>
                             <div style="display:flex; justify-content:space-around; margin-top:10px; padding-top:8px; border-top:1px dashed var(--border-subtle); font-size:11.5px; color:var(--text-muted);">
                                 <span>Avg Goals: <strong style="color:var(--text-main);">${h2h.averageGoalsPerMatch || '—'}</strong></span>
@@ -3547,7 +3696,7 @@
                     state.lastFullFixturesSync = now;
 
                     if (state.selectedLeagueSlug === 'live' || state.currentStatus === 'live') {
-                        loadLiveMatches({ background: true });
+                        loadLiveMatches({ background: true, initialLive: liveMatches });
                     } else if (state.selectedLeagueSlug === 'all') {
                         loadAllLeagueFixtures({ background: true });
                     } else if (state.league) {

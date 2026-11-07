@@ -1019,9 +1019,16 @@ router.get('/:league/standings', validateLeague, async(req, res) => {
         const filter = { league_slug: req.params.league };
         if (seasonYear) filter.season_year = seasonYear;
 
-        const groups = await SoccerStanding.find(filter)
-            .sort({ group_name: 1 })
+        let groups = await SoccerStanding.find(filter)
+            .sort({ season_year: -1, group_name: 1 })
             .lean();
+
+        if (!groups.length && filter.season_year) {
+            // Fallback to latest available season if requested season has no stored records
+            groups = await SoccerStanding.find({ league_slug: req.params.league })
+                .sort({ season_year: -1, group_name: 1 })
+                .lean();
+        }
 
         res.set('Cache-Control', 'public, max-age=30');
         return res.json({

@@ -217,6 +217,67 @@ let liveFeedMemoryCache = {
     inFlightPromise: null
 };
 
+// Canonical League Tier Ranking for Prioritizing High-Profile Livescore Views
+const LEAGUE_PRIORITY_MAP = {
+    'uefa.champions': 100,
+    'eng.1': 99,
+    'esp.1': 98,
+    'ita.1': 97,
+    'ger.1': 96,
+    'fra.1': 95,
+    'uefa.europa': 94,
+    'uefa.europa.conf': 93,
+    'eng.fa': 92,
+    'esp.copa_del_rey': 91,
+    'ita.coppa_italia': 90,
+    'ger.dfb_pokal': 89,
+    'eng.league_cup': 88,
+    'eng.2': 87,
+    'ned.1': 86,
+    'por.1': 85,
+    'bra.1': 84,
+    'arg.1': 83,
+    'nga.1': 82,
+    'sau.1': 81,
+    'mex.1': 80,
+    'col.1': 79,
+    'tur.1': 78,
+    'bel.1': 77,
+    'sco.1': 76,
+    'caf.champions': 75,
+    'afc.champions': 74,
+    'usa.1': 73,
+    'conmebol.libertadores': 72,
+    'conmebol.sudamericana': 71,
+    'aut.1': 70,
+    'sui.1': 69,
+    'den.1': 68,
+    'swe.1': 67,
+    'nor.1': 66,
+    'gre.1': 65,
+    'egy.1': 64,
+    'rsa.1': 63,
+    'mar.1': 62,
+    'gha.1': 61,
+    'ken.1': 60,
+    'tza.1': 59,
+    'jpn.1': 58,
+    'kor.1': 57,
+    'aus.1': 56
+};
+
+function getLeaguePriority(slug = '') {
+    if (!slug) return 30;
+    const cleanSlug = String(slug).toLowerCase().trim();
+    if (LEAGUE_PRIORITY_MAP[cleanSlug]) return LEAGUE_PRIORITY_MAP[cleanSlug];
+    if (cleanSlug.includes('youth') || cleanSlug.includes('u21') || cleanSlug.includes('u19') || cleanSlug.includes('u23')) return 20;
+    if (cleanSlug.includes('friendly') || cleanSlug === 'club.friendly') return 10;
+    if (cleanSlug.endsWith('.1')) return 55;
+    if (cleanSlug.endsWith('.2')) return 45;
+    if (cleanSlug.endsWith('.3') || cleanSlug.endsWith('.4')) return 35;
+    return 40;
+}
+
 function fetchUpstreamJsonFast(url, timeoutMs = 3500) {
     return new Promise((resolve) => {
         const https = require('https');
@@ -491,6 +552,12 @@ async function fetchFreshWorldwideLiveMatches() {
     }
 
     const dedupedLive = Array.from(seenLiveMap.values()).map(e => e.match);
+    dedupedLive.sort((a, b) => {
+        const pA = getLeaguePriority(a.league?.slug);
+        const pB = getLeaguePriority(b.league?.slug);
+        if (pB !== pA) return pB - pA;
+        return new Date(a.date) - new Date(b.date);
+    });
     return dedupedLive;
 }
 
@@ -993,6 +1060,12 @@ router.get('/fixtures', optionalApiKeyAuth, async (req, res) => {
         }
 
         const dedupedMatches = Array.from(seenFixturesMap.values()).map(e => e.match);
+        dedupedMatches.sort((a, b) => {
+            const pA = getLeaguePriority(a.league?.slug);
+            const pB = getLeaguePriority(b.league?.slug);
+            if (pB !== pA) return pB - pA;
+            return new Date(a.date) - new Date(b.date);
+        });
 
         const hasLive = dedupedMatches.some(m => m.status.isLive);
         if (hasLive || status === 'live') {
@@ -1276,7 +1349,6 @@ router.get('/predictions-context/:eventId', optionalApiKeyAuth, async (req, res)
 
         // Compute Lifetime H2H statistics across all deduplicated historical encounters
         const allLifetimeH2h = Array.from(h2hMap.values()).sort((a, b) => new Date(b.date) - new Date(a.date));
-        const totalLifetimeMeetings = Math.max(parsedSeriesTotal, allLifetimeH2h.length);
 
         let homeWins = 0;
         let awayWins = 0;
@@ -1284,50 +1356,54 @@ router.get('/predictions-context/:eventId', optionalApiKeyAuth, async (req, res)
         let totalGoals = 0;
         let bttsCount = 0;
         let over25Count = 0;
+        const h2hFormHome = [];
+        const h2hFormAway = [];
 
         const currentHomeName = (match.home?.displayName || match.home?.name || '').toLowerCase();
         const currentAwayName = (match.away?.displayName || match.away?.name || '').toLowerCase();
+        const curHNorm = currentHomeName.replace(/[^a-z0-9]/g, '');
+        const curANorm = currentAwayName.replace(/[^a-z0-9]/g, '');
 
         for (const m of allLifetimeH2h) {
-            const hScore = m.homeScore;
-            const aScore = m.awayScore;
+            const hScore = Number(m.homeScore) || 0;
+            const aScore = Number(m.awayScore) || 0;
             const matchTotal = hScore + aScore;
             totalGoals += matchTotal;
 
             if (hScore > 0 && aScore > 0) bttsCount++;
             if (matchTotal > 2.5) over25Count++;
 
-            if (m.winner && m.winner !== 'Draw') {
-                const w = m.winner.toLowerCase();
-                if (w.includes(currentHomeName) || currentHomeName.includes(w)) {
-                    homeWins++;
-                } else if (w.includes(currentAwayName) || currentAwayName.includes(w)) {
-                    awayWins++;
-                } else if (m.isHomeOriginal !== undefined) {
-                    if (m.isHomeOriginal) {
-                        if (hScore > aScore) homeWins++; else awayWins++;
-                    } else {
-                        if (aScore > hScore) homeWins++; else awayWins++;
-                    }
-                } else if (hScore > aScore) {
-                    homeWins++;
-                } else {
-                    awayWins++;
-                }
-            } else if (hScore === aScore) {
-                draws++;
-            } else if (m.isHomeOriginal !== undefined) {
-                if (m.isHomeOriginal) {
-                    if (hScore > aScore) homeWins++; else awayWins++;
-                } else {
-                    if (aScore > hScore) homeWins++; else awayWins++;
-                }
-            } else if (hScore > aScore) {
-                homeWins++;
+            // Determine if currentHome was home or away in this past historical encounter
+            let isCurrentHomeSideHome = true;
+            if (m.isHomeOriginal !== undefined) {
+                isCurrentHomeSideHome = Boolean(m.isHomeOriginal);
             } else {
+                const pastH = (m.homeTeam || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+                const pastA = (m.awayTeam || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+                if (pastA === curHNorm || (pastA.includes(curHNorm) && !pastH.includes(curHNorm))) {
+                    isCurrentHomeSideHome = false;
+                }
+            }
+
+            const currentHomeGoals = isCurrentHomeSideHome ? hScore : aScore;
+            const currentAwayGoals = isCurrentHomeSideHome ? aScore : hScore;
+
+            if (currentHomeGoals > currentAwayGoals) {
+                homeWins++;
+                h2hFormHome.push('W');
+                h2hFormAway.push('L');
+            } else if (currentAwayGoals > currentHomeGoals) {
                 awayWins++;
+                h2hFormHome.push('L');
+                h2hFormAway.push('W');
+            } else {
+                draws++;
+                h2hFormHome.push('D');
+                h2hFormAway.push('D');
             }
         }
+
+        const totalLifetimeMeetings = Math.max(parsedSeriesTotal, allLifetimeH2h.length, homeWins + awayWins + draws);
 
         // Recent encounters limited to the last 5 meetings
         const recentH2hMeetings = allLifetimeH2h.slice(0, 5);
@@ -1543,6 +1619,8 @@ router.get('/predictions-context/:eventId', optionalApiKeyAuth, async (req, res)
                 draws,
                 seriesSummary,
                 seriesScore,
+                h2hFormHome,
+                h2hFormAway,
                 averageGoalsPerMatch: totalLifetimeMeetings > 0 ? Number((totalGoals / totalLifetimeMeetings).toFixed(2)) : 0,
                 bttsPercentage: totalLifetimeMeetings > 0 ? Number(((bttsCount / totalLifetimeMeetings) * 100).toFixed(1)) : 0,
                 over25Percentage: totalLifetimeMeetings > 0 ? Number(((over25Count / totalLifetimeMeetings) * 100).toFixed(1)) : 0,

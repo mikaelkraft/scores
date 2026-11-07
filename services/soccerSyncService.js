@@ -633,11 +633,22 @@ async function syncAllLeagues() {
 }
 
 function resolveLeagueSlug(altGameNote = '', compDesc = '', uid = '') {
-    const text = `${altGameNote} ${compDesc} ${uid}`.toLowerCase();
+    const leagueRaw = String(altGameNote || '').trim();
+    const countryRaw = String(compDesc || '').trim();
+    const uidRaw = String(uid || '').trim();
+    const text = `${leagueRaw} ${countryRaw} ${uidRaw}`.toLowerCase();
+    const country = countryRaw.toLowerCase();
+    const league = leagueRaw.toLowerCase();
+    const scd = uidRaw.toLowerCase();
 
     // 1. Explicitly reject NCAA non-soccer and college basketball events
     if (text.includes('ncaam') || text.includes('ncaa') || text.includes('college basketball') || text.includes('mens college') || text.includes('wnba') || text.includes('nba')) {
         return null;
+    }
+
+    // Direct explicit canonical slug matches in uid
+    if (scd === 'eng.1' || scd === 'esp.1' || scd === 'ita.1' || scd === 'ger.1' || scd === 'fra.1' || scd === 'bra.1' || scd === 'mex.1' || scd === 'nga.1' || scd === 'uefa.champions') {
+        return scd;
     }
 
     // 2. Women's Football Discriminator FIRST (prevents WSL, Liga F, NWSL matching men's senior leagues)
@@ -727,72 +738,7 @@ function resolveLeagueSlug(altGameNote = '', compDesc = '', uid = '') {
         return 'uefa.youth';
     }
 
-    // 4. Continental Tournaments evaluated early (prevents "AFC Champions League Two" matching English "League Two")
-    if (text.includes('afc champions league two') || text.includes('acl two') || text.includes('afc.cup')) return 'afc.cup';
-    if (text.includes('afc champions') || text.includes('afc.champions') || (text.includes('afc') && text.includes('champions'))) return 'afc.champions';
-    if (text.includes('caf champions') || text.includes('caf.champions') || text.includes('totalenergies caf cl') || (text.includes('caf') && text.includes('champions'))) return 'caf.champions';
-    if (text.includes('caf confederation') || text.includes('caf confed') || text.includes('caf.confed') || (text.includes('caf') && text.includes('confed'))) return 'caf.confed';
-    if (text.includes('concacaf') || text.includes('concacaf.champions')) return 'concacaf.champions';
-
-    // 5. English Lower Divisions & Cups (prevents Northern/Southern Premier matching senior Premier League)
-    if (text.includes('northern premier') || text.includes('eng.northern')) return 'eng.northern';
-    if (text.includes('southern premier') || text.includes('eng.southern') || text.includes('southern football league')) return 'eng.southern';
-    if (text.includes('isthmian') || text.includes('eng.isthmian')) return 'eng.isthmian';
-    if (text.includes('national league north') || text.includes('national league south') || text.includes('eng.6')) return 'eng.6';
-    if (text.includes('national league') || text.includes('eng.5')) return 'eng.5';
-    if (text.includes('eng.4') || ((text.includes('league two') || text.includes('league 2')) && !text.includes('afc'))) return 'eng.4';
-    if (text.includes('eng.3') || ((text.includes('league one') || text.includes('league 1')) && !text.includes('ligue 1') && !text.includes('fra.1') && !text.includes('tha.1'))) return 'eng.3';
-    if (text.includes('efl championship') || text.includes('english championship') || (text.includes('championship') && (text.includes('eng') || text.includes('efl') || text.includes('sky bet'))) || text.includes('eng.2')) return 'eng.2';
-    if (text.includes('fa cup') || text.includes('eng.fa')) return 'eng.fa';
-    if (text.includes('carabao') || text.includes('efl cup') || (text.includes('league cup') && !text.includes('scot') && !text.includes('thai')) || text.includes('eng.league_cup')) return 'eng.league_cup';
-
-    // 5. Foreign Domestic Leagues that contain "Premier League" or "Premiership" (MUST BE EVALUATED BEFORE SENIOR EPL!)
-    if (text.includes('tanzan') || text.includes('tza.1') || text.includes('ligi kuu') || text.includes('nbc premier') || text.includes('mbeya') || text.includes('singida') || text.includes('simba') || text.includes('young africans') || text.includes('yanga') || text.includes('azam') || text.includes('mashujaa') || text.includes('namungo') || text.includes('fountain gate') || text.includes('kagera sugar') || text.includes('pamba') || text.includes('tra united')) return 'tza.1';
-    if (text.includes('egypt') || text.includes('egy.1')) return 'egy.1';
-    if (text.includes('npfl') || text.includes('nigeria') || text.includes('nga.1') || text.includes('nigerian')) return 'nga.1';
-    if (text.includes('kenya') || text.includes('fkf') || text.includes('ken.1')) return 'ken.1';
-    if (text.includes('ghana') || text.includes('gha.1') || text.includes('aduana') || text.includes('asante kotoko') || text.includes('hearts of oak')) return 'gha.1';
-    if (text.includes('uganda') || text.includes('uga.1')) return 'uga.1';
-    if (text.includes('south africa') || text.includes('psl') || text.includes('betway premiership') || text.includes('rsa.1')) return 'rsa.1';
-    if (text.includes('botola') || (text.includes('morocco') && text.includes('league')) || text.includes('mar.1')) return 'mar.1';
-    if (text.includes('zamb') || text.includes('zmb.1')) return 'zmb.1';
-    if (text.includes('zimbab') || text.includes('zwe.1')) return 'zwe.1';
-    if (text.includes('ethiop') || text.includes('eth.1')) return 'eth.1';
-    if (text.includes('rwand') || text.includes('rwa.1')) return 'rwa.1';
-    if (text.includes('dr congo') || text.includes('congo dr') || text.includes('linafoot') || text.includes('cod.1')) return 'cod.1';
-    if (text.includes('cameroon') || text.includes('elite one') || text.includes('cmr.1')) return 'cmr.1';
-    if (text.includes('ivory coast') || text.includes('côte d\'ivoire') || text.includes('cote d\'ivoire') || text.includes('civ.1')) return 'civ.1';
-    if (text.includes('algeria') || text.includes('dza.1')) return 'dza.1';
-    if (text.includes('tunisia') || text.includes('tun.1')) return 'tun.1';
-    if (text.includes('sudan') || text.includes('sdn.1')) return 'sdn.1';
-    if (text.includes('angola') || text.includes('girabola') || text.includes('ago.1')) return 'ago.1';
-    if (text.includes('botswana') || text.includes('bwa.1') || text.includes('township rollers')) return 'bwa.1';
-    if (text.includes('malawi') || text.includes('mwi.1')) return 'mwi.1';
-    if (text.includes('libya') || text.includes('lby.1') || text.includes('al-ahli tripoli')) return 'lby.1';
-    if (text.includes('israel') || text.includes('isr.1') || text.includes('maccabi') || text.includes('hapoel') || text.includes('beitar')) return 'isr.1';
-    if (text.includes('azerbaijan') || text.includes('aze.1') || text.includes('sumqayit') || text.includes('qarabag') || text.includes('neftchi')) return 'aze.1';
-    if (text.includes('belarus') || text.includes('blr.1') || text.includes('torpedo zhodino') || text.includes('belshina') || text.includes('dinamo minsk')) return 'blr.1';
-    if (text.includes('armenia') || text.includes('arm.1') || text.includes('ararat') || text.includes('gandzasar') || text.includes('pyunik')) return 'arm.1';
-    if (text.includes('bosnia') || text.includes('herzegovina') || text.includes('bih.1') || text.includes('premijer liga')) return 'bih.1';
-    if (text.includes('jamaica') || text.includes('jam.1') || text.includes('tivoli') || text.includes('portmore') || text.includes('montego bay')) return 'jam.1';
-    if (text.includes('northern ireland') || text.includes('nifl') || text.includes('nir.1')) return 'nir.1';
-    if (text.includes('wales') || text.includes('cymru') || text.includes('wal.1')) return 'wal.1';
-    if (text.includes('ireland') || text.includes('loi premier') || text.includes('irl.1')) return 'irl.1';
-    if (text.includes('hong kong') || text.includes('hkg.1')) return 'hkg.1';
-    if (text.includes('bangladesh') || text.includes('bgd.1')) return 'bgd.1';
-    if (text.includes('malta') || text.includes('mlt.1')) return 'mlt.1';
-    if (text.includes('kazakh') || text.includes('kaz.1')) return 'kaz.1';
-    if (text.includes('singapore') || text.includes('spl') || text.includes('sgp.1')) return 'sgp.1';
-    if (text.includes('bahrain') || text.includes('bhr.1')) return 'bhr.1';
-    if (text.includes('canadian premier') || text.includes('cpl') || text.includes('can.1') || (text.includes('canada') && text.includes('premier'))) return 'can.1';
-    if (text.includes('scottish') || text.includes('premiership') || text.includes('sco.1')) return 'sco.1';
-    if (text.includes('saudi') || text.includes('roshn') || text.includes('ksa.1')) return 'ksa.1';
-    if (text.includes('kuwait') || text.includes('kwt.1') || text.includes('al-qadsia') || text.includes('al-arabi')) return 'kwt.1';
-    if (text.includes('russia') || text.includes('rus.1')) return 'rus.1';
-    if (text.includes('ukrain') || text.includes('ukr.1')) return 'ukr.1';
-    if (text.includes('new zealand') || text.includes('nzl.1')) return 'nzl.1';
-
-    // 6. Continental Tournaments (Confederation-specific first to prevent UEFA collisions)
+    // 4. Continental Club & International Tournaments
     if (text.includes('caf champions') || text.includes('caf.champions') || text.includes('totalenergies caf cl') || (text.includes('caf') && text.includes('champions'))) return 'caf.champions';
     if (text.includes('caf confederation') || text.includes('caf confed') || text.includes('caf.confed') || (text.includes('caf') && text.includes('confed'))) return 'caf.confed';
     if (text.includes('africa cup') || text.includes('afcon') || text.includes('caf.nations') || (text.includes('caf') && text.includes('nations'))) return 'caf.nations';
@@ -813,94 +759,282 @@ function resolveLeagueSlug(altGameNote = '', compDesc = '', uid = '') {
     if (text.includes('uefa.nations') || text.includes('nations league')) return 'uefa.nations';
     if (text.includes('super cup') || text.includes('uefa.super_cup')) return 'uefa.super_cup';
     if (text.includes('club world cup') || text.includes('fifa.cwc')) return 'fifa.cwc';
+    if (text.includes('fifa world cup') || text.includes('fifa.world')) return 'fifa.world';
 
-    // 7. United States Senior Soccer
-    if (text.includes('usl') || text.includes('united soccer league') || text.includes('usa.usl')) return 'usa.usl.1';
-    if (text.includes('u.s. open') || text.includes('us open cup') || text.includes('usa.open')) return 'usa.open';
-    if (text.includes('mls') || text.includes('major league soccer') || text.includes('usa.1')) return 'usa.1';
+    // 5. COUNTRY-SPECIFIC DOMESTIC COMPETITIONS (Evaluated before generic terms like Serie A / La Liga / Premier League!)
 
-    // 8. Major Senior Domestic Leagues
-    if (text.includes('laliga 2') || text.includes('segunda') || text.includes('esp.2')) return 'esp.2';
-    if (text.includes('laliga') || text.includes('la liga') || text.includes('esp.1')) return 'esp.1';
-    if (text.includes('copa del rey') || text.includes('esp.copa_del_rey')) return 'esp.copa_del_rey';
-    if (text.includes('serie b') || text.includes('ita.2')) return 'ita.2';
-    if (text.includes('serie a') || text.includes('ita.1')) return 'ita.1';
-    if (text.includes('coppa italia') || text.includes('ita.coppa_italia')) return 'ita.coppa_italia';
-    if (text.includes('2. bundesliga') || text.includes('ger.2')) return 'ger.2';
-    // Austrian Bundesliga must win over German when "austria" / "österreich" / "aut." is present
-    if (text.includes('austrian') || text.includes('austria') || text.includes('österreich') || text.includes('aut.1') || text.includes('aut ')) return 'aut.1';
-    if (text.includes('bundesliga') || text.includes('ger.1')) return 'ger.1';
-    if (text.includes('dfb-pokal') || text.includes('ger.dfb_pokal')) return 'ger.dfb_pokal';
-    if (text.includes('ligue 2') || text.includes('fra.2')) return 'fra.2';
-    if (text.includes('ligue 1') || text.includes('fra.1')) return 'fra.1';
-    if (text.includes('coupe de france') || text.includes('fra.coupe_de_france')) return 'fra.coupe_de_france';
-    if (text.includes('eredivisie') || text.includes('ned.1')) return 'ned.1';
-    if (text.includes('primeira') || text.includes('por.1')) return 'por.1';
-    if (text.includes('belgian') || text.includes('jupiler') || text.includes('bel.1')) return 'bel.1';
-    if (text.includes('super lig') || text.includes('süper lig') || text.includes('tur.1')) return 'tur.1';
-    if (text.includes('brasileir') || text.includes('bra.1')) return 'bra.1';
-    if (text.includes('serie b brasil') || text.includes('bra.2')) return 'bra.2';
-    if (text.includes('copa argentina') || text.includes('arg.copa')) return 'arg.copa';
-    if (text.includes('argentin') || text.includes('arg.1')) return 'arg.1';
-    if (text.includes('expansión') || text.includes('expansion') || text.includes('mex.2')) return 'mex.2';
-    if (text.includes('liga mx') || text.includes('mex.1')) return 'mex.1';
-    if (text.includes('colombia') || text.includes('primera a') || text.includes('col.1')) return 'col.1';
-    if (text.includes('bolivia') || text.includes('bol.1') || text.includes('bol.copa')) return 'bol.copa';
-    if (text.includes('club friendly') || text.includes('friendly')) return 'club.friendly';
+    // --- BRAZIL (Brasileirão Série A / Série B / Copa) ---
+    const isBrazil = country.includes('brazil') || country.includes('brasil') || text.includes('brasileir') || scd.includes('bra.');
+    if (isBrazil) {
+        if (text.includes('serie b') || scd.includes('serie-b') || scd.includes('bra.2')) return 'bra.2';
+        if (text.includes('copa') || scd.includes('copa')) return 'bra.copa';
+        if (text.includes('paulista')) return 'bra.paulista';
+        if (text.includes('carioca')) return 'bra.carioca';
+        return 'bra.1';
+    }
 
-    // 9. Senior English Premier League (Only match if it is strictly English EPL and not foreign)
-    if (text.includes('english premier league') || text.includes('epl') || uid.includes('eng.1') || (text.includes('premier league') && (text.includes('england') || text.includes('english')))) {
-        const foreignIndicators = ['egypt', 'ghana', 'kenya', 'uganda', 'singapore', 'bahrain', 'canada', 'scotland', 'russia', 'ukraine', 'kuwait', 'new zealand', 'ireland', 'wales', 'jamaica', 'india', 'nigeria', 'south africa', 'tanzania', 'zambia', 'zimbabwe', 'ethiopia', 'rwanda', 'congo', 'cameroon', 'ivory', 'algeria', 'tunisia', 'sudan', 'angola', 'botswana', 'malawi', 'bangladesh', 'hong kong', 'malta', 'israel', 'kazakhstan', 'northern ireland', 'armenia', 'azerbaijan', 'georgia', 'belarus', 'trinidad', 'barbados', 'bermuda', 'libya', 'somalia', 'syria', 'yemen', 'oman', 'lebanon', 'palestine', 'nbc', 'ligi kuu'];
-        const hasForeign = foreignIndicators.some(country => text.includes(country));
+    // --- MEXICO (Liga MX / Liga de Expansión / Copa MX) ---
+    const isMexico = country.includes('mexic') || text.includes('liga mx') || scd.includes('mex.') || scd.includes('liga-mx');
+    if (isMexico) {
+        if (text.includes('expansi') || text.includes('expansion') || scd.includes('mex.2') || scd.includes('expansion')) return 'mex.2';
+        if (text.includes('copa')) return 'mex.copa';
+        return 'mex.1';
+    }
+
+    // --- GUATEMALA (Guatemalan Liga Nacional) ---
+    const isGuatemala = country.includes('guatemala') || text.includes('xelaju') || text.includes('marquense') || text.includes('comunicaciones') || text.includes('municipal') || scd.includes('gua.') || scd.includes('guatemala');
+    if (isGuatemala) {
+        return 'gua.1';
+    }
+
+    // --- ECUADOR (LigaPro Ecuador / Serie A / Serie B) ---
+    const isEcuador = country.includes('ecuador') || text.includes('ligapro') || text.includes('mushuc runa') || text.includes('ldu quito') || text.includes('barcelona sc') || scd.includes('ecu.');
+    if (isEcuador) {
+        if (text.includes('serie b') || scd.includes('serie-b') || scd.includes('ecu.2')) return 'ecu.2';
+        return 'ecu.1';
+    }
+
+    // --- VENEZUELA (Liga FUTVE / Primera División) ---
+    const isVenezuela = country.includes('venezuela') || text.includes('futve') || text.includes('monagas') || text.includes('caracas') || scd.includes('ven.');
+    if (isVenezuela) {
+        return 'ven.1';
+    }
+
+    // --- COLOMBIA (Categoría Primera A / Primera B) ---
+    const isColombia = country.includes('colombia') || text.includes('betplay') || scd.includes('col.');
+    if (isColombia) {
+        if (text.includes('primera b') || text.includes('torneo') || scd.includes('col.2')) return 'col.2';
+        if (text.includes('copa')) return 'col.copa';
+        return 'col.1';
+    }
+
+    // --- ARGENTINA (Liga Profesional / Primera División / Copa) ---
+    const isArgentina = country.includes('argentin') || text.includes('boca juniors') || text.includes('river plate') || scd.includes('arg.');
+    if (isArgentina) {
+        if (text.includes('copa') || scd.includes('arg.copa')) return 'arg.copa';
+        if (text.includes('primera nacional') || text.includes('b nacional') || scd.includes('arg.2')) return 'arg.2';
+        return 'arg.1';
+    }
+
+    // --- PARAGUAY (División Profesional / Copa) ---
+    const isParaguay = country.includes('paraguay') || text.includes('olimpia') || text.includes('cerro porteno') || text.includes('cerro porteño') || text.includes('asuncion') || scd.includes('par.');
+    if (isParaguay) {
+        return 'par.1';
+    }
+
+    // --- BOLIVIA (Bolivian Liga Profesional) ---
+    const isBolivia = country.includes('bolivia') || scd.includes('bol.');
+    if (isBolivia) {
+        if (text.includes('copa') || scd.includes('bol.copa')) return 'bol.copa';
+        return 'bol.1';
+    }
+
+    // --- PERU (Liga 1 Peru) ---
+    const isPeru = country.includes('peru') || text.includes('alianza lima') || text.includes('universitario de deportes') || text.includes('sporting cristal') || scd.includes('per.');
+    if (isPeru) {
+        return 'per.1';
+    }
+
+    // --- CHILE (Primera División Chile) ---
+    const isChile = country.includes('chile') || text.includes('colo-colo') || text.includes('universidad de chile') || scd.includes('chi.');
+    if (isChile) {
+        return 'chi.1';
+    }
+
+    // --- URUGUAY (Primera División Uruguay) ---
+    const isUruguay = country.includes('uruguay') || text.includes('penarol') || text.includes('peñarol') || text.includes('nacional montevideo') || scd.includes('uru.');
+    if (isUruguay) {
+        return 'uru.1';
+    }
+
+    // --- CENTRAL AMERICAN LEAGUES ---
+    if (country.includes('costa rica') || scd.includes('crc.')) return 'crc.1';
+    if (country.includes('honduras') || scd.includes('hon.')) return 'hon.1';
+    if (country.includes('el salvador') || scd.includes('slv.')) return 'slv.1';
+
+    // --- AFRICAN DOMESTIC COMPETITIONS ---
+    if (country.includes('tanzan') || text.includes('tza.1') || text.includes('nbc premier') || text.includes('ligi kuu') || text.includes('mbeya') || text.includes('singida') || text.includes('simba') || text.includes('yanga') || text.includes('azam')) return 'tza.1';
+    if (country.includes('nigeria') || text.includes('npfl') || text.includes('nga.1') || text.includes('rivers united') || text.includes('enugu rangers') || text.includes('enyimba') || text.includes('bendel insurance')) return 'nga.1';
+    if (country.includes('south africa') || text.includes('psl') || text.includes('betway premiership') || text.includes('rsa.1') || text.includes('mamelodi sundowns') || text.includes('kaizer chiefs') || text.includes('orlando pirates')) return 'rsa.1';
+    if (country.includes('egypt') || text.includes('egy.1') || text.includes('al ahly') || text.includes('zamalek')) {
+        if (text.includes('cup') || text.includes('league cup')) return 'egy.cup';
+        return 'egy.1';
+    }
+    if (country.includes('kenya') || text.includes('fkf') || text.includes('ken.1')) return 'ken.1';
+    if (country.includes('ghana') || text.includes('gha.1') || text.includes('asante kotoko') || text.includes('hearts of oak')) return 'gha.1';
+    if (country.includes('uganda') || text.includes('uga.1')) return 'uga.1';
+    if (country.includes('morocco') || text.includes('botola') || text.includes('mar.1') || text.includes('raja') || text.includes('wydad')) return 'mar.1';
+    if (country.includes('algeria') || text.includes('dza.1') || text.includes('mouloudia')) return 'dza.1';
+    if (country.includes('tunisia') || text.includes('tun.1') || text.includes('esperance')) return 'tun.1';
+    if (country.includes('zamb') || text.includes('zmb.1')) return 'zmb.1';
+    if (country.includes('zimbab') || text.includes('zwe.1')) return 'zwe.1';
+    if (country.includes('ethiop') || text.includes('eth.1')) return 'eth.1';
+    if (country.includes('rwand') || text.includes('rwa.1')) return 'rwa.1';
+    if (country.includes('congo') || text.includes('cod.1') || text.includes('linafoot') || text.includes('tp mazembe')) return 'cod.1';
+    if (country.includes('cameroon') || text.includes('cmr.1') || text.includes('elite one')) return 'cmr.1';
+    if (country.includes('ivory coast') || country.includes('côte') || country.includes('cote') || text.includes('civ.1') || text.includes('asec mimosas')) return 'civ.1';
+    if (country.includes('sudan') || text.includes('sdn.1')) return 'sdn.1';
+    if (country.includes('angola') || text.includes('ago.1') || text.includes('girabola') || text.includes('petro luanda')) return 'ago.1';
+    if (country.includes('botswana') || text.includes('bwa.1')) return 'bwa.1';
+    if (country.includes('malawi') || text.includes('mwi.1')) return 'mwi.1';
+    if (country.includes('libya') || text.includes('lby.1')) return 'lby.1';
+
+    // --- MIDDLE EAST & ASIA ---
+    if (country.includes('saudi') || text.includes('roshn') || text.includes('ksa.1') || text.includes('al-hilal') || text.includes('al-nassr') || text.includes('al-ittihad')) {
+        if (text.includes('king') || text.includes('cup')) return 'ksa.cup';
+        return 'ksa.1';
+    }
+    if (country.includes('kuwait') || text.includes('kwt.1')) return 'kwt.1';
+    if (country.includes('bahrain') || text.includes('bhr.1')) return 'bhr.1';
+    if (country.includes('emirates') || country.includes('uae') || text.includes('uae.1')) return 'uae.1';
+    if (country.includes('qatar') || text.includes('qat.1')) return 'qat.1';
+    if (country.includes('iraq') || text.includes('irq.1')) return 'irq.1';
+    if (country.includes('jordan') || text.includes('jor.1')) return 'jor.1';
+    if (country.includes('iran') || text.includes('irn.1') || text.includes('persepolis') || text.includes('esteghlal')) return 'irn.1';
+    if (country.includes('israel') || text.includes('isr.1')) return 'isr.1';
+    if (country.includes('turkey') || country.includes('turkish') || text.includes('tur.1') || text.includes('süper lig') || text.includes('super lig') || text.includes('galatasaray') || text.includes('fenerbahce') || text.includes('besiktas')) return 'tur.1';
+
+    if (country.includes('india') || text.includes('ind.1') || text.includes('ind.2')) {
+        if (text.includes('i-league') || text.includes('ind.2')) return 'ind.2';
+        return 'ind.1';
+    }
+    if (country.includes('japan') || text.includes('jpn.1') || text.includes('j1') || text.includes('j.league')) return 'jpn.1';
+    if (country.includes('china') || text.includes('chn.1') || text.includes('csl')) return 'chn.1';
+    if (country.includes('australia') || text.includes('aus.1') || text.includes('a-league')) return 'aus.1';
+    if (country.includes('indonesia') || text.includes('idn.1') || text.includes('liga 1')) return 'idn.1';
+    if (country.includes('thailand') || text.includes('tha.1') || text.includes('thai league')) return 'tha.1';
+    if (country.includes('malaysia') || text.includes('mys.1')) return 'mys.1';
+    if (country.includes('singapore') || text.includes('sgp.1')) return 'sgp.1';
+    if (country.includes('vietnam') || text.includes('vie.1')) return 'vie.1';
+    if (country.includes('uzbekistan') || text.includes('uzb.1')) return 'uzb.1';
+    if (country.includes('bangladesh') || text.includes('bgd.1')) return 'bgd.1';
+    if (country.includes('hong kong') || text.includes('hkg.1')) return 'hkg.1';
+    if (country.includes('kazakh') || text.includes('kaz.1')) return 'kaz.1';
+
+    // --- NORTH AMERICA ---
+    if (country.includes('united states') || country.includes('usa') || text.includes('usa.1') || text.includes('usa.usl') || text.includes('mls') || text.includes('major league soccer')) {
+        if (text.includes('usl') || text.includes('usa.usl')) return 'usa.usl.1';
+        if (text.includes('open') || text.includes('usa.open')) return 'usa.open';
+        return 'usa.1';
+    }
+    if (country.includes('canada') || text.includes('can.1') || text.includes('canadian premier') || text.includes('cpl')) return 'can.1';
+    if (country.includes('jamaica') || text.includes('jam.1')) return 'jam.1';
+
+    // --- OTHER EUROPEAN LEAGUES (Checked before Big 5 to avoid keyword overlap) ---
+    if (country.includes('austria') || text.includes('aut.1') || (text.includes('bundesliga') && country.includes('austria'))) return 'aut.1';
+    if (country.includes('switzerland') || country.includes('swiss') || text.includes('sui.1')) return 'sui.1';
+    if (country.includes('greece') || country.includes('greek') || text.includes('gre.1') || text.includes('olympiacos') || text.includes('panathinaikos') || text.includes('paok')) return 'gre.1';
+    if (country.includes('scotland') || country.includes('scottish') || text.includes('sco.1') || text.includes('celtic') || text.includes('rangers')) {
+        if (text.includes('championship') || text.includes('sco.2')) return 'sco.2';
+        if (text.includes('cup') || text.includes('sco.cup')) return 'sco.cup';
+        return 'sco.1';
+    }
+    if (country.includes('netherlands') || country.includes('dutch') || text.includes('ned.1') || text.includes('eredivisie') || text.includes('ajax') || text.includes('psv') || text.includes('feyenoord')) {
+        if (text.includes('eerste') || text.includes('ned.2')) return 'ned.2';
+        if (text.includes('knvb') || text.includes('cup')) return 'ned.cup';
+        return 'ned.1';
+    }
+    if (country.includes('portugal') || country.includes('portuguese') || text.includes('por.1') || text.includes('primeira') || text.includes('benfica') || text.includes('porto') || text.includes('sporting cp')) {
+        if (text.includes('segunda') || text.includes('liga 2') || text.includes('por.2')) return 'por.2';
+        if (text.includes('taca') || text.includes('taça') || text.includes('cup')) return 'por.cup';
+        return 'por.1';
+    }
+    if (country.includes('belgium') || country.includes('belgian') || text.includes('bel.1') || text.includes('jupiler') || text.includes('club brugge') || text.includes('anderlecht')) return 'bel.1';
+    if (country.includes('denmark') || country.includes('danish') || text.includes('den.1') || text.includes('copenhagen') || text.includes('brondby')) {
+        if (text.includes('pokal') || text.includes('cup') || text.includes('dbu')) return 'den.cup';
+        return 'den.1';
+    }
+    if (country.includes('sweden') || country.includes('swedish') || text.includes('swe.1') || text.includes('allsvenskan') || text.includes('malmo')) return 'swe.1';
+    if (country.includes('norway') || country.includes('norwegian') || text.includes('nor.1') || text.includes('eliteserien') || text.includes('bodo/glimt')) return 'nor.1';
+    if (country.includes('finland') || text.includes('fin.1') || text.includes('veikkausliiga')) return 'fin.1';
+    if (country.includes('poland') || text.includes('pol.1') || text.includes('ekstraklasa') || text.includes('legia')) return 'pol.1';
+    if (country.includes('croatia') || text.includes('cro.1') || text.includes('dinamo zagreb') || text.includes('hajduk split')) {
+        if (text.includes('cup')) return 'cro.cup';
+        return 'cro.1';
+    }
+    if (country.includes('cyprus') || text.includes('cyp.1') || text.includes('apoel')) {
+        if (text.includes('cup')) return 'cyp.cup';
+        return 'cyp.1';
+    }
+    if (country.includes('romania') || text.includes('rou.2') || text.includes('steaua') || text.includes('fcsb')) return 'rou.2';
+    if (country.includes('russia') || text.includes('rus.1') || text.includes('zenit') || text.includes('spartak')) return 'rus.1';
+    if (country.includes('ukrain') || text.includes('ukr.1') || text.includes('shakhtar') || text.includes('dynamo kyiv')) return 'ukr.1';
+    if (country.includes('czech') || text.includes('cze.1') || text.includes('slavia prague') || text.includes('sparta prague')) return 'cze.1';
+    if (country.includes('serbia') || text.includes('srb.1') || text.includes('red star') || text.includes('partizan')) return 'srb.1';
+    if (country.includes('bulgaria') || text.includes('bgr.1') || text.includes('ludogorets')) return 'bgr.1';
+    if (country.includes('hungary') || text.includes('hun.1') || text.includes('ferencvaros')) return 'hun.1';
+    if (country.includes('slovakia') || text.includes('svk.1') || text.includes('slovan bratislava')) return 'svk.1';
+    if (country.includes('slovenia') || text.includes('svn.1') || text.includes('maribor')) return 'svn.1';
+    if (country.includes('belarus') || text.includes('blr.1')) return 'blr.1';
+    if (country.includes('azerbaijan') || text.includes('aze.1') || text.includes('qarabag')) return 'aze.1';
+    if (country.includes('armenia') || text.includes('arm.1')) return 'arm.1';
+    if (country.includes('bosnia') || text.includes('bih.1')) return 'bih.1';
+    if (country.includes('northern ireland') || text.includes('nir.1')) return 'nir.1';
+    if (country.includes('wales') || text.includes('wal.1')) return 'wal.1';
+    if (country.includes('ireland') || text.includes('irl.1')) return 'irl.1';
+    if (country.includes('iceland') || text.includes('isl.1') || text.includes('besta deild')) return 'isl.1';
+    if (country.includes('malta') || text.includes('mlt.1')) return 'mlt.1';
+    if (country.includes('montenegro') || text.includes('mne.1')) return 'mne.1';
+
+    // --- EUROPEAN BIG 5 (With strict country and word boundary protection!) ---
+
+    // SPAIN (LaLiga EA Sports / LaLiga 2 / Copa del Rey)
+    const isSpain = country.includes('spain') || country.includes('spanish') || country.includes('españa') || country.includes('espana') || scd.includes('esp.');
+    if (isSpain || (/\b(?:laliga|la\s+liga|copa del rey)\b/i.test(text) && !country.includes('guatemala') && !country.includes('mexic') && !country.includes('colombia') && !country.includes('argentin') && !country.includes('venezuela') && !country.includes('honduras') && !country.includes('costa rica') && !country.includes('chile') && !country.includes('uruguay') && !country.includes('peru') && !country.includes('bolivia') && !country.includes('paraguay'))) {
+        if (text.includes('copa del rey') || scd.includes('copa-del-rey') || scd.includes('esp.copa_del_rey')) return 'esp.copa_del_rey';
+        if (text.includes('laliga 2') || text.includes('segunda') || scd.includes('esp.2') || scd.includes('laliga2')) return 'esp.2';
+        if (/\b(?:laliga|la\s+liga)\b/i.test(text) || scd.includes('esp.1') || isSpain) return 'esp.1';
+    }
+
+    // ITALY (Serie A / Serie B / Coppa Italia)
+    const isItaly = country.includes('italy') || country.includes('italian') || country.includes('italia') || scd.includes('ita.');
+    if (isItaly || (/\b(?:serie\s+a|serie\s+b|coppa italia)\b/i.test(text) && !country.includes('brazil') && !country.includes('brasil') && !country.includes('ecuador'))) {
+        if (text.includes('coppa italia') || scd.includes('coppa-italia') || scd.includes('ita.coppa_italia')) return 'ita.coppa_italia';
+        if (text.includes('serie b') || scd.includes('serie-b') || scd.includes('ita.2')) return 'ita.2';
+        if (text.includes('serie a') || scd.includes('serie-a') || scd.includes('ita.1') || isItaly) return 'ita.1';
+    }
+
+    // GERMANY (Bundesliga / 2. Bundesliga / DFB-Pokal)
+    const isGermany = country.includes('germany') || country.includes('german') || country.includes('deutschland') || scd.includes('ger.');
+    if (isGermany || (/\b(?:bundesliga|dfb-pokal)\b/i.test(text) && !country.includes('austria'))) {
+        if (text.includes('dfb-pokal') || scd.includes('dfb-pokal') || scd.includes('ger.dfb_pokal')) return 'ger.dfb_pokal';
+        if (text.includes('2. bundesliga') || scd.includes('2-bundesliga') || scd.includes('ger.2')) return 'ger.2';
+        if (text.includes('bundesliga') || scd.includes('ger.1') || isGermany) return 'ger.1';
+    }
+
+    // FRANCE (Ligue 1 / Ligue 2 / Coupe de France)
+    const isFrance = country.includes('france') || country.includes('french') || scd.includes('fra.');
+    if (isFrance || (/\b(?:ligue\s*1|ligue\s*2|coupe de france)\b/i.test(text) && !country.includes('ivory') && !country.includes('algeria') && !country.includes('tunisia') && !country.includes('senegal') && !country.includes('guinea') && !country.includes('mali'))) {
+        if (text.includes('coupe de france') || scd.includes('coupe-de-france') || scd.includes('fra.coupe_de_france')) return 'fra.coupe_de_france';
+        if (text.includes('ligue 2') || scd.includes('fra.2')) return 'fra.2';
+        if (text.includes('ligue 1') || scd.includes('fra.1') || isFrance) return 'fra.1';
+    }
+
+    // ENGLAND (EPL / Championship / League One / League Two / FA Cup / Carabao Cup / National Leagues)
+    const isEngland = country.includes('england') || country.includes('english') || scd.includes('eng.');
+    if (isEngland || text.includes('premier league') || text.includes('championship') || text.includes('league 1') || text.includes('league 2') || text.includes('fa cup') || text.includes('efl')) {
+        const foreignIndicators = ['egypt', 'ghana', 'kenya', 'uganda', 'singapore', 'bahrain', 'canada', 'scotland', 'russia', 'ukraine', 'kuwait', 'new zealand', 'ireland', 'wales', 'jamaica', 'india', 'nigeria', 'south africa', 'tanzania', 'zambia', 'zimbabwe', 'ethiopia', 'rwanda', 'congo', 'cameroon', 'ivory', 'algeria', 'tunisia', 'sudan', 'angola', 'botswana', 'malawi', 'bangladesh', 'hong kong', 'malta', 'israel', 'kazakhstan', 'northern ireland', 'armenia', 'azerbaijan', 'georgia', 'belarus', 'libya', 'nbc', 'ligi kuu', 'psl', 'npfl'];
+        const hasForeign = foreignIndicators.some(f => text.includes(f) || country.includes(f));
         if (!hasForeign) {
-            return 'eng.1';
+            if (text.includes('northern premier') || text.includes('eng.northern')) return 'eng.northern';
+            if (text.includes('southern premier') || text.includes('eng.southern')) return 'eng.southern';
+            if (text.includes('isthmian') || text.includes('eng.isthmian')) return 'eng.isthmian';
+            if (text.includes('national league north') || text.includes('national league south') || text.includes('eng.6')) return 'eng.6';
+            if (text.includes('national league') || text.includes('eng.5')) return 'eng.5';
+            if (text.includes('eng.4') || ((text.includes('league two') || text.includes('league 2')) && !text.includes('afc'))) return 'eng.4';
+            if (text.includes('eng.3') || ((text.includes('league one') || text.includes('league 1')) && !text.includes('ligue 1'))) return 'eng.3';
+            if (text.includes('efl championship') || text.includes('english championship') || (text.includes('championship') && (text.includes('eng') || text.includes('efl') || text.includes('sky bet'))) || text.includes('eng.2') || scd === 'championship') return 'eng.2';
+            if (text.includes('fa cup') || text.includes('eng.fa')) return 'eng.fa';
+            if (text.includes('carabao') || text.includes('efl cup') || (text.includes('league cup') && !text.includes('scot') && !text.includes('thai') && !text.includes('egypt')) || text.includes('eng.league_cup')) return 'eng.league_cup';
+            if (text.includes('efl trophy') || scd.includes('efl-trophy')) return 'eng.trophy';
+            if (text.includes('premier league') || text.includes('epl') || scd.includes('eng.1') || isEngland) return 'eng.1';
         }
     }
 
-    // 10. Regional Domestic Leagues (Asia, Americas, Europe)
-    if (text.includes('indonesia') || text.includes('liga 1') || text.includes('idn.1')) return 'idn.1';
-    if (text.includes('thailand') || text.includes('thai league') || text.includes('tha.1')) return 'tha.1';
-    if (text.includes('malaysia') || text.includes('mys.1')) return 'mys.1';
-    if (text.includes('i-league') || text.includes('ind.2')) return 'ind.2';
-    // Super League disambiguation (country must win)
-    if ((text.includes('swiss') || text.includes('switzerland') || text.includes('sui.')) && text.includes('super league')) return 'sui.1';
-    if ((text.includes('greek') || text.includes('greece') || text.includes('gre.')) && text.includes('super league')) return 'gre.1';
-    if ((text.includes('malaysian') || text.includes('malaysia') || text.includes('mys.')) && text.includes('super league')) return 'mys.1';
-    if ((text.includes('chinese') || text.includes('china') || text.includes('chn.')) && text.includes('super league')) return 'chn.1';
-    if ((text.includes('uzbek') || text.includes('uzbekistan')) && text.includes('super')) return 'uzb.1';
-    if (text.includes('indian super league') || text.includes('ind.1') || (text.includes('super league') && (text.includes('india') || text.includes('isl')))) return 'ind.1';
-    if (text.includes('j1') || text.includes('j.league') || text.includes('jpn.1')) return 'jpn.1';
-    if (text.includes('a-league') || text.includes('aus.1')) return 'aus.1';
-    if (text.includes('chinese') || text.includes('csl') || text.includes('chn.1')) return 'chn.1';
-    if (text.includes('vietnam') || text.includes('vie.1')) return 'vie.1';
-    if (text.includes('iran') || text.includes('irn.1')) return 'irn.1';
-    if (text.includes('emirates') || text.includes('uae.1')) return 'uae.1';
-    if (text.includes('uzbekistan') || text.includes('uzb.1')) return 'uzb.1';
-    if (text.includes('qatar') || text.includes('qat.1')) return 'qat.1';
-    if (text.includes('iraq') || text.includes('irq.1')) return 'irq.1';
-    if (text.includes('jordan') || text.includes('jor.1')) return 'jor.1';
+    // 10. Friendlies
+    if (text.includes('club friendly') || text.includes('friendly') || scd.includes('friendly')) return 'club.friendly';
 
-    if (text.includes('peru') || text.includes('per.1')) return 'per.1';
-    if (text.includes('ecuador') || text.includes('ligapro') || text.includes('ecu.1')) return 'ecu.1';
-    if (text.includes('paraguay') || text.includes('par.1')) return 'par.1';
-    if (text.includes('venezuela') || text.includes('futve') || text.includes('ven.1')) return 'ven.1';
-    if (text.includes('uruguay') || text.includes('uru.1')) return 'uru.1';
-    if (text.includes('costa rica') || text.includes('crc.1')) return 'crc.1';
-    if (text.includes('honduras') || text.includes('hon.1')) return 'hon.1';
-    if (text.includes('guatemala') || text.includes('gua.1')) return 'gua.1';
-
-    if (text.includes('romania') || text.includes('rou.2')) return 'rou.2';
-    if (text.includes('montenegro') || text.includes('mne.1')) return 'mne.1';
-    if (text.includes('austrian') || text.includes('aut.1')) return 'aut.1';
-    if (text.includes('swiss') || text.includes('sui.1')) return 'sui.1';
-    if (text.includes('danish') || text.includes('den.1')) return 'den.1';
-    if (text.includes('greek') || text.includes('gre.1')) return 'gre.1';
-    if (text.includes('allsvenskan') || text.includes('swe.1')) return 'swe.1';
-    if (text.includes('eliteserien') || text.includes('nor.1')) return 'nor.1';
-    if (text.includes('veikkausliiga') || text.includes('fin.1')) return 'fin.1';
-    if (text.includes('iceland') || text.includes('besta deild') || text.includes('isl.1')) return 'isl.1';
-
-    // Universal clean fallback: derive from altGameNote or compDesc so NO live matches are ever dropped
+    // 11. Clean Universal Fallback: derive from altGameNote or compDesc so NO live matches are ever dropped
     const cleanTitle = (altGameNote || compDesc || '').split(',')[0].trim();
     if (cleanTitle) {
         const slugified = cleanTitle.toLowerCase().replace(/[^a-z0-9]+/g, '.').replace(/^\.+|\.+$/g, '').slice(0, 32);
@@ -1382,36 +1516,12 @@ function areTeamNamesMatching(nameA = '', nameB = '', leagueSlugA = '', leagueSl
     // Youth/Reserves vs Senior teams must NEVER match
     if (catA.isYouth !== catB.isYouth) return false;
 
-    // Prefer same league or same country prefix when both slugs are known
-    if (leagueSlugA && leagueSlugB) {
-        const countryA = String(leagueSlugA).split('.')[0];
-        const countryB = String(leagueSlugB).split('.')[0];
-        // Allow match only if same league or same country (prevents Swiss Super League picking Indian teams etc.)
-        if (leagueSlugA !== leagueSlugB && countryA !== countryB) {
-            // Still allow pure ID-based matches higher up; here we block loose name match across continents
-            return false;
-        }
-    }
-
     const a = normalizeTeamName(nameA);
     const b = normalizeTeamName(nameB);
     if (!a || !b) return false;
     if (a === b) return true;
-
-    // Stricter containment: shorter name must be a substantial part and not just a common word
-    const shorter = a.length <= b.length ? a : b;
-    const longer = a.length > b.length ? a : b;
-    if (shorter.length >= 5 && longer.includes(shorter)) {
-        // Reject if the difference is only a common suffix/prefix like "fc", "ceif", "united" etc already stripped
-        return true;
-    }
-    // Token overlap for multi-word names (e.g. "independiente medellin" vs "independiente de medellin")
-    const tokensA = a.split(/\s+/).filter(t => t.length > 2);
-    const tokensB = b.split(/\s+/).filter(t => t.length > 2);
-    if (tokensA.length >= 2 && tokensB.length >= 2) {
-        const setB = new Set(tokensB);
-        const overlap = tokensA.filter(t => setB.has(t)).length;
-        if (overlap >= Math.min(tokensA.length, tokensB.length) - 0) return true;
+    if (a.includes(b) || b.includes(a)) {
+        if (Math.min(a.length, b.length) >= 3) return true;
     }
     return false;
 }
@@ -1445,26 +1555,14 @@ async function findExistingMatch({ eventId, homeName, awayName, matchDate, score
 
     if (dateQuery.length === 0) return null;
 
-    // Prefer same-league candidates first to avoid cross-league contamination
-    const baseFilter = { $or: dateQuery };
-    let candidates = [];
-    if (leagueSlug) {
-        candidates = await SoccerMatch.find({ ...baseFilter, league_slug: leagueSlug }).lean();
-    }
-    if (candidates.length === 0) {
-        candidates = await SoccerMatch.find(baseFilter).lean();
-    }
-
+    const candidates = await SoccerMatch.find({ $or: dateQuery }).lean();
     for (const cand of candidates) {
         const candHome = cand.home?.name || cand.home?.display_name || '';
         const candAway = cand.away?.name || cand.away?.display_name || '';
-        const homeOk = areTeamNamesMatching(candHome, homeName, cand.league_slug, leagueSlug);
-        const awayOk = areTeamNamesMatching(candAway, awayName, cand.league_slug, leagueSlug);
-        if (homeOk && awayOk) return cand;
-        // Also accept reversed home/away (some providers swap)
-        const homeOkRev = areTeamNamesMatching(candHome, awayName, cand.league_slug, leagueSlug);
-        const awayOkRev = areTeamNamesMatching(candAway, homeName, cand.league_slug, leagueSlug);
-        if (homeOkRev && awayOkRev) return cand;
+        if (areTeamNamesMatching(candHome, homeName, cand.league_slug, leagueSlug) &&
+            areTeamNamesMatching(candAway, awayName, cand.league_slug, leagueSlug)) {
+            return cand;
+        }
     }
     return null;
 }
@@ -1626,6 +1724,34 @@ async function cleanupStuckMatchesAndPurgeNcaa() {
         );
         await SoccerLeague.deleteOne({ slug: 'fifa.youth' }).catch(() => {});
 
+        // 4d. Re-classify matches mistakenly categorized under 'ita.1', 'esp.1', 'eng.league_cup'
+        const misclassifiedRegionalMatches = await SoccerMatch.find({
+            league_slug: { $in: ['ita.1', 'ita.2', 'esp.1', 'esp.2', 'eng.league_cup'] },
+            $or: [
+                { note: /brazil|brasileir|ecuador|ligapro|guatemala|mexic|liga mx|egypt/i },
+                { name: /brazil|brasileir|ecuador|ligapro|guatemala|mexic|liga mx|egypt|chapecoense|mirassol|mushuc runa|manta|san pedro|municipal|xelaju|marquense/i },
+                { 'home.name': /chapecoense|mirassol|mushuc runa|manta|san pedro|municipal|xelaju|marquense|america|cruz azul|guadalajara|chivas|tigres|monterrey|pachuca|toluca|santos laguna|pumas|necaxa|atlas|puebla|mazatlan|juarez|queretaro|tijuana|leon|atletico san luis/i },
+                { 'away.name': /chapecoense|mirassol|mushuc runa|manta|san pedro|municipal|xelaju|marquense|america|cruz azul|guadalajara|chivas|tigres|monterrey|pachuca|toluca|santos laguna|pumas|necaxa|atlas|puebla|mazatlan|juarez|queretaro|tijuana|leon|atletico san luis/i }
+            ]
+        }).lean();
+
+        const regionalReclassOps = [];
+        for (const m of misclassifiedRegionalMatches) {
+            const rawHint = `${m.note || ''} ${m.name || ''} ${m.home?.name || ''} ${m.away?.name || ''}`;
+            const newSlug = resolveLeagueSlug(rawHint, m.venue?.country || '', m.source?.uid || '');
+            if (newSlug && newSlug !== m.league_slug) {
+                regionalReclassOps.push({
+                    updateOne: {
+                        filter: { _id: m._id },
+                        update: { $set: { league_slug: newSlug } }
+                    }
+                });
+            }
+        }
+        if (regionalReclassOps.length > 0) {
+            await SoccerMatch.bulkWrite(regionalReclassOps, { ordered: false });
+        }
+
         // 5. Purge duplicate match documents across the past 7 days
         const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 3600 * 1000);
         const recentMatches = await SoccerMatch.find({ date: { $gte: sevenDaysAgo } }).sort({ date: 1, _id: 1 }).lean();
@@ -1640,9 +1766,7 @@ async function cleanupStuckMatchesAndPurgeNcaa() {
             const categoryKey = `${catHome.isWomen ? 'w' : 'm'}_${catHome.isYouth ? 'y' : 's'}`;
             const teamsKey = [homeNorm, awayNorm].sort().join('_vs_');
             const dateKey = m.scoreboard_date || (m.date ? m.date.toISOString().slice(0, 10) : '');
-            // Include league_slug so the same fixture wrongly stored under two leagues still collapses after country fix
-            const leagueKey = m.league_slug || 'unknown';
-            const sig = `${teamsKey}_${dateKey}_${categoryKey}_${leagueKey}`;
+            const sig = `${teamsKey}_${dateKey}_${categoryKey}`;
 
             if (signatureMap.has(sig)) {
                 const primary = signatureMap.get(sig);
@@ -1737,29 +1861,6 @@ async function syncLiveScoreInPlay() {
             const cLower = country.toLowerCase();
 
             let targetSlug = resolveLeagueSlug(leagueName, country, stage.Scd || '');
-            // Hard country overrides when resolveLeagueSlug is ambiguous
-            if (cLower.includes('korea') || cLower.includes('south korea') || cLower.includes('republic of korea')) {
-                if (leagueName.toLowerCase().includes('k league') || leagueName.toLowerCase().includes('kleague')) {
-                    targetSlug = leagueName.toLowerCase().includes('2') ? 'kor.2' : 'kor.1';
-                }
-            }
-            if (cLower.includes('colombia')) {
-                if (!targetSlug || targetSlug.startsWith('eng.') || targetSlug.startsWith('esp.')) {
-                    targetSlug = 'col.1';
-                }
-            }
-            if (cLower.includes('mexico') && (!targetSlug || targetSlug.startsWith('eng.'))) {
-                targetSlug = leagueName.toLowerCase().includes('femenil') ? 'mex.w.1' : 'mex.1';
-            }
-            if (cLower.includes('nigeria') && (!targetSlug || targetSlug.startsWith('eng.'))) {
-                targetSlug = 'nga.1';
-            }
-            if (cLower.includes('india') && (!targetSlug || targetSlug.includes('sui') || targetSlug.startsWith('eng.'))) {
-                targetSlug = leagueName.toLowerCase().includes('i-league') ? 'ind.2' : 'ind.1';
-            }
-            if (cLower.includes('switzerland') && (!targetSlug || targetSlug.startsWith('ind.') || targetSlug.startsWith('eng.'))) {
-                targetSlug = 'sui.1';
-            }
             if (!targetSlug) {
                 if (cLower.includes('tanzania')) targetSlug = 'tza.1';
                 else if (cLower.includes('botswana')) targetSlug = 'bwa.1';

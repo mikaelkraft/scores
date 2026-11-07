@@ -57,14 +57,30 @@ function toggleAuthMode() {
     }
 }
 
+function togglePasswordVisibility(inputId, btnEl) {
+    const input = document.getElementById(inputId);
+    if (!input) return;
+    const isPw = input.type === 'password';
+    input.type = isPw ? 'text' : 'password';
+    if (btnEl) btnEl.textContent = isPw ? '🙈' : '👁️';
+}
+window.togglePasswordVisibility = togglePasswordVisibility;
+
 async function handleAuthSubmit(event) {
-    event.preventDefault();
-    const email = document.getElementById('auth-email').value.trim();
-    const password = document.getElementById('auth-password').value;
-    const fullName = document.getElementById('auth-name').value.trim();
+    if (event) {
+        event.preventDefault();
+        event.stopPropagation();
+    }
+    const emailInput = document.getElementById('auth-email');
+    const passwordInput = document.getElementById('auth-password');
+    const nameInput = document.getElementById('auth-name');
+
+    const email = (emailInput?.value || '').trim();
+    const password = passwordInput?.value || '';
+    const fullName = (nameInput?.value || '').trim();
     const errorEl = document.getElementById('auth-error');
 
-    errorEl.style.display = 'none';
+    if (errorEl) errorEl.style.display = 'none';
     const endpoint = isRegisterMode ? '/api/account/register' : '/api/account/login';
     const payload = isRegisterMode ? { email, password, fullName } : { email, password };
 
@@ -89,12 +105,16 @@ async function handleAuthSubmit(event) {
             }
             loadPortalData();
         } else {
-            errorEl.textContent = data.error || 'Authentication failed.';
-            errorEl.style.display = 'block';
+            if (errorEl) {
+                errorEl.textContent = data.error || 'Authentication failed.';
+                errorEl.style.display = 'block';
+            }
         }
     } catch (err) {
-        errorEl.textContent = 'Connection error. Please try again.';
-        errorEl.style.display = 'block';
+        if (errorEl) {
+            errorEl.textContent = 'Connection error. Please try again.';
+            errorEl.style.display = 'block';
+        }
     }
 }
 
