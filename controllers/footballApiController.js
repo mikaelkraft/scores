@@ -908,9 +908,14 @@ router.get('/fixtures', optionalApiKeyAuth, async (req, res) => {
                                 const mid = String(m.source?.event_id || m.id || m._id || '');
                                 const mSlug = m.league?.slug || m.league_slug || '';
                                 const mTier = getMatchTier(m.home?.name || m.home?.displayName || '', m.away?.name || m.away?.displayName || '', mSlug);
-                                return (id && mid === id) || (h && a && mh === h && ma === a && mTier === tier);
+                                return (id && mid === id) || (h && a && mh === h && ma === a && (mSlug === slug || !slug) && mTier === tier);
                             });
                             if (idx !== -1) {
+                                // Never overwrite a completed match with an in-play candidate!
+                                if (matches[idx].status?.completed || matches[idx].status?.state === 'post') {
+                                    continue;
+                                }
+
                                 const existingClock = matches[idx].status?.clock || matches[idx].status?.detail;
                                 const incomingClock = lm.status?.clock || lm.status?.detail;
                                 const bestClock = isConcreteClock(incomingClock) ? incomingClock : (isConcreteClock(existingClock) ? existingClock : (incomingClock || 'Live'));
@@ -1359,10 +1364,8 @@ router.get('/predictions-context/:eventId', optionalApiKeyAuth, async (req, res)
         const h2hFormHome = [];
         const h2hFormAway = [];
 
-        const currentHomeName = (match.home?.displayName || match.home?.name || '').toLowerCase();
-        const currentAwayName = (match.away?.displayName || match.away?.name || '').toLowerCase();
-        const curHNorm = currentHomeName.replace(/[^a-z0-9]/g, '');
-        const curANorm = currentAwayName.replace(/[^a-z0-9]/g, '');
+        const curHNorm = normalizeTeamName(match.home?.displayName || match.home?.name || '');
+        const curANorm = normalizeTeamName(match.away?.displayName || match.away?.name || '');
 
         for (const m of allLifetimeH2h) {
             const hScore = Number(m.homeScore) || 0;
@@ -1374,15 +1377,15 @@ router.get('/predictions-context/:eventId', optionalApiKeyAuth, async (req, res)
             if (matchTotal > 2.5) over25Count++;
 
             // Determine if currentHome was home or away in this past historical encounter
+            const pastH = normalizeTeamName(m.homeTeam || '');
+            const pastA = normalizeTeamName(m.awayTeam || '');
             let isCurrentHomeSideHome = true;
-            if (m.isHomeOriginal !== undefined) {
+            if (pastA === curHNorm || (pastA && curHNorm && (pastA.includes(curHNorm) || curHNorm.includes(pastA)) && !pastH.includes(curHNorm))) {
+                isCurrentHomeSideHome = false;
+            } else if (pastH === curHNorm || (pastH && curHNorm && (pastH.includes(curHNorm) || curHNorm.includes(pastH)) && !pastA.includes(curHNorm))) {
+                isCurrentHomeSideHome = true;
+            } else if (m.isHomeOriginal !== undefined) {
                 isCurrentHomeSideHome = Boolean(m.isHomeOriginal);
-            } else {
-                const pastH = (m.homeTeam || '').toLowerCase().replace(/[^a-z0-9]/g, '');
-                const pastA = (m.awayTeam || '').toLowerCase().replace(/[^a-z0-9]/g, '');
-                if (pastA === curHNorm || (pastA.includes(curHNorm) && !pastH.includes(curHNorm))) {
-                    isCurrentHomeSideHome = false;
-                }
             }
 
             const currentHomeGoals = isCurrentHomeSideHome ? hScore : aScore;
@@ -1933,13 +1936,13 @@ router.get('/leagues', async (req, res) => {
 router.get(['/standings', '/standings/:league'], async (req, res) => {
     try {
         const filter = {};
+        const requestedSlug = String(req.params.league || req.query.league || '').toLowerCase();
 
         if (isFreePlanRestricted(req.apiKey)) {
-            if (req.params.league && req.params.league !== 'all') {
-                const requestedSlug = String(req.params.league).toLowerCase();
+            if (requestedSlug && requestedSlug !== 'all') {
                 if (!FREE_TIER_ALLOWED_LEAGUES.includes(requestedSlug)) {
                     return res.status(403).json({
-                        error: `Access to standings for '${req.params.league}' is restricted on the Free Developer tier. Upgrade to Starter ($10/mo) or Pro ($29/mo) to access all 100+ world leagues.`,
+                        error: `Access to standings for '${requestedSlug}' is restricted on the Free Developer tier. Upgrade to Starter ($10/mo) or Pro ($29/mo) to access all 100+ world leagues.`,
                         upgradeUrl: '/pricing',
                         tier: 'free',
                         allowedLeagues: FREE_TIER_ALLOWED_LEAGUES
@@ -1949,11 +1952,11 @@ router.get(['/standings', '/standings/:league'], async (req, res) => {
             } else {
                 filter.league_slug = { $in: FREE_TIER_ALLOWED_LEAGUES };
             }
-        } else if (req.params.league && req.params.league !== 'all') {
-            filter.league_slug = String(req.params.league).toLowerCase();
+        } else if (requestedSlug && requestedSlug !== 'all') {
+            filter.league_slug = requestedSlug;
         }
 
-        const groups = await SoccerStanding.find(filter).sort({ group_name: 1 }).lean();
+        const groups = await SoccerStanding.find(filter).sort({ season_year: -1, group_name: 1 }).lean();
         res.set('Cache-Control', 'public, max-age=30');
         return res.json({
             status: 'success',

@@ -83,7 +83,7 @@ function switchAdminTab(tabName) {
     if (tabName === 'transactions') loadTransactions();
 }
 
-async async function loadDashboardData() {
+async function loadDashboardData() {
     try {
         await Promise.all([loadStats(), loadSettings(), loadApiKeysAndUsers()]);
     } catch (err) {

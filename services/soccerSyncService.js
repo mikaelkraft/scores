@@ -167,7 +167,15 @@ const TARGET_LEAGUES = [
     { slug: 'hkg.1', name: 'Hong Kong Premier League', abbreviation: 'HKPL', country: 'Hong Kong', kind: 'club', sort_order: 137 },
     { slug: 'bgd.1', name: 'Bangladesh Premier League', abbreviation: 'BPL', country: 'Bangladesh', kind: 'club', sort_order: 138 },
     { slug: 'mlt.1', name: 'Maltese Premier League', abbreviation: 'Malta PL', country: 'Malta', kind: 'club', sort_order: 139 },
-    { slug: 'kaz.1', name: 'Kazakhstan Premier League', abbreviation: 'KPL', country: 'Kazakhstan', kind: 'club', sort_order: 140 }
+    { slug: 'kaz.1', name: 'Kazakhstan Premier League', abbreviation: 'KPL', country: 'Kazakhstan', kind: 'club', sort_order: 140 },
+    { slug: 'por.2', name: 'Liga Portugal 2', abbreviation: 'Liga 2', country: 'Portugal', kind: 'club', sort_order: 141 },
+    { slug: 'ecu.2', name: 'LigaPro Serie B', abbreviation: 'Serie B', country: 'Ecuador', kind: 'club', sort_order: 142 },
+    { slug: 'ben.1', name: 'Benin Ligue 1', abbreviation: 'Benin L1', country: 'Benin', kind: 'club', sort_order: 143 },
+    { slug: 'bfa.1', name: 'Burkina Faso Premier League', abbreviation: 'Burkina PL', country: 'Burkina Faso', kind: 'club', sort_order: 144 },
+    { slug: 'sen.1', name: 'Senegal Ligue 1', abbreviation: 'Senegal L1', country: 'Senegal', kind: 'club', sort_order: 145 },
+    { slug: 'mli.1', name: 'Mali Première Division', abbreviation: 'Mali L1', country: 'Mali', kind: 'club', sort_order: 146 },
+    { slug: 'gin.1', name: 'Guinea Ligue 1', abbreviation: 'Guinea L1', country: 'Guinea', kind: 'club', sort_order: 147 },
+    { slug: 'twn.1', name: 'Taiwan Football Premier League', abbreviation: 'Taiwan PL', country: 'Taiwan', kind: 'club', sort_order: 148 }
 ];
 
 function fetchJson(url) {
@@ -532,16 +540,27 @@ async function syncLeague(leagueDef) {
                 const standingsObj = grp.standings || {};
                 const entries = standingsObj.entries || [];
 
-                const normalizedEntries = entries.map((entry, eIdx) => {
+                // Sort entries by real rank ascending (or points descending)
+                const sortedEntries = entries.slice().sort((a, b) => {
+                    const rankA = Number((a.stats || []).find(s => s.name === 'rank')?.value ?? 999);
+                    const rankB = Number((b.stats || []).find(s => s.name === 'rank')?.value ?? 999);
+                    if (rankA !== rankB) return rankA - rankB;
+                    const ptsA = Number((a.stats || []).find(s => s.name === 'points')?.value ?? 0);
+                    const ptsB = Number((b.stats || []).find(s => s.name === 'points')?.value ?? 0);
+                    return ptsB - ptsA;
+                });
+
+                const normalizedEntries = sortedEntries.map((entry, eIdx) => {
                     const statsMap = new Map();
                     for (const st of (entry.stats || [])) {
                         if (st.name && typeof st.value === 'number') {
                             statsMap.set(st.name, st.value);
                         }
                     }
+                    const realRank = Number((entry.stats || []).find(s => s.name === 'rank')?.value ?? (eIdx + 1));
 
                     return {
-                        rank: eIdx + 1,
+                        rank: realRank,
                         club: {
                             source_id: String(entry.team?.id || `club-${eIdx}`),
                             display_name: entry.team?.displayName || entry.team?.name || 'Club',
@@ -878,6 +897,14 @@ function resolveLeagueSlug(altGameNote = '', compDesc = '', uid = '') {
     if (country.includes('botswana') || text.includes('bwa.1')) return 'bwa.1';
     if (country.includes('malawi') || text.includes('mwi.1')) return 'mwi.1';
     if (country.includes('libya') || text.includes('lby.1')) return 'lby.1';
+    if (country.includes('benin') || text.includes('ben.1') || text.includes('cotonou')) return 'ben.1';
+    if (country.includes('burkina') || text.includes('bfa.1') || text.includes('faso')) return 'bfa.1';
+    if (country.includes('senegal') || text.includes('sen.1')) return 'sen.1';
+    if (country.includes('mali') || text.includes('mli.1')) return 'mli.1';
+    if (country.includes('guinea') || text.includes('gin.1')) return 'gin.1';
+    if (country.includes('togo') || text.includes('tgo.1')) return 'tgo.1';
+    if (country.includes('gabon') || text.includes('gab.1')) return 'gab.1';
+    if (country.includes('mauritania') || text.includes('mrt.1')) return 'mrt.1';
 
     // --- MIDDLE EAST & ASIA ---
     if (country.includes('saudi') || text.includes('roshn') || text.includes('ksa.1') || text.includes('al-hilal') || text.includes('al-nassr') || text.includes('al-ittihad')) {
@@ -906,6 +933,7 @@ function resolveLeagueSlug(altGameNote = '', compDesc = '', uid = '') {
     if (country.includes('malaysia') || text.includes('mys.1')) return 'mys.1';
     if (country.includes('singapore') || text.includes('sgp.1')) return 'sgp.1';
     if (country.includes('vietnam') || text.includes('vie.1')) return 'vie.1';
+    if (country.includes('taiwan') || country.includes('chinese taipei') || text.includes('twn.1') || text.includes('taipei') || text.includes('taichung') || text.includes('tainan')) return 'twn.1';
     if (country.includes('uzbekistan') || text.includes('uzb.1')) return 'uzb.1';
     if (country.includes('bangladesh') || text.includes('bgd.1')) return 'bgd.1';
     if (country.includes('hong kong') || text.includes('hkg.1')) return 'hkg.1';
@@ -977,18 +1005,19 @@ function resolveLeagueSlug(altGameNote = '', compDesc = '', uid = '') {
     if (country.includes('montenegro') || text.includes('mne.1')) return 'mne.1';
 
     // --- EUROPEAN BIG 5 (With strict country and word boundary protection!) ---
+    const isNeutralCountry = !country || country === 'international' || country === 'world' || country === 'europe' || country === 'global';
 
     // SPAIN (LaLiga EA Sports / LaLiga 2 / Copa del Rey)
     const isSpain = country.includes('spain') || country.includes('spanish') || country.includes('españa') || country.includes('espana') || scd.includes('esp.');
-    if (isSpain || (/\b(?:laliga|la\s+liga|copa del rey)\b/i.test(text) && !country.includes('guatemala') && !country.includes('mexic') && !country.includes('colombia') && !country.includes('argentin') && !country.includes('venezuela') && !country.includes('honduras') && !country.includes('costa rica') && !country.includes('chile') && !country.includes('uruguay') && !country.includes('peru') && !country.includes('bolivia') && !country.includes('paraguay'))) {
+    if (isSpain || (isNeutralCountry && /\b(?:laliga|la\s+liga|copa del rey)\b/i.test(text))) {
         if (text.includes('copa del rey') || scd.includes('copa-del-rey') || scd.includes('esp.copa_del_rey')) return 'esp.copa_del_rey';
-        if (text.includes('laliga 2') || text.includes('segunda') || scd.includes('esp.2') || scd.includes('laliga2')) return 'esp.2';
+        if (text.includes('laliga 2') || text.includes('segunda división') || text.includes('segunda division') || scd.includes('esp.2') || scd.includes('laliga2')) return 'esp.2';
         if (/\b(?:laliga|la\s+liga)\b/i.test(text) || scd.includes('esp.1') || isSpain) return 'esp.1';
     }
 
     // ITALY (Serie A / Serie B / Coppa Italia)
     const isItaly = country.includes('italy') || country.includes('italian') || country.includes('italia') || scd.includes('ita.');
-    if (isItaly || (/\b(?:serie\s+a|serie\s+b|coppa italia)\b/i.test(text) && !country.includes('brazil') && !country.includes('brasil') && !country.includes('ecuador'))) {
+    if (isItaly || (isNeutralCountry && /\b(?:serie\s+a|serie\s+b|coppa italia)\b/i.test(text))) {
         if (text.includes('coppa italia') || scd.includes('coppa-italia') || scd.includes('ita.coppa_italia')) return 'ita.coppa_italia';
         if (text.includes('serie b') || scd.includes('serie-b') || scd.includes('ita.2')) return 'ita.2';
         if (text.includes('serie a') || scd.includes('serie-a') || scd.includes('ita.1') || isItaly) return 'ita.1';
@@ -996,7 +1025,7 @@ function resolveLeagueSlug(altGameNote = '', compDesc = '', uid = '') {
 
     // GERMANY (Bundesliga / 2. Bundesliga / DFB-Pokal)
     const isGermany = country.includes('germany') || country.includes('german') || country.includes('deutschland') || scd.includes('ger.');
-    if (isGermany || (/\b(?:bundesliga|dfb-pokal)\b/i.test(text) && !country.includes('austria'))) {
+    if (isGermany || (isNeutralCountry && /\b(?:bundesliga|dfb-pokal)\b/i.test(text))) {
         if (text.includes('dfb-pokal') || scd.includes('dfb-pokal') || scd.includes('ger.dfb_pokal')) return 'ger.dfb_pokal';
         if (text.includes('2. bundesliga') || scd.includes('2-bundesliga') || scd.includes('ger.2')) return 'ger.2';
         if (text.includes('bundesliga') || scd.includes('ger.1') || isGermany) return 'ger.1';
@@ -1004,7 +1033,7 @@ function resolveLeagueSlug(altGameNote = '', compDesc = '', uid = '') {
 
     // FRANCE (Ligue 1 / Ligue 2 / Coupe de France)
     const isFrance = country.includes('france') || country.includes('french') || scd.includes('fra.');
-    if (isFrance || (/\b(?:ligue\s*1|ligue\s*2|coupe de france)\b/i.test(text) && !country.includes('ivory') && !country.includes('algeria') && !country.includes('tunisia') && !country.includes('senegal') && !country.includes('guinea') && !country.includes('mali'))) {
+    if (isFrance || (isNeutralCountry && /\b(?:ligue\s*1|ligue\s*2|coupe de france)\b/i.test(text))) {
         if (text.includes('coupe de france') || scd.includes('coupe-de-france') || scd.includes('fra.coupe_de_france')) return 'fra.coupe_de_france';
         if (text.includes('ligue 2') || scd.includes('fra.2')) return 'fra.2';
         if (text.includes('ligue 1') || scd.includes('fra.1') || isFrance) return 'fra.1';
@@ -1012,7 +1041,7 @@ function resolveLeagueSlug(altGameNote = '', compDesc = '', uid = '') {
 
     // ENGLAND (EPL / Championship / League One / League Two / FA Cup / Carabao Cup / National Leagues)
     const isEngland = country.includes('england') || country.includes('english') || scd.includes('eng.');
-    if (isEngland || text.includes('premier league') || text.includes('championship') || text.includes('league 1') || text.includes('league 2') || text.includes('fa cup') || text.includes('efl')) {
+    if (isEngland || (isNeutralCountry && (text.includes('premier league') || text.includes('championship') || text.includes('league 1') || text.includes('league 2') || text.includes('fa cup') || text.includes('efl')))) {
         const foreignIndicators = ['egypt', 'ghana', 'kenya', 'uganda', 'singapore', 'bahrain', 'canada', 'scotland', 'russia', 'ukraine', 'kuwait', 'new zealand', 'ireland', 'wales', 'jamaica', 'india', 'nigeria', 'south africa', 'tanzania', 'zambia', 'zimbabwe', 'ethiopia', 'rwanda', 'congo', 'cameroon', 'ivory', 'algeria', 'tunisia', 'sudan', 'angola', 'botswana', 'malawi', 'bangladesh', 'hong kong', 'malta', 'israel', 'kazakhstan', 'northern ireland', 'armenia', 'azerbaijan', 'georgia', 'belarus', 'libya', 'nbc', 'ligi kuu', 'psl', 'npfl'];
         const hasForeign = foreignIndicators.some(f => text.includes(f) || country.includes(f));
         if (!hasForeign) {
@@ -1034,7 +1063,15 @@ function resolveLeagueSlug(altGameNote = '', compDesc = '', uid = '') {
     // 10. Friendlies
     if (text.includes('club friendly') || text.includes('friendly') || scd.includes('friendly')) return 'club.friendly';
 
-    // 11. Clean Universal Fallback: derive from altGameNote or compDesc so NO live matches are ever dropped
+    // 11. Foreign Country Fallback: if a specific foreign country was provided, map to that country's tier 1
+    if (country && !isNeutralCountry) {
+        const cSlug = country.toLowerCase().replace(/[^a-z0-9]+/g, '').slice(0, 3);
+        if (cSlug && cSlug.length >= 2) {
+            return `${cSlug}.1`;
+        }
+    }
+
+    // 12. Clean Universal Fallback: derive from altGameNote or compDesc so NO live matches are ever dropped
     const cleanTitle = (altGameNote || compDesc || '').split(',')[0].trim();
     if (cleanTitle) {
         const slugified = cleanTitle.toLowerCase().replace(/[^a-z0-9]+/g, '.').replace(/^\.+|\.+$/g, '').slice(0, 32);
@@ -1724,21 +1761,31 @@ async function cleanupStuckMatchesAndPurgeNcaa() {
         );
         await SoccerLeague.deleteOne({ slug: 'fifa.youth' }).catch(() => {});
 
-        // 4d. Re-classify matches mistakenly categorized under 'ita.1', 'esp.1', 'eng.league_cup'
+        // 4d. Re-classify matches mistakenly categorized under European Big 5
+        const europeanBig5Slugs = ['ita.1', 'ita.2', 'esp.1', 'esp.2', 'ger.1', 'ger.2', 'fra.1', 'fra.2', 'eng.1', 'eng.2', 'eng.league_cup'];
         const misclassifiedRegionalMatches = await SoccerMatch.find({
-            league_slug: { $in: ['ita.1', 'ita.2', 'esp.1', 'esp.2', 'eng.league_cup'] },
             $or: [
-                { note: /brazil|brasileir|ecuador|ligapro|guatemala|mexic|liga mx|egypt/i },
-                { name: /brazil|brasileir|ecuador|ligapro|guatemala|mexic|liga mx|egypt|chapecoense|mirassol|mushuc runa|manta|san pedro|municipal|xelaju|marquense/i },
-                { 'home.name': /chapecoense|mirassol|mushuc runa|manta|san pedro|municipal|xelaju|marquense|america|cruz azul|guadalajara|chivas|tigres|monterrey|pachuca|toluca|santos laguna|pumas|necaxa|atlas|puebla|mazatlan|juarez|queretaro|tijuana|leon|atletico san luis/i },
-                { 'away.name': /chapecoense|mirassol|mushuc runa|manta|san pedro|municipal|xelaju|marquense|america|cruz azul|guadalajara|chivas|tigres|monterrey|pachuca|toluca|santos laguna|pumas|necaxa|atlas|puebla|mazatlan|juarez|queretaro|tijuana|leon|atletico san luis/i }
+                {
+                    league_slug: { $in: europeanBig5Slugs },
+                    $or: [
+                        { note: /brazil|brasileir|ecuador|ligapro|guatemala|mexic|liga mx|egypt|tanzan|ghana|nigeria|kenya|uganda|benin|burkina|senegal|mali|guinea|togo|gabon|taiwan/i },
+                        { name: /brazil|brasileir|ecuador|ligapro|guatemala|mexic|liga mx|egypt|chapecoense|mirassol|mushuc runa|manta|san pedro|municipal|xelaju|marquense|mbeya|singida|simba|young africans|yanga|azam|coritiba|sport recife|novorizontino|guarani|enyimba|rivers utd|plateau|remo stars|kano pillars|rangers int|bendel/i },
+                        { 'home.name': /chapecoense|mirassol|mushuc runa|manta|san pedro|municipal|xelaju|marquense|america|cruz azul|guadalajara|chivas|tigres|monterrey|pachuca|toluca|santos laguna|pumas|necaxa|atlas|puebla|mazatlan|juarez|queretaro|tijuana|leon|atletico san luis|mbeya|singida|simba|young africans|yanga|azam|coritiba|sport recife|novorizontino|guarani|enyimba|rivers utd|plateau|remo stars|kano pillars|rangers int|bendel/i },
+                        { 'away.name': /chapecoense|mirassol|mushuc runa|manta|san pedro|municipal|xelaju|marquense|america|cruz azul|guadalajara|chivas|tigres|monterrey|pachuca|toluca|santos laguna|pumas|necaxa|atlas|puebla|mazatlan|juarez|queretaro|tijuana|leon|atletico san luis|mbeya|singida|simba|young africans|yanga|azam|coritiba|sport recife|novorizontino|guarani|enyimba|rivers utd|plateau|remo stars|kano pillars|rangers int|bendel/i }
+                    ]
+                },
+                {
+                    league_slug: { $in: europeanBig5Slugs },
+                    'venue.country': { $exists: true, $nin: ['', 'Italy', 'Spain', 'Germany', 'France', 'England', 'United Kingdom', 'Great Britain', 'Wales', 'Scotland', 'Northern Ireland', 'Europe', 'International'] }
+                }
             ]
         }).lean();
 
         const regionalReclassOps = [];
         for (const m of misclassifiedRegionalMatches) {
             const rawHint = `${m.note || ''} ${m.name || ''} ${m.home?.name || ''} ${m.away?.name || ''}`;
-            const newSlug = resolveLeagueSlug(rawHint, m.venue?.country || '', m.source?.uid || '');
+            const countryHint = m.venue?.country || (m.note && /brazil/i.test(m.note) ? 'Brazil' : (m.note && /mexic/i.test(m.note) ? 'Mexico' : (m.note && /ecuador/i.test(m.note) ? 'Ecuador' : '')));
+            const newSlug = resolveLeagueSlug(rawHint, countryHint, m.source?.uid || '');
             if (newSlug && newSlug !== m.league_slug) {
                 regionalReclassOps.push({
                     updateOne: {
@@ -1821,19 +1868,28 @@ async function syncLiveScoreInPlay() {
     let updatedCount = 0;
     try {
         const todayStr = formatDateToScoreboard(now);
-        const [liveData, dateData] = await Promise.all([
+        const tomorrow = new Date(now.getTime() + 86400000);
+        const tomorrowStr = formatDateToScoreboard(tomorrow);
+        const yesterday = new Date(now.getTime() - 86400000);
+        const yesterdayStr = formatDateToScoreboard(yesterday);
+
+        const [liveData, dateData, tomorrowData, yesterdayData] = await Promise.all([
             fetchJson('https://prod-public-api.livescore.com/v1/api/app/live/soccer/0').catch(() => null),
-            fetchJson(`https://prod-public-api.livescore.com/v1/api/app/date/soccer/${todayStr}/0`).catch(() => null)
+            fetchJson(`https://prod-public-api.livescore.com/v1/api/app/date/soccer/${todayStr}/0`).catch(() => null),
+            fetchJson(`https://prod-public-api.livescore.com/v1/api/app/date/soccer/${tomorrowStr}/0`).catch(() => null),
+            fetchJson(`https://prod-public-api.livescore.com/v1/api/app/date/soccer/${yesterdayStr}/0`).catch(() => null)
         ]);
 
         const stages = [];
         if (dateData && Array.isArray(dateData.Stages)) stages.push(...dateData.Stages);
+        if (tomorrowData && Array.isArray(tomorrowData.Stages)) stages.push(...tomorrowData.Stages);
+        if (yesterdayData && Array.isArray(yesterdayData.Stages)) stages.push(...yesterdayData.Stages);
         if (liveData && Array.isArray(liveData.Stages)) stages.push(...liveData.Stages);
 
         if (stages.length === 0) return 0;
 
-        // Preload all today's existing matches from database once to eliminate N+1 DB lookups
-        const existingList = await SoccerMatch.find({ scoreboard_date: todayStr })
+        // Preload today, tomorrow, and yesterday's existing matches from database once to eliminate N+1 DB lookups
+        const existingList = await SoccerMatch.find({ scoreboard_date: { $in: [todayStr, tomorrowStr, yesterdayStr] } })
             .select('_id source league_slug name short_name date status home away venue')
             .lean()
             .catch(() => []);
@@ -1848,6 +1904,7 @@ async function syncLiveScoreInPlay() {
             const a = normalizeTeamName(m.away?.name || m.away?.display_name || '');
             if (h && a) {
                 const tier = getMatchTier(m.home?.name || m.home?.display_name, m.away?.name || m.away?.display_name, m.league_slug);
+                bySig.set(`${h}_vs_${a}_${m.league_slug}_${tier}`, m);
                 bySig.set(`${h}_vs_${a}_${tier}`, m);
             }
         }
@@ -1989,7 +2046,12 @@ async function syncLiveScoreInPlay() {
                 const aNorm = normalizeTeamName(awayName);
                 const tier = getMatchTier(homeName, awayName, targetSlug);
                 const sig = `${hNorm}_vs_${aNorm}_${tier}`;
-                const existingMatch = byEventId.get(eid) || bySig.get(sig);
+                const existingMatch = byEventId.get(eid) || bySig.get(`${hNorm}_vs_${aNorm}_${targetSlug}_${tier}`) || bySig.get(sig);
+
+                // Never overwrite a completed senior match with an in-play match
+                if (existingMatch?.status?.completed && state === 'in') {
+                    continue;
+                }
 
                 const finalHomeLogo = existingMatch?.home?.logo || homeCrest || '';
                 const finalAwayLogo = existingMatch?.away?.logo || awayCrest || '';

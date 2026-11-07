@@ -563,8 +563,9 @@
             return String(ev.id || Math.random());
         }
         const dKey = ev.scoreboardDate || (ev.date ? String(ev.date).slice(0, 10) : '');
+        const slug = ev.league?.slug || ev.league_slug || '';
         const tier = getEventMatchTierClient(ev);
-        return [hName, aName].sort().join('_vs_') + '_' + dKey + '_' + tier;
+        return [hName, aName].sort().join('_vs_') + '_' + dKey + '_' + slug + '_' + tier;
     }
 
     function getEventQualityScore(ev) {
@@ -610,43 +611,53 @@
         'fra.1': 95,
         'uefa.europa': 94,
         'uefa.europa.conf': 93,
-        'eng.fa': 92,
-        'esp.copa_del_rey': 91,
-        'ita.coppa_italia': 90,
-        'ger.dfb_pokal': 89,
-        'eng.league_cup': 88,
-        'eng.2': 87,
-        'ned.1': 86,
-        'por.1': 85,
-        'bra.1': 84,
-        'arg.1': 83,
-        'nga.1': 82,
-        'sau.1': 81,
-        'mex.1': 80,
-        'col.1': 79,
-        'tur.1': 78,
-        'bel.1': 77,
-        'sco.1': 76,
-        'caf.champions': 75,
-        'afc.champions': 74,
-        'usa.1': 73,
+        'uefa.super_cup': 92,
+        'fifa.world': 91,
+        'eng.fa': 90,
+        'esp.copa_del_rey': 89,
+        'ita.coppa_italia': 88,
+        'ger.dfb_pokal': 87,
+        'eng.league_cup': 86,
+        'eng.2': 85,
+        'ned.1': 84,
+        'por.1': 83,
+        'bra.1': 82,
+        'arg.1': 81,
+        'nga.1': 80,
+        'sau.1': 79,
+        'mex.1': 78,
+        'col.1': 77,
+        'tur.1': 76,
+        'bel.1': 75,
+        'caf.champions': 74,
+        'caf.confed': 73,
         'conmebol.libertadores': 72,
         'conmebol.sudamericana': 71,
-        'aut.1': 70,
-        'sui.1': 69,
-        'den.1': 68,
-        'swe.1': 67,
-        'nor.1': 66,
-        'gre.1': 65,
-        'egy.1': 64,
-        'rsa.1': 63,
-        'mar.1': 62,
-        'gha.1': 61,
-        'ken.1': 60,
-        'tza.1': 59,
-        'jpn.1': 58,
-        'kor.1': 57,
-        'aus.1': 56
+        'sco.1': 70,
+        'afc.champions': 69,
+        'usa.1': 68,
+        'aut.1': 67,
+        'sui.1': 66,
+        'den.1': 65,
+        'swe.1': 64,
+        'nor.1': 63,
+        'gre.1': 62,
+        'egy.1': 61,
+        'rsa.1': 60,
+        'mar.1': 59,
+        'gha.1': 58,
+        'ken.1': 57,
+        'tza.1': 56,
+        'jpn.1': 55,
+        'kor.1': 54,
+        'aus.1': 53,
+        'bra.2': 52,
+        'esp.2': 51,
+        'ger.2': 50,
+        'ita.2': 49,
+        'fra.2': 48,
+        'por.2': 47,
+        'mex.2': 46
     };
 
     function getLeaguePriorityClient(slug = '') {
@@ -756,6 +767,46 @@
                 slug = 'lby.1';
                 name = 'Libyan Premier League';
                 country = 'Libya';
+            }
+        }
+
+        // 1c. Correct foreign matches mistakenly labeled as Italian Serie A/B ('ita.1' / 'ita.2')
+        if (slug === 'ita.1' || slug === 'ita.2') {
+            const evText = `${ev?.name || ''} ${ev?.home?.name || ''} ${ev?.away?.name || ''} ${name || ''} ${country || ''}`.toLowerCase();
+            if (evText.includes('brazil') || evText.includes('brasileir') || evText.includes('coritiba') || evText.includes('sport recife') || evText.includes('novorizontino') || evText.includes('mirassol') || evText.includes('guarani') || evText.includes('chapecoense') || evText.includes('santos') || evText.includes('vila nova') || evText.includes('operario') || evText.includes('crb') || evText.includes('brusque') || evText.includes('ituano') || evText.includes('botafogo sp') || evText.includes('amazonas') || evText.includes('paysandu') || evText.includes('ponte preta')) {
+                slug = slug === 'ita.1' ? 'bra.1' : 'bra.2';
+                name = slug === 'bra.1' ? 'Brasileirão Série A' : 'Brasileirão Série B';
+                country = 'Brazil';
+            } else if (evText.includes('mexic') || evText.includes('liga mx') || evText.includes('expansion') || evText.includes('america') || evText.includes('chivas') || evText.includes('cruz azul') || evText.includes('tigres') || evText.includes('monterrey') || evText.includes('pachuca') || evText.includes('toluca') || evText.includes('pumas') || evText.includes('santos laguna')) {
+                slug = 'mex.1';
+                name = 'Liga MX';
+                country = 'Mexico';
+            } else if (evText.includes('ecuador') || evText.includes('ligapro') || evText.includes('mushuc runa') || evText.includes('manta') || evText.includes('aucas') || evText.includes('barcelona sc') || evText.includes('emelec') || evText.includes('ldu quito') || evText.includes('independiente del valle')) {
+                slug = 'ecu.1';
+                name = 'LigaPro Serie A';
+                country = 'Ecuador';
+            } else if (evText.includes('portugal') || evText.includes('maritimo') || evText.includes('feirense') || evText.includes('penafiel') || evText.includes('academico')) {
+                slug = 'por.2';
+                name = 'Liga Portugal 2';
+                country = 'Portugal';
+            }
+        }
+
+        // 1d. Correct foreign matches mistakenly labeled as Spanish La Liga ('esp.1' / 'esp.2')
+        if (slug === 'esp.1' || slug === 'esp.2') {
+            const evText = `${ev?.name || ''} ${ev?.home?.name || ''} ${ev?.away?.name || ''} ${name || ''} ${country || ''}`.toLowerCase();
+            if (evText.includes('mexic') || evText.includes('liga mx') || evText.includes('expansion') || evText.includes('america') || evText.includes('chivas') || evText.includes('cruz azul') || evText.includes('tigres') || evText.includes('monterrey') || evText.includes('pachuca') || evText.includes('toluca')) {
+                slug = 'mex.1';
+                name = 'Liga MX';
+                country = 'Mexico';
+            } else if (evText.includes('colombia') || evText.includes('millonarios') || evText.includes('santa fe') || evText.includes('atletico nacional') || evText.includes('junior') || evText.includes('america de cali')) {
+                slug = 'col.1';
+                name = 'Colombian Primera A';
+                country = 'Colombia';
+            } else if (evText.includes('guatemala') || evText.includes('municipal') || evText.includes('comunicaciones') || evText.includes('xelaju') || evText.includes('marquense')) {
+                slug = 'gtm.1';
+                name = 'Liga Nacional Guatemala';
+                country = 'Guatemala';
             }
         }
 
@@ -1436,118 +1487,128 @@
         await loadAllLeagueFixtures();
     }
 
+    let inFlightAllFixturesPromise = null;
     async function loadAllLeagueFixtures({ background = false, favoritesOnly = false } = {}) {
+        if (inFlightAllFixturesPromise) {
+            return inFlightAllFixturesPromise;
+        }
+
         if (!background) {
             setLoading('fixtures', true);
             if (elements['fixtures-list']) elements['fixtures-list'].replaceChildren();
         }
 
-        try {
-            // Determine date param
-            let dateParam = 'today';
-            if (state.selectedDayOffset === -1) dateParam = 'yesterday';
-            else if (state.selectedDayOffset === 1) dateParam = 'tomorrow';
-            else if (state.selectedDayOffset === 0) dateParam = 'today';
-            else if (state.selectedDateStr) dateParam = state.selectedDateStr;
+        inFlightAllFixturesPromise = (async () => {
+            try {
+                // Determine date param
+                let dateParam = 'today';
+                if (state.selectedDayOffset === -1) dateParam = 'yesterday';
+                else if (state.selectedDayOffset === 1) dateParam = 'tomorrow';
+                else if (state.selectedDayOffset === 0) dateParam = 'today';
+                else if (state.selectedDateStr) dateParam = state.selectedDateStr;
 
-            const isFavorites = state.currentStatus === 'favorites' || Boolean(favoritesOnly);
-            const statusParam = isFavorites ? 'all' : (state.currentStatus || 'all');
-            let url = `/api/v1/football/fixtures?date=${encodeURIComponent(dateParam)}&limit=200`;
-            if (statusParam && statusParam !== 'all') {
-                url += `&status=${encodeURIComponent(statusParam)}`;
-            }
+                const isFavorites = state.currentStatus === 'favorites' || Boolean(favoritesOnly);
+                const statusParam = isFavorites ? 'all' : (state.currentStatus || 'all');
+                let url = `/api/v1/football/fixtures?date=${encodeURIComponent(dateParam)}&limit=200`;
+                if (statusParam && statusParam !== 'all') {
+                    url += `&status=${encodeURIComponent(statusParam)}`;
+                }
 
-            let matches = [];
+                let matches = [];
 
-            if (isFavorites) {
-                // Fetch fixtures and live matches in parallel so pinned matches from both feeds are found
-                const [fixturesRes, liveRes] = await Promise.allSettled([
-                    fetchJson(url),
-                    fetchJson('/api/v1/football/live')
-                ]);
-                const fixturesMatches = fixturesRes.status === 'fulfilled' ? (fixturesRes.value?.matches || fixturesRes.value?.fixtures || []) : [];
-                const liveMatches = liveRes.status === 'fulfilled' ? (liveRes.value?.live || liveRes.value?.matches || []) : [];
-                const allAvailable = deduplicateMatchesList([...liveMatches, ...fixturesMatches]);
-                matches = allAvailable.filter(m => state.pinnedMatches.includes(String(m.id)));
+                if (isFavorites) {
+                    // Fetch fixtures and live matches in parallel so pinned matches from both feeds are found
+                    const [fixturesRes, liveRes] = await Promise.allSettled([
+                        fetchJson(url),
+                        fetchJson('/api/v1/football/live')
+                    ]);
+                    const fixturesMatches = fixturesRes.status === 'fulfilled' ? (fixturesRes.value?.matches || fixturesRes.value?.fixtures || []) : [];
+                    const liveMatches = liveRes.status === 'fulfilled' ? (liveRes.value?.live || liveRes.value?.matches || []) : [];
+                    const allAvailable = deduplicateMatchesList([...liveMatches, ...fixturesMatches]);
+                    matches = allAvailable.filter(m => state.pinnedMatches.includes(String(m.id)));
+
+                    if (!matches.length) {
+                        if (elements['fixtures-empty']) {
+                            elements['fixtures-empty'].hidden = false;
+                            elements['fixtures-empty'].innerHTML = `
+                                <div class="empty-state-card" style="text-align:center; padding:28px 16px;">
+                                    <span class="empty-icon" style="font-size:32px; display:block; margin-bottom:10px;">⭐</span>
+                                    <p style="font-size:15px; font-weight:700; color:var(--text-main); margin-bottom:6px;">No Pinned Games</p>
+                                    <p style="font-size:13px; color:var(--text-muted); margin:0 0 16px;">Click the ★ star icon next to any match in All or Live view to pin it to My Games for instant tracking.</p>
+                                    <button class="btn-primary" type="button" id="fav-view-all-btn" style="display:inline-flex; align-items:center; gap:6px; padding:8px 18px; border-radius:6px; font-size:13px; font-weight:600; cursor:pointer;">
+                                        <span>🌐</span> <span>Browse All Games</span>
+                                    </button>
+                                </div>
+                            `;
+                            const browseBtn = document.getElementById('fav-view-all-btn');
+                            if (browseBtn) {
+                                browseBtn.addEventListener('click', (e) => {
+                                    e.preventDefault();
+                                    selectAllLeagues();
+                                });
+                            }
+                        }
+                        if (elements['fixture-count']) elements['fixture-count'].textContent = '0';
+                        if (elements['fixtures-list']) elements['fixtures-list'].innerHTML = '';
+                        return;
+                    }
+                } else if (dateParam === 'today' && (statusParam === 'all' || !statusParam)) {
+                    // Fetch fixtures (which already includes in-play live matches from backend in one unified response)
+                    const fixturesRes = await fetchJson(url);
+                    matches = fixturesRes.matches || fixturesRes.fixtures || [];
+                } else {
+                    const data = await fetchJson(url);
+                    matches = data.matches || data.fixtures || [];
+                }
 
                 if (!matches.length) {
-                    if (elements['fixtures-empty']) {
-                        elements['fixtures-empty'].hidden = false;
-                        elements['fixtures-empty'].innerHTML = `
-                            <div class="empty-state-card" style="text-align:center; padding:28px 16px;">
-                                <span class="empty-icon" style="font-size:32px; display:block; margin-bottom:10px;">⭐</span>
-                                <p style="font-size:15px; font-weight:700; color:var(--text-main); margin-bottom:6px;">No Pinned Games</p>
-                                <p style="font-size:13px; color:var(--text-muted); margin:0 0 16px;">Click the ★ star icon next to any match in All or Live view to pin it to My Games for instant tracking.</p>
-                                <button class="btn-primary" type="button" id="fav-view-all-btn" style="display:inline-flex; align-items:center; gap:6px; padding:8px 18px; border-radius:6px; font-size:13px; font-weight:600; cursor:pointer;">
-                                    <span>🌐</span> <span>Browse All Games</span>
-                                </button>
-                            </div>
-                        `;
-                        const browseBtn = document.getElementById('fav-view-all-btn');
-                        if (browseBtn) {
-                            browseBtn.addEventListener('click', (e) => {
-                                e.preventDefault();
-                                selectAllLeagues();
-                            });
-                        }
+                    // ONLY fall back to checking live matches if user was viewing today on ALL view
+                    // NEVER fall back if user explicitly clicked 'finished' or 'scheduled'
+                    if (dateParam === 'today' && !isFavorites && statusParam === 'all') {
+                        try {
+                            const liveData = await fetchJson('/api/v1/football/live');
+                            const liveList = liveData?.live || liveData?.matches || [];
+                            if (liveList.length) {
+                                state.liveMatchCount = liveList.length;
+                                await loadLiveMatches({ background });
+                                return;
+                            }
+                        } catch {}
                     }
-                    if (elements['fixture-count']) elements['fixture-count'].textContent = '0';
-                    if (elements['fixtures-list']) elements['fixtures-list'].innerHTML = '';
+                    renderAllLeaguesGrouped([]);
                     return;
                 }
-            } else if (dateParam === 'today' && (statusParam === 'all' || !statusParam)) {
-                // Fetch fixtures (which already includes in-play live matches from backend in one unified response)
-                const fixturesRes = await fetchJson(url);
-                matches = fixturesRes.matches || fixturesRes.fixtures || [];
-            } else {
-                const data = await fetchJson(url);
-                matches = data.matches || data.fixtures || [];
-            }
 
-            if (!matches.length) {
-                // ONLY fall back to checking live matches if user was viewing today on ALL view
-                // NEVER fall back if user explicitly clicked 'finished' or 'scheduled'
-                if (dateParam === 'today' && !isFavorites && statusParam === 'all') {
-                    try {
-                        const liveData = await fetchJson('/api/v1/football/live');
-                        const liveList = liveData?.live || liveData?.matches || [];
-                        if (liveList.length) {
-                            state.liveMatchCount = liveList.length;
-                            await loadLiveMatches({ background });
-                            return;
-                        }
-                    } catch {}
+                // Deduplicate all fixtures globally across all feeds / providers
+                const dedupedMatches = deduplicateMatchesList(matches);
+
+                const groupsMap = new Map();
+                for (const m of dedupedMatches) {
+                    const league = enrichLeagueMeta(m.league, m);
+                    const groupKey = (league.slug && league.slug !== 'w.other' && league.slug !== 'other')
+                        ? league.slug
+                        : `league_${(league.name || 'other').toLowerCase().replace(/[^a-z0-9]/g, '_')}`;
+
+                    if (!groupsMap.has(groupKey)) {
+                        groupsMap.set(groupKey, {
+                            league,
+                            events: []
+                        });
+                    }
+                    groupsMap.get(groupKey).events.push(m);
                 }
-                renderAllLeaguesGrouped([]);
-                return;
+
+                renderAllLeaguesGrouped([...groupsMap.values()]);
+            } catch (error) {
+                if (elements['fixtures-empty']) elements['fixtures-empty'].hidden = false;
+                showToast(`Unable to load all fixtures: ${error.message}`);
+            } finally {
+                if (!background) setLoading('fixtures', false);
+                inFlightAllFixturesPromise = null;
             }
+        })();
 
-            // Deduplicate all fixtures globally across all feeds / providers
-            const dedupedMatches = deduplicateMatchesList(matches);
-
-            const groupsMap = new Map();
-            for (const m of dedupedMatches) {
-                const league = enrichLeagueMeta(m.league, m);
-                const groupKey = (league.slug && league.slug !== 'w.other' && league.slug !== 'other')
-                    ? league.slug
-                    : `league_${(league.name || 'other').toLowerCase().replace(/[^a-z0-9]/g, '_')}`;
-
-                if (!groupsMap.has(groupKey)) {
-                    groupsMap.set(groupKey, {
-                        league,
-                        events: []
-                    });
-                }
-                groupsMap.get(groupKey).events.push(m);
-            }
-
-            renderAllLeaguesGrouped([...groupsMap.values()]);
-        } catch (error) {
-            if (elements['fixtures-empty']) elements['fixtures-empty'].hidden = false;
-            showToast(`Unable to load all fixtures: ${error.message}`);
-        } finally {
-            if (!background) setLoading('fixtures', false);
-        }
+        return inFlightAllFixturesPromise;
     }
 
     function renderAllLeaguesGrouped(groupedData) {
@@ -1555,8 +1616,8 @@
 
         const prevScrollY = window.scrollY || window.pageYOffset || document.documentElement.scrollTop || 0;
         const fixturesContainer = elements['fixtures-list'];
-        if (fixturesContainer && prevScrollY > 60) {
-            fixturesContainer.style.minHeight = fixturesContainer.offsetHeight + 'px';
+        if (fixturesContainer && prevScrollY > 0) {
+            fixturesContainer.style.minHeight = Math.max(fixturesContainer.offsetHeight, prevScrollY + window.innerHeight + 100) + 'px';
         }
 
         let totalCount = 0;
@@ -1719,10 +1780,16 @@
             if (elements['fixtures-empty']) elements['fixtures-empty'].hidden = true;
             elements['fixtures-list'].innerHTML = pinnedHtml + html;
 
-            if (prevScrollY > 60) {
+            if (prevScrollY > 0) {
                 window.scrollTo({ top: prevScrollY, behavior: 'instant' });
                 requestAnimationFrame(() => {
-                    if (fixturesContainer) fixturesContainer.style.minHeight = '';
+                    if (prevScrollY > 0) window.scrollTo({ top: prevScrollY, behavior: 'instant' });
+                    setTimeout(() => {
+                        if (prevScrollY > 0 && Math.abs((window.scrollY || 0) - prevScrollY) > 5) {
+                            window.scrollTo({ top: prevScrollY, behavior: 'instant' });
+                        }
+                        if (fixturesContainer) fixturesContainer.style.minHeight = '';
+                    }, 150);
                 });
             }
 
@@ -1887,8 +1954,8 @@
         if (!elements['fixtures-list']) return;
         const prevScrollY = window.scrollY || window.pageYOffset || document.documentElement.scrollTop || 0;
         const fixturesContainer = elements['fixtures-list'];
-        if (fixturesContainer && prevScrollY > 60) {
-            fixturesContainer.style.minHeight = fixturesContainer.offsetHeight + 'px';
+        if (fixturesContainer && prevScrollY > 0) {
+            fixturesContainer.style.minHeight = Math.max(fixturesContainer.offsetHeight, prevScrollY + window.innerHeight + 100) + 'px';
         }
 
         const hasFixtures = Boolean(fixtures && fixtures.length > 0);
@@ -1935,10 +2002,16 @@
             </div>
         `;
 
-        if (prevScrollY > 60) {
+        if (prevScrollY > 0) {
             window.scrollTo({ top: prevScrollY, behavior: 'instant' });
             requestAnimationFrame(() => {
-                if (fixturesContainer) fixturesContainer.style.minHeight = '';
+                if (prevScrollY > 0) window.scrollTo({ top: prevScrollY, behavior: 'instant' });
+                setTimeout(() => {
+                    if (prevScrollY > 0 && Math.abs((window.scrollY || 0) - prevScrollY) > 5) {
+                        window.scrollTo({ top: prevScrollY, behavior: 'instant' });
+                    }
+                    if (fixturesContainer) fixturesContainer.style.minHeight = '';
+                }, 150);
             });
         }
     }
@@ -2020,7 +2093,15 @@
         if (!groups.length) return;
 
         elements['standings-content'].innerHTML = groups.map(group => {
-            const entries = group.standings?.entries || [];
+            const rawEntries = group.standings?.entries || [];
+            const entries = rawEntries.slice().sort((a, b) => {
+                const rA = Number(a.rank ?? statValue(a, 'rank')) || 999;
+                const rB = Number(b.rank ?? statValue(b, 'rank')) || 999;
+                if (rA !== rB) return rA - rB;
+                const pA = Number(statValue(a, 'points')) || 0;
+                const pB = Number(statValue(b, 'points')) || 0;
+                return pB - pA;
+            });
             return `
                 <section class="standing-group" style="margin-bottom:30px;">
                     <h3 style="margin-bottom:12px; font-size:16px; font-weight:700;">${escapeHtml(group.name || 'League Table')}</h3>
@@ -2537,21 +2618,13 @@
         }
 
         // Calculate WDW records for both teams in their head-to-head encounters
-        let calculatedHomeWins = Number(h2h.homeWins);
-        let calculatedAwayWins = Number(h2h.awayWins);
-        let calculatedDraws = Number(h2h.draws);
-        let homeH2hForm = Array.isArray(h2h.h2hFormHome) ? [...h2h.h2hFormHome] : [];
-        let awayH2hForm = Array.isArray(h2h.h2hFormAway) ? [...h2h.h2hFormAway] : [];
+        let calculatedHomeWins = 0;
+        let calculatedAwayWins = 0;
+        let calculatedDraws = 0;
+        let homeH2hForm = [];
+        let awayH2hForm = [];
 
-        const hasPrecomputedWins = Number.isFinite(calculatedHomeWins) && Number.isFinite(calculatedAwayWins) && Number.isFinite(calculatedDraws) && (calculatedHomeWins > 0 || calculatedAwayWins > 0 || calculatedDraws > 0);
-
-        if (!hasPrecomputedWins && recentH2h.length) {
-            calculatedHomeWins = 0;
-            calculatedAwayWins = 0;
-            calculatedDraws = 0;
-            homeH2hForm = [];
-            awayH2hForm = [];
-
+        if (recentH2h.length) {
             const hClean = cleanTeamNameForDedup(home.team?.displayName || home.team?.name || '');
             const aClean = cleanTeamNameForDedup(away.team?.displayName || away.team?.name || '');
 
@@ -2562,7 +2635,15 @@
                 const s1 = isNaN(scoreParts[0]) ? 0 : scoreParts[0];
                 const s2 = isNaN(scoreParts[1]) ? 0 : scoreParts[1];
 
-                const isHomeSideH = pastHClean === hClean || pastHClean.includes(hClean) || hClean.includes(pastHClean);
+                let isHomeSideH = true;
+                if (pastAClean === hClean || (pastAClean && hClean && (pastAClean.includes(hClean) || hClean.includes(pastAClean)) && !pastHClean.includes(hClean))) {
+                    isHomeSideH = false;
+                } else if (pastHClean === hClean || (pastHClean && hClean && (pastHClean.includes(hClean) || hClean.includes(pastHClean)))) {
+                    isHomeSideH = true;
+                } else if (meeting.isHomeOriginal !== undefined) {
+                    isHomeSideH = Boolean(meeting.isHomeOriginal);
+                }
+
                 const teamHomeGoals = isHomeSideH ? s1 : s2;
                 const teamAwayGoals = isHomeSideH ? s2 : s1;
 
@@ -2580,6 +2661,12 @@
                     awayH2hForm.push('D');
                 }
             }
+        } else {
+            calculatedHomeWins = Number(h2h.homeWins) || 0;
+            calculatedAwayWins = Number(h2h.awayWins) || 0;
+            calculatedDraws = Number(h2h.draws) || 0;
+            homeH2hForm = Array.isArray(h2h.h2hFormHome) ? [...h2h.h2hFormHome] : [];
+            awayH2hForm = Array.isArray(h2h.h2hFormAway) ? [...h2h.h2hFormAway] : [];
         }
 
         const totalLifetimeMeetings = Math.max(
@@ -3649,6 +3736,37 @@
         });
     }
 
+    function patchLiveMatchRowsInDom(liveMatches) {
+        const list = elements['fixtures-list'];
+        if (!list || !liveMatches || !liveMatches.length) return false;
+        let matchedCount = 0;
+        for (const m of liveMatches) {
+            const row = list.querySelector(`.fs-match-row[data-event-id="${m.id}"]`);
+            if (row) {
+                matchedCount++;
+                const scoreDigits = row.querySelectorAll('.fs-score-digit');
+                if (scoreDigits.length >= 2) {
+                    const hScore = String(m.home?.score ?? 0);
+                    const aScore = String(m.away?.score ?? 0);
+                    if (scoreDigits[0].textContent !== hScore) {
+                        scoreDigits[0].textContent = hScore;
+                        scoreDigits[0].classList.add('score-live');
+                    }
+                    if (scoreDigits[1].textContent !== aScore) {
+                        scoreDigits[1].textContent = aScore;
+                        scoreDigits[1].classList.add('score-live');
+                    }
+                }
+                const liveStatusEl = row.querySelector('.fs-status-live');
+                const clock = m.status?.clock || m.status?.detail || 'Live';
+                if (liveStatusEl && liveStatusEl.textContent !== clock) {
+                    liveStatusEl.textContent = clock;
+                }
+            }
+        }
+        return matchedCount > 0 && matchedCount === liveMatches.length;
+    }
+
     function initLiveSync() {
         const refreshBtn = document.getElementById('quick-refresh-btn');
         if (refreshBtn) {
@@ -3687,12 +3805,25 @@
 
                 const digestChanged = currentDigest !== state.lastLiveDigest;
                 const now = Date.now();
+                const isInitialBoot = !state.lastFullFixturesSync;
                 const timeSinceLastFullSync = now - (state.lastFullFixturesSync || 0);
 
-                // Only update the visible fixture list if viewing today AND (digest changed OR >60s elapsed)
+                // Update digest
+                state.lastLiveDigest = currentDigest;
+
+                if (isInitialBoot) {
+                    state.lastFullFixturesSync = now;
+                    return; // Prevent duplicate initial fetch since selectAllLeagues/init runs on boot
+                }
+
+                // If only existing live scores changed in-place, patch DOM without re-rendering container
+                if (digestChanged && patchLiveMatchRowsInDom(liveMatches)) {
+                    return;
+                }
+
+                // Only update the full visible fixture list if viewing today AND (digest changed OR >60s elapsed)
                 const isViewingToday = !state.selectedDayOffset || state.selectedDayOffset === 0;
                 if (isViewingToday && (digestChanged || timeSinceLastFullSync > 60000)) {
-                    state.lastLiveDigest = currentDigest;
                     state.lastFullFixturesSync = now;
 
                     if (state.selectedLeagueSlug === 'live' || state.currentStatus === 'live') {

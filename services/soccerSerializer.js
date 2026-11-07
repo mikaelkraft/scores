@@ -434,17 +434,44 @@ function serializePlay(event) {
 }
 
 function serializeStandingGroup(group) {
+    const rawEntries = group.entries || [];
+    const sortedEntries = rawEntries.slice().sort((a, b) => {
+        const getRank = (e) => {
+            if (typeof e.rank === 'number' && e.rank > 0) return e.rank;
+            if (e.stats instanceof Map && e.stats.has('rank')) return Number(e.stats.get('rank'));
+            if (e.stats && typeof e.stats.rank === 'number') return e.stats.rank;
+            if (Array.isArray(e.stats)) {
+                const s = e.stats.find(st => st.name === 'rank');
+                if (s && !isNaN(Number(s.value ?? s.displayValue))) return Number(s.value ?? s.displayValue);
+            }
+            return 999;
+        };
+        const getPoints = (e) => {
+            if (e.stats instanceof Map && e.stats.has('points')) return Number(e.stats.get('points'));
+            if (e.stats && typeof e.stats.points === 'number') return e.stats.points;
+            if (Array.isArray(e.stats)) {
+                const s = e.stats.find(st => st.name === 'points');
+                if (s && !isNaN(Number(s.value ?? s.displayValue))) return Number(s.value ?? s.displayValue);
+            }
+            return 0;
+        };
+        const rA = getRank(a);
+        const rB = getRank(b);
+        if (rA !== rB) return rA - rB;
+        return getPoints(b) - getPoints(a);
+    });
+
     return {
         id: group.group_id,
         name: group.group_name,
         abbreviation: group.group_name,
         standings: {
             season: group.season_year,
-            entries: (group.entries || []).map(entry => ({
+            entries: sortedEntries.map((entry, idx) => ({
                 team: serializeClub(entry.club),
                 stats: statsToArray(entry.stats),
                 note: entry.note || null,
-                rank: entry.rank ?? null
+                rank: entry.rank ?? (idx + 1)
             }))
         },
         lastSyncedAt: toIso(group.last_synced_at)
