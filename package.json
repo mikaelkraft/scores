@@ -1,6 +1,6 @@
 {
   "name": "scores-mynorra",
-  "version": "2.1.9",
+  "version": "2.2.0",
   "description": "Norra AI Live Football Scores & Commercial Sports API Platform",
   "main": "index.js",
   "scripts": {

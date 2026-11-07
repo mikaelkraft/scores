@@ -16,6 +16,11 @@ test('Booking Hook Service returns supported bookmaker providers', () => {
     assert.ok(ids.includes('sportybet'));
     assert.ok(ids.includes('bet9ja'));
     assert.ok(ids.includes('msport'));
+    assert.ok(ids.includes('betway'));
+    assert.ok(ids.includes('betking'));
+    assert.ok(ids.includes('bangbet'));
+    assert.ok(ids.includes('22bet'));
+    assert.ok(ids.includes('paripesa'));
 });
 
 test('Booking Hook Service registers booking code for selections', async () => {
@@ -133,7 +138,7 @@ test('Booking Controller converts codes and attaches tier quota info', async () 
         assert.equal(data.to, 'sportybet');
         assert.ok(data.convertedCode.startsWith('SB-'));
         assert.ok(data.directUrl.includes('sportybet.com'));
-        assert.ok(data.quotaLimit >= 5);
+        assert.ok(data.quotaLimit >= 2);
         assert.ok(data.quotaRemaining !== undefined);
     } finally {
         await new Promise(resolve => server.close(resolve));

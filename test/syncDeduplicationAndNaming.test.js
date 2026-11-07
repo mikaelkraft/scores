@@ -331,3 +331,44 @@ test('normalizeTeamName harmonizes Club prefixes, Santos Laguna aliases, and par
     assert.equal(resolveLeagueSlug('Felgueiras 1932 vs Leixoes', 'Portugal', ''), 'por.2');
     assert.equal(resolveLeagueSlug('Segunda Liga', 'Portugal', ''), 'por.2');
 });
+
+test('syncLeagueFromLiveScoreStages handles LiveScore fallback stages gracefully without throwing', async () => {
+    const { syncLeagueFromLiveScoreStages } = require('../services/soccerSyncService');
+    const mockLeagueDef = {
+        slug: 'tza.1',
+        name: 'Tanzanian Premier League',
+        abbreviation: 'TZA',
+        country: 'Tanzania',
+        kind: 'club'
+    };
+
+    const mockStages = [
+        {
+            Snm: 'NBC Premier League',
+            Cnm: 'Tanzania',
+            Scd: '26057',
+            Events: [
+                {
+                    Eid: '998811',
+                    T1: [{ Nm: 'Simba SC', Abr: 'SIM' }],
+                    T2: [{ Nm: 'Young Africans', Abr: 'YAN' }],
+                    Tr1: '2',
+                    Tr2: '1',
+                    Eps: 'FT',
+                    Esd: '20261107160000'
+                }
+            ]
+        },
+        {
+            Snm: 'Premier League',
+            Cnm: 'England',
+            Scd: 'eng.1',
+            Events: []
+        }
+    ];
+
+    // When DB is offline, bulkWrite catch will prevent throwing
+    const count = await syncLeagueFromLiveScoreStages(mockLeagueDef, mockStages, new Date());
+    assert.equal(typeof count, 'number');
+    assert.equal(count, 1);
+});

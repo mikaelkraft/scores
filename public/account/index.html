@@ -295,6 +295,8 @@
             <button class="portal-tab-btn active" onclick="switchPortalTab('keys')">🔑 My API Keys</button>
             <button class="portal-tab-btn" onclick="switchPortalTab('profile')">👤 My Profile</button>
             <button class="portal-tab-btn" onclick="switchPortalTab('upgrade')">⚡ Upgrade Plans</button>
+            <button class="portal-tab-btn" onclick="switchPortalTab('sdks')">💻 Code Generator &amp; SDKs</button>
+            <button class="portal-tab-btn" onclick="switchPortalTab('webhooks')">🪝 Webhook Tester</button>
             <button class="portal-tab-btn" onclick="switchPortalTab('whitelabel')">🖼️ Whitelabel Embeds</button>
             <button class="portal-tab-btn" onclick="switchPortalTab('invoices')">🧾 Receipts</button>
             <a href="/api-docs/" target="_blank" class="portal-tab-btn" style="text-decoration: none;">📚 API Docs ↗</a>
@@ -552,6 +554,88 @@ console.log(`Synced ${live.length} live matches into Norra prediction engine.`);
                 <p style="color: var(--text-muted); font-size: 13px; margin: 0 0 16px;">Power your sports apps, websites, and fantasy leagues with ad-free, high-throughput commercial sports data. Free plans are limited to the top 10 world leagues; Starter, Pro, and Whitelabel unlock all 100+ global competitions.</p>
                 <div class="plan-grid" id="upgrade-plans-grid">
                     <!-- Populated dynamically with USD and local currency -->
+                </div>
+            </div>
+        </section>
+
+        <!-- Tab: Code Generator & SDKs -->
+        <section id="portal-tab-sdks" class="portal-tab-content" style="display: none;">
+            <div class="portal-card">
+                <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px; margin-bottom: 16px;">
+                    <div>
+                        <h3 style="margin: 0; font-size: 18px;">Commercial API Code Generator &amp; SDK Snippets</h3>
+                        <p style="color: var(--text-muted); font-size: 13px; margin: 4px 0 0;">Interactive, production-ready code samples populated with your active developer API key.</p>
+                    </div>
+                    <span style="padding: 4px 10px; border-radius: 12px; background: rgba(16, 185, 129, 0.15); color: #34d399; font-size: 12px; font-weight: 700;">4 LANGUAGES</span>
+                </div>
+
+                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 12px; margin-bottom: 20px;">
+                    <div>
+                        <label style="display: block; font-size: 12px; font-weight: 700; color: var(--text-muted); margin-bottom: 6px; text-transform: uppercase;">1. Choose Endpoint</label>
+                        <select id="sdk-endpoint-select" onchange="updateSdkCodeSnippet()" style="width: 100%; padding: 10px; border-radius: 6px; background: var(--bg-canvas); border: 1px solid var(--border-subtle); color: var(--text-main); font-size: 13px;">
+                            <option value="live">⚡ GET /api/v1/football/live (Global Live Telemetry)</option>
+                            <option value="fixtures">📅 GET /api/v1/football/fixtures?date=today (Multi-League Fixtures)</option>
+                            <option value="predictions">🔮 GET /api/v1/football/predictions-context/{id} (Norra AI Data Bundle)</option>
+                            <option value="booking">🔄 POST /api/v1/booking/convert (Booking Code Converter)</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label style="display: block; font-size: 12px; font-weight: 700; color: var(--text-muted); margin-bottom: 6px; text-transform: uppercase;">2. Choose Language</label>
+                        <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+                            <button type="button" class="btn-secondary sdk-lang-btn active" data-lang="nodejs" onclick="selectSdkLang('nodejs')">🟢 Node.js</button>
+                            <button type="button" class="btn-secondary sdk-lang-btn" data-lang="python" onclick="selectSdkLang('python')">🐍 Python</button>
+                            <button type="button" class="btn-secondary sdk-lang-btn" data-lang="curl" onclick="selectSdkLang('curl')">💻 cURL</button>
+                            <button type="button" class="btn-secondary sdk-lang-btn" data-lang="php" onclick="selectSdkLang('php')">🐘 PHP</button>
+                        </div>
+                    </div>
+                </div>
+
+                <div style="position: relative;">
+                    <pre class="snippet-box" id="sdk-code-display" style="font-family: monospace; font-size: 12.5px; padding: 16px; background: var(--bg-canvas); border-radius: 8px; border: 1px solid var(--border-subtle); overflow-x: auto; margin: 0; line-height: 1.5; color: #a5f3fc;"></pre>
+                    <button class="btn-primary" style="position: absolute; top: 12px; right: 12px; padding: 6px 14px; font-size: 12px; display: flex; align-items: center; gap: 4px;" onclick="copySdkCodeSnippet()">
+                        <span>📋</span> <span id="sdk-copy-label">Copy Code</span>
+                    </button>
+                </div>
+            </div>
+        </section>
+
+        <!-- Tab: Webhook Tester -->
+        <section id="portal-tab-webhooks" class="portal-tab-content" style="display: none;">
+            <div class="portal-card">
+                <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px; margin-bottom: 16px;">
+                    <div>
+                        <h3 style="margin: 0; font-size: 18px;">Live Webhook Dispatcher &amp; Latency Tester</h3>
+                        <p style="color: var(--text-muted); font-size: 13px; margin: 4px 0 0;">Test real-time event delivery directly to your server with HMAC SHA-256 signatures.</p>
+                    </div>
+                    <span style="padding: 4px 10px; border-radius: 12px; background: rgba(59, 130, 246, 0.15); color: #60a5fa; font-size: 12px; font-weight: 700;">WEBHOOK DISPATCH</span>
+                </div>
+
+                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 16px; margin-bottom: 20px;">
+                    <div>
+                        <label style="display: block; font-size: 12px; font-weight: 700; color: var(--text-muted); margin-bottom: 6px; text-transform: uppercase;">Webhook Destination URL</label>
+                        <input type="url" id="webhook-target-url" placeholder="https://yourdomain.com/api/norra-events" style="width: 100%; padding: 10px 12px; border-radius: 6px; background: var(--bg-canvas); border: 1px solid var(--border-subtle); color: var(--text-main); font-size: 13px;">
+                    </div>
+                    <div>
+                        <label style="display: block; font-size: 12px; font-weight: 700; color: var(--text-muted); margin-bottom: 6px; text-transform: uppercase;">Event Type</label>
+                        <select id="webhook-event-type" style="width: 100%; padding: 10px 12px; border-radius: 6px; background: var(--bg-canvas); border: 1px solid var(--border-subtle); color: var(--text-main); font-size: 13px;">
+                            <option value="match.goal">⚽ match.goal (Goal Scored)</option>
+                            <option value="match.status_change">⏱️ match.status_change (Kickoff / Half Time / Cards)</option>
+                            <option value="match.full_time">🏁 match.full_time (Full Time Concluded)</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label style="display: block; font-size: 12px; font-weight: 700; color: var(--text-muted); margin-bottom: 6px; text-transform: uppercase;">HMAC Signing Secret (Optional)</label>
+                        <input type="text" id="webhook-secret-input" placeholder="whsec_abc123..." style="width: 100%; padding: 10px 12px; border-radius: 6px; background: var(--bg-canvas); border: 1px solid var(--border-subtle); color: var(--text-main); font-size: 13px;">
+                    </div>
+                </div>
+
+                <button type="button" class="btn-primary" id="btn-send-webhook-test" onclick="sendTestWebhook()" style="padding: 10px 22px; font-size: 13.5px; font-weight: 700; display: inline-flex; align-items: center; gap: 6px;">
+                    <span>🚀</span> <span id="btn-webhook-label">Send Test Webhook Ping</span>
+                </button>
+
+                <div id="webhook-result-container" style="display: none; margin-top: 20px;">
+                    <div id="webhook-status-banner" style="padding: 12px 16px; border-radius: 8px; font-size: 13px; font-weight: 600; margin-bottom: 12px;"></div>
+                    <pre id="webhook-response-payload" style="font-family: monospace; font-size: 12px; padding: 14px; background: var(--bg-canvas); border-radius: 8px; border: 1px solid var(--border-subtle); overflow-x: auto; color: #a5f3fc; max-height: 280px;"></pre>
                 </div>
             </div>
         </section>

@@ -2342,6 +2342,108 @@ async function handleCrestProxy(req, res) {
     }
 }
 
+/**
+ * Developer Webhook Testing Endpoint
+ * Simulates real-time event delivery (goal, status change, full-time) to a user's webhook URL.
+ */
+router.post('/webhooks/test', optionalApiKeyAuth, async (req, res) => {
+    const { targetUrl, eventType = 'match.goal', secret = '' } = req.body || {};
+
+    if (!targetUrl || typeof targetUrl !== 'string') {
+        return res.status(400).json({ error: 'targetUrl is required and must be a valid URL string' });
+    }
+
+    let parsed;
+    try {
+        parsed = new URL(targetUrl);
+    } catch {
+        return res.status(400).json({ error: 'Invalid targetUrl format. Must start with http:// or https://' });
+    }
+
+    if (!['http:', 'https:'].includes(parsed.protocol)) {
+        return res.status(400).json({ error: 'targetUrl protocol must be HTTP or HTTPS' });
+    }
+
+    // SSRF protection: reject private/local hostnames
+    const hostname = parsed.hostname.toLowerCase();
+    if (['localhost', '127.0.0.1', '0.0.0.0', '::1'].includes(hostname) || hostname.endsWith('.local') || hostname.startsWith('192.168.') || hostname.startsWith('10.')) {
+        return res.status(400).json({ error: 'Loopback and private RFC1918 destination IP addresses are not permitted' });
+    }
+
+    const deliveryId = `dlv_${crypto.randomBytes(8).toString('hex')}`;
+    const timestamp = new Date().toISOString();
+
+    const samplePayload = {
+        event: eventType,
+        deliveryId,
+        timestamp,
+        data: {
+            matchId: '700812',
+            league: 'eng.1',
+            leagueName: 'English Premier League',
+            home: { name: 'Arsenal', abbreviation: 'ARS', score: 2 },
+            away: { name: 'Chelsea', abbreviation: 'CHE', score: 1 },
+            clock: '68\'',
+            status: 'STATUS_IN_PROGRESS',
+            scorer: eventType === 'match.goal' ? {
+                player: 'Bukayo Saka',
+                team: 'Arsenal',
+                minute: '68\'',
+                assist: 'Martin Ødegaard'
+            } : null
+        }
+    };
+
+    const payloadJson = JSON.stringify(samplePayload);
+    const headers = {
+        'Content-Type': 'application/json',
+        'User-Agent': 'Norra-Webhooks/2.0 (+https://scores.mynorra.xyz)',
+        'x-norra-delivery-id': deliveryId,
+        'x-norra-event': eventType,
+        'x-norra-timestamp': timestamp
+    };
+
+    if (secret) {
+        const sig = crypto.createHmac('sha256', secret).update(payloadJson).digest('hex');
+        headers['x-norra-signature'] = `sha256=${sig}`;
+    }
+
+    const startTs = Date.now();
+    try {
+        const fetchRes = await fetch(targetUrl, {
+            method: 'POST',
+            headers,
+            body: payloadJson,
+            signal: AbortSignal.timeout(6000)
+        });
+        const latencyMs = Date.now() - startTs;
+
+        let responseBody = '';
+        try {
+            responseBody = (await fetchRes.text()).slice(0, 500);
+        } catch {}
+
+        return res.json({
+            success: fetchRes.ok,
+            statusCode: fetchRes.status,
+            statusText: fetchRes.statusText,
+            latencyMs,
+            deliveredAt: new Date().toISOString(),
+            responseBody,
+            samplePayload
+        });
+    } catch (deliveryErr) {
+        const latencyMs = Date.now() - startTs;
+        return res.json({
+            success: false,
+            error: deliveryErr.message || 'Webhook delivery connection failed or timed out',
+            latencyMs,
+            deliveredAt: new Date().toISOString(),
+            samplePayload
+        });
+    }
+});
+
 router.get('/crest-proxy', handleCrestProxy);
 
 module.exports = app => {

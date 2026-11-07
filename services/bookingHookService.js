@@ -51,6 +51,42 @@ const SUPPORTED_BOOKMAKERS = [
         baseUrl: 'https://www.betway.com.ng/?betslip=',
         status: 'ready',
         converterSupported: true
+    },
+    {
+        id: 'betking',
+        name: 'BetKing',
+        badge: '👑',
+        badgeColor: '#1e40af',
+        baseUrl: 'https://www.betking.com/sports/coupon?code=',
+        status: 'ready',
+        converterSupported: true
+    },
+    {
+        id: 'bangbet',
+        name: 'Bangbet',
+        badge: '⚡',
+        badgeColor: '#b91c1c',
+        baseUrl: 'https://www.bangbet.com/betslip?shareCode=',
+        status: 'ready',
+        converterSupported: true
+    },
+    {
+        id: '22bet',
+        name: '22Bet',
+        badge: '⚪',
+        badgeColor: '#0f766e',
+        baseUrl: 'https://22bet.com/en/line/?coupon=',
+        status: 'ready',
+        converterSupported: true
+    },
+    {
+        id: 'paripesa',
+        name: 'PariPesa',
+        badge: '🟣',
+        badgeColor: '#7c3aed',
+        baseUrl: 'https://paripesa.com/en/line/?coupon=',
+        status: 'ready',
+        converterSupported: true
     }
 ];
 
@@ -120,6 +156,15 @@ class BookingHookService {
         } else if (dest.id === '1xbet') {
             const num = parseInt(seed.slice(0, 6), 16) % 900000 + 100000;
             targetCode = `XB-${num}`;
+        } else if (dest.id === 'betking') {
+            targetCode = `BK-${seed.slice(0, 6).toUpperCase()}`;
+        } else if (dest.id === 'bangbet') {
+            targetCode = `BB-${seed.slice(0, 6).toUpperCase()}`;
+        } else if (dest.id === '22bet') {
+            const num = parseInt(seed.slice(0, 6), 16) % 900000 + 100000;
+            targetCode = `22-${num}`;
+        } else if (dest.id === 'paripesa') {
+            targetCode = `PP-${seed.slice(0, 6).toUpperCase()}`;
         } else {
             targetCode = `BW-${seed.slice(0, 6).toUpperCase()}`;
         }

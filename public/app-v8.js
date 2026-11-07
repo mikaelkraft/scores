@@ -2210,6 +2210,46 @@
             return;
         }
 
+        // Instant optimistic render from in-memory fixture / live match list (<50ms)
+        const liveMatch = (state.liveMatches || []).find(m => String(m.id || m.source?.event_id) === String(eventId));
+        const fixtureMatch = (state.fixtures || []).find(m => String(m.id || m.source?.event_id) === String(eventId));
+        const matchObj = liveMatch || fixtureMatch;
+
+        if (matchObj) {
+            const compStatus = matchObj.status || {};
+            const initialSummary = {
+                header: {
+                    id: eventId,
+                    date: matchObj.date,
+                    competitions: [{
+                        id: eventId,
+                        date: matchObj.date,
+                        status: compStatus,
+                        competitors: [
+                            { homeAway: 'home', team: matchObj.home, score: matchObj.home?.score },
+                            { homeAway: 'away', team: matchObj.away, score: matchObj.away?.score }
+                        ],
+                        league: { name: matchObj.note || state.league?.name || '' }
+                    }]
+                },
+                gameInfo: {
+                    venue: matchObj.venue || { fullName: 'Stadium Venue' }
+                },
+                boxscore: matchObj.boxscore || {
+                    teams: [
+                        { homeAway: 'home', team: matchObj.home, statistics: [] },
+                        { homeAway: 'away', team: matchObj.away, statistics: [] }
+                    ]
+                },
+                keyEvents: matchObj.key_events || [],
+                timeline: matchObj.key_events || [],
+                rosters: matchObj.lineups || []
+            };
+            renderMatchDetails(initialSummary, initialSummary.timeline, null, false);
+            loadMatchDetails(eventId, true, leagueSlug);
+            return;
+        }
+
         await loadMatchDetails(eventId, false, leagueSlug);
     }
 
@@ -2714,6 +2754,102 @@
         const homeRoster = rosters.find(r => String(r.team?.id) === String(home.team?.id) || r.team?.side === 'home' || r.team?.homeAway === 'home') || rosters[0];
         const awayRoster = rosters.find(r => String(r.team?.id) === String(away.team?.id) || r.team?.side === 'away' || r.team?.homeAway === 'away') || rosters[1];
 
+        function renderTacticalPitchHtml(teamRoster, teamName, isHome = true) {
+            if (!teamRoster?.roster?.length) return '';
+            const allPlayers = teamRoster.roster;
+            const starters = allPlayers.filter(p => p.starter);
+            const squad = starters.length >= 11 ? starters.slice(0, 11) : allPlayers.slice(0, 11);
+            if (squad.length < 7) return '';
+
+            const gk = [];
+            const def = [];
+            const mid = [];
+            const fwd = [];
+
+            squad.forEach(p => {
+                const pos = String(p.position?.abbreviation || p.athlete?.position?.abbreviation || p.position?.name || '').toUpperCase();
+                if (pos.startsWith('G')) gk.push(p);
+                else if (pos.startsWith('D') || pos.includes('CB') || pos.includes('LB') || pos.includes('RB')) def.push(p);
+                else if (pos.startsWith('M') || pos.includes('CM') || pos.includes('DM') || pos.includes('AM')) mid.push(p);
+                else if (pos.startsWith('F') || pos.startsWith('A') || pos.includes('ST') || pos.includes('LW') || pos.includes('RW')) fwd.push(p);
+                else {
+                    if (gk.length === 0) gk.push(p);
+                    else if (def.length < 4) def.push(p);
+                    else if (mid.length < 3) mid.push(p);
+                    else fwd.push(p);
+                }
+            });
+
+            if (gk.length === 0 && squad.length) gk.push(squad[0]);
+
+            const formationStr = `${def.length}-${mid.length}-${fwd.length}`;
+            const themeColor = isHome ? '#10b981' : '#3b82f6';
+
+            function renderLinePlayers(players) {
+                return players.map(p => {
+                    const name = p.athlete?.displayName || p.athlete?.fullName || p.name || 'Player';
+                    const parts = name.trim().split(' ');
+                    const shortName = parts.length > 1 ? parts[parts.length - 1] : name;
+                    const jersey = p.jersey || p.shirtNumber || '•';
+                    return `
+                        <div class="pitch-player-node" style="display:flex; flex-direction:column; align-items:center; text-align:center; max-width:68px; z-index:2;">
+                            <div style="width:28px; height:28px; border-radius:50%; background:${themeColor}; color:#ffffff; font-weight:800; font-size:12px; display:flex; align-items:center; justify-content:center; box-shadow:0 3px 6px rgba(0,0,0,0.4); border:2px solid #ffffff;">
+                                ${escapeHtml(jersey)}
+                            </div>
+                            <span style="font-size:10px; font-weight:700; color:#ffffff; text-shadow:0 1px 4px rgba(0,0,0,0.9); margin-top:3px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:64px;">
+                                ${escapeHtml(shortName)}
+                            </span>
+                        </div>
+                    `;
+                }).join('');
+            }
+
+            return `
+                <div class="tactical-pitch-card" style="margin-bottom:20px;">
+                    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px; flex-wrap:wrap; gap:6px;">
+                        <div style="display:flex; align-items:center; gap:8px;">
+                            <span style="font-size:16px;">📋</span>
+                            <strong style="font-size:13px; color:var(--text-main);">${escapeHtml(teamName)} Formation</strong>
+                        </div>
+                        <span style="font-size:11.5px; font-weight:700; color:${themeColor}; background:var(--bg-canvas); border:1px solid var(--border-subtle); padding:2px 8px; border-radius:6px;">Starting XI (${formationStr})</span>
+                    </div>
+
+                    <div class="tactical-pitch-canvas" style="position:relative; width:100%; max-width:500px; margin:0 auto; aspect-ratio:1.45/1; background:radial-gradient(ellipse at center, #184a3b 0%, #0d281e 100%); border:2px solid rgba(255,255,255,0.22); border-radius:12px; overflow:hidden; box-shadow:0 6px 20px rgba(0,0,0,0.35); padding:14px 10px; display:flex; flex-direction:column; justify-content:space-between;">
+                        <svg style="position:absolute; top:0; left:0; width:100%; height:100%; pointer-events:none;" viewBox="0 0 400 280" preserveAspectRatio="none">
+                            <rect x="8" y="8" width="384" height="264" fill="none" stroke="rgba(255,255,255,0.18)" stroke-width="1.5" />
+                            <line x1="8" y1="140" x2="392" y2="140" stroke="rgba(255,255,255,0.18)" stroke-width="1.5" />
+                            <circle cx="200" cy="140" r="38" fill="none" stroke="rgba(255,255,255,0.18)" stroke-width="1.5" />
+                            <circle cx="200" cy="140" r="2.5" fill="rgba(255,255,255,0.3)" />
+                            <rect x="130" y="8" width="140" height="46" fill="none" stroke="rgba(255,255,255,0.18)" stroke-width="1.5" />
+                            <rect x="160" y="8" width="80" height="18" fill="none" stroke="rgba(255,255,255,0.18)" stroke-width="1.2" />
+                            <rect x="130" y="226" width="140" height="46" fill="none" stroke="rgba(255,255,255,0.18)" stroke-width="1.5" />
+                            <rect x="160" y="254" width="80" height="18" fill="none" stroke="rgba(255,255,255,0.18)" stroke-width="1.2" />
+                        </svg>
+
+                        <!-- Attackers Line -->
+                        <div style="display:flex; justify-content:space-around; align-items:center; z-index:2;">
+                            ${renderLinePlayers(fwd.length ? fwd : squad.slice(8, 11))}
+                        </div>
+
+                        <!-- Midfielders Line -->
+                        <div style="display:flex; justify-content:space-around; align-items:center; z-index:2;">
+                            ${renderLinePlayers(mid.length ? mid : squad.slice(5, 8))}
+                        </div>
+
+                        <!-- Defenders Line -->
+                        <div style="display:flex; justify-content:space-around; align-items:center; z-index:2;">
+                            ${renderLinePlayers(def.length ? def : squad.slice(1, 5))}
+                        </div>
+
+                        <!-- Goalkeeper Line -->
+                        <div style="display:flex; justify-content:center; align-items:center; z-index:2;">
+                            ${renderLinePlayers(gk)}
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+
         function renderRosterList(teamRoster, teamName) {
             if (!teamRoster?.roster?.length) return `<p style="color:var(--text-muted); font-size:13px;">No official lineup announced yet for ${escapeHtml(teamName)}.</p>`;
             const starters = teamRoster.roster.filter(p => p.starter);
@@ -2991,7 +3127,9 @@
                 </div>
 
                 <div id="drawer-tab-lineups" class="drawer-tab-content" ${activeTab === 'lineups' ? '' : 'hidden'}>
-                    <h4 style="margin:0 0 14px; font-size:14px; color:var(--text-main);">Official Team Lineups</h4>
+                    <h4 style="margin:0 0 14px; font-size:14px; color:var(--text-main);">Official Team Lineups &amp; Tactical Formations</h4>
+                    ${renderTacticalPitchHtml(homeRoster, home.team?.displayName || 'Home Team', true) || ''}
+                    ${renderTacticalPitchHtml(awayRoster, away.team?.displayName || 'Away Team', false) || ''}
                     <div style="display:flex; gap:20px; flex-wrap:wrap; margin-bottom:24px;">
                         ${renderRosterList(homeRoster, home.team?.displayName || 'Home Team')}
                         ${renderRosterList(awayRoster, away.team?.displayName || 'Away Team')}

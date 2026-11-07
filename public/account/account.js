@@ -304,6 +304,7 @@ function switchPortalTab(tabName) {
     if (tabName === 'upgrade') loadUpgradePlans();
     if (tabName === 'whitelabel') loadWhitelabelSnippets();
     if (tabName === 'invoices') loadInvoices();
+    if (tabName === 'sdks') updateSdkCodeSnippet();
 }
 
 function populateProfileTab() {
@@ -932,3 +933,283 @@ document.addEventListener('DOMContentLoaded', () => {
         loadPortalData();
     }
 });
+
+let currentSdkLang = 'nodejs';
+
+function selectSdkLang(lang) {
+    currentSdkLang = lang;
+    document.querySelectorAll('.sdk-lang-btn').forEach(btn => {
+        btn.classList.toggle('active', btn.dataset.lang === lang);
+    });
+    updateSdkCodeSnippet();
+}
+
+function updateSdkCodeSnippet() {
+    const endpointSelect = document.getElementById('sdk-endpoint-select');
+    const endpoint = endpointSelect ? endpointSelect.value : 'live';
+    const displayEl = document.getElementById('sdk-code-display');
+    if (!displayEl) return;
+
+    const apiKey = (typeof revealedRawKey !== 'undefined' && revealedRawKey) || (typeof currentKey !== 'undefined' && currentKey?.key) || 'YOUR_API_KEY';
+    const baseUrl = 'https://scores.mynorra.xyz';
+
+    let code = '';
+    if (endpoint === 'live') {
+        if (currentSdkLang === 'nodejs') {
+            code = `// Node.js (v18+) - Real-time Live Matches & Telemetry
+const response = await fetch('${baseUrl}/api/v1/football/live', {
+  headers: {
+    'x-api-key': '${apiKey}',
+    'Accept': 'application/json'
+  }
+});
+
+const data = await response.json();
+console.log(\`Found \${data.live?.length || 0} active live games.\`);
+data.live?.forEach(match => {
+  console.log(\`[\${match.status?.clock || 'LIVE'}] \${match.home?.name} \${match.home?.score} - \${match.away?.score} \${match.away?.name}\`);
+});`;
+        } else if (currentSdkLang === 'python') {
+            code = `# Python 3.8+ (requests) - Real-time Live Scores
+import requests
+
+url = "${baseUrl}/api/v1/football/live"
+headers = {
+    "x-api-key": "${apiKey}",
+    "Accept": "application/json"
+}
+
+response = requests.get(url, headers=headers)
+data = response.json()
+
+for match in data.get("live", []):
+    home = match.get("home", {})
+    away = match.get("away", {})
+    print(f"[{match.get('status', {}).get('clock', 'LIVE')}] {home.get('name')} {home.get('score')} - {away.get('score')} {away.get('name')}")`;
+        } else if (currentSdkLang === 'curl') {
+            code = `# cURL - Global Live Scores
+curl -X GET "${baseUrl}/api/v1/football/live" \\
+  -H "x-api-key: ${apiKey}" \\
+  -H "Accept: application/json"`;
+        } else if (currentSdkLang === 'php') {
+            code = `<?php
+// PHP cURL - Real-time Live Matches
+$ch = curl_init("${baseUrl}/api/v1/football/live");
+curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+curl_setopt($ch, CURLOPT_HTTPHEADER, [
+    "x-api-key: ${apiKey}",
+    "Accept: application/json"
+]);
+
+$response = curl_exec($ch);
+curl_close($ch);
+
+$data = json_decode($response, true);
+print_r($data);
+?>`;
+        }
+    } else if (endpoint === 'fixtures') {
+        if (currentSdkLang === 'nodejs') {
+            code = `// Node.js - Multi-League Fixtures & Results
+const response = await fetch('${baseUrl}/api/v1/football/fixtures?date=today', {
+  headers: { 'x-api-key': '${apiKey}' }
+});
+const { fixtures } = await response.json();
+console.log('Today fixtures:', fixtures);`;
+        } else if (currentSdkLang === 'python') {
+            code = `import requests
+
+res = requests.get(
+    "${baseUrl}/api/v1/football/fixtures",
+    params={"date": "today"},
+    headers={"x-api-key": "${apiKey}"}
+)
+fixtures = res.json().get("fixtures", [])
+print(f"Retrieved {len(fixtures)} matches for today.")`;
+        } else if (currentSdkLang === 'curl') {
+            code = `curl -X GET "${baseUrl}/api/v1/football/fixtures?date=today" \\
+  -H "x-api-key: ${apiKey}"`;
+        } else if (currentSdkLang === 'php') {
+            code = `<?php
+$ch = curl_init("${baseUrl}/api/v1/football/fixtures?date=today");
+curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+curl_setopt($ch, CURLOPT_HTTPHEADER, ["x-api-key: ${apiKey}"]);
+$fixtures = json_decode(curl_exec($ch), true);
+curl_close($ch);
+?>`;
+        }
+    } else if (endpoint === 'predictions') {
+        if (currentSdkLang === 'nodejs') {
+            code = `// Node.js - Norra AI Match Outcome Probability & Historical Telemetry
+const eventId = '700812';
+const response = await fetch(\`${baseUrl}/api/v1/football/predictions-context/\${eventId}\`, {
+  headers: { 'x-api-key': '${apiKey}' }
+});
+const pred = await response.json();
+console.log('Norra AI Hints:', pred.norraAiPredictionHints);`;
+        } else if (currentSdkLang === 'python') {
+            code = `import requests
+
+event_id = "700812"
+res = requests.get(
+    f"${baseUrl}/api/v1/football/predictions-context/{event_id}",
+    headers={"x-api-key": "${apiKey}"}
+)
+data = res.json()
+print("Predicted probabilities:", data.get("norraAiPredictionHints"))`;
+        } else if (currentSdkLang === 'curl') {
+            code = `curl -X GET "${baseUrl}/api/v1/football/predictions-context/700812" \\
+  -H "x-api-key: ${apiKey}"`;
+        } else if (currentSdkLang === 'php') {
+            code = `<?php
+$ch = curl_init("${baseUrl}/api/v1/football/predictions-context/700812");
+curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+curl_setopt($ch, CURLOPT_HTTPHEADER, ["x-api-key: ${apiKey}"]);
+$predictions = json_decode(curl_exec($ch), true);
+curl_close($ch);
+?>`;
+        }
+    } else if (endpoint === 'booking') {
+        if (currentSdkLang === 'nodejs') {
+            code = `// Node.js - Universal Bet Booking Code Converter
+const response = await fetch('${baseUrl}/api/v1/booking/convert', {
+  method: 'POST',
+  headers: {
+    'Content-Type': 'application/json',
+    'x-api-key': '${apiKey}'
+  },
+  body: JSON.stringify({
+    sourceCode: 'B9-1234567',
+    fromBookmaker: 'bet9ja',
+    toBookmaker: 'sportybet'
+  })
+});
+
+const result = await response.json();
+console.log('Converted Code:', result.convertedCode);
+console.log('Direct Slip URL:', result.directUrl);`;
+        } else if (currentSdkLang === 'python') {
+            code = `import requests
+
+payload = {
+    "sourceCode": "B9-1234567",
+    "fromBookmaker": "bet9ja",
+    "toBookmaker": "sportybet"
+}
+
+res = requests.post(
+    "${baseUrl}/api/v1/booking/convert",
+    headers={"x-api-key": "${apiKey}"},
+    json=payload
+)
+print("Conversion result:", res.json())`;
+        } else if (currentSdkLang === 'curl') {
+            code = `curl -X POST "${baseUrl}/api/v1/booking/convert" \\
+  -H "Content-Type: application/json" \\
+  -H "x-api-key: ${apiKey}" \\
+  -d '{"sourceCode":"B9-1234567","fromBookmaker":"bet9ja","toBookmaker":"sportybet"}'`;
+        } else if (currentSdkLang === 'php') {
+            code = `<?php
+$payload = json_encode([
+    "sourceCode" => "B9-1234567",
+    "fromBookmaker" => "bet9ja",
+    "toBookmaker" => "sportybet"
+]);
+
+$ch = curl_init("${baseUrl}/api/v1/booking/convert");
+curl_setopt($ch, CURLOPT_POST, true);
+curl_setopt($ch, CURLOPT_POSTFIELDS, $payload);
+curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+curl_setopt($ch, CURLOPT_HTTPHEADER, [
+    "Content-Type: application/json",
+    "x-api-key: ${apiKey}"
+]);
+
+$res = json_decode(curl_exec($ch), true);
+curl_close($ch);
+print_r($res);
+?>`;
+        }
+    }
+
+    displayEl.textContent = code;
+}
+
+function copySdkCodeSnippet() {
+    const el = document.getElementById('sdk-code-display');
+    if (!el) return;
+    navigator.clipboard.writeText(el.textContent).then(() => {
+        const btn = document.getElementById('sdk-copy-label');
+        if (btn) {
+            btn.textContent = 'Copied!';
+            setTimeout(() => { btn.textContent = 'Copy Code'; }, 2000);
+        }
+    });
+}
+
+async function sendTestWebhook() {
+    const targetUrlInput = document.getElementById('webhook-target-url');
+    const eventTypeSelect = document.getElementById('webhook-event-type');
+    const secretInput = document.getElementById('webhook-secret-input');
+    const btn = document.getElementById('btn-send-webhook-test');
+    const label = document.getElementById('btn-webhook-label');
+    const resultContainer = document.getElementById('webhook-result-container');
+    const banner = document.getElementById('webhook-status-banner');
+    const payloadPre = document.getElementById('webhook-response-payload');
+
+    const targetUrl = targetUrlInput ? targetUrlInput.value.trim() : '';
+    if (!targetUrl) {
+        alert('Please enter a destination Webhook URL (e.g. https://webhook.site/...)');
+        return;
+    }
+
+    const eventType = eventTypeSelect ? eventTypeSelect.value : 'match.goal';
+    const secret = secretInput ? secretInput.value.trim() : '';
+
+    if (btn) btn.disabled = true;
+    if (label) label.textContent = 'Sending Webhook...';
+
+    try {
+        const res = await fetch('/api/v1/football/webhooks/test', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                ...((typeof currentKey !== 'undefined' && currentKey?.key) ? { 'x-api-key': currentKey.key } : {})
+            },
+            body: JSON.stringify({ targetUrl, eventType, secret })
+        });
+        const data = await res.json();
+
+        if (resultContainer) resultContainer.style.display = 'block';
+        if (banner) {
+            if (data.success) {
+                banner.style.background = 'rgba(16, 185, 129, 0.15)';
+                banner.style.border = '1px solid #10b981';
+                banner.style.color = '#34d399';
+                banner.textContent = `✅ Webhook Delivered Successfully — HTTP ${data.statusCode} in ${data.latencyMs}ms`;
+            } else {
+                banner.style.background = 'rgba(239, 68, 68, 0.15)';
+                banner.style.border = '1px solid #ef4444';
+                banner.style.color = '#f87171';
+                banner.textContent = `❌ Webhook Delivery Notice — ${data.error || ('HTTP ' + data.statusCode)} (${data.latencyMs}ms)`;
+            }
+        }
+        if (payloadPre) {
+            payloadPre.textContent = JSON.stringify(data, null, 2);
+        }
+    } catch (err) {
+        if (resultContainer) resultContainer.style.display = 'block';
+        if (banner) {
+            banner.style.background = 'rgba(239, 68, 68, 0.15)';
+            banner.style.border = '1px solid #ef4444';
+            banner.style.color = '#f87171';
+            banner.textContent = `❌ Delivery Error: ${err.message}`;
+        }
+        if (payloadPre) {
+            payloadPre.textContent = err.stack || err.message;
+        }
+    } finally {
+        if (btn) btn.disabled = false;
+        if (label) label.textContent = 'Send Test Webhook Ping';
+    }
+}
