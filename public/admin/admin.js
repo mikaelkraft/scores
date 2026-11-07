@@ -63,8 +63,20 @@ function switchAdminTab(tabName) {
     if (tabName === 'transactions') loadTransactions();
 }
 
-async function loadDashboardData() {
-    await Promise.all([loadStats(), loadSettings(), loadApiKeysAndUsers()]);
+async async function loadDashboardData() {
+    try {
+        await Promise.all([loadStats(), loadSettings(), loadApiKeysAndUsers()]);
+    } catch (err) {
+        console.error('Dashboard load error:', err);
+        const keysBody = document.getElementById('api-keys-body');
+        const usersBody = document.getElementById('users-body');
+        if (keysBody && keysBody.textContent.includes('Loading')) {
+            keysBody.innerHTML = `<tr><td colspan="8" style="text-align:center; color:#ef4444;">Failed to load keys. <button class="btn-secondary" style="margin-left:8px; padding:2px 8px; font-size:11px;" onclick="loadApiKeysAndUsers()">Retry</button></td></tr>`;
+        }
+        if (usersBody && usersBody.textContent.includes('Loading')) {
+            usersBody.innerHTML = `<tr><td colspan="5" style="text-align:center; color:#ef4444;">Failed to load users. <button class="btn-secondary" style="margin-left:8px; padding:2px 8px; font-size:11px;" onclick="loadApiKeysAndUsers()">Retry</button></td></tr>`;
+        }
+    }
 }
 
 async function loadStats() {

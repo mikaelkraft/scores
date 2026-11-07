@@ -39,6 +39,11 @@ const ApiKeySchema = new mongoose.Schema({
         type: Boolean,
         default: false
     },
+    // null / empty = all leagues; free tier restricted to a small allowlist
+    allowedLeagues: [{
+        type: String,
+        trim: true
+    }],
     allowedDomains: [{
         type: String,
         trim: true

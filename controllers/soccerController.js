@@ -442,6 +442,12 @@ router.get('/:league/fixtures', validateLeague, async(req, res) => {
             if (status === 'live') {
                 filter.date = { $gte: new Date(Date.now() - 6 * 3600 * 1000) };
             }
+            // Scheduled = future only (prevents "next matchday" pointing at past Oct 2024/2025 fixtures)
+            if (status === 'scheduled') {
+                const startOfToday = new Date();
+                startOfToday.setUTCHours(0, 0, 0, 0);
+                filter.date = { ...(filter.date || {}), $gte: startOfToday };
+            }
         }
 
         const [count, matches] = await Promise.all([
