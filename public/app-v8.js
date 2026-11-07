@@ -2523,28 +2523,18 @@
                 </div>
 
                 <div id="drawer-tab-timeline" class="drawer-tab-content" ${activeTab === 'timeline' ? '' : 'hidden'}>
-                    ${scorers.length ? `
-                        <div class="timeline-goals-summary" style="background:var(--bg-canvas); border:1px solid var(--border-subtle); border-radius:8px; padding:12px 14px; margin-bottom:18px;">
-                            <div style="font-size:11.5px; text-transform:uppercase; color:var(--text-muted); font-weight:700; margin-bottom:8px; letter-spacing:0.5px;">⚽ Goals &amp; Match Deciders</div>
-                            <div style="display:flex; flex-wrap:wrap; gap:8px;">
-                                ${scorers.map(goal => {
-                                    const athleteName = goal.athlete?.displayName || goal.athlete?.fullName || goal.text || 'Goal';
-                                    const teamName = goal.team?.displayName || goal.team?.name || '';
-                                    return `<span style="display:inline-flex; align-items:center; gap:6px; background:var(--bg-surface-elevated); border:1px solid var(--border-subtle); padding:4px 10px; border-radius:6px; font-size:12px; font-weight:600; color:var(--text-main);">
-                                        <strong style="color:var(--color-primary);">${escapeHtml(goal.clock || '—')}</strong>
-                                        <span>⚽ ${escapeHtml(athleteName)}</span>
-                                        ${teamName ? `<span style="color:var(--text-muted); font-size:11px;">(${escapeHtml(teamName)})</span>` : ''}
-                                    </span>`;
-                                }).join('')}
-                            </div>
-                        </div>
-                    ` : ''}
-
                     <h4 style="margin:0 0 12px; font-size:14px; color:var(--text-main); display:flex; justify-content:space-between; align-items:center;">
-                        <span>Chronological Match Timeline &amp; Events</span>
-                        <span style="font-size:11.5px; color:var(--text-muted); font-weight:normal;">${events.length} recorded events</span>
+                        <span>Match Timeline</span>
+                        <span style="font-size:11.5px; color:var(--text-muted); font-weight:normal;">${events.length} events</span>
                     </h4>
-                    <div>${timelineRows || '<p style="color:var(--text-muted); font-size:13px;">No play-by-play events recorded.</p>'}</div>
+                    <div>${timelineRows || (scorers.length ? scorers.map(goal => {
+                        const athleteName = goal.athlete?.displayName || goal.athlete?.fullName || goal.text || 'Goal';
+                        const teamName = goal.team?.displayName || goal.team?.name || '';
+                        return `<div class="timeline-row goal-event" style="display:flex; gap:12px; padding:10px 0; border-bottom:1px solid var(--border-subtle);">
+                            <span style="min-width:42px; font-weight:700; color:var(--color-primary);">${escapeHtml(goal.clock || '—')}</span>
+                            <span>⚽ <strong>${escapeHtml(athleteName)}</strong>${teamName ? ` <span style="color:var(--text-muted);">(${escapeHtml(teamName)})</span>` : ''}</span>
+                        </div>`;
+                    }).join('') : '<p style="color:var(--text-muted); font-size:13px;">No play-by-play events recorded yet.</p>')}</div>
                 </div>
 
                 <div id="drawer-tab-stats" class="drawer-tab-content" ${activeTab === 'stats' ? '' : 'hidden'}>
@@ -3455,23 +3445,29 @@
     }
 
     function applyLiveSearch(query) {
-        if (!elements['fixtures-list']) return;
-        const rows = elements['fixtures-list'].querySelectorAll('.fs-match-row');
-        if (!query) {
-            rows.forEach(r => r.style.display = 'flex');
-            elements['fixtures-list'].querySelectorAll('.fs-league-section').forEach(s => s.style.display = 'block');
+        const list = elements['fixtures-list'] || document.getElementById('fixtures-list');
+        if (!list) return;
+        const q = (query || '').trim().toLowerCase();
+        const rows = list.querySelectorAll('.fs-match-row');
+        if (!q) {
+            rows.forEach(r => { r.style.display = ''; });
+            list.querySelectorAll('.fs-league-section').forEach(s => { s.style.display = ''; });
             return;
         }
 
-        elements['fixtures-list'].querySelectorAll('.fs-league-section').forEach(sec => {
+        list.querySelectorAll('.fs-league-section').forEach(sec => {
             let sectionHasMatch = false;
             sec.querySelectorAll('.fs-match-row').forEach(row => {
-                const searchData = (row.dataset.search || row.textContent).toLowerCase();
-                const matched = searchData.includes(query);
-                row.style.display = matched ? 'flex' : 'none';
+                const searchData = (
+                    (row.dataset.search || '') + ' ' +
+                    (row.textContent || '') + ' ' +
+                    (row.getAttribute('aria-label') || '')
+                ).toLowerCase();
+                const matched = searchData.includes(q);
+                row.style.display = matched ? '' : 'none';
                 if (matched) sectionHasMatch = true;
             });
-            sec.style.display = sectionHasMatch ? 'block' : 'none';
+            sec.style.display = sectionHasMatch ? '' : 'none';
         });
     }
 
