@@ -71,7 +71,6 @@ router.post('/api/v1/booking/generate', optionalApiKeyAuth, async (req, res) => 
  * Hook to convert code between bookmakers with fair-use tier quota enforcement
  */
 router.post('/api/v1/booking/convert', optionalApiKeyAuth, async (req, res) => {
-    if (!requireFeature(req, res, 'bookingCodes', 'Betting code conversion')) return;
     try {
         const settings = await SiteSetting.getGlobalSettings().catch(() => null);
         if (settings?.bookingSettings?.hookEnabled === false) {
