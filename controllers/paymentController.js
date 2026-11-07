@@ -40,11 +40,13 @@ router.get(['/api/plans', '/api/v1/payments/plans'], async (req, res) => {
                     isAdFree: false,
                     whitelabel: false,
                     allowedLeagues: ['eng.1', 'esp.1', 'nga.1'],
+                    capabilities: PLAN_LIMITS.free.features,
                     features: [
                         '120 requests / minute',
                         '3 leagues only: English Premier League, La Liga, Nigeria Premier Football League',
                         'Live scoreboards & minute tickers for those leagues',
                         'Fixtures, results & standings for the 3 free leagues',
+                        'No H2H, play-by-play, or booking codes',
                         'Community developer support',
                         'Upgrade to unlock all 100+ competitions'
                     ]
@@ -56,13 +58,15 @@ router.get(['/api/plans', '/api/v1/payments/plans'], async (req, res) => {
                     rateLimitPerMinute: plans.starter?.rateLimitPerMinute || 500,
                     isAdFree: true,
                     whitelabel: false,
+                    capabilities: PLAN_LIMITS.starter.features,
                     features: [
                         '500 requests / minute',
                         'All world competitions (100+ leagues)',
                         'No league restrictions',
+                        'Play-by-play match events',
                         'Universal Bet Booking Code Converter',
                         'Ad-free clean JSON payloads',
-                        'Team H2H head-to-head records',
+                        '30-day historical fixtures',
                         'Standard email support'
                     ]
                 },
@@ -72,14 +76,17 @@ router.get(['/api/plans', '/api/v1/payments/plans'], async (req, res) => {
                     priceUsd: plans.pro?.priceUsd || 29,
                     rateLimitPerMinute: plans.pro?.rateLimitPerMinute || 1500,
                     isAdFree: true,
-                    whitelabel: true,
+                    whitelabel: false,
+                    capabilities: PLAN_LIMITS.pro.features,
                     features: [
                         '1,500 requests / minute',
-                        'Sub-second real-time score updates',
-                        'Full timeline plays, goals, VAR & cards',
+                        'All leagues + full play-by-play timelines',
+                        'Head-to-head (H2H) statistics',
+                        'Predictions context for AI engines',
                         'Universal Booking Code API hook',
+                        '365-day historical fixtures',
                         'Team lineups & roster profiles',
-                        'Priority 24/7 technical SLA'
+                        'Priority technical support'
                     ]
                 },
                 {
@@ -89,12 +96,15 @@ router.get(['/api/plans', '/api/v1/payments/plans'], async (req, res) => {
                     rateLimitPerMinute: plans.whitelabel?.rateLimitPerMinute || 5000,
                     isAdFree: true,
                     whitelabel: true,
+                    capabilities: PLAN_LIMITS.whitelabel.features,
                     features: [
                         '5,000 requests / minute (High Throughput)',
-                        'Custom whitelabel branded match centers',
+                        'Everything in Pro',
+                        'Custom domain / whitelabel embeds',
                         'Direct Norra AI Prediction Engine access',
-                        'Multi-bookmaker odds & universal slip conversion',
-                        'Dedicated account manager & Discord/Telegram VIP channel',
+                        'Multi-bookmaker booking code conversion',
+                        'Full historical archive',
+                        'Dedicated account manager & VIP channel',
                         'Custom contract & 99.9% uptime SLA'
                     ]
                 }

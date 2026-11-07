@@ -6,35 +6,99 @@ const PLAN_LIMITS = {
     free: {
         rateLimitPerMinute: 120,
         isAdFree: false,
-        // Free tier locked to 3 test leagues
-        allowedLeagues: ['eng.1', 'esp.1', 'nga.1']
+        allowedLeagues: ['eng.1', 'esp.1', 'nga.1'],
+        features: {
+            liveScores: true,
+            fixtures: true,
+            standings: true,
+            matchSummary: true,
+            playByPlay: false,
+            h2h: false,
+            predictions: false,
+            bookingCodes: false,
+            historicalDays: 7,
+            crestProxy: true
+        }
     },
     starter: {
         rateLimitPerMinute: 500,
         isAdFree: true,
-        allowedLeagues: null // all
+        allowedLeagues: null,
+        features: {
+            liveScores: true,
+            fixtures: true,
+            standings: true,
+            matchSummary: true,
+            playByPlay: true,
+            h2h: false,
+            predictions: false,
+            bookingCodes: true,
+            historicalDays: 30,
+            crestProxy: true
+        }
     },
     pro: {
         rateLimitPerMinute: 1500,
         isAdFree: true,
-        allowedLeagues: null
+        allowedLeagues: null,
+        features: {
+            liveScores: true,
+            fixtures: true,
+            standings: true,
+            matchSummary: true,
+            playByPlay: true,
+            h2h: true,
+            predictions: true,
+            bookingCodes: true,
+            historicalDays: 365,
+            crestProxy: true
+        }
     },
     whitelabel: {
         rateLimitPerMinute: 5000,
         isAdFree: true,
-        allowedLeagues: null
+        allowedLeagues: null,
+        features: {
+            liveScores: true,
+            fixtures: true,
+            standings: true,
+            matchSummary: true,
+            playByPlay: true,
+            h2h: true,
+            predictions: true,
+            bookingCodes: true,
+            historicalDays: 3650,
+            crestProxy: true,
+            customDomain: true
+        }
     },
     admin: {
         rateLimitPerMinute: 0,
         isAdFree: true,
-        allowedLeagues: null
+        allowedLeagues: null,
+        features: {
+            liveScores: true, fixtures: true, standings: true, matchSummary: true,
+            playByPlay: true, h2h: true, predictions: true, bookingCodes: true,
+            historicalDays: 3650, crestProxy: true, customDomain: true
+        }
     },
     internal: {
         rateLimitPerMinute: 0,
         isAdFree: true,
-        allowedLeagues: null
+        allowedLeagues: null,
+        features: {
+            liveScores: true, fixtures: true, standings: true, matchSummary: true,
+            playByPlay: true, h2h: true, predictions: true, bookingCodes: true,
+            historicalDays: 3650, crestProxy: true, customDomain: true
+        }
     }
 };
+
+function getPlanConfig(keyDoc) {
+    if (!keyDoc) return PLAN_LIMITS.free;
+    if (keyDoc.plan === 'admin' || keyDoc.plan === 'internal') return PLAN_LIMITS.admin;
+    return PLAN_LIMITS[keyDoc.plan] || PLAN_LIMITS.free;
+}
 
 function getAllowedLeaguesForKey(keyDoc) {
     if (!keyDoc) return PLAN_LIMITS.free.allowedLeagues;
@@ -42,15 +106,50 @@ function getAllowedLeaguesForKey(keyDoc) {
     if (Array.isArray(keyDoc.allowedLeagues) && keyDoc.allowedLeagues.length > 0) {
         return keyDoc.allowedLeagues;
     }
-    const plan = PLAN_LIMITS[keyDoc.plan] || PLAN_LIMITS.free;
-    return plan.allowedLeagues; // null = unrestricted
+    return getPlanConfig(keyDoc).allowedLeagues; // null = unrestricted
 }
 
 function assertLeagueAccess(keyDoc, leagueSlug) {
     const allowed = getAllowedLeaguesForKey(keyDoc);
-    if (!allowed) return true; // unrestricted
-    if (!leagueSlug || leagueSlug === 'all') return false; // free cannot request global feed via API key path
+    if (!allowed) return true;
+    if (!leagueSlug || leagueSlug === 'all') return false;
     return allowed.includes(String(leagueSlug).toLowerCase());
+}
+
+/** Returns true if the key's plan includes the named feature */
+function hasFeature(keyDoc, featureName) {
+    // Unauthenticated public reads: treat as free (limited)
+    const features = getPlanConfig(keyDoc).features || PLAN_LIMITS.free.features;
+    return Boolean(features[featureName]);
+}
+
+/**
+ * Enforce a feature gate. Sends 403 and returns false when blocked.
+ * When keyDoc is null (public), free-tier rules apply for gated premium features.
+ */
+function requireFeature(req, res, featureName, label) {
+    const keyDoc = req.apiKey || null;
+    // Public (no key) may use basic free features only
+    if (!keyDoc && ['h2h', 'predictions', 'bookingCodes', 'playByPlay'].includes(featureName)) {
+        res.status(401).json({
+            error: `${label || featureName} requires an API key on Starter or higher.`,
+            upgradeUrl: '/pricing',
+            plansUrl: '/api/plans'
+        });
+        return false;
+    }
+    if (!hasFeature(keyDoc, featureName)) {
+        const plan = keyDoc?.plan || 'free';
+        res.status(403).json({
+            error: `${label || featureName} is not included in the ${plan} plan. Upgrade to unlock.`,
+            plan,
+            feature: featureName,
+            upgradeUrl: '/pricing',
+            plansUrl: '/api/plans'
+        });
+        return false;
+    }
+    return true;
 }
 
 
@@ -227,6 +326,9 @@ module.exports = {
     requireApiKey,
     keyCache,
     PLAN_LIMITS,
+    getPlanConfig,
     getAllowedLeaguesForKey,
-    assertLeagueAccess
+    assertLeagueAccess,
+    hasFeature,
+    requireFeature
 };

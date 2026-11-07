@@ -1700,6 +1700,12 @@
         if (elements['dashboard-country']) elements['dashboard-country'].textContent = localCountryName(league.country);
         if (elements['dashboard-title']) elements['dashboard-title'].textContent = league.name;
 
+        // Clear global feed immediately so it does not flash under the league view
+        if (elements['fixtures-list']) {
+            elements['fixtures-list'].innerHTML = '<div class="content-state"><span class="loader"></span> Loading league fixtures…</div>';
+        }
+        state.currentStatus = 'all';
+
         const leagueToolbar = document.getElementById('league-view-toolbar');
         if (leagueToolbar) leagueToolbar.style.display = 'flex';
 
