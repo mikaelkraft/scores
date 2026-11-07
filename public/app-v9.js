@@ -375,16 +375,39 @@
         elements['service-status'].lastElementChild.textContent = text;
     }
 
+    // Persistent crest cache so repeated list renders do not re-hit upstream
+    const crestCacheKey = 'norra_crest_cache_v1';
+    let crestMemory = {};
+    try { crestMemory = JSON.parse(localStorage.getItem(crestCacheKey) || '{}'); } catch (_) { crestMemory = {}; }
+
+    function rememberCrest(teamId, url) {
+        if (!teamId || !url) return;
+        crestMemory[String(teamId)] = { url, ts: Date.now() };
+        try {
+            // Cap cache size
+            const keys = Object.keys(crestMemory);
+            if (keys.length > 400) {
+                keys.slice(0, 80).forEach(k => delete crestMemory[k]);
+            }
+            localStorage.setItem(crestCacheKey, JSON.stringify(crestMemory));
+        } catch (_) { /* quota */ }
+    }
+
     function teamLogo(team, className = 'team-crest') {
+        const teamId = team?.id || team?.slug || team?.displayName || '';
         let logo = safeUrl(team?.logo || team?.logos?.[0]?.href);
+        if (!logo && teamId && crestMemory[String(teamId)]?.url) {
+            logo = crestMemory[String(teamId)].url;
+        }
         if (logo.includes('static.livescore.com/')) {
             logo = logo.replace('static.livescore.com/', 'storage.livescore.com/images/team/medium/');
         }
         if (logo && logo.startsWith('http')) {
+            rememberCrest(teamId, logo);
             logo = `/cdn/crest?url=${encodeURIComponent(logo)}`;
         }
         const abbreviation = escapeHtml(team?.abbreviation || 'FC');
-        return `<span class="${className}">${logo ? `<img src="${logo}" alt="${escapeHtml(team?.displayName || abbreviation)}" loading="lazy" onerror="this.onerror=null;this.style.display='none';this.parentElement.textContent='${abbreviation}';">` : abbreviation}</span>`;
+        return `<span class="${className}">${logo ? `<img src="${logo}" alt="${escapeHtml(team?.displayName || abbreviation)}" loading="lazy" decoding="async" onerror="this.onerror=null;this.style.display='none';this.parentElement.textContent='${abbreviation}';">` : abbreviation}</span>`;
     }
 
     function competitionFromEvent(event) {

@@ -1,6 +1,59 @@
 const ApiKey = require('../models/apiKey');
 const { config } = require('../config/env');
 
+/** Plan catalogue used for defaults + free-tier league lock */
+const PLAN_LIMITS = {
+    free: {
+        rateLimitPerMinute: 120,
+        isAdFree: false,
+        // Free tier locked to 3 test leagues
+        allowedLeagues: ['eng.1', 'esp.1', 'nga.1']
+    },
+    starter: {
+        rateLimitPerMinute: 500,
+        isAdFree: true,
+        allowedLeagues: null // all
+    },
+    pro: {
+        rateLimitPerMinute: 1500,
+        isAdFree: true,
+        allowedLeagues: null
+    },
+    whitelabel: {
+        rateLimitPerMinute: 5000,
+        isAdFree: true,
+        allowedLeagues: null
+    },
+    admin: {
+        rateLimitPerMinute: 0,
+        isAdFree: true,
+        allowedLeagues: null
+    },
+    internal: {
+        rateLimitPerMinute: 0,
+        isAdFree: true,
+        allowedLeagues: null
+    }
+};
+
+function getAllowedLeaguesForKey(keyDoc) {
+    if (!keyDoc) return PLAN_LIMITS.free.allowedLeagues;
+    if (keyDoc.plan === 'admin' || keyDoc.plan === 'internal') return null;
+    if (Array.isArray(keyDoc.allowedLeagues) && keyDoc.allowedLeagues.length > 0) {
+        return keyDoc.allowedLeagues;
+    }
+    const plan = PLAN_LIMITS[keyDoc.plan] || PLAN_LIMITS.free;
+    return plan.allowedLeagues; // null = unrestricted
+}
+
+function assertLeagueAccess(keyDoc, leagueSlug) {
+    const allowed = getAllowedLeaguesForKey(keyDoc);
+    if (!allowed) return true; // unrestricted
+    if (!leagueSlug || leagueSlug === 'all') return false; // free cannot request global feed via API key path
+    return allowed.includes(String(leagueSlug).toLowerCase());
+}
+
+
 // In-memory cache for fast key validation and minimal DB round-trips
 const keyCache = new Map();
 const CACHE_TTL_MS = 60 * 1000; // 60 seconds
@@ -172,5 +225,8 @@ module.exports = {
     isMasterAdminKey,
     optionalApiKeyAuth,
     requireApiKey,
-    keyCache
+    keyCache,
+    PLAN_LIMITS,
+    getAllowedLeaguesForKey,
+    assertLeagueAccess
 };

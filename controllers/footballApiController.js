@@ -10,7 +10,35 @@ const SoccerClub = require('../models/soccerClub');
 const SoccerMatch = require('../models/soccerMatch');
 const SoccerMatchEvent = require('../models/soccerMatchEvent');
 const SoccerStanding = require('../models/soccerStanding');
-const { optionalApiKeyAuth } = require('../middleware/apiKeyAuth');
+const { optionalApiKeyAuth, assertLeagueAccess, getAllowedLeaguesForKey, PLAN_LIMITS } = require('../middleware/apiKeyAuth');
+
+/** Reject free-tier keys when they request leagues outside their allowlist */
+function enforceLeaguePlan(req, res, leagueSlug) {
+    if (!req.apiKey) return true; // public unauthenticated reads still allowed (rate-limited by IP)
+    const allowed = getAllowedLeaguesForKey(req.apiKey);
+    if (!allowed) return true;
+    const slug = String(leagueSlug || req.params.league || req.query.league || '').toLowerCase();
+    if (!slug || slug === 'all') {
+        // Free key cannot pull global "all leagues" commercial feed
+        res.status(403).json({
+            error: 'Your Free plan is limited to 3 leagues: eng.1 (Premier League), esp.1 (La Liga), nga.1 (NPFL). Upgrade for full coverage.',
+            allowedLeagues: allowed,
+            upgradeUrl: '/pricing'
+        });
+        return false;
+    }
+    if (!assertLeagueAccess(req.apiKey, slug)) {
+        res.status(403).json({
+            error: `League "${slug}" is not included in your Free plan. Allowed: ${allowed.join(', ')}`,
+            allowedLeagues: allowed,
+            upgradeUrl: '/pricing'
+        });
+        return false;
+    }
+    return true;
+}
+
+
 const {
     serializeLeague,
     serializeScoreboardEvent,
@@ -592,8 +620,9 @@ router.get(['/live', '/livescores'], async (req, res) => {
  * Sub-second Server-Sent Events (SSE) live score & minute updates stream.
  * Pushes live match score changes and minute clock ticks directly to clients.
  */
-router.get('/live/stream', async (req, res) => {
+router.get('/live/stream', optionalApiKeyAuth, async (req, res) => {
     const { league } = req.query;
+    if (!enforceLeaguePlan(req, res, league)) return;
 
     res.setHeader('Content-Type', 'text/event-stream');
     res.setHeader('Cache-Control', 'no-cache, no-transform');
@@ -669,7 +698,8 @@ const FIXTURES_CACHE_MAX_SIZE = 100;
  * GET /api/v1/football/fixtures
  * Multi-league fixtures schedule query with date, league, team, and status filters.
  */
-router.get('/fixtures', async (req, res) => {
+router.get('/fixtures', optionalApiKeyAuth, async (req, res) => {
+    if (!enforceLeaguePlan(req, res, req.query.league)) return;
     const cacheKey = req.originalUrl || `/fixtures?${new URLSearchParams(req.query).toString()}`;
     const now = Date.now();
     const cached = fixturesResponseCache.get(cacheKey);

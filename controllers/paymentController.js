@@ -39,13 +39,14 @@ router.get(['/api/plans', '/api/v1/payments/plans'], async (req, res) => {
                     rateLimitPerMinute: 120,
                     isAdFree: false,
                     whitelabel: false,
+                    allowedLeagues: ['eng.1', 'esp.1', 'nga.1'],
                     features: [
                         '120 requests / minute',
-                        'Top 10 world leagues (EPL, LaLiga, UCL, Serie A, etc.)',
-                        'Live scoreboards & minute tickers',
-                        'Full fixture dates & historical results',
-                        'League tables & standings',
-                        'Community developer support'
+                        '3 leagues only: English Premier League, La Liga, Nigeria Premier Football League',
+                        'Live scoreboards & minute tickers for those leagues',
+                        'Fixtures, results & standings for the 3 free leagues',
+                        'Community developer support',
+                        'Upgrade to unlock all 100+ competitions'
                     ]
                 },
                 {
@@ -57,7 +58,8 @@ router.get(['/api/plans', '/api/v1/payments/plans'], async (req, res) => {
                     whitelabel: false,
                     features: [
                         '500 requests / minute',
-                        'All 100+ world competitions',
+                        'All world competitions (100+ leagues)',
+                        'No league restrictions',
                         'Universal Bet Booking Code Converter',
                         'Ad-free clean JSON payloads',
                         'Team H2H head-to-head records',
