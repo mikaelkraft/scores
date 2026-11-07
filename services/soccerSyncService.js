@@ -827,6 +827,8 @@ function resolveLeagueSlug(altGameNote = '', compDesc = '', uid = '') {
     if (text.includes('serie a') || text.includes('ita.1')) return 'ita.1';
     if (text.includes('coppa italia') || text.includes('ita.coppa_italia')) return 'ita.coppa_italia';
     if (text.includes('2. bundesliga') || text.includes('ger.2')) return 'ger.2';
+    // Austrian Bundesliga must win over German when "austria" / "österreich" / "aut." is present
+    if (text.includes('austrian') || text.includes('austria') || text.includes('österreich') || text.includes('aut.1') || text.includes('aut ')) return 'aut.1';
     if (text.includes('bundesliga') || text.includes('ger.1')) return 'ger.1';
     if (text.includes('dfb-pokal') || text.includes('ger.dfb_pokal')) return 'ger.dfb_pokal';
     if (text.includes('ligue 2') || text.includes('fra.2')) return 'fra.2';
@@ -860,7 +862,13 @@ function resolveLeagueSlug(altGameNote = '', compDesc = '', uid = '') {
     if (text.includes('thailand') || text.includes('thai league') || text.includes('tha.1')) return 'tha.1';
     if (text.includes('malaysia') || text.includes('mys.1')) return 'mys.1';
     if (text.includes('i-league') || text.includes('ind.2')) return 'ind.2';
-    if (text.includes('indian super league') || text.includes('ind.1')) return 'ind.1';
+    // Super League disambiguation (country must win)
+    if ((text.includes('swiss') || text.includes('switzerland') || text.includes('sui.')) && text.includes('super league')) return 'sui.1';
+    if ((text.includes('greek') || text.includes('greece') || text.includes('gre.')) && text.includes('super league')) return 'gre.1';
+    if ((text.includes('malaysian') || text.includes('malaysia') || text.includes('mys.')) && text.includes('super league')) return 'mys.1';
+    if ((text.includes('chinese') || text.includes('china') || text.includes('chn.')) && text.includes('super league')) return 'chn.1';
+    if ((text.includes('uzbek') || text.includes('uzbekistan')) && text.includes('super')) return 'uzb.1';
+    if (text.includes('indian super league') || text.includes('ind.1') || (text.includes('super league') && (text.includes('india') || text.includes('isl')))) return 'ind.1';
     if (text.includes('j1') || text.includes('j.league') || text.includes('jpn.1')) return 'jpn.1';
     if (text.includes('a-league') || text.includes('aus.1')) return 'aus.1';
     if (text.includes('chinese') || text.includes('csl') || text.includes('chn.1')) return 'chn.1';
@@ -1374,12 +1382,36 @@ function areTeamNamesMatching(nameA = '', nameB = '', leagueSlugA = '', leagueSl
     // Youth/Reserves vs Senior teams must NEVER match
     if (catA.isYouth !== catB.isYouth) return false;
 
+    // Prefer same league or same country prefix when both slugs are known
+    if (leagueSlugA && leagueSlugB) {
+        const countryA = String(leagueSlugA).split('.')[0];
+        const countryB = String(leagueSlugB).split('.')[0];
+        // Allow match only if same league or same country (prevents Swiss Super League picking Indian teams etc.)
+        if (leagueSlugA !== leagueSlugB && countryA !== countryB) {
+            // Still allow pure ID-based matches higher up; here we block loose name match across continents
+            return false;
+        }
+    }
+
     const a = normalizeTeamName(nameA);
     const b = normalizeTeamName(nameB);
     if (!a || !b) return false;
     if (a === b) return true;
-    if (a.includes(b) || b.includes(a)) {
-        if (Math.min(a.length, b.length) >= 3) return true;
+
+    // Stricter containment: shorter name must be a substantial part and not just a common word
+    const shorter = a.length <= b.length ? a : b;
+    const longer = a.length > b.length ? a : b;
+    if (shorter.length >= 5 && longer.includes(shorter)) {
+        // Reject if the difference is only a common suffix/prefix like "fc", "ceif", "united" etc already stripped
+        return true;
+    }
+    // Token overlap for multi-word names (e.g. "independiente medellin" vs "independiente de medellin")
+    const tokensA = a.split(/\s+/).filter(t => t.length > 2);
+    const tokensB = b.split(/\s+/).filter(t => t.length > 2);
+    if (tokensA.length >= 2 && tokensB.length >= 2) {
+        const setB = new Set(tokensB);
+        const overlap = tokensA.filter(t => setB.has(t)).length;
+        if (overlap >= Math.min(tokensA.length, tokensB.length) - 0) return true;
     }
     return false;
 }
@@ -1413,14 +1445,26 @@ async function findExistingMatch({ eventId, homeName, awayName, matchDate, score
 
     if (dateQuery.length === 0) return null;
 
-    const candidates = await SoccerMatch.find({ $or: dateQuery }).lean();
+    // Prefer same-league candidates first to avoid cross-league contamination
+    const baseFilter = { $or: dateQuery };
+    let candidates = [];
+    if (leagueSlug) {
+        candidates = await SoccerMatch.find({ ...baseFilter, league_slug: leagueSlug }).lean();
+    }
+    if (candidates.length === 0) {
+        candidates = await SoccerMatch.find(baseFilter).lean();
+    }
+
     for (const cand of candidates) {
         const candHome = cand.home?.name || cand.home?.display_name || '';
         const candAway = cand.away?.name || cand.away?.display_name || '';
-        if (areTeamNamesMatching(candHome, homeName, cand.league_slug, leagueSlug) &&
-            areTeamNamesMatching(candAway, awayName, cand.league_slug, leagueSlug)) {
-            return cand;
-        }
+        const homeOk = areTeamNamesMatching(candHome, homeName, cand.league_slug, leagueSlug);
+        const awayOk = areTeamNamesMatching(candAway, awayName, cand.league_slug, leagueSlug);
+        if (homeOk && awayOk) return cand;
+        // Also accept reversed home/away (some providers swap)
+        const homeOkRev = areTeamNamesMatching(candHome, awayName, cand.league_slug, leagueSlug);
+        const awayOkRev = areTeamNamesMatching(candAway, homeName, cand.league_slug, leagueSlug);
+        if (homeOkRev && awayOkRev) return cand;
     }
     return null;
 }
@@ -1596,7 +1640,9 @@ async function cleanupStuckMatchesAndPurgeNcaa() {
             const categoryKey = `${catHome.isWomen ? 'w' : 'm'}_${catHome.isYouth ? 'y' : 's'}`;
             const teamsKey = [homeNorm, awayNorm].sort().join('_vs_');
             const dateKey = m.scoreboard_date || (m.date ? m.date.toISOString().slice(0, 10) : '');
-            const sig = `${teamsKey}_${dateKey}_${categoryKey}`;
+            // Include league_slug so the same fixture wrongly stored under two leagues still collapses after country fix
+            const leagueKey = m.league_slug || 'unknown';
+            const sig = `${teamsKey}_${dateKey}_${categoryKey}_${leagueKey}`;
 
             if (signatureMap.has(sig)) {
                 const primary = signatureMap.get(sig);
@@ -1691,6 +1737,29 @@ async function syncLiveScoreInPlay() {
             const cLower = country.toLowerCase();
 
             let targetSlug = resolveLeagueSlug(leagueName, country, stage.Scd || '');
+            // Hard country overrides when resolveLeagueSlug is ambiguous
+            if (cLower.includes('korea') || cLower.includes('south korea') || cLower.includes('republic of korea')) {
+                if (leagueName.toLowerCase().includes('k league') || leagueName.toLowerCase().includes('kleague')) {
+                    targetSlug = leagueName.toLowerCase().includes('2') ? 'kor.2' : 'kor.1';
+                }
+            }
+            if (cLower.includes('colombia')) {
+                if (!targetSlug || targetSlug.startsWith('eng.') || targetSlug.startsWith('esp.')) {
+                    targetSlug = 'col.1';
+                }
+            }
+            if (cLower.includes('mexico') && (!targetSlug || targetSlug.startsWith('eng.'))) {
+                targetSlug = leagueName.toLowerCase().includes('femenil') ? 'mex.w.1' : 'mex.1';
+            }
+            if (cLower.includes('nigeria') && (!targetSlug || targetSlug.startsWith('eng.'))) {
+                targetSlug = 'nga.1';
+            }
+            if (cLower.includes('india') && (!targetSlug || targetSlug.includes('sui') || targetSlug.startsWith('eng.'))) {
+                targetSlug = leagueName.toLowerCase().includes('i-league') ? 'ind.2' : 'ind.1';
+            }
+            if (cLower.includes('switzerland') && (!targetSlug || targetSlug.startsWith('ind.') || targetSlug.startsWith('eng.'))) {
+                targetSlug = 'sui.1';
+            }
             if (!targetSlug) {
                 if (cLower.includes('tanzania')) targetSlug = 'tza.1';
                 else if (cLower.includes('botswana')) targetSlug = 'bwa.1';
