@@ -969,7 +969,7 @@ function resolveLeagueSlug(altGameNote = '', compDesc = '', uid = '') {
         return 'ned.1';
     }
     if (country.includes('portugal') || country.includes('portuguese') || text.includes('por.1') || text.includes('primeira') || text.includes('benfica') || text.includes('porto') || text.includes('sporting cp')) {
-        if (text.includes('segunda') || text.includes('liga 2') || text.includes('por.2')) return 'por.2';
+        if (text.includes('segunda') || text.includes('liga 2') || text.includes('por.2') || /\b(felgueiras|leixoes|leix[oõ]es|penafiel|feirense|oliveirense|torreense|alverca|mafra|uniao de leiria)\b/i.test(text)) return 'por.2';
         if (text.includes('taca') || text.includes('taça') || text.includes('cup')) return 'por.cup';
         return 'por.1';
     }
@@ -1504,6 +1504,7 @@ function normalizeTeamName(name = '') {
     let s = String(name).toLowerCase()
         .normalize('NFD')
         .replace(/[\u0300-\u036f]/g, '')
+        .replace(/\([^)]*\)/g, ' ')
         // Remove gender/youth markers from base name so e.g. "Arsenal Women" and "Arsenal Ladies" match each other
         .replace(/\b(women|woman|ladies|femenin[oa]?|frauen|damen|vrouwen|fem|wfc|w)\b|\(w\)/gi, '')
         .replace(/\b(u-?23|u-?21|u-?20|u-?19|u-?18|u-?17|u-?16|u-?15|youth|reserves?|development)\b/gi, '')
@@ -1545,8 +1546,10 @@ function normalizeTeamName(name = '') {
         .replace(/\bsimba\s+sc\b|\bsimba\b/g, 'simba')
         .replace(/\bmbeya\s+city\b/g, 'mbeyacity')
         .replace(/\bsingida\s+black\s+stars\b|\bsingida\s+bs\b/g, 'singidablackstars')
-        // Strip common non-distinct club markers like FC, CF, etc. and foundation years (e.g. Como 1907 -> como)
-        .replace(/\b(fc|cf|sc|ac|cd|ceif|afc|fk|sk|sv|ssc|as|rc|ud|rb|calcio|sad|sa)\b/gi, '')
+        .replace(/\bsantos\s+laguna\b/g, 'santos')
+        // Strip common non-distinct club markers like Club, FC, CF, etc. and foundation years (e.g. Como 1907 -> como)
+        .replace(/\b(club|clube|csd|deportivo|fc|cf|sc|ac|cd|ceif|afc|fk|sk|sv|ssc|as|rc|ud|rb|calcio|sad|sa)\b/gi, '')
+        .replace(/\b(de\s+)?(junin|resistencia|cordoba|la\s+plata)\b/gi, '')
         .replace(/\b(18\d{2}|19\d{2}|20\d{2})\b/g, '')
         .replace(/\b(04|05|96|98)\b/g, '')
         .replace(/[^a-z0-9]/g, '')
@@ -1840,6 +1843,46 @@ async function cleanupStuckMatchesAndPurgeNcaa() {
                 }
             },
             { upsert: true }
+        ).catch(() => {});
+
+        // 4f. Upsert Liga Portugal 2 and re-classify any Portuguese matches mistakenly categorized under Spanish Segunda
+        await SoccerLeague.updateOne(
+            { slug: 'por.2' },
+            {
+                $set: {
+                    name: 'Liga Portugal 2',
+                    abbreviation: 'Liga 2',
+                    country: 'Portugal',
+                    kind: 'club',
+                    active: true,
+                    sort_order: 141
+                }
+            },
+            { upsert: true }
+        ).catch(() => {});
+
+        await SoccerMatch.updateMany(
+            {
+                $or: [
+                    { league_slug: 'por.2', note: /segunda divisi[oó]n|spanish/i },
+                    {
+                        league_slug: 'esp.2',
+                        $or: [
+                            { note: /felgueiras|leixoes|leixões|penafiel|pacos de ferreira|paços de ferreira|vizela|chaves|portimonense|feirense|oliveirense|torreense|alverca|maritimo|marítimo|porto b|benfica b|uniao de leiria|tondela|mafra/i },
+                            { name: /felgueiras|leixoes|leixões|penafiel|vizela|feirense|oliveirense|torreense|alverca|tondela|mafra/i },
+                            { 'home.name': /felgueiras|leixoes|leixões|penafiel|vizela|feirense|oliveirense|torreense|alverca|tondela|mafra/i },
+                            { 'away.name': /felgueiras|leixoes|leixões|penafiel|vizela|feirense|oliveirense|torreense|alverca|tondela|mafra/i },
+                            { 'venue.country': 'Portugal' }
+                        ]
+                    }
+                ]
+            },
+            {
+                $set: {
+                    league_slug: 'por.2',
+                    note: 'Liga Portugal 2'
+                }
+            }
         ).catch(() => {});
 
         // 5. Purge duplicate match documents across the past 7 days
@@ -2243,12 +2286,14 @@ const CORE_AND_REGIONAL_SCOREBOARD_FEEDS = [
     'uefa.champions', 'uefa.europa', 'uefa.europa.conf', 'uefa.youth',
     // English tiers & domestic cups
     'eng.1', 'eng.2',
-    // Top European domestic leagues
-    'esp.1', 'ita.1', 'ger.1', 'fra.1',
-    // African & Asian continental
-    'caf.champions', 'afc.champions', 'afc.cup',
-    // Americas
-    'conmebol.libertadores'
+    // Top European domestic leagues & second tiers
+    'esp.1', 'esp.2', 'ita.1', 'ger.1', 'fra.1', 'por.1', 'por.2',
+    // African Premier Competitions
+    'caf.champions', 'nga.1', 'gha.1', 'ken.1', 'tza.1', 'egy.1', 'rsa.1',
+    // Asian continental
+    'afc.champions', 'afc.cup',
+    // Americas & Women's Premier
+    'conmebol.libertadores', 'bra.1', 'arg.1', 'mex.1', 'mex.w.1', 'col.1', 'esp.w.1'
 ];
 
 let isScoreboardSyncing = false;

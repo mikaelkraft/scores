@@ -51,7 +51,7 @@ const {
     isConcreteClock,
     formatMatchClock
 } = require('../services/soccerSerializer');
-const { normalizeTeamName, getTeamCategory, getMatchTier, resolveMatchEspnId, resolveLeagueSlug, formatLiveScoreLogo } = require('../services/soccerSyncService');
+const { normalizeTeamName, getTeamCategory, getMatchTier, resolveMatchEspnId, resolveLeagueSlug, formatLiveScoreLogo, TARGET_LEAGUES } = require('../services/soccerSyncService');
 
 function formatDateKey(d = new Date()) {
     const y = d.getUTCFullYear();
@@ -326,7 +326,8 @@ async function fetchFreshWorldwideLiveMatches() {
             const leagueName = stage.Snm || 'Football Competition';
             const slug = resolveLeagueSlug(leagueName, country, stage.Scd || '');
             if (!slug || slug === 'usa.ncaa') continue;
-            const lg = leagueMap.get(slug) || {};
+            const targetLg = TARGET_LEAGUES.find(l => l.slug === slug);
+            const lg = leagueMap.get(slug) || targetLg || {};
 
             for (const ev of (stage.Events || [])) {
                 const eid = String(ev.Eid);
@@ -405,7 +406,8 @@ async function fetchFreshWorldwideLiveMatches() {
             if (/ncaa|college basketball/i.test(`${comp.altGameNote || ''} ${ev.name || ''} ${ev.uid || ''}`)) continue;
             const targetSlug = resolveLeagueSlug(comp.altGameNote || '', comp.notes?.[0]?.headline || '', ev.uid || '');
             if (!targetSlug || targetSlug === 'usa.ncaa') continue;
-            const lg = leagueMap.get(targetSlug) || {};
+            const targetLg = TARGET_LEAGUES.find(l => l.slug === targetSlug);
+            const lg = leagueMap.get(targetSlug) || targetLg || {};
             const clock = ev.status?.displayClock || ev.status?.type?.detail || "45'";
 
             candidateMatches.push({
@@ -413,10 +415,10 @@ async function fetchFreshWorldwideLiveMatches() {
                 uid: ev.uid || String(ev.id),
                 league: {
                     slug: targetSlug,
-                    name: lg.name || comp.altGameNote || targetSlug,
-                    abbreviation: lg.abbreviation || targetSlug,
-                    country: lg.country || 'International',
-                    logo: lg.logo || ''
+                    name: lg.name || (targetLg?.name) || comp.altGameNote || targetSlug,
+                    abbreviation: lg.abbreviation || (targetLg?.abbreviation) || targetSlug,
+                    country: lg.country || (targetLg?.country) || 'International',
+                    logo: lg.logo || (targetLg?.logo) || ''
                 },
                 date: ev.date ? new Date(ev.date) : new Date(),
                 status: {
@@ -455,16 +457,17 @@ async function fetchFreshWorldwideLiveMatches() {
     // 3. Ingest in-play matches from MongoDB
     if (Array.isArray(dbLiveMatches)) {
         for (const m of dbLiveMatches) {
-            const lg = leagueMap.get(m.league_slug) || {};
+            const targetLg = TARGET_LEAGUES.find(l => l.slug === m.league_slug);
+            const lg = leagueMap.get(m.league_slug) || targetLg || {};
             candidateMatches.push({
                 id: m.source?.event_id || String(m._id),
                 uid: m.source?.uid || '',
                 league: {
                     slug: m.league_slug,
-                    name: lg.name || m.note || m.league_slug,
-                    abbreviation: lg.abbreviation || m.league_slug,
-                    country: lg.country || inferMatchCountry(m),
-                    logo: lg.logo || ''
+                    name: lg.name || (targetLg?.name) || m.note || m.league_slug,
+                    abbreviation: lg.abbreviation || (targetLg?.abbreviation) || m.league_slug,
+                    country: lg.country || (targetLg?.country) || inferMatchCountry(m),
+                    logo: lg.logo || (targetLg?.logo) || ''
                 },
                 date: m.date,
                 status: {
@@ -954,7 +957,8 @@ router.get('/fixtures', optionalApiKeyAuth, async (req, res) => {
 
         const formattedMatches = matches.map(m => {
             const leagueSlug = m.league_slug || m.league?.slug;
-            const lg = leagueMap.get(leagueSlug) || m.league || {};
+            const targetLg = TARGET_LEAGUES.find(l => l.slug === leagueSlug);
+            const lg = leagueMap.get(leagueSlug) || targetLg || m.league || {};
             const isLive = m.status?.state === 'in' || Boolean(m.status?.isLive);
             const concreteClock = formatMatchClock(m.status);
             const displayClock = isConcreteClock(concreteClock) ? concreteClock : (isLive ? 'Live' : '');
@@ -965,10 +969,10 @@ router.get('/fixtures', optionalApiKeyAuth, async (req, res) => {
                 uid: m.source?.uid || m.uid || '',
                 league: {
                     slug: leagueSlug,
-                    name: lg.name || m.note || leagueSlug,
-                    abbreviation: lg.abbreviation || leagueSlug,
-                    country: lg.country || inferMatchCountry(m),
-                    logo: lg.logo || ''
+                    name: lg.name || (targetLg?.name) || m.note || leagueSlug,
+                    abbreviation: lg.abbreviation || (targetLg?.abbreviation) || leagueSlug,
+                    country: lg.country || (targetLg?.country) || inferMatchCountry(m),
+                    logo: lg.logo || (targetLg?.logo) || ''
                 },
                 scoreboardDate: m.scoreboard_date || m.scoreboardDate,
                 date: m.date,
@@ -1666,7 +1670,7 @@ router.get(['/training-data', '/analytics/training-data'], optionalApiKeyAuth, a
         const stateParam = req.query.state ? String(req.query.state).trim().toLowerCase() : 'all';
         const limit = Math.min(1000, Math.max(1, parseInt(req.query.limit, 10) || 100));
         const format = String(req.query.format || 'json').trim().toLowerCase();
-        const minStats = req.query.minStats !== 'false';
+        const minStats = req.query.minStats === 'true';
 
         const filter = {};
         if (leagueSlug && leagueSlug !== 'all') {
@@ -1686,9 +1690,21 @@ router.get(['/training-data', '/analytics/training-data'], optionalApiKeyAuth, a
         if (mongoose.connection && mongoose.connection.readyState === 1) {
             try {
                 matches = await SoccerMatch.find(filter)
+                    .select('source league_slug date scoreboard_date home away status key_events')
                     .sort({ date: -1 })
                     .limit(limit)
+                    .maxTimeMS(6000)
                     .lean();
+
+                if (matches.length === 0 && minStats) {
+                    delete filter['home.stats'];
+                    matches = await SoccerMatch.find(filter)
+                        .select('source league_slug date scoreboard_date home away status key_events')
+                        .sort({ date: -1 })
+                        .limit(limit)
+                        .maxTimeMS(6000)
+                        .lean();
+                }
             } catch (dbErr) {
                 console.warn('Training data query warning:', dbErr.message);
                 matches = [];

@@ -342,17 +342,23 @@ app.listen(PORT, '0.0.0.0', () => {
                 syncLiveScoreInPlay()
             ]);
             console.log('⚡ [LiveSync] Initial live scoreboard ingestion complete.');
+
+            // Immediate priority sync for African premier competitions and key regional leagues
+            const { syncLeague, TARGET_LEAGUES } = require('./services/soccerSyncService');
+            const prioritySlugs = ['nga.1', 'gha.1', 'ken.1', 'tza.1', 'egy.1', 'rsa.1', 'por.2', 'mex.w.1', 'esp.w.1'];
+            const priorityDefs = prioritySlugs.map(s => TARGET_LEAGUES.find(l => l.slug === s)).filter(Boolean);
+            Promise.allSettled(priorityDefs.map(l => syncLeague(l))).catch(() => {});
         } catch (e) {
             console.warn('Initial live sync notice:', e.message);
         }
     }, 5000);
 
-    // Run database cleanup and auto-finalize in background 30 seconds after boot
+    // Run database cleanup and auto-finalize in background 20 seconds after boot
     setTimeout(() => {
         if (typeof cleanupStuckMatchesAndPurgeNcaa === 'function') {
             cleanupStuckMatchesAndPurgeNcaa().catch(e => console.warn('Cleanup notice:', e.message));
         }
-    }, 30000);
+    }, 20000);
 
     // Fast in-play scoreboard and live match infeed refresh every 60 seconds
     const liveScoreInterval = setInterval(() => {
@@ -367,10 +373,10 @@ app.listen(PORT, '0.0.0.0', () => {
         liveScoreInterval.unref();
     }
 
-    // Initial deep league schedules sync after 5 minutes of server uptime, then every 6 hours
+    // Initial deep league schedules sync after 60 seconds of server uptime, then every 6 hours
     setTimeout(() => {
         syncAllLeagues().catch(e => console.warn('[LiveSync] Background league sync notice:', e.message));
-    }, 5 * 60 * 1000);
+    }, 60 * 1000);
 
     const deepSyncInterval = setInterval(() => {
         Promise.allSettled([

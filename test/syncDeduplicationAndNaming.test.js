@@ -302,3 +302,32 @@ test('normalizeTeamName and deduplication properly harmonize club suffixes like 
     const sigGranadaPlain = [normalizeTeamName('Granada'), normalizeTeamName('Espanyol')].sort().join('_vs_') + '_' + dKey + '_esp.w.1_w_s';
     assert.equal(sigGranadaW, sigGranadaPlain);
 });
+
+test('normalizeTeamName harmonizes Club prefixes, Santos Laguna aliases, and parenthetical locations', () => {
+    // 1. Liga MX Femenil Cruz Azul W and Club Leon W vs León
+    assert.equal(normalizeTeamName('Cruz Azul W'), 'cruzazul');
+    assert.equal(normalizeTeamName('Cruz Azul'), 'cruzazul');
+    assert.equal(normalizeTeamName('Cruz Azul W'), normalizeTeamName('Cruz Azul'));
+
+    assert.equal(normalizeTeamName('Club Leon W'), 'leon');
+    assert.equal(normalizeTeamName('León'), 'leon');
+    assert.equal(normalizeTeamName('Club Leon W'), normalizeTeamName('León'));
+
+    // 2. Liga MX Atlante v Santos / Club Santos Laguna
+    assert.equal(normalizeTeamName('Club Santos Laguna'), 'santos');
+    assert.equal(normalizeTeamName('Santos Laguna'), 'santos');
+    assert.equal(normalizeTeamName('Santos'), 'santos');
+    assert.equal(normalizeTeamName('Club Santos Laguna'), normalizeTeamName('Santos'));
+
+    // 3. Argentine Primera Tigre v Sarmiento / Sarmiento (Junín)
+    assert.equal(normalizeTeamName('Sarmiento (Junín)'), 'sarmiento');
+    assert.equal(normalizeTeamName('Sarmiento (Junin)'), 'sarmiento');
+    assert.equal(normalizeTeamName('Sarmiento de Junin'), 'sarmiento');
+    assert.equal(normalizeTeamName('Sarmiento'), 'sarmiento');
+    assert.equal(normalizeTeamName('Sarmiento (Junín)'), normalizeTeamName('Sarmiento'));
+
+    // 4. Portuguese Segunda Felgueiras 1932 vs Leixões
+    assert.equal(resolveLeagueSlug('Liga Portugal 2', 'Portugal', 'por.2'), 'por.2');
+    assert.equal(resolveLeagueSlug('Felgueiras 1932 vs Leixoes', 'Portugal', ''), 'por.2');
+    assert.equal(resolveLeagueSlug('Segunda Liga', 'Portugal', ''), 'por.2');
+});

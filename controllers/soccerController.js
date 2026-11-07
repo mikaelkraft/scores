@@ -460,6 +460,14 @@ router.get('/:league/fixtures', validateLeague, async(req, res) => {
         ]);
         const live = matches.some(match => match.status?.state === 'in');
 
+        if (count === 0 && (!status || status === 'all')) {
+            const { syncLeague, TARGET_LEAGUES } = require('../services/soccerSyncService');
+            const leagueDef = TARGET_LEAGUES.find(l => l.slug === req.params.league);
+            if (leagueDef) {
+                syncLeague(leagueDef).catch(() => {});
+            }
+        }
+
         if (live || status === 'live') {
             res.set('Cache-Control', 'no-cache, no-store, must-revalidate');
             res.set('Pragma', 'no-cache');
@@ -1014,20 +1022,33 @@ router.get('/:league/standings', validateLeague, async(req, res) => {
         }
 
         let seasonYear = Number.parseInt(req.query.season, 10);
-        if (!Number.isFinite(seasonYear)) seasonYear = league.season?.year;
+        let groups = [];
 
-        const filter = { league_slug: req.params.league };
-        if (seasonYear) filter.season_year = seasonYear;
+        if (Number.isFinite(seasonYear)) {
+            groups = await SoccerStanding.find({ league_slug: req.params.league, season_year: seasonYear })
+                .sort({ group_name: 1 })
+                .lean();
+        }
 
-        let groups = await SoccerStanding.find(filter)
-            .sort({ season_year: -1, group_name: 1 })
-            .lean();
-
-        if (!groups.length && filter.season_year) {
-            // Fallback to latest available season if requested season has no stored records
-            groups = await SoccerStanding.find({ league_slug: req.params.league })
+        if (!groups.length) {
+            // Find all groups for this league sorted by latest season_year desc
+            const allGroups = await SoccerStanding.find({ league_slug: req.params.league })
                 .sort({ season_year: -1, group_name: 1 })
                 .lean();
+            if (allGroups.length > 0) {
+                const latestYear = allGroups[0].season_year;
+                seasonYear = latestYear;
+                groups = allGroups.filter(g => g.season_year === latestYear);
+            }
+        }
+
+        // Proactive sync if this league has 0 standings in MongoDB
+        if (!groups.length) {
+            const { syncLeague, TARGET_LEAGUES } = require('../services/soccerSyncService');
+            const leagueDef = TARGET_LEAGUES.find(l => l.slug === req.params.league);
+            if (leagueDef) {
+                syncLeague(leagueDef).catch(() => {});
+            }
         }
 
         res.set('Cache-Control', 'public, max-age=30');

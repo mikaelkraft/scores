@@ -99,15 +99,37 @@ router.post('/api/v1/booking/convert', optionalApiKeyAuth, async (req, res) => {
         }
 
         if (!quota) {
-            // Anonymous web visitor: 5 free conversions / day per IP
+            // Anonymous web visitor: 2 free conversions / day per user IP / and device
             const ip = getClientIp(req);
-            quota = checkAndConsumeQuota(`ip:${ip}`, 5);
+            const deviceId = req.headers['x-device-id'] || req.headers['x-fingerprint'] || req.cookies?.norra_device_id || '';
+            const uaHash = Buffer.from(req.headers['user-agent'] || '').toString('base64').slice(0, 16);
+
+            const ipQuota = checkAndConsumeQuota(`ip:${ip}`, 2);
+            let devQuota = null;
+            if (deviceId) {
+                devQuota = checkAndConsumeQuota(`dev:${deviceId}`, 2);
+            } else if (uaHash) {
+                devQuota = checkAndConsumeQuota(`dev:${ip}:${uaHash}`, 2);
+            }
+
+            if (!ipQuota.allowed) {
+                quota = ipQuota;
+            } else if (devQuota && !devQuota.allowed) {
+                quota = devQuota;
+            } else {
+                quota = {
+                    allowed: true,
+                    limit: 2,
+                    remaining: Math.min(ipQuota.remaining, devQuota ? devQuota.remaining : ipQuota.remaining),
+                    resetHours: ipQuota.resetHours
+                };
+            }
         }
 
         if (!quota.allowed) {
             return res.status(429).json({
                 status: 'rate_limited',
-                error: `Daily conversion limit reached (${quota.limit}/${quota.limit}). Upgrade to Starter ($10/mo) for 500 conversions/day or Pro ($29/mo) for unlimited conversions.`,
+                error: `Daily conversion limit reached (${quota.limit}/${quota.limit} free daily per IP/device). Upgrade to Starter ($10/mo) for 500 conversions/day or Pro ($29/mo) for unlimited conversions.`,
                 quotaLimit: quota.limit,
                 quotaRemaining: 0,
                 tier,

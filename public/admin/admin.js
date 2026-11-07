@@ -3,6 +3,17 @@
 let adminToken = localStorage.getItem('norra_admin_token') || localStorage.getItem('admin_token') || '';
 let globalSettings = null;
 
+function escapeHtml(str) {
+    if (str === null || str === undefined) return '';
+    return String(str)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+}
+window.escapeHtml = escapeHtml;
+
 function togglePasswordVisibility(inputId, btnEl) {
     const input = document.getElementById(inputId);
     if (!input) return;
@@ -85,7 +96,7 @@ function switchAdminTab(tabName) {
 
 async function loadDashboardData() {
     try {
-        await Promise.all([loadStats(), loadSettings(), loadApiKeysAndUsers()]);
+        await Promise.allSettled([loadStats(), loadSettings(), loadApiKeysAndUsers(), loadTransactions()]);
     } catch (err) {
         console.error('Dashboard load error:', err);
         const keysBody = document.getElementById('api-keys-body');

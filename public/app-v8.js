@@ -536,11 +536,14 @@
             .normalize('NFD')
             .replace(/[\u0300-\u036f]/g, '')
             .toLowerCase()
+            .replace(/\([^)]*\)/g, ' ')
             .replace(/\b(18\d{2}|19\d{2}|20\d{2})\b/g, '')
             .replace(/\b(04|05|96|98)\b/g, '')
             .replace(/\b(women|woman|ladies|femenin[oa]?|frauen|damen|vrouwen|fem|wfc|w)\b|\(w\)/gi, '')
             .replace(/\b(u-?23|u-?21|u-?20|u-?19|u-?18|u-?17|u-?16|u-?15|youth|reserves?|development)\b/gi, '')
-            .replace(/\b(fc|cf|sc|ac|cd|ceif|afc|fk|sk|sv|ssc|as|rc|ud|rb|calcio|sad|sa)\b/gi, '')
+            .replace(/\bsantos\s+laguna\b/g, 'santos')
+            .replace(/\b(club|clube|csd|deportivo|fc|cf|sc|ac|cd|ceif|afc|fk|sk|sv|ssc|as|rc|ud|rb|calcio|sad|sa)\b/gi, '')
+            .replace(/\b(de\s+)?(junin|resistencia|cordoba|la\s+plata)\b/gi, '')
             .replace(/[^a-z0-9]/g, '');
     }
 
@@ -570,8 +573,9 @@
         const dKey = ev.scoreboardDate || (ev.date ? String(ev.date).slice(0, 10) : '');
         const enrichedLeague = enrichLeagueMeta(ev.league, ev);
         const slug = enrichedLeague?.slug || ev.league?.slug || ev.league_slug || '';
+        const countryCode = (enrichedLeague?.country || slug.split('.')[0] || '').toLowerCase();
         const tier = getEventMatchTierClient(ev);
-        return [hName, aName].sort().join('_vs_') + '_' + dKey + '_' + slug + '_' + tier;
+        return [hName, aName].sort().join('_vs_') + '_' + dKey + '_' + countryCode + '_' + tier;
     }
 
     function getEventQualityScore(ev) {
@@ -4077,10 +4081,19 @@
                 submitBtn.innerHTML = '<span class="loader" style="width:14px; height:14px; border-width:2px; display:inline-block;"></span> Converting...';
             }
 
+            let deviceId = localStorage.getItem('norra_device_id');
+            if (!deviceId) {
+                deviceId = 'dev_' + Math.random().toString(36).substring(2, 15) + Date.now().toString(36);
+                localStorage.setItem('norra_device_id', deviceId);
+            }
+
             try {
                 const res = await fetch('/api/v1/booking/convert', {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'x-device-id': deviceId
+                    },
                     body: JSON.stringify({
                         sourceCode: code,
                         fromBookmaker,
@@ -4096,7 +4109,7 @@
                             <div style="background: rgba(239, 68, 68, 0.08); border: 1px solid rgba(239, 68, 68, 0.3); border-radius: 8px; padding: 16px; text-align: center;">
                                 <span style="font-size: 24px;">⏳</span>
                                 <h4 style="margin: 6px 0; color: #ef4444;">Daily Free Conversion Limit Reached</h4>
-                                <p style="font-size: 13px; color: var(--text-muted); margin: 0 0 12px;">You've used all 5 free daily web conversions. Upgrade to Starter ($10/mo) for 500 conversions/day or Pro ($29/mo) for unlimited conversions.</p>
+                                <p style="font-size: 13px; color: var(--text-muted); margin: 0 0 12px;">You've used all 2 free daily web conversions. Upgrade to Starter ($10/mo) for 500 conversions/day or Pro ($29/mo) for unlimited conversions.</p>
                                 <a href="/pricing" class="btn-primary" style="display: inline-block; padding: 8px 16px; text-decoration: none; border-radius: 6px; font-weight: 700; font-size: 13px;">View Pricing Plans &rarr;</a>
                             </div>
                         `;

@@ -163,6 +163,14 @@ SoccerMatchSchema.index(
     { name: 'soccer_match_date_desc' }
 );
 SoccerMatchSchema.index(
+    { 'status.state': 1, date: -1 },
+    { name: 'soccer_match_status_date_desc' }
+);
+SoccerMatchSchema.index(
+    { 'home.stats': 1, date: -1 },
+    { name: 'soccer_match_stats_date_desc' }
+);
+SoccerMatchSchema.index(
     { league_slug: 1, 'status.state': 1, date: 1 },
     { name: 'soccer_match_live_state' }
 );
