@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const bookingHookService = require('../services/bookingHookService');
-const { extractApiKey } = require('../middleware/apiKeyAuth');
+const { extractApiKey, optionalApiKeyAuth, requireFeature } = require('../middleware/apiKeyAuth');
 const ApiKey = require('../models/apiKey');
 const SiteSetting = require('../models/siteSetting');
 
