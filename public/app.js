@@ -533,10 +533,14 @@
 
     function cleanTeamNameForDedup(name) {
         return (name || '')
+            .normalize('NFD')
+            .replace(/[\u0300-\u036f]/g, '')
             .toLowerCase()
             .replace(/\b(18\d{2}|19\d{2}|20\d{2})\b/g, '')
             .replace(/\b(04|05|96|98)\b/g, '')
-            .replace(/\b(fc|cf|sc|ac|cd|afc|fk|sk|sv|ssc|as|rc|ud|rb|calcio)\b/g, '')
+            .replace(/\b(women|woman|ladies|femenin[oa]?|frauen|damen|vrouwen|fem|wfc|w)\b|\(w\)/gi, '')
+            .replace(/\b(u-?23|u-?21|u-?20|u-?19|u-?18|u-?17|u-?16|u-?15|youth|reserves?|development)\b/gi, '')
+            .replace(/\b(fc|cf|sc|ac|cd|ceif|afc|fk|sk|sv|ssc|as|rc|ud|rb|calcio|sad|sa)\b/gi, '')
             .replace(/[^a-z0-9]/g, '');
     }
 
@@ -548,7 +552,8 @@
         const leagueName = ev.league?.name || ev.note || '';
         const s = `${hName} ${aName} ${slug} ${leagueName}`.toLowerCase();
 
-        const isWomen = /\b(women|woman|ladies|femenin[oa]?|frauen|damen|vrouwen|fem|wfc)\b|\(w\)/i.test(s) ||
+        const isWomen = /\b(women|woman|ladies|femenin[oa]?|frauen|damen|vrouwen|fem|wfc|w)\b|\(w\)/i.test(s) ||
+                        s.includes('liga f') || s.includes('femenil') || s.includes('damallsvenskan') || s.includes('toppserien') ||
                         s.includes('.w.') || s.startsWith('w.') || s.endsWith('.w');
         const isYouth = /\b(u-?23|u-?21|u-?20|u-?19|u-?18|u-?17|u-?16|u-?15|youth|primavera|reserves?|development)\b/i.test(s) ||
                         s.includes('youth') || s.includes('u21') || s.includes('u23') || s.includes('u20') || s.includes('u19') || s.includes('u18') || s.includes('u17') || s.includes('primavera');
@@ -563,7 +568,8 @@
             return String(ev.id || Math.random());
         }
         const dKey = ev.scoreboardDate || (ev.date ? String(ev.date).slice(0, 10) : '');
-        const slug = ev.league?.slug || ev.league_slug || '';
+        const enrichedLeague = enrichLeagueMeta(ev.league, ev);
+        const slug = enrichedLeague?.slug || ev.league?.slug || ev.league_slug || '';
         const tier = getEventMatchTierClient(ev);
         return [hName, aName].sort().join('_vs_') + '_' + dKey + '_' + slug + '_' + tier;
     }
@@ -706,7 +712,8 @@
             if (!slug || slug === 'w.other' || slug === 'other') slug = 'ita.w.1';
         } else if (lowerName.includes("liga f") || lowerName.includes("primera división femenina") || lowerName.includes("copa de la reina")) {
             country = 'Spain';
-            if (!slug || slug === 'w.other' || slug === 'other') slug = 'esp.w.1';
+            slug = 'esp.w.1';
+            name = 'Liga F';
         } else if (lowerName.includes("damallsvenskan")) {
             country = 'Sweden';
             if (!slug || slug === 'w.other' || slug === 'other') slug = 'swe.w.1';
@@ -795,7 +802,11 @@
         // 1d. Correct foreign matches mistakenly labeled as Spanish La Liga ('esp.1' / 'esp.2')
         if (slug === 'esp.1' || slug === 'esp.2') {
             const evText = `${ev?.name || ''} ${ev?.home?.name || ''} ${ev?.away?.name || ''} ${name || ''} ${country || ''}`.toLowerCase();
-            if (evText.includes('mexic') || evText.includes('liga mx') || evText.includes('expansion') || evText.includes('america') || evText.includes('chivas') || evText.includes('cruz azul') || evText.includes('tigres') || evText.includes('monterrey') || evText.includes('pachuca') || evText.includes('toluca')) {
+            if (evText.includes('liga f') || evText.includes('femenin') || /\b(granada w|espanyol w|barcelona w|real madrid w|atletico madrid w|levante w|sevilla w|athletic club w|valencia w|eibar w|betis w|deportivo abanca|madrid cff)\b/i.test(evText)) {
+                slug = 'esp.w.1';
+                name = 'Liga F';
+                country = 'Spain';
+            } else if (evText.includes('mexic') || evText.includes('liga mx') || evText.includes('expansion') || evText.includes('america') || evText.includes('chivas') || evText.includes('cruz azul') || evText.includes('tigres') || evText.includes('monterrey') || evText.includes('pachuca') || evText.includes('toluca')) {
                 slug = 'mex.1';
                 name = 'Liga MX';
                 country = 'Mexico';
@@ -807,6 +818,16 @@
                 slug = 'gtm.1';
                 name = 'Liga Nacional Guatemala';
                 country = 'Guatemala';
+            }
+        }
+
+        // 1e. Correct foreign/Moldovan matches mistakenly labeled as Turkish Süper Lig ('tur.1')
+        if (slug === 'tur.1') {
+            const evText = `${ev?.name || ''} ${ev?.home?.name || ''} ${ev?.away?.name || ''} ${name || ''} ${country || ''}`.toLowerCase();
+            if (evText.includes('moldov') || evText.includes('zimbru') || evText.includes('sireti') || evText.includes('sheriff') || evText.includes('petrocub') || evText.includes('milsami') || evText.includes('dacia buiucani') || evText.includes('floresti') || evText.includes('cupa moldovei')) {
+                slug = 'mda.1';
+                name = 'Moldovan Super Liga';
+                country = 'Moldova';
             }
         }
 
@@ -830,7 +851,7 @@
                 isr: 'Israel', aze: 'Azerbaijan', blr: 'Belarus', arm: 'Armenia',
                 bih: 'Bosnia and Herzegovina', nir: 'Northern Ireland', wal: 'Wales',
                 irl: 'Ireland', hkg: 'Hong Kong', bgd: 'Bangladesh', mlt: 'Malta',
-                kaz: 'Kazakhstan'
+                kaz: 'Kazakhstan', mda: 'Moldova', mol: 'Moldova'
             };
             if (countryMap[prefix]) {
                 country = countryMap[prefix];

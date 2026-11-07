@@ -252,3 +252,53 @@ test('resolveLeagueSlug correctly resolves Latin American and African domestic l
     // Colombia
     assert.equal(resolveLeagueSlug('Primera A', 'Colombia'), 'col.1');
 });
+
+test('resolveLeagueSlug correctly resolves Moldovan competitions without colliding with Turkish Süper Lig', () => {
+    // Moldovan Super Liga and Cup must NEVER resolve to Turkish Süper Lig (tur.1)
+    assert.equal(resolveLeagueSlug('Moldovan Super Liga', 'Moldova'), 'mda.1');
+    assert.equal(resolveLeagueSlug('Moldovan Super Liga', 'International'), 'mda.1');
+    assert.equal(resolveLeagueSlug('Super Liga', 'Moldova'), 'mda.1');
+    assert.equal(resolveLeagueSlug('Zimbru v Real Sireti', 'Moldova'), 'mda.1');
+    assert.equal(resolveLeagueSlug('Zimbru v Real Sireti', ''), 'mda.1');
+    assert.equal(resolveLeagueSlug('Sheriff Tiraspol v Petrocub', 'Moldova'), 'mda.1');
+    assert.equal(resolveLeagueSlug('Cupa Moldovei - Turul 2', 'Moldova'), 'mda.cup');
+
+    // Genuine Turkish Süper Lig competitions must resolve accurately to tur.1
+    assert.equal(resolveLeagueSlug('Turkish Süper Lig', 'Turkey'), 'tur.1');
+    assert.equal(resolveLeagueSlug('Süper Lig', 'Turkey'), 'tur.1');
+    assert.equal(resolveLeagueSlug('Süper Lig', 'International'), 'tur.1');
+    assert.equal(resolveLeagueSlug('Super Lig', ''), 'tur.1');
+    assert.equal(resolveLeagueSlug('Galatasaray vs Fenerbahce', ''), 'tur.1');
+});
+
+test('normalizeTeamName and deduplication properly harmonize club suffixes like CEIF and W', () => {
+    // Colombian Primera A Fortaleza CEIF vs Independiente Medellín variants
+    assert.equal(normalizeTeamName('Fortaleza CEIF'), 'fortaleza');
+    assert.equal(normalizeTeamName('Fortaleza FC'), 'fortaleza');
+    assert.equal(normalizeTeamName('Fortaleza CEIF'), normalizeTeamName('Fortaleza FC'));
+
+    assert.equal(normalizeTeamName('Independiente Medellín'), 'independientemedellin');
+    assert.equal(normalizeTeamName('Independiente Medellin'), 'independientemedellin');
+    assert.equal(normalizeTeamName('Independiente Medellín'), normalizeTeamName('Independiente Medellin'));
+
+    const dKey = '20261107';
+    const sigCeif = [normalizeTeamName('Fortaleza CEIF'), normalizeTeamName('Independiente Medellín')].sort().join('_vs_') + '_' + dKey + '_col.1_m_s';
+    const sigFc = [normalizeTeamName('Fortaleza FC'), normalizeTeamName('Independiente Medellin')].sort().join('_vs_') + '_' + dKey + '_col.1_m_s';
+    assert.equal(sigCeif, sigFc);
+
+    // Spanish Liga F Granada W vs Espanyol W variants
+    assert.equal(normalizeTeamName('Granada W'), 'granada');
+    assert.equal(normalizeTeamName('Granada'), 'granada');
+    assert.equal(normalizeTeamName('Granada W'), normalizeTeamName('Granada'));
+
+    assert.equal(normalizeTeamName('Espanyol W'), 'espanyol');
+    assert.equal(normalizeTeamName('Espanyol'), 'espanyol');
+    assert.equal(normalizeTeamName('Espanyol W'), normalizeTeamName('Espanyol'));
+
+    assert.equal(getMatchTier('Granada W', 'Espanyol W', 'esp.w.1'), 'w_s');
+    assert.equal(getMatchTier('Granada', 'Espanyol', 'esp.w.1'), 'w_s');
+
+    const sigGranadaW = [normalizeTeamName('Granada W'), normalizeTeamName('Espanyol W')].sort().join('_vs_') + '_' + dKey + '_esp.w.1_w_s';
+    const sigGranadaPlain = [normalizeTeamName('Granada'), normalizeTeamName('Espanyol')].sort().join('_vs_') + '_' + dKey + '_esp.w.1_w_s';
+    assert.equal(sigGranadaW, sigGranadaPlain);
+});
