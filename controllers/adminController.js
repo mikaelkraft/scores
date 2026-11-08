@@ -614,6 +614,32 @@ router.post('/api/admin/sync', requireAdmin, async (req, res) => {
             SoccerMatch.countDocuments({ 'home.stats': { $exists: true, $ne: null } })
         ]);
 
+        // Proactively push sync notification to Norra AI predictor backend so it ingests training samples immediately
+        const norraPredictorUrl = process.env.NORRA_PREDICTOR_URL || 'https://i.mynorra.xyz';
+        const norraSecretToken = process.env.CRON_TOKEN || process.env.NORRA_INTERNAL_API_KEY || 'norra_live_master_internal_access_2026';
+        setTimeout(async () => {
+            try {
+                const fetchFn = typeof fetch !== 'undefined' ? fetch : require('node-fetch');
+                await fetchFn(`${norraPredictorUrl}/api/admin/sync-scores-training-data`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'x-api-key': norraSecretToken
+                    },
+                    body: JSON.stringify({
+                        token: norraSecretToken,
+                        sync_type: syncType,
+                        source: 'scores.mynorra.xyz',
+                        limit: syncType === 'stats' ? 300 : 150,
+                        trigger_refit: (syncType === 'stats' || syncType === 'all')
+                    })
+                });
+                console.log(`[LiveSync] Successfully dispatched background training sync webhook to Norra AI (${norraPredictorUrl}).`);
+            } catch (pErr) {
+                console.warn('[LiveSync] Notice dispatching training sync webhook to Norra AI:', pErr.message);
+            }
+        }, 100);
+
         return res.json({
             success: true,
             message,
