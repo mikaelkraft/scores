@@ -505,6 +505,12 @@ async function syncLeagueFromLiveScoreStages(leagueDef, stages, now = new Date()
             const a = ev.T2?.[0] || {};
             const homeName = h.Nm || 'Home Club';
             const awayName = a.Nm || 'Away Club';
+            // Keep senior top-flight boards clean — no B/II/U21 sides mixed in
+            const seniorSlug = String(targetSlug || '').toLowerCase();
+            const isSeniorTop = /\.[1]$/.test(seniorSlug) && !seniorSlug.includes('.w.') && !seniorSlug.includes('youth');
+            if (isSeniorTop && (isReserveOrBTeamName(homeName) || isReserveOrBTeamName(awayName))) {
+                continue;
+            }
             const homeScore = parseInt(ev.Tr1 || 0, 10);
             const awayScore = parseInt(ev.Tr2 || 0, 10);
             const rawClock = String(ev.Eps || ev.Epr || 'NS');
@@ -1804,6 +1810,14 @@ async function syncInGameStats({ limit = 150, onlyLive = false, forceAll = false
 /**
  * Detects team category (gender and age/reserves tier)
  */
+function isReserveOrBTeamName(name = '') {
+    const s = String(name || '').trim();
+    if (!s) return false;
+    if (/\b(u-?2[0-3]|u-?1[5-9]|youth|primavera|reserves?|development|academy)\b/i.test(s)) return true;
+    if (/\s+[bB]$/.test(s) || /\s+II$/i.test(s) || /\(b\)|\(ii\)|\(res\)/i.test(s)) return true;
+    return false;
+}
+
 function getTeamCategory(name = '', leagueSlug = '') {
     const s = `${name} ${leagueSlug}`.toLowerCase();
     const isWomen = /\b(women|woman|ladies|femenin[oa]?|frauen|damen|vrouwen|fem|wfc|w)\b|\(w\)/i.test(s) ||
@@ -2936,6 +2950,7 @@ module.exports = {
     syncInGameStats,
     cleanupStuckMatchesAndPurgeNcaa,
     getTeamCategory,
+    isReserveOrBTeamName,
     getMatchTier,
     normalizeTeamName,
     areTeamNamesMatching,
