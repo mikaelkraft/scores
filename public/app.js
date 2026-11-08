@@ -556,10 +556,11 @@
     function isReserveOrBTeam(name = '') {
         const s = String(name || '').trim();
         if (!s) return false;
-        // Olympiacos B, Real Madrid II, Team Reserves, U21/U23, Primavera
+        // Olympiacos B, Real Madrid II, Team Reserves, U21/U23, Primavera, Castilla
         if (/\b(u-?2[0-3]|u-?1[5-9]|youth|primavera|reserves?|development|academy)\b/i.test(s)) return true;
         if (/\s+[bB]$/.test(s) || /\s+II$/i.test(s) || /\s+2$/.test(s)) return true;
         if (/\(b\)|\(ii\)|\(res\)/i.test(s)) return true;
+        if (/\b(castilla|atl[eè]tic|fortuna|promesas|fabril|vetusta|filial)\b/i.test(s)) return true;
         return false;
     }
 
@@ -608,7 +609,7 @@
             try {
                 const d = new Date(ev.date);
                 if (!isNaN(d.getTime())) {
-                    dKey = d.toISOString().slice(0, 10).replace(/-/g, '');
+                    dKey = d.toISOString().slice(0, 10);
                 } else {
                     dKey = String(ev.date).slice(0, 10);
                 }
@@ -616,6 +617,7 @@
                 dKey = String(ev.date).slice(0, 10);
             }
         }
+        dKey = String(dKey || '').replace(/[^0-9]/g, '').slice(0, 8);
         const tier = getEventMatchTierClient(ev);
         const isYouth = tier.endsWith('_y');
         const isWomen = tier.startsWith('w_');
@@ -669,6 +671,25 @@
                 if (secondary.source?.livescore_id && !winner.source?.livescore_id) {
                     if (!winner.source) winner.source = {};
                     winner.source.livescore_id = secondary.source.livescore_id;
+                }
+
+                // Merge crest logos so neither club loses its logo
+                const { home: wH, away: wA } = competitorsFromEvent(winner);
+                const { home: sH, away: sA } = competitorsFromEvent(secondary);
+                if ((!wH.team?.logo || /placeholder|default.?crest|unknown/i.test(wH.team.logo)) && sH.team?.logo) {
+                    if (wH.team) wH.team.logo = sH.team.logo;
+                    if (winner.home) winner.home.logo = sH.team.logo;
+                } else if (wH.team?.logo && sH.team?.logo && sH.team.logo.includes('espncdn') && !wH.team.logo.includes('espncdn')) {
+                    if (wH.team) wH.team.logo = sH.team.logo;
+                    if (winner.home) winner.home.logo = sH.team.logo;
+                }
+
+                if ((!wA.team?.logo || /placeholder|default.?crest|unknown/i.test(wA.team.logo)) && sA.team?.logo) {
+                    if (wA.team) wA.team.logo = sA.team.logo;
+                    if (winner.away) winner.away.logo = sA.team.logo;
+                } else if (wA.team?.logo && sA.team?.logo && sA.team.logo.includes('espncdn') && !wA.team.logo.includes('espncdn')) {
+                    if (wA.team) wA.team.logo = sA.team.logo;
+                    if (winner.away) winner.away.logo = sA.team.logo;
                 }
 
                 seenMap.set(sig, { item: winner, score: Math.max(existing.score, score) });
@@ -1833,6 +1854,9 @@
             }
         }
 
+        const globallyRenderedSignatures = new Set();
+        const globallyRenderedIds = new Set();
+
         const html = sortedGroups.map(({ league, events }) => {
             if (!events || !events.length) return '';
 
@@ -1841,6 +1865,9 @@
             for (const ev of events) {
                 const sig = getEventDedupSignature(ev);
                 if (!sig || sig === '_vs_') continue;
+                if (globallyRenderedSignatures.has(sig) || (ev.id && globallyRenderedIds.has(String(ev.id)))) {
+                    continue; // Skip: already rendered under another league
+                }
                 // Drop B/reserve sides from senior top-flight boards
                 const slug = (league?.slug || ev.league_slug || '').toLowerCase();
                 const isSeniorTop = /\.[1]$/.test(slug) && !slug.includes('.w.') && !slug.includes('youth');
@@ -1864,9 +1891,22 @@
                     seenMatchSig.set(sig, { event: ev, score: evScore });
                 } else {
                     const existing = seenMatchSig.get(sig);
-                    if (evScore > existing.score) {
-                        seenMatchSig.set(sig, { event: ev, score: evScore });
+                    const winner = evScore > existing.score ? ev : existing.event;
+                    const secondary = evScore > existing.score ? existing.event : ev;
+
+                    // Merge crests & live telemetry between duplicates
+                    const { home: wH, away: wA } = competitorsFromEvent(winner);
+                    const { home: sH, away: sA } = competitorsFromEvent(secondary);
+                    if ((!wH.team?.logo || /placeholder|default.?crest|unknown/i.test(wH.team.logo)) && sH.team?.logo) {
+                        if (wH.team) wH.team.logo = sH.team.logo;
+                        if (winner.home) winner.home.logo = sH.team.logo;
                     }
+                    if ((!wA.team?.logo || /placeholder|default.?crest|unknown/i.test(wA.team.logo)) && sA.team?.logo) {
+                        if (wA.team) wA.team.logo = sA.team.logo;
+                        if (winner.away) winner.away.logo = sA.team.logo;
+                    }
+
+                    seenMatchSig.set(sig, { event: winner, score: Math.max(existing.score, evScore) });
                 }
             }
             // Promote winners into global set so the same fixture cannot reappear under another league header
@@ -1879,10 +1919,17 @@
                 .filter(e => {
                     const sig = getEventDedupSignature(e.event);
                     const g = globalSeenMatchSig.get(sig);
-                    return !g || g.id === e.event.id;
+                    return (!g || g.id === e.event.id) && !globallyRenderedSignatures.has(sig) && (!e.event.id || !globallyRenderedIds.has(String(e.event.id)));
                 })
                 .map(e => e.event);
             if (!dedupedEvents.length) return '';
+
+            // Mark rendered to ensure zero cross-league match duplication
+            for (const ev of dedupedEvents) {
+                const sig = getEventDedupSignature(ev);
+                if (sig && sig !== '_vs_') globallyRenderedSignatures.add(sig);
+                if (ev.id) globallyRenderedIds.add(String(ev.id));
+            }
 
             totalCount += dedupedEvents.length;
             const flag = renderLeagueAvatarHtml(league, { size: 18, className: 'fs-league-flag-img' });

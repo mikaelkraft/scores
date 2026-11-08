@@ -17,38 +17,38 @@ const SoccerSyncState = require('../models/soccerSyncState');
 const { synthesizeMatchTelemetry } = require('./soccerSerializer');
 
 const TARGET_LEAGUES = [
-    { slug: 'eng.1', name: 'English Premier League', abbreviation: 'Premier League', country: 'England', kind: 'club', sort_order: 1 },
-    { slug: 'esp.1', name: 'Spanish La Liga', abbreviation: 'La Liga', country: 'Spain', kind: 'club', sort_order: 2 },
-    { slug: 'uefa.champions', name: 'UEFA Champions League', abbreviation: 'Champions League', country: 'International', kind: 'club', sort_order: 3 },
-    { slug: 'ita.1', name: 'Italian Serie A', abbreviation: 'Serie A', country: 'Italy', kind: 'club', sort_order: 4 },
-    { slug: 'ger.1', name: 'German Bundesliga', abbreviation: 'Bundesliga', country: 'Germany', kind: 'club', sort_order: 5 },
-    { slug: 'fra.1', name: 'French Ligue 1', abbreviation: 'Ligue 1', country: 'France', kind: 'club', sort_order: 6 },
-    { slug: 'uefa.europa', name: 'UEFA Europa League', abbreviation: 'Europa League', country: 'International', kind: 'club', sort_order: 7 },
-    { slug: 'uefa.europa.conf', name: 'UEFA Conference League', abbreviation: 'Conference League', country: 'International', kind: 'club', sort_order: 8 },
-    { slug: 'ned.1', name: 'Dutch Eredivisie', abbreviation: 'Eredivisie', country: 'Netherlands', kind: 'club', sort_order: 9 },
-    { slug: 'por.1', name: 'Portuguese Primeira Liga', abbreviation: 'Primeira Liga', country: 'Portugal', kind: 'club', sort_order: 10 },
-    { slug: 'eng.2', name: 'EFL Championship', abbreviation: 'Championship', country: 'England', kind: 'club', sort_order: 11 },
-    { slug: 'esp.2', name: 'Spanish Segunda División', abbreviation: 'La Liga 2', country: 'Spain', kind: 'club', sort_order: 12 },
-    { slug: 'ita.2', name: 'Italian Serie B', abbreviation: 'Serie B', country: 'Italy', kind: 'club', sort_order: 13 },
-    { slug: 'ger.2', name: 'German 2. Bundesliga', abbreviation: '2. Bundesliga', country: 'Germany', kind: 'club', sort_order: 14 },
-    { slug: 'fra.2', name: 'French Ligue 2', abbreviation: 'Ligue 2', country: 'France', kind: 'club', sort_order: 15 },
-    { slug: 'bel.1', name: 'Belgian Pro League', abbreviation: 'Pro League', country: 'Belgium', kind: 'club', sort_order: 16 },
-    { slug: 'tur.1', name: 'Turkish Süper Lig', abbreviation: 'Süper Lig', country: 'Turkey', kind: 'club', sort_order: 17 },
-    { slug: 'sco.1', name: 'Scottish Premiership', abbreviation: 'Premiership', country: 'Scotland', kind: 'club', sort_order: 18 },
-    { slug: 'usa.1', name: 'Major League Soccer', abbreviation: 'MLS', country: 'United States', kind: 'club', sort_order: 19 },
-    { slug: 'ksa.1', name: 'Saudi Pro League', abbreviation: 'Saudi League', country: 'Saudi Arabia', kind: 'club', sort_order: 20 },
-    { slug: 'bra.1', name: 'Brasileirão Série A', abbreviation: 'Brasileirão', country: 'Brazil', kind: 'club', sort_order: 21 },
-    { slug: 'arg.1', name: 'Argentine Primera División', abbreviation: 'Liga Profesional', country: 'Argentina', kind: 'club', sort_order: 22 },
-    { slug: 'mex.1', name: 'Liga MX', abbreviation: 'Liga MX', country: 'Mexico', kind: 'club', sort_order: 23 },
-    { slug: 'conmebol.libertadores', name: 'Copa Libertadores', abbreviation: 'Libertadores', country: 'South America', kind: 'club', sort_order: 24 },
-    { slug: 'conmebol.sudamericana', name: 'Copa Sudamericana', abbreviation: 'Sudamericana', country: 'South America', kind: 'club', sort_order: 25 },
-    { slug: 'uefa.nations', name: 'UEFA Nations League', abbreviation: 'Nations League', country: 'International', kind: 'international', sort_order: 26 },
-    { slug: 'eng.fa', name: 'English FA Cup', abbreviation: 'FA Cup', country: 'England', kind: 'club', sort_order: 27 },
-    { slug: 'eng.league_cup', name: 'English Carabao Cup', abbreviation: 'EFL Cup', country: 'England', kind: 'club', sort_order: 28 },
-    { slug: 'esp.copa_del_rey', name: 'Copa del Rey', abbreviation: 'Copa del Rey', country: 'Spain', kind: 'club', sort_order: 29 },
-    { slug: 'ita.coppa_italia', name: 'Coppa Italia', abbreviation: 'Coppa Italia', country: 'Italy', kind: 'club', sort_order: 30 },
-    { slug: 'ger.dfb_pokal', name: 'German Cup', abbreviation: 'DFB-Pokal', country: 'Germany', kind: 'club', sort_order: 31 },
-    { slug: 'fra.coupe_de_france', name: 'Coupe de France', abbreviation: 'Coupe de France', country: 'France', kind: 'club', sort_order: 32 },
+    { slug: 'eng.1', name: 'English Premier League', abbreviation: 'Premier League', country: 'England', kind: 'club', sort_order: 1, logo: 'https://a.espncdn.com/i/leaguelogos/soccer/500/23.png' },
+    { slug: 'esp.1', name: 'Spanish La Liga', abbreviation: 'La Liga', country: 'Spain', kind: 'club', sort_order: 2, logo: 'https://a.espncdn.com/i/leaguelogos/soccer/500/15.png' },
+    { slug: 'uefa.champions', name: 'UEFA Champions League', abbreviation: 'Champions League', country: 'International', kind: 'club', sort_order: 3, logo: 'https://a.espncdn.com/i/leaguelogos/soccer/500/2.png' },
+    { slug: 'ita.1', name: 'Italian Serie A', abbreviation: 'Serie A', country: 'Italy', kind: 'club', sort_order: 4, logo: 'https://a.espncdn.com/i/leaguelogos/soccer/500/12.png' },
+    { slug: 'ger.1', name: 'German Bundesliga', abbreviation: 'Bundesliga', country: 'Germany', kind: 'club', sort_order: 5, logo: 'https://a.espncdn.com/i/leaguelogos/soccer/500/10.png' },
+    { slug: 'fra.1', name: 'French Ligue 1', abbreviation: 'Ligue 1', country: 'France', kind: 'club', sort_order: 6, logo: 'https://a.espncdn.com/i/leaguelogos/soccer/500/9.png' },
+    { slug: 'uefa.europa', name: 'UEFA Europa League', abbreviation: 'Europa League', country: 'International', kind: 'club', sort_order: 7, logo: 'https://a.espncdn.com/i/leaguelogos/soccer/500/2054.png' },
+    { slug: 'uefa.europa.conf', name: 'UEFA Conference League', abbreviation: 'Conference League', country: 'International', kind: 'club', sort_order: 8, logo: 'https://a.espncdn.com/i/leaguelogos/soccer/500/20420.png' },
+    { slug: 'ned.1', name: 'Dutch Eredivisie', abbreviation: 'Eredivisie', country: 'Netherlands', kind: 'club', sort_order: 9, logo: 'https://a.espncdn.com/i/leaguelogos/soccer/500/11.png' },
+    { slug: 'por.1', name: 'Portuguese Primeira Liga', abbreviation: 'Primeira Liga', country: 'Portugal', kind: 'club', sort_order: 10, logo: 'https://a.espncdn.com/i/leaguelogos/soccer/500/14.png' },
+    { slug: 'eng.2', name: 'EFL Championship', abbreviation: 'Championship', country: 'England', kind: 'club', sort_order: 11, logo: 'https://a.espncdn.com/i/leaguelogos/soccer/500/24.png' },
+    { slug: 'esp.2', name: 'Spanish Segunda División', abbreviation: 'La Liga 2', country: 'Spain', kind: 'club', sort_order: 12, logo: 'https://a.espncdn.com/i/leaguelogos/soccer/500/16.png' },
+    { slug: 'ita.2', name: 'Italian Serie B', abbreviation: 'Serie B', country: 'Italy', kind: 'club', sort_order: 13, logo: 'https://a.espncdn.com/i/leaguelogos/soccer/500/13.png' },
+    { slug: 'ger.2', name: 'German 2. Bundesliga', abbreviation: '2. Bundesliga', country: 'Germany', kind: 'club', sort_order: 14, logo: 'https://a.espncdn.com/i/leaguelogos/soccer/500/255.png' },
+    { slug: 'fra.2', name: 'French Ligue 2', abbreviation: 'Ligue 2', country: 'France', kind: 'club', sort_order: 15, logo: 'https://a.espncdn.com/i/leaguelogos/soccer/500/17.png' },
+    { slug: 'bel.1', name: 'Belgian Pro League', abbreviation: 'Pro League', country: 'Belgium', kind: 'club', sort_order: 16, logo: 'https://a.espncdn.com/i/leaguelogos/soccer/500/62.png' },
+    { slug: 'tur.1', name: 'Turkish Süper Lig', abbreviation: 'Süper Lig', country: 'Turkey', kind: 'club', sort_order: 17, logo: 'https://a.espncdn.com/i/leaguelogos/soccer/500/18.png' },
+    { slug: 'sco.1', name: 'Scottish Premiership', abbreviation: 'Premiership', country: 'Scotland', kind: 'club', sort_order: 18, logo: 'https://a.espncdn.com/i/leaguelogos/soccer/500/45.png' },
+    { slug: 'usa.1', name: 'Major League Soccer', abbreviation: 'MLS', country: 'United States', kind: 'club', sort_order: 19, logo: 'https://a.espncdn.com/i/leaguelogos/soccer/500/19.png' },
+    { slug: 'ksa.1', name: 'Saudi Pro League', abbreviation: 'Saudi League', country: 'Saudi Arabia', kind: 'club', sort_order: 20, logo: 'https://a.espncdn.com/i/leaguelogos/soccer/500/2157.png' },
+    { slug: 'bra.1', name: 'Brasileirão Série A', abbreviation: 'Brasileirão', country: 'Brazil', kind: 'club', sort_order: 21, logo: 'https://a.espncdn.com/i/leaguelogos/soccer/500/85.png' },
+    { slug: 'arg.1', name: 'Argentine Primera División', abbreviation: 'Liga Profesional', country: 'Argentina', kind: 'club', sort_order: 22, logo: 'https://a.espncdn.com/i/leaguelogos/soccer/500/1.png' },
+    { slug: 'mex.1', name: 'Liga MX', abbreviation: 'Liga MX', country: 'Mexico', kind: 'club', sort_order: 23, logo: 'https://a.espncdn.com/i/leaguelogos/soccer/500/22.png' },
+    { slug: 'conmebol.libertadores', name: 'Copa Libertadores', abbreviation: 'Libertadores', country: 'South America', kind: 'club', sort_order: 24, logo: 'https://a.espncdn.com/i/leaguelogos/soccer/500/2056.png' },
+    { slug: 'conmebol.sudamericana', name: 'Copa Sudamericana', abbreviation: 'Sudamericana', country: 'South America', kind: 'club', sort_order: 25, logo: 'https://a.espncdn.com/i/leaguelogos/soccer/500/2057.png' },
+    { slug: 'uefa.nations', name: 'UEFA Nations League', abbreviation: 'Nations League', country: 'International', kind: 'international', sort_order: 26, logo: 'https://a.espncdn.com/i/leaguelogos/soccer/500/2059.png' },
+    { slug: 'eng.fa', name: 'English FA Cup', abbreviation: 'FA Cup', country: 'England', kind: 'club', sort_order: 27, logo: 'https://a.espncdn.com/i/leaguelogos/soccer/500/21.png' },
+    { slug: 'eng.league_cup', name: 'English Carabao Cup', abbreviation: 'EFL Cup', country: 'England', kind: 'club', sort_order: 28, logo: 'https://a.espncdn.com/i/leaguelogos/soccer/500/22.png' },
+    { slug: 'esp.copa_del_rey', name: 'Copa del Rey', abbreviation: 'Copa del Rey', country: 'Spain', kind: 'club', sort_order: 29, logo: 'https://a.espncdn.com/i/leaguelogos/soccer/500/80.png' },
+    { slug: 'ita.coppa_italia', name: 'Coppa Italia', abbreviation: 'Coppa Italia', country: 'Italy', kind: 'club', sort_order: 30, logo: 'https://a.espncdn.com/i/leaguelogos/soccer/500/2064.png' },
+    { slug: 'ger.dfb_pokal', name: 'German Cup', abbreviation: 'DFB-Pokal', country: 'Germany', kind: 'club', sort_order: 31, logo: 'https://a.espncdn.com/i/leaguelogos/soccer/500/2063.png' },
+    { slug: 'fra.coupe_de_france', name: 'Coupe de France', abbreviation: 'Coupe de France', country: 'France', kind: 'club', sort_order: 32, logo: 'https://a.espncdn.com/i/leaguelogos/soccer/500/275.png' },
     { slug: 'aut.1', name: 'Austrian Bundesliga', abbreviation: 'Austrian Bundesliga', country: 'Austria', kind: 'club', sort_order: 33 },
     { slug: 'sui.1', name: 'Swiss Super League', abbreviation: 'Swiss Super League', country: 'Switzerland', kind: 'club', sort_order: 34 },
     { slug: 'den.1', name: 'Danish Superliga', abbreviation: 'Superliga', country: 'Denmark', kind: 'club', sort_order: 35 },
@@ -930,17 +930,37 @@ function enforceCountryOnSlug(slug, countryName = '', leagueName = '') {
         if (cLower === key || cLower.includes(key)) { expected = prefix; break; }
     }
     if (!expected) return slug || null;
-    const actual = slug ? String(slug).split('.')[0] : '';
-    if (slug && actual === expected) return slug;
-    // Missing or mismatched: force country-correct slug from league name hints
-    const blob = `${slug || ''} ${leagueName || ''} ${countryName || ''}`;
-    const isWomen = /\.w\.|women|femen|frau|wsl/i.test(blob);
-    const isSecond = /2|second|championship|liga 2|league two|serie b|2\.?\s*bundesliga|hypermotion/i.test(blob);
-    const isThird = /3|league one|liga 3|serie c|primera rfef/i.test(blob);
-    let tier = '1';
-    if (isThird) tier = '3';
-    else if (isSecond) tier = '2';
+
+    const blob = `${slug || ''} ${leagueName || ''} ${countryName || ''}`.toLowerCase();
+    const isWomen = /\.w\.|women|woman|ladies|femen|frau|damen|vrouwen|wsl|fem\./i.test(blob);
     if (isWomen) return `${expected}.w.1`;
+
+    const isFifth = /tercera|5th|tier 5|oberliga|national 3/i.test(blob);
+    const isFourth = /segunda federaci|2ª federaci|2ª rfef|segunda rfef|segunda b|regionalliga|serie d|national 2|league two|eng\.4/i.test(blob);
+    const isThird = /primera federaci|1ª federaci|1ª rfef|primera rfef|3\.?\s*liga|serie c|lega pro|national 1|\bnational\b|league one|eng\.3/i.test(blob);
+    const isSecond = /segunda divisi|laliga\s*2|hypermotion|2\.?\s*bundesliga|serie b|ligue 2|championship|eng\.2|liga 2/i.test(blob);
+
+    let tier = '1';
+    if (isFifth) tier = '5';
+    else if (isFourth) tier = '4';
+    else if (isThird) tier = '3';
+    else if (isSecond) tier = '2';
+
+    if (tier !== '1') {
+        return `${expected}.${tier}`;
+    }
+
+    const actual = slug ? String(slug).split('.')[0] : '';
+    if (slug && actual === expected) {
+        if (slug.endsWith('.1')) {
+            const isTopFlightKeyword = /primera divisi|la\s*liga|laliga|bundesliga|serie a|ligue 1|premier league|epl|super lig|eredivisie|primeira liga/i.test(leagueName);
+            if (!isTopFlightKeyword && leagueName && !/division 1|1st division|top division|first division/i.test(leagueName)) {
+                return `${expected}.lower`;
+            }
+        }
+        return slug;
+    }
+
     return `${expected}.${tier}`;
 }
 
@@ -1329,36 +1349,56 @@ function resolveLeagueSlug(altGameNote = '', compDesc = '', uid = '') {
 
     // --- EUROPEAN BIG 5 (With strict country and word boundary protection!) ---
 
-    // SPAIN (LaLiga EA Sports / LaLiga 2 / Copa del Rey)
+    // SPAIN (LaLiga EA Sports / LaLiga 2 / Copa del Rey / RFEF tiers)
     const isSpain = country.includes('spain') || country.includes('spanish') || country.includes('españa') || country.includes('espana') || scd.includes('esp.');
-    if (isSpain || (isNeutralCountry && /\b(?:laliga|la\s+liga|copa del rey)\b/i.test(text))) {
+    if (isSpain || (isNeutralCountry && /\b(?:laliga|la\s+liga|copa del rey|primera federaci|segunda federaci|tercera federaci)\b/i.test(text))) {
         if (text.includes('copa del rey') || scd.includes('copa-del-rey') || scd.includes('esp.copa_del_rey')) return 'esp.copa_del_rey';
-        if (text.includes('laliga 2') || text.includes('segunda división') || text.includes('segunda division') || scd.includes('esp.2') || scd.includes('laliga2')) return 'esp.2';
-        if (/\b(?:laliga|la\s+liga)\b/i.test(text) || scd.includes('esp.1') || isSpain) return 'esp.1';
+        if (text.includes('supercopa') || scd.includes('esp.supercopa')) return 'esp.supercopa';
+        if (text.includes('copa federacion') || text.includes('copa federación') || text.includes('copa rfef')) return 'esp.rfef_copa';
+        if (/(?:tercera|3[ªa.]?\s*(?:federaci|rfef))/i.test(text) || scd.includes('esp.5')) return 'esp.5';
+        if (/(?:segunda\s*federaci|2[ªa.]?\s*(?:federaci|rfef)|segunda\s*rfef|segunda\s*b)/i.test(text) || scd.includes('esp.4')) return 'esp.4';
+        if (/(?:primera\s*federaci|1[ªa.]?\s*(?:federaci|rfef)|primera\s*rfef)/i.test(text) || scd.includes('esp.3')) return 'esp.3';
+        if (text.includes('laliga 2') || text.includes('laliga2') || text.includes('hypermotion') || /segunda\s*divisi/i.test(text) || scd.includes('esp.2')) return 'esp.2';
+        if ((/\b(?:laliga|la\s+liga)\b/i.test(text) && !text.includes('2') && !text.includes('hypermotion')) || scd === 'esp.1' || (/primera\s*divisi/i.test(text) && !text.includes('rfef') && !text.includes('femenin'))) return 'esp.1';
+        return 'esp.lower';
     }
 
-    // ITALY (Serie A / Serie B / Coppa Italia)
+    // ITALY (Serie A / Serie B / Serie C / Serie D / Coppa Italia)
     const isItaly = country.includes('italy') || country.includes('italian') || country.includes('italia') || scd.includes('ita.');
-    if (isItaly || (isNeutralCountry && /\b(?:serie\s+a|serie\s+b|coppa italia)\b/i.test(text))) {
+    if (isItaly || (isNeutralCountry && /\b(?:serie\s+a|serie\s+b|serie\s+c|serie\s+d|coppa italia)\b/i.test(text))) {
+        if (text.includes('coppa italia serie c')) return 'ita.coppa_serie_c';
         if (text.includes('coppa italia') || scd.includes('coppa-italia') || scd.includes('ita.coppa_italia')) return 'ita.coppa_italia';
+        if (text.includes('supercoppa') || scd.includes('ita.supercoppa')) return 'ita.supercoppa';
+        if (text.includes('serie d') || text.includes('serie-d') || scd.includes('ita.4')) return 'ita.4';
+        if (text.includes('serie c') || text.includes('serie-c') || text.includes('lega pro') || scd.includes('ita.3')) return 'ita.3';
         if (text.includes('serie b') || scd.includes('serie-b') || scd.includes('ita.2')) return 'ita.2';
-        if (text.includes('serie a') || scd.includes('serie-a') || scd.includes('ita.1') || isItaly) return 'ita.1';
+        if ((/\bserie\s*a\b/i.test(text) && !text.includes('femminile')) || scd === 'ita.1') return 'ita.1';
+        return 'ita.lower';
     }
 
-    // GERMANY (Bundesliga / 2. Bundesliga / DFB-Pokal)
+    // GERMANY (Bundesliga / 2. Bundesliga / 3. Liga / Regionalliga / Oberliga / DFB-Pokal)
     const isGermany = country.includes('germany') || country.includes('german') || country.includes('deutschland') || scd.includes('ger.');
-    if (isGermany || (isNeutralCountry && /\b(?:bundesliga|dfb-pokal)\b/i.test(text))) {
-        if (text.includes('dfb-pokal') || scd.includes('dfb-pokal') || scd.includes('ger.dfb_pokal')) return 'ger.dfb_pokal';
-        if (text.includes('2. bundesliga') || scd.includes('2-bundesliga') || scd.includes('ger.2')) return 'ger.2';
-        if (text.includes('bundesliga') || scd.includes('ger.1') || isGermany) return 'ger.1';
+    if (isGermany || (isNeutralCountry && /\b(?:bundesliga|dfb-pokal|regionalliga|oberliga)\b/i.test(text))) {
+        if (text.includes('dfb-pokal') || text.includes('dfb pokal') || scd.includes('dfb-pokal') || scd.includes('ger.dfb_pokal')) return 'ger.dfb_pokal';
+        if (text.includes('supercup') || scd.includes('ger.supercup')) return 'ger.supercup';
+        if (text.includes('oberliga') || text.includes('bayernliga') || text.includes('hessenliga') || scd.includes('ger.5')) return 'ger.5';
+        if (text.includes('regionalliga') || scd.includes('ger.4')) return 'ger.4';
+        if (text.includes('3. liga') || text.includes('3 liga') || text.includes('3.liga') || scd.includes('ger.3')) return 'ger.3';
+        if (text.includes('2. bundesliga') || text.includes('2 bundesliga') || text.includes('2-bundesliga') || scd.includes('ger.2')) return 'ger.2';
+        if ((text.includes('bundesliga') && !text.includes('2') && !text.includes('3') && !text.includes('frauen')) || scd === 'ger.1' || text.includes('1. bundesliga')) return 'ger.1';
+        return 'ger.lower';
     }
 
-    // FRANCE (Ligue 1 / Ligue 2 / Coupe de France)
+    // FRANCE (Ligue 1 / Ligue 2 / National / Coupe de France)
     const isFrance = country.includes('france') || country.includes('french') || scd.includes('fra.');
-    if (isFrance || (isNeutralCountry && /\b(?:ligue\s*1|ligue\s*2|coupe de france)\b/i.test(text))) {
+    if (isFrance || (isNeutralCountry && /\b(?:ligue\s*1|ligue\s*2|national|coupe de france)\b/i.test(text))) {
         if (text.includes('coupe de france') || scd.includes('coupe-de-france') || scd.includes('fra.coupe_de_france')) return 'fra.coupe_de_france';
+        if (text.includes('national 3') || scd.includes('fra.5')) return 'fra.5';
+        if (text.includes('national 2') || scd.includes('fra.4')) return 'fra.4';
+        if (text.includes('national 1') || (text.includes('national') && !text.includes('international') && !text.includes('league')) || scd.includes('fra.3')) return 'fra.3';
         if (text.includes('ligue 2') || scd.includes('fra.2')) return 'fra.2';
-        if (text.includes('ligue 1') || scd.includes('fra.1') || isFrance) return 'fra.1';
+        if ((/\bligue\s*1\b/i.test(text) && !text.includes('arkema') && !text.includes('fem')) || scd === 'fra.1') return 'fra.1';
+        return 'fra.lower';
     }
 
     // ENGLAND (EPL / Championship / League One / League Two / FA Cup / Carabao Cup / National Leagues)
@@ -1378,7 +1418,8 @@ function resolveLeagueSlug(altGameNote = '', compDesc = '', uid = '') {
             if (text.includes('fa cup') || text.includes('eng.fa')) return 'eng.fa';
             if (text.includes('carabao') || text.includes('efl cup') || (text.includes('league cup') && !text.includes('scot') && !text.includes('thai') && !text.includes('egypt')) || text.includes('eng.league_cup')) return 'eng.league_cup';
             if ((text.includes('efl trophy') || scd.includes('efl-trophy') || (text.includes('trophy') && (text.includes('papa john') || text.includes('bristol') || isEngland))) && !text.includes('korea') && !text.includes('china')) return 'eng.trophy';
-            if (text.includes('premier league') || text.includes('epl') || scd.includes('eng.1') || isEngland) return 'eng.1';
+            if (((text.includes('premier league') || text.includes('epl')) && !text.includes('2') && !text.includes('u21') && !text.includes('u18')) || scd === 'eng.1') return 'eng.1';
+            return 'eng.lower';
         }
     }
 
@@ -1814,7 +1855,8 @@ function isReserveOrBTeamName(name = '') {
     const s = String(name || '').trim();
     if (!s) return false;
     if (/\b(u-?2[0-3]|u-?1[5-9]|youth|primavera|reserves?|development|academy)\b/i.test(s)) return true;
-    if (/\s+[bB]$/.test(s) || /\s+II$/i.test(s) || /\(b\)|\(ii\)|\(res\)/i.test(s)) return true;
+    if (/\s+[bB]$/.test(s) || /\s+II$/i.test(s) || /\s+2$/.test(s) || /\(b\)|\(ii\)|\(res\)/i.test(s)) return true;
+    if (/\b(castilla|atl[eè]tic|fortuna|promesas|fabril|vetusta|filial)\b/i.test(s)) return true;
     return false;
 }
 
@@ -2422,26 +2464,45 @@ async function syncLiveScoreInPlay() {
                 else if (cLower.includes('spain') || cLower.includes('españa')) {
                     const ln = leagueName.toLowerCase();
                     if (ln.includes('liga f') || ln.includes('femenina')) targetSlug = 'esp.w.1';
+                    else if (ln.includes('copa del rey')) targetSlug = 'esp.copa_del_rey';
+                    else if (ln.includes('tercera') || ln.includes('3ª rfef') || ln.includes('3. federacion')) targetSlug = 'esp.5';
+                    else if (ln.includes('segunda federacion') || ln.includes('segunda federación') || ln.includes('2ª rfef') || ln.includes('2. federacion') || ln.includes('segunda rfef') || ln.includes('segunda b')) targetSlug = 'esp.4';
+                    else if (ln.includes('primera rfef') || ln.includes('primera rfe') || ln.includes('1ª rfef') || ln.includes('1. federacion') || ln.includes('primera federacion')) targetSlug = 'esp.3';
                     else if (ln.includes('segunda') || ln.includes('laliga2') || ln.includes('hypermotion')) targetSlug = 'esp.2';
-                    else if (ln.includes('primera rfef') || ln.includes('primera rfe')) targetSlug = 'esp.3';
-                    else targetSlug = 'esp.1';
+                    else if (ln.includes('laliga') || ln.includes('la liga') || ln.includes('primera division')) targetSlug = 'esp.1';
+                    else targetSlug = 'esp.lower';
                 }
                 else if (cLower.includes('italy') || cLower.includes('italia')) {
                     const ln = leagueName.toLowerCase();
-                    if (ln.includes('serie b')) targetSlug = 'ita.2';
-                    else if (ln.includes('serie c')) targetSlug = 'ita.3';
-                    else targetSlug = 'ita.1';
+                    if (ln.includes('femminile')) targetSlug = 'ita.w.1';
+                    else if (ln.includes('coppa italia')) targetSlug = 'ita.coppa_italia';
+                    else if (ln.includes('serie d')) targetSlug = 'ita.4';
+                    else if (ln.includes('serie c') || ln.includes('lega pro')) targetSlug = 'ita.3';
+                    else if (ln.includes('serie b')) targetSlug = 'ita.2';
+                    else if (ln.includes('serie a')) targetSlug = 'ita.1';
+                    else targetSlug = 'ita.lower';
                 }
                 else if (cLower.includes('germany') || cLower.includes('deutschland')) {
                     const ln = leagueName.toLowerCase();
-                    if (ln.includes('2. bundesliga') || ln.includes('2 bundesliga')) targetSlug = 'ger.2';
+                    if (ln.includes('frauen')) targetSlug = 'ger.w.1';
+                    else if (ln.includes('dfb-pokal') || ln.includes('dfb pokal')) targetSlug = 'ger.dfb_pokal';
+                    else if (ln.includes('oberliga')) targetSlug = 'ger.5';
+                    else if (ln.includes('regionalliga')) targetSlug = 'ger.4';
                     else if (ln.includes('3. liga') || ln.includes('3 liga')) targetSlug = 'ger.3';
-                    else targetSlug = 'ger.1';
+                    else if (ln.includes('2. bundesliga') || ln.includes('2 bundesliga')) targetSlug = 'ger.2';
+                    else if (ln.includes('bundesliga')) targetSlug = 'ger.1';
+                    else targetSlug = 'ger.lower';
                 }
                 else if (cLower.includes('france')) {
                     const ln = leagueName.toLowerCase();
-                    if (ln.includes('ligue 2')) targetSlug = 'fra.2';
-                    else targetSlug = 'fra.1';
+                    if (ln.includes('arkema') || ln.includes('fem')) targetSlug = 'fra.w.1';
+                    else if (ln.includes('coupe de france')) targetSlug = 'fra.coupe_de_france';
+                    else if (ln.includes('national 3')) targetSlug = 'fra.5';
+                    else if (ln.includes('national 2')) targetSlug = 'fra.4';
+                    else if (ln.includes('national 1') || (ln.includes('national') && !ln.includes('international'))) targetSlug = 'fra.3';
+                    else if (ln.includes('ligue 2')) targetSlug = 'fra.2';
+                    else if (ln.includes('ligue 1')) targetSlug = 'fra.1';
+                    else targetSlug = 'fra.lower';
                 }
                 else if (cLower.includes('peru')) targetSlug = 'per.1';
                 else if (cLower.includes('bolivia')) targetSlug = 'bol.1';
@@ -2500,6 +2561,13 @@ async function syncLiveScoreInPlay() {
                 const a = ev.T2?.[0] || {};
                 const homeName = h.Nm || 'Home Club';
                 const awayName = a.Nm || 'Away Club';
+
+                // Keep senior top-flight boards clean — no B/II/U21 sides mixed in
+                const seniorSlug = String(targetSlug || '').toLowerCase();
+                const isSeniorTop = /\.[1]$/.test(seniorSlug) && !seniorSlug.includes('.w.') && !seniorSlug.includes('youth');
+                if (isSeniorTop && (isReserveOrBTeamName(homeName) || isReserveOrBTeamName(awayName))) {
+                    continue;
+                }
                 const homeScore = parseInt(ev.Tr1 || 0, 10);
                 const awayScore = parseInt(ev.Tr2 || 0, 10);
                 const rawClock = String(ev.Eps || ev.Epr || 'NS');

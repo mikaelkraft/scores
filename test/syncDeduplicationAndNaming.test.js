@@ -1,6 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { resolveLeagueSlug, normalizeTeamName, areTeamNamesMatching, getTeamCategory, getMatchTier } = require('../services/soccerSyncService');
+const { resolveLeagueSlug, enforceCountryOnSlug, isReserveOrBTeamName, normalizeTeamName, areTeamNamesMatching, getTeamCategory, getMatchTier } = require('../services/soccerSyncService');
 
 test('resolveLeagueSlug explicitly rejects NCAA basketball and college non-soccer events', () => {
     assert.equal(resolveLeagueSlug('NCAA Men\'s Basketball', 'College Basketball', 's:40~l:41'), null);
@@ -397,4 +397,68 @@ test('resolveLeagueSlug correctly resolves South Korean and Chinese competitions
     // Chinese games must NEVER be lumped under Korean lower tiers or English divisions!
     assert.notEqual(resolveLeagueSlug('China League 1', 'China', ''), 'kor.2');
     assert.notEqual(resolveLeagueSlug('China League 1', 'China', ''), 'eng.3');
+});
+
+test('resolveLeagueSlug and enforceCountryOnSlug prevent lower-tier and regional games from polluting top flight boards', () => {
+    // Spanish lower tiers must NEVER land in esp.1 (LaLiga)
+    assert.equal(resolveLeagueSlug('Segunda Federación - Group 1', 'Spain', ''), 'esp.4');
+    assert.equal(resolveLeagueSlug('2ª Federación - Grupo 2', 'Spain', ''), 'esp.4');
+    assert.equal(resolveLeagueSlug('Segunda RFEF', 'Spain', ''), 'esp.4');
+    assert.equal(resolveLeagueSlug('Tercera Federación - Group 7', 'Spain', ''), 'esp.5');
+    assert.equal(resolveLeagueSlug('3ª RFEF', 'Spain', ''), 'esp.5');
+    assert.equal(resolveLeagueSlug('Primera Federación - Group 1', 'Spain', ''), 'esp.3');
+    assert.equal(resolveLeagueSlug('1ª RFEF', 'Spain', ''), 'esp.3');
+    assert.notEqual(resolveLeagueSlug('Segunda Federación', 'Spain', ''), 'esp.1');
+    assert.notEqual(resolveLeagueSlug('Tercera Federación', 'Spain', ''), 'esp.1');
+    assert.notEqual(resolveLeagueSlug('Primera Federación', 'Spain', ''), 'esp.1');
+
+    // German lower tiers must NEVER land in ger.1 (Bundesliga)
+    assert.equal(resolveLeagueSlug('Regionalliga Bayern', 'Germany', ''), 'ger.4');
+    assert.equal(resolveLeagueSlug('Regionalliga West', 'Germany', ''), 'ger.4');
+    assert.equal(resolveLeagueSlug('Oberliga Baden-Württemberg', 'Germany', ''), 'ger.5');
+    assert.equal(resolveLeagueSlug('3. Liga', 'Germany', ''), 'ger.3');
+    assert.notEqual(resolveLeagueSlug('Regionalliga Bayern', 'Germany', ''), 'ger.1');
+    assert.notEqual(resolveLeagueSlug('Oberliga', 'Germany', ''), 'ger.1');
+    assert.notEqual(resolveLeagueSlug('3. Liga', 'Germany', ''), 'ger.1');
+
+    // Italian lower tiers must NEVER land in ita.1 (Serie A)
+    assert.equal(resolveLeagueSlug('Serie C - Girone A', 'Italy', ''), 'ita.3');
+    assert.equal(resolveLeagueSlug('Serie C - Girone C', 'Italy', ''), 'ita.3');
+    assert.equal(resolveLeagueSlug('Serie D - Girone B', 'Italy', ''), 'ita.4');
+    assert.notEqual(resolveLeagueSlug('Serie C', 'Italy', ''), 'ita.1');
+    assert.notEqual(resolveLeagueSlug('Serie D', 'Italy', ''), 'ita.1');
+
+    // French lower tiers must NEVER land in fra.1 (Ligue 1)
+    assert.equal(resolveLeagueSlug('National 1', 'France', ''), 'fra.3');
+    assert.equal(resolveLeagueSlug('National 2 - Group A', 'France', ''), 'fra.4');
+    assert.equal(resolveLeagueSlug('National 3', 'France', ''), 'fra.5');
+    assert.notEqual(resolveLeagueSlug('National 1', 'France', ''), 'fra.1');
+    assert.notEqual(resolveLeagueSlug('National 2', 'France', ''), 'fra.1');
+
+    // English non-league / lower tiers
+    assert.equal(resolveLeagueSlug('National League North', 'England', ''), 'eng.6');
+    assert.equal(resolveLeagueSlug('National League', 'England', ''), 'eng.5');
+    assert.equal(resolveLeagueSlug('League Two', 'England', ''), 'eng.4');
+    assert.equal(resolveLeagueSlug('League One', 'England', ''), 'eng.3');
+    assert.notEqual(resolveLeagueSlug('League One', 'England', ''), 'eng.1');
+
+    // enforceCountryOnSlug hard guards
+    assert.equal(enforceCountryOnSlug('esp.1', 'Spain', 'Segunda Federación'), 'esp.4');
+    assert.equal(enforceCountryOnSlug('ger.1', 'Germany', 'Regionalliga Nord'), 'ger.4');
+    assert.equal(enforceCountryOnSlug('ita.1', 'Italy', 'Serie C Girone B'), 'ita.3');
+    assert.equal(enforceCountryOnSlug('fra.1', 'France', 'National 2'), 'fra.4');
+});
+
+test('isReserveOrBTeamName detects reserve, B, II, U21, and Spanish filial sides', () => {
+    assert.equal(isReserveOrBTeamName('Real Madrid Castilla'), true);
+    assert.equal(isReserveOrBTeamName('Barcelona Atlètic'), true);
+    assert.equal(isReserveOrBTeamName('Celta Fortuna'), true);
+    assert.equal(isReserveOrBTeamName('Osasuna Promesas'), true);
+    assert.equal(isReserveOrBTeamName('RC Deportivo Fabril'), true);
+    assert.equal(isReserveOrBTeamName('Arsenal U21'), true);
+    assert.equal(isReserveOrBTeamName('Chelsea Reserves'), true);
+    assert.equal(isReserveOrBTeamName('Bayern Munich II'), true);
+    assert.equal(isReserveOrBTeamName('Real Madrid'), false);
+    assert.equal(isReserveOrBTeamName('FC Barcelona'), false);
+    assert.equal(isReserveOrBTeamName('Bayern Munich'), false);
 });

@@ -51,7 +51,7 @@ const {
     isConcreteClock,
     formatMatchClock
 } = require('../services/soccerSerializer');
-const { normalizeTeamName, getTeamCategory, getMatchTier, resolveMatchEspnId, resolveLeagueSlug, formatLiveScoreLogo, TARGET_LEAGUES } = require('../services/soccerSyncService');
+const { normalizeTeamName, getTeamCategory, getMatchTier, resolveMatchEspnId, resolveLeagueSlug, enforceCountryOnSlug, isReserveOrBTeamName, formatLiveScoreLogo, TARGET_LEAGUES } = require('../services/soccerSyncService');
 
 function formatDateKey(d = new Date()) {
     const y = d.getUTCFullYear();
@@ -328,7 +328,9 @@ async function fetchFreshWorldwideLiveMatches() {
         for (const stage of liveScoreData.Stages) {
             const country = stage.Cnm || stage.Sdn || 'International';
             const leagueName = stage.Snm || 'Football Competition';
-            const slug = resolveLeagueSlug(leagueName, country, stage.Scd || '');
+            let slug = resolveLeagueSlug(leagueName, country, stage.Scd || '');
+            if (!slug || slug === 'usa.ncaa') continue;
+            slug = enforceCountryOnSlug(slug, country, leagueName);
             if (!slug || slug === 'usa.ncaa') continue;
             const targetLg = TARGET_LEAGUES.find(l => l.slug === slug);
             const lg = leagueMap.get(slug) || targetLg || {};
@@ -337,6 +339,13 @@ async function fetchFreshWorldwideLiveMatches() {
                 const eid = String(ev.Eid);
                 const h = ev.T1?.[0] || {};
                 const a = ev.T2?.[0] || {};
+
+                // Strict filter: Never allow B/reserve sides on senior top-flight boards (.1)
+                const seniorSlug = String(slug || '').toLowerCase();
+                const isSeniorTop = /\.[1]$/.test(seniorSlug) && !seniorSlug.includes('.w.') && !seniorSlug.includes('youth');
+                if (isSeniorTop && (isReserveOrBTeamName(h.Nm) || isReserveOrBTeamName(a.Nm))) {
+                    continue;
+                }
                 const hScore = parseInt(ev.Tr1 || 0, 10);
                 const aScore = parseInt(ev.Tr2 || 0, 10);
                 const rawClock = String(ev.Eps || ev.Epr || 'NS').trim();
@@ -408,7 +417,9 @@ async function fetchFreshWorldwideLiveMatches() {
             const homeComp = competitors.find(c => c.homeAway === 'home') || competitors[0] || {};
             const awayComp = competitors.find(c => c.homeAway === 'away') || competitors[1] || {};
             if (/ncaa|college basketball/i.test(`${comp.altGameNote || ''} ${ev.name || ''} ${ev.uid || ''}`)) continue;
-            const targetSlug = resolveLeagueSlug(comp.altGameNote || '', comp.notes?.[0]?.headline || '', ev.uid || '');
+            let targetSlug = resolveLeagueSlug(comp.altGameNote || '', comp.notes?.[0]?.headline || '', ev.uid || '');
+            if (!targetSlug || targetSlug === 'usa.ncaa') continue;
+            targetSlug = enforceCountryOnSlug(targetSlug, comp.notes?.[0]?.headline || '', comp.altGameNote || '');
             if (!targetSlug || targetSlug === 'usa.ncaa') continue;
             const targetLg = TARGET_LEAGUES.find(l => l.slug === targetSlug);
             const lg = leagueMap.get(targetSlug) || targetLg || {};
@@ -521,7 +532,9 @@ async function fetchFreshWorldwideLiveMatches() {
         const tier = getMatchTier(hName, aName, slug);
         const isYouth = tier.endsWith('_y');
         const isWomen = tier.startsWith('w_');
-        const sig = [hNorm, aNorm].sort().join('_vs_') + (isYouth ? '_youth' : '');
+        const rawD = m.scoreboardDate || (m.date ? new Date(m.date).toISOString().slice(0, 10) : '');
+        const dKey = String(rawD).replace(/[^0-9]/g, '').slice(0, 8);
+        const sig = [hNorm, aNorm].sort().join('_vs_') + '_' + dKey + (isWomen ? '_w' : '') + (isYouth ? '_youth' : '');
 
         const mScore = (m.home?.logo?.includes('espncdn') ? 4 : 0) +
                        (m.source?.provider === 'espn' || (m.id && /^\d{6,}$/.test(m.id)) ? 3 : 0) +
@@ -558,6 +571,27 @@ async function fetchFreshWorldwideLiveMatches() {
                 if (!winner.source) winner.source = {};
                 winner.source.espn_id = secondary.source.espn_id;
             }
+
+            // Merge crest logos so neither club nor league loses its logo
+            if ((!winner.home?.logo || /placeholder|default.?crest|unknown/i.test(winner.home.logo)) && secondary.home?.logo) {
+                if (!winner.home) winner.home = {};
+                winner.home.logo = secondary.home.logo;
+            } else if (winner.home?.logo && secondary.home?.logo && secondary.home.logo.includes('espncdn') && !winner.home.logo.includes('espncdn')) {
+                winner.home.logo = secondary.home.logo;
+            }
+
+            if ((!winner.away?.logo || /placeholder|default.?crest|unknown/i.test(winner.away.logo)) && secondary.away?.logo) {
+                if (!winner.away) winner.away = {};
+                winner.away.logo = secondary.away.logo;
+            } else if (winner.away?.logo && secondary.away?.logo && secondary.away.logo.includes('espncdn') && !winner.away.logo.includes('espncdn')) {
+                winner.away.logo = secondary.away.logo;
+            }
+
+            if (!winner.league?.logo && secondary.league?.logo) {
+                if (!winner.league) winner.league = {};
+                winner.league.logo = secondary.league.logo;
+            }
+
             seenLiveMap.set(sig, { match: winner, score: Math.max(existing.score, mScore) });
         }
     }
@@ -1037,8 +1071,9 @@ router.get('/fixtures', optionalApiKeyAuth, async (req, res) => {
             const tier = getMatchTier(hName, aName, slug);
             const isYouth = tier.endsWith('_y');
             const isWomen = tier.startsWith('w_');
-            const dKey = m.scoreboardDate || (m.date ? new Date(m.date).toISOString().slice(0, 10) : '');
-            const baseSig = [hNorm, aNorm].sort().join('_vs_') + '_' + dKey + (isYouth ? '_youth' : '');
+            const rawD = m.scoreboardDate || (m.date ? new Date(m.date).toISOString().slice(0, 10) : '');
+            const dKey = String(rawD).replace(/[^0-9]/g, '').slice(0, 8);
+            const baseSig = [hNorm, aNorm].sort().join('_vs_') + '_' + dKey + (isWomen ? '_w' : '') + (isYouth ? '_youth' : '');
 
             const mScore = (m.home?.logo?.includes('espncdn') ? 4 : 0) +
                            (m.source?.provider === 'espn' || (m.id && /^\d{6,}$/.test(m.id)) ? 3 : 0) +
@@ -1078,6 +1113,27 @@ router.get('/fixtures', optionalApiKeyAuth, async (req, res) => {
                     if (!winner.source) winner.source = {};
                     winner.source.espn_id = secondary.source.espn_id;
                 }
+
+                // Merge crest logos so neither club nor league loses its logo
+                if ((!winner.home?.logo || /placeholder|default.?crest|unknown/i.test(winner.home.logo)) && secondary.home?.logo) {
+                    if (!winner.home) winner.home = {};
+                    winner.home.logo = secondary.home.logo;
+                } else if (winner.home?.logo && secondary.home?.logo && secondary.home.logo.includes('espncdn') && !winner.home.logo.includes('espncdn')) {
+                    winner.home.logo = secondary.home.logo;
+                }
+
+                if ((!winner.away?.logo || /placeholder|default.?crest|unknown/i.test(winner.away.logo)) && secondary.away?.logo) {
+                    if (!winner.away) winner.away = {};
+                    winner.away.logo = secondary.away.logo;
+                } else if (winner.away?.logo && secondary.away?.logo && secondary.away.logo.includes('espncdn') && !winner.away.logo.includes('espncdn')) {
+                    winner.away.logo = secondary.away.logo;
+                }
+
+                if (!winner.league?.logo && secondary.league?.logo) {
+                    if (!winner.league) winner.league = {};
+                    winner.league.logo = secondary.league.logo;
+                }
+
                 seenFixturesMap.set(baseSig, { match: winner, score: Math.max(existing.score, mScore) });
             }
         }
@@ -2389,6 +2445,37 @@ router.get('/teams/:teamId', async (req, res) => {
 const CREST_DIR = path.join(__dirname, '..', 'public', 'crests');
 try { fs.mkdirSync(CREST_DIR, { recursive: true }); } catch {}
 
+function fetchStreamWithRedirects(targetUrl, maxRedirects = 3) {
+    return new Promise((resolve, reject) => {
+        if (maxRedirects <= 0) return reject(new Error('Too many redirects'));
+        const client = targetUrl.startsWith('https') ? require('https') : require('http');
+        const req = client.get(targetUrl, {
+            headers: {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+                'Accept': 'image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8'
+            },
+            timeout: 6000
+        }, (res) => {
+            if ([301, 302, 307, 308].includes(res.statusCode) && res.headers.location) {
+                let redirectUrl = res.headers.location;
+                if (!redirectUrl.startsWith('http')) {
+                    const parsed = new URL(targetUrl);
+                    redirectUrl = new URL(redirectUrl, parsed.origin).toString();
+                }
+                return resolve(fetchStreamWithRedirects(redirectUrl, maxRedirects - 1));
+            }
+            if (res.statusCode !== 200) {
+                return reject(new Error(`Upstream returned HTTP ${res.statusCode}`));
+            }
+            resolve(res);
+        });
+        req.on('error', reject);
+        req.on('timeout', () => { req.destroy(); reject(new Error('Request timeout')); });
+    });
+}
+
+const crestInFlightMap = new Map();
+
 async function handleCrestProxy(req, res) {
     const rawUrl = req.query.url;
     if (!rawUrl || typeof rawUrl !== 'string' || !rawUrl.startsWith('http')) {
@@ -2401,38 +2488,60 @@ async function handleCrestProxy(req, res) {
         const filename = `${hash}.${ext}`;
         const localPath = path.join(CREST_DIR, filename);
 
-        res.set('Cache-Control', 'public, max-age=31536000, immutable');
-
         if (fs.existsSync(localPath)) {
-            return res.sendFile(localPath);
+            const stats = fs.statSync(localPath);
+            if (stats.size > 0) {
+                res.set('Cache-Control', 'public, max-age=31536000, immutable');
+                return res.sendFile(localPath);
+            }
         }
 
-        const client = rawUrl.startsWith('https') ? require('https') : require('http');
-        const fileStream = fs.createWriteStream(localPath);
-        const upstreamReq = client.get(rawUrl, {
-            headers: { 'User-Agent': 'NorraScores/2.1' },
-            timeout: 5000
-        }, (upstreamRes) => {
-            if (upstreamRes.statusCode === 200) {
-                upstreamRes.pipe(fileStream);
-                fileStream.on('finish', () => {
-                    res.sendFile(localPath);
-                });
-            } else {
-                fs.unlink(localPath, () => {});
-                return res.status(404).send('Crest not found');
+        if (crestInFlightMap.has(filename)) {
+            await crestInFlightMap.get(filename);
+            if (fs.existsSync(localPath) && fs.statSync(localPath).size > 0) {
+                res.set('Cache-Control', 'public, max-age=31536000, immutable');
+                return res.sendFile(localPath);
             }
-        });
-        upstreamReq.on('error', () => {
-            fs.unlink(localPath, () => {});
+        }
+
+        const downloadPromise = (async () => {
+            const tmpPath = `${localPath}.tmp.${Date.now()}`;
+            try {
+                const stream = await fetchStreamWithRedirects(rawUrl);
+                await new Promise((resolve, reject) => {
+                    const fileStream = fs.createWriteStream(tmpPath);
+                    stream.pipe(fileStream);
+                    fileStream.on('finish', resolve);
+                    fileStream.on('error', reject);
+                    stream.on('error', reject);
+                });
+                if (fs.existsSync(tmpPath) && fs.statSync(tmpPath).size > 0) {
+                    fs.renameSync(tmpPath, localPath);
+                } else {
+                    try { fs.unlinkSync(tmpPath); } catch {}
+                }
+            } catch (err) {
+                try { if (fs.existsSync(tmpPath)) fs.unlinkSync(tmpPath); } catch {}
+                throw err;
+            }
+        })();
+
+        crestInFlightMap.set(filename, downloadPromise);
+        try {
+            await downloadPromise;
+        } finally {
+            crestInFlightMap.delete(filename);
+        }
+
+        if (fs.existsSync(localPath) && fs.statSync(localPath).size > 0) {
+            res.set('Cache-Control', 'public, max-age=31536000, immutable');
+            return res.sendFile(localPath);
+        } else {
+            res.set('Cache-Control', 'no-cache, no-store, must-revalidate');
             return res.status(404).send('Crest not found');
-        });
-        upstreamReq.on('timeout', () => {
-            upstreamReq.destroy();
-            fs.unlink(localPath, () => {});
-            return res.status(404).send('Crest not found');
-        });
+        }
     } catch {
+        res.set('Cache-Control', 'no-cache, no-store, must-revalidate');
         return res.status(404).send('Crest not found');
     }
 }
