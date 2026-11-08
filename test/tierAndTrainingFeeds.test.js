@@ -111,6 +111,30 @@ test('Regenerated Whitelabel Key for Norra AI grants full access, streaming, and
     assert.equal(requireFeature({ apiKey: regeneratedWhitelabelKey }, mockRes, 'predictions'), true);
 });
 
+test('Starter or Free user naming their key Norra is strictly blocked from Pro/Whitelabel features', () => {
+    const starterUserSpoofedKey = {
+        name: 'Norra AI Prediction Model',
+        email: 'user-with-norra-in-email@gmail.com',
+        plan: 'starter',
+        rateLimitPerMinute: 500,
+        allowedLeagues: null
+    };
+
+    assert.equal(hasFeature(starterUserSpoofedKey, 'predictions'), false);
+    assert.equal(hasFeature(starterUserSpoofedKey, 'h2h'), false);
+    assert.equal(hasFeature(starterUserSpoofedKey, 'trainingData'), false);
+
+    let statusSent = null;
+    const mockRes = {
+        status(code) { statusSent = code; return this; },
+        json() { return this; }
+    };
+
+    const allowed = requireFeature({ apiKey: starterUserSpoofedKey }, mockRes, 'predictions');
+    assert.equal(allowed, false);
+    assert.equal(statusSent, 403);
+});
+
 test('Training Dataset endpoint serves rich ML feature vectors', async () => {
     const initFootballApi = require('../controllers/footballApiController');
     const app = express();

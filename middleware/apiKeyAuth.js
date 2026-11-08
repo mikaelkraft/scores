@@ -153,7 +153,7 @@ function getAllowedLeaguesForKey(keyDoc) {
 }
 
 function assertLeagueAccess(keyDoc, leagueSlug) {
-    if (keyDoc?.plan === 'admin' || keyDoc?.plan === 'internal' || /norra/i.test(keyDoc?.email || '') || /norra/i.test(keyDoc?.name || '')) return true;
+    if (keyDoc?.plan === 'admin' || keyDoc?.plan === 'internal') return true;
     const allowed = getAllowedLeaguesForKey(keyDoc);
     if (!allowed) return true;
     if (!leagueSlug || leagueSlug === 'all') return false;
@@ -162,8 +162,8 @@ function assertLeagueAccess(keyDoc, leagueSlug) {
 
 /** Returns true if the key's plan includes the named feature */
 function hasFeature(keyDoc, featureName) {
-    // Admin / Internal / Norra AI keys have master bypass for ALL features
-    if (keyDoc?.plan === 'admin' || keyDoc?.plan === 'internal' || /norra/i.test(keyDoc?.email || '') || /norra/i.test(keyDoc?.name || '')) return true;
+    // Admin / Internal master keys have master bypass for ALL features
+    if (keyDoc?.plan === 'admin' || keyDoc?.plan === 'internal') return true;
     // Unauthenticated public reads: treat as free (limited)
     const features = getPlanConfig(keyDoc).features || PLAN_LIMITS.free.features;
     return Boolean(features[featureName]);
@@ -175,8 +175,8 @@ function hasFeature(keyDoc, featureName) {
  */
 function requireFeature(req, res, featureName, label) {
     const keyDoc = req.apiKey || null;
-    // Master Admin / Internal (Norra AI) keys always pass
-    if (keyDoc?.plan === 'admin' || keyDoc?.plan === 'internal' || /norra/i.test(keyDoc?.email || '') || /norra/i.test(keyDoc?.name || '')) return true;
+    // Master Admin / Internal keys always pass
+    if (keyDoc?.plan === 'admin' || keyDoc?.plan === 'internal') return true;
 
     // Public (no key) may use basic free features only
     if (!keyDoc && ['h2h', 'predictions', 'bookingCodes', 'playByPlay', 'trainingData'].includes(featureName)) {
@@ -281,8 +281,8 @@ async function resolveApiKey(rawKey) {
             if (keyDoc.expiresAt && new Date(keyDoc.expiresAt).getTime() < now) {
                 return null;
             }
-            // If the key is issued or regenerated for Norra AI (even under whitelabel tier), grant unlimited rate limit and bypass
-            if (/norra/i.test(keyDoc.email || '') || /norra/i.test(keyDoc.name || '') || keyDoc.plan === 'internal' || keyDoc.plan === 'admin') {
+            // Internal master and admin plans always have unlimited rate limits and unrestricted leagues
+            if (keyDoc.plan === 'internal' || keyDoc.plan === 'admin') {
                 keyDoc.rateLimitPerMinute = 0;
                 keyDoc.allowedLeagues = null;
             }
