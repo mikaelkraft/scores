@@ -505,10 +505,16 @@ async function syncLeagueFromLiveScoreStages(leagueDef, stages, now = new Date()
             const a = ev.T2?.[0] || {};
             const homeName = h.Nm || 'Home Club';
             const awayName = a.Nm || 'Away Club';
+            // Demote mis-tagged lower-division games off top-flight boards
+            targetSlug = demoteIfNotTopFlight(targetSlug, homeName, awayName, leagueName);
             // Keep senior top-flight boards clean — no B/II/U21 sides mixed in
             const seniorSlug = String(targetSlug || '').toLowerCase();
             const isSeniorTop = /\.[1]$/.test(seniorSlug) && !seniorSlug.includes('.w.') && !seniorSlug.includes('youth');
             if (isSeniorTop && (isReserveOrBTeamName(homeName) || isReserveOrBTeamName(awayName))) {
+                continue;
+            }
+            // Final gate: still on .1 with no known club → skip inserting into top board
+            if (isSeniorTop && TOP_FLIGHT_CLUBS[seniorSlug] && !hasTopFlightClub(seniorSlug, homeName, awayName)) {
                 continue;
             }
             const homeScore = parseInt(ev.Tr1 || 0, 10);
@@ -962,6 +968,98 @@ function enforceCountryOnSlug(slug, countryName = '', leagueName = '') {
     }
 
     return `${expected}.${tier}`;
+}
+
+
+/** Canonical aliases so Inter/Internazionale, Como/Como 1907, SC Heerenveen etc. collapse */
+const TEAM_NAME_ALIASES = {
+    internazionale: 'inter',
+    'inter milan': 'inter',
+    'fc internazionale': 'inter',
+    'inter nazion': 'inter',
+    'como 1907': 'como',
+    'calcio como': 'como',
+    'sc heerenveen': 'heerenveen',
+    heerenveen: 'heerenveen',
+    'feyenoord rotterdam': 'feyenoord',
+    feyenoord: 'feyenoord',
+    'athletic club': 'athletic bilbao',
+    'athletic bilbao': 'athletic bilbao',
+    'atletico de madrid': 'atletico madrid',
+    'atletico madrid': 'atletico madrid',
+    'atlético de madrid': 'atletico madrid',
+    'man united': 'manchester united',
+    'manchester utd': 'manchester united',
+    'man city': 'manchester city',
+    'spurs': 'tottenham',
+    'tottenham hotspur': 'tottenham',
+    'paris sg': 'psg',
+    'paris saint germain': 'psg',
+    'paris saint-germain': 'psg',
+    'bayern munich': 'bayern',
+    'fc bayern': 'bayern',
+    'bayern munchen': 'bayern',
+    'borussia dortmund': 'dortmund',
+    'bvb': 'dortmund',
+    'sporting cp': 'sporting',
+    'sporting lisbon': 'sporting',
+    'vitoria de guimaraes': 'vitoria guimaraes',
+    'vitoria guimaraes': 'vitoria guimaraes',
+    'fc porto': 'porto',
+    porto: 'porto',
+};
+
+/** Known first-division clubs — matches under .1 without a club on this list get demoted */
+const TOP_FLIGHT_CLUBS = {
+    'ita.1': new Set(['inter','milan','ac milan','juventus','napoli','roma','as roma','lazio','atalanta','fiorentina','bologna','torino','genoa','cagliari','udinese','verona','hellas verona','empoli','monza','lecce','frosinone','sassuolo','como','parma','venezia','cremonese','pisa','salernitana','spezia','sampdoria','benevento','crotone','spal','chievo']),
+    'esp.1': new Set(['real madrid','barcelona','barca','atletico madrid','sevilla','real sociedad','villarreal','athletic bilbao','real betis','betis','osasuna','getafe','celta','celta vigo','levante','mallorca','girona','rayo vallecano','rayo','valencia','espanyol','alaves','deportivo alaves','elche','cadiz','granada','valladolid','leganes','las palmas','almeria','villarreal cf']),
+    'eng.1': new Set(['arsenal','chelsea','liverpool','manchester city','manchester united','tottenham','newcastle','aston villa','brighton','west ham','crystal palace','fulham','brentford','wolves','wolverhampton','everton','nottingham forest','bournemouth','southampton','leicester','ipswich','burnley','sheffield united','luton','leeds','watford','norwich']),
+    'ger.1': new Set(['bayern','dortmund','leverkusen','bayer leverkusen','rb leipzig','leipzig','stuttgart','eintracht frankfurt','frankfurt','wolfsburg','freiburg','hoffenheim','monchengladbach','gladbach','mainz','augsburg','werder bremen','bremen','union berlin','bochum','heidenheim','st pauli','holstein kiel','koln','cologne','hertha','schalke','schalke 04','hamburg','hamburger sv']),
+    'fra.1': new Set(['psg','marseille','monaco','lyon','lille','nice','rennes','lens','strasbourg','nantes','montpellier','reims','toulouse','brest','angers','auxerre','le havre','saint etienne','st etienne','metz','clermont','lorient','troyes']),
+    'por.1': new Set(['benfica','porto','sporting','braga','guimaraes','vitoria guimaraes','boavista','famalicao','moreirense','casa pia','estoril','arouca','rio ave','gil vicente','santa clara','nacional','tondela','chaves','vizela','portimonense','farense']),
+    'ned.1': new Set(['ajax','psv','feyenoord','az','az alkmaar','twente','utrecht','heerenveen','groningen','sparta rotterdam','sparta','willem ii','nec','nijmegen','go ahead eagles','fortuna sittard','heracles','pec zwolle','zwolle','excelsior','volendam','rkc','waalwijk','almere']),
+};
+
+function applyTeamAlias(normalized = '') {
+    const n = String(normalized || '').trim().toLowerCase();
+    if (!n) return n;
+    if (TEAM_NAME_ALIASES[n]) return TEAM_NAME_ALIASES[n];
+    // prefix match for longer names
+    for (const [k, v] of Object.entries(TEAM_NAME_ALIASES)) {
+        if (n === k || n.startsWith(k + ' ') || n.includes(k)) return v;
+    }
+    return n;
+}
+
+/** Returns true if at least one side looks like a known top-flight club for this slug */
+function hasTopFlightClub(slug, homeName, awayName) {
+    const list = TOP_FLIGHT_CLUBS[String(slug || '').toLowerCase()];
+    if (!list) return true; // unknown leagues: don't filter
+    const h = applyTeamAlias(normalizeTeamName(homeName));
+    const a = applyTeamAlias(normalizeTeamName(awayName));
+    const hit = (name) => {
+        if (!name) return false;
+        if (list.has(name)) return true;
+        for (const club of list) {
+            if (name.includes(club) || club.includes(name)) return true;
+        }
+        return false;
+    };
+    return hit(h) || hit(a);
+}
+
+/** Demote .1 slug to .lower when neither side is a known first-division club */
+function demoteIfNotTopFlight(slug, homeName, awayName, leagueName = '') {
+    if (!slug || !/\.1$/.test(slug)) return slug;
+    if (!TOP_FLIGHT_CLUBS[slug]) return slug;
+    // Explicit top-flight league title always keeps .1 if present
+    if (/serie a\b|la\s*liga|laliga ea|premier league|\bpl\b|bundesliga|ligue 1|eredivisie|primeira liga/i.test(leagueName || '')) {
+        // still require at least one known club — otherwise LiveScore mislabeled the stage
+        if (hasTopFlightClub(slug, homeName, awayName)) return slug;
+        return slug.replace(/\.1$/, '.lower');
+    }
+    if (hasTopFlightClub(slug, homeName, awayName)) return slug;
+    return slug.replace(/\.1$/, '.lower');
 }
 
 function resolveLeagueSlug(altGameNote = '', compDesc = '', uid = '') {
@@ -1904,7 +2002,7 @@ function normalizeTeamName(name = '') {
         .replace(/\breal\s+madrid\b/g, 'realmadrid')
         .replace(/\bbayern\s+munich\b|\bbayern\s+munchen\b/g, 'bayernmunich')
         .replace(/\bdortmund\b|\bborussia\s+dortmund\b/g, 'borussiadortmund')
-        .replace(/\binter\s+milan\b|\binternazionale\b/g, 'intermilan')
+        .replace(/\binter\s+milan\b|\binternazionale\b|\binter\b/g, 'inter')
         .replace(/\bac\s+milan\b/g, 'acmilan')
         .replace(/\bsporting\s+cp\b|\bsporting\s+lisbon\b/g, 'sportingcp')
         .replace(/\bjuve\b|\bjuventus\b/g, 'juventus')
@@ -1933,6 +2031,9 @@ function normalizeTeamName(name = '') {
         .replace(/\bmbeya\s+city\b/g, 'mbeyacity')
         .replace(/\bsingida\s+black\s+stars\b|\bsingida\s+bs\b/g, 'singidablackstars')
         .replace(/\bsantos\s+laguna\b/g, 'santos')
+        .replace(/\bfeyenoord\s+rotterdam\b/g, 'feyenoord')
+        .replace(/\bsc\s+heerenveen\b/g, 'heerenveen')
+        .replace(/\bcomo\s+1907\b|\bcalcio\s+como\b/g, 'como')
         // Strip common non-distinct club markers like Club, FC, CF, etc. and foundation years (e.g. Como 1907 -> como)
         .replace(/\b(club|clube|csd|deportivo|fc|cf|sc|ac|cd|ceif|afc|fk|sk|sv|ssc|as|rc|ud|rb|calcio|sad|sa)\b/gi, '')
         .replace(/\b(de\s+)?(junin|resistencia|cordoba|la\s+plata)\b/gi, '')
@@ -3019,6 +3120,9 @@ module.exports = {
     cleanupStuckMatchesAndPurgeNcaa,
     getTeamCategory,
     isReserveOrBTeamName,
+    hasTopFlightClub,
+    demoteIfNotTopFlight,
+    applyTeamAlias,
     getMatchTier,
     normalizeTeamName,
     areTeamNamesMatching,

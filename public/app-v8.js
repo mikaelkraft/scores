@@ -442,6 +442,16 @@
         if (logo && /placeholder|default.?crest|unknown|no.?logo/i.test(logo)) {
             logo = '';
         }
+        // LiveScore medium crest by numeric team id when logo URL missing
+        if (!logo) {
+            const sid = team?.source_id || team?.id || team?.uid || '';
+            if (/^\d{4,}$/.test(String(sid))) {
+                logo = `https://storage.livescore.com/images/team/medium/${sid}.png`;
+            }
+        }
+        if (!logo && team?.espn_id && /^\d+$/.test(String(team.espn_id))) {
+            logo = `https://a.espncdn.com/i/teamlogos/soccer/500/${team.espn_id}.png`;
+        }
         if (logo && logo.startsWith('http')) {
             rememberCrest(nameKey, logo);
             logo = `/cdn/crest?url=${encodeURIComponent(logo)}`;
@@ -553,6 +563,31 @@
         if (loading && elements[`${kind}-empty`]) elements[`${kind}-empty`].hidden = true;
     }
 
+    const CLIENT_TOP_FLIGHT = {
+        'ita.1': ['inter','milan','juventus','napoli','roma','lazio','atalanta','fiorentina','bologna','torino','genoa','cagliari','udinese','verona','empoli','monza','lecce','frosinone','sassuolo','como','parma','venezia','cremonese','pisa','salernitana','spezia','sampdoria'],
+        'esp.1': ['real madrid','barcelona','atletico madrid','sevilla','real sociedad','villarreal','athletic bilbao','betis','osasuna','getafe','celta','levante','mallorca','girona','rayo','valencia','espanyol','alaves','elche','cadiz','granada','valladolid','leganes','las palmas','almeria'],
+        'eng.1': ['arsenal','chelsea','liverpool','manchester city','manchester united','tottenham','newcastle','aston villa','brighton','west ham','crystal palace','fulham','brentford','wolves','everton','nottingham forest','bournemouth','southampton','leicester','ipswich','burnley','leeds'],
+        'ger.1': ['bayern','dortmund','leverkusen','leipzig','stuttgart','frankfurt','wolfsburg','freiburg','hoffenheim','gladbach','mainz','augsburg','bremen','union berlin','bochum','heidenheim','st pauli','koln','schalke','hamburg'],
+        'fra.1': ['psg','marseille','monaco','lyon','lille','nice','rennes','lens','strasbourg','nantes','montpellier','reims','toulouse','brest','angers','auxerre','le havre','saint etienne','metz'],
+        'por.1': ['benfica','porto','sporting','braga','guimaraes','boavista','famalicao','moreirense','casa pia','estoril','arouca','rio ave','gil vicente','santa clara'],
+        'ned.1': ['ajax','psv','feyenoord','az','twente','utrecht','heerenveen','groningen','sparta','willem ii','nec','go ahead eagles','fortuna sittard','heracles','zwolle']
+    };
+
+    function clientHasTopFlightClub(slug, homeName, awayName) {
+        const list = CLIENT_TOP_FLIGHT[String(slug || '').toLowerCase()];
+        if (!list) return true;
+        const norm = (n) => cleanTeamNameForDedup(n || '');
+        const hit = (n) => {
+            const x = norm(n);
+            if (!x) return false;
+            return list.some(c => {
+                const cn = c.replace(/\s+/g, '');
+                return x === cn || x.includes(cn) || cn.includes(x);
+            });
+        };
+        return hit(homeName) || hit(awayName);
+    }
+
     function isReserveOrBTeam(name = '') {
         const s = String(name || '').trim();
         if (!s) return false;
@@ -575,6 +610,10 @@
             .replace(/\b(women|woman|ladies|femenin[oa]?|frauen|damen|vrouwen|fem|wfc|w)\b|\(w\)/gi, '')
             .replace(/\b(u-?23|u-?21|u-?20|u-?19|u-?18|u-?17|u-?16|u-?15|youth|reserves?|development)\b/gi, '')
             .replace(/\bsantos\s+laguna\b/g, 'santos')
+            .replace(/\binternazionale\b|\binter\s+milan\b|\binter\b/g, 'inter')
+            .replace(/\bcomo\s+1907\b|\bcalcio\s+como\b/g, 'como')
+            .replace(/\bfeyenoord\s+rotterdam\b/g, 'feyenoord')
+            .replace(/\bsc\s+heerenveen\b/g, 'heerenveen')
             .replace(/\b(club|clube|csd|deportivo|fc|cf|sc|ac|cd|ceif|afc|fk|sk|sv|ssc|as|rc|ud|rb|calcio|sad|sa)\b/gi, '')
             .replace(/\b(de\s+)?(junin|resistencia|cordoba|la\s+plata)\b/gi, '')
             .replace(/[^a-z0-9]/g, '');
@@ -1876,6 +1915,7 @@
                     const hn = hT.team?.displayName || hT.team?.name || '';
                     const an = aT.team?.displayName || aT.team?.name || '';
                     if (isReserveOrBTeam(hn) || isReserveOrBTeam(an)) continue;
+                    if (CLIENT_TOP_FLIGHT[slug] && !clientHasTopFlightClub(slug, hn, an)) continue;
                 }
 
                 if (globalSeenMatchSig.has(sig)) {
@@ -2736,16 +2776,50 @@
             `;
         }).join('');
 
-        const timelineRows = events.map(event => `
-            <div class="timeline-item">
+        const timelineRows = (() => {
+            const seenTimeline = new Set();
+            const dedupedEvents = [];
+            for (const event of events) {
+                const key = [
+                    String(event.clock || event.minute || ''),
+                    String(event.kind || event.type || '').toLowerCase(),
+                    String(event.athlete?.displayName || event.player || event.text || '').toLowerCase().slice(0, 48)
+                ].join('|');
+                if (seenTimeline.has(key)) continue;
+                seenTimeline.add(key);
+                dedupedEvents.push(event);
+            }
+            dedupedEvents.sort((x, y) => {
+                const ma = parseInt(String(x.clock || x.minute || '0').replace(/\D/g, ''), 10) || 0;
+                const mb = parseInt(String(y.clock || y.minute || '0').replace(/\D/g, ''), 10) || 0;
+                return ma - mb;
+            });
+            return dedupedEvents.map(event => {
+                let text = String(event.text || '').trim();
+                const kind = String(event.kind || event.type || '').toLowerCase();
+                const player = event.athlete?.displayName || event.player || '';
+                if (!text || /^event$/i.test(text)) {
+                    if (kind.includes('goal')) text = player ? `Goal! ${player}` : 'Goal!';
+                    else if (kind.includes('yellow')) text = player ? `Yellow card — ${player}` : 'Yellow card';
+                    else if (kind.includes('red')) text = player ? `Red card — ${player}` : 'Red card';
+                    else if (kind.includes('sub')) text = 'Substitution';
+                    else if (kind.includes('var')) text = 'VAR check';
+                    else if (kind.includes('pen')) text = player ? `Penalty — ${player}` : 'Penalty';
+                    else if (kind.includes('kick')) text = 'Kick-off';
+                    else if (kind.includes('half') || kind.includes('ht')) text = 'Half-time';
+                    else if (kind.includes('end') || kind.includes('ft')) text = 'Full-time';
+                    else text = player ? `Match incident — ${player}` : 'Match incident';
+                }
+                return `<div class="timeline-item">
                 <span class="timeline-minute">${escapeHtml(event.clock || '—')}</span>
                 ${eventBadge(event.kind)}
                 <div class="timeline-details">
-                    <p style="margin:0;">${escapeHtml(event.text)}</p>
+                    <p style="margin:0;">${escapeHtml(text)}</p>
                     ${event.team?.displayName || event.team?.name ? `<small style="color:var(--text-muted);">${escapeHtml(event.team.displayName || event.team.name)}</small>` : ''}
                 </div>
-            </div>
-        `).join('');
+            </div>`;
+            }).join('');
+        })();
 
         const substitutionRows = substitutions.map(item => `
             <div class="timeline-item">
@@ -2955,8 +3029,9 @@
         function renderTacticalPitchHtml(teamRoster, teamName, isHome = true) {
             if (!teamRoster?.roster?.length) return '';
             const allPlayers = teamRoster.roster;
-            const starters = allPlayers.filter(p => p.starter);
-            const squad = starters.length >= 11 ? starters.slice(0, 11) : allPlayers.slice(0, 11);
+            let starters = allPlayers.filter(p => p.starter === true || p.starter === 'true' || p.starter === 1);
+            if (starters.length < 11) starters = allPlayers.slice(0, 11);
+            const squad = starters.slice(0, 11);
             if (squad.length < 7) return '';
 
             const gk = [];
@@ -3050,8 +3125,26 @@
 
         function renderRosterList(teamRoster, teamName) {
             if (!teamRoster?.roster?.length) return `<p style="color:var(--text-muted); font-size:13px;">No official lineup announced yet for ${escapeHtml(teamName)}.</p>`;
-            const starters = teamRoster.roster.filter(p => p.starter);
-            const bench = teamRoster.roster.filter(p => !p.starter);
+            let starters = teamRoster.roster.filter(p => p.starter === true || p.starter === 'true' || p.starter === 1);
+            let bench = teamRoster.roster.filter(p => !(p.starter === true || p.starter === 'true' || p.starter === 1));
+            // Provider often omits starter flags — split XI vs bench by order (first 11 + extra GKs to bench)
+            if (starters.length < 11 && teamRoster.roster.length > 11) {
+                const ordered = [...teamRoster.roster];
+                starters = ordered.slice(0, 11);
+                bench = ordered.slice(11);
+                // If multiple GKs in starters, keep one GK in XI, push extras to bench
+                const isGk = (p) => /gk|goa|goal/i.test(String(p.position?.abbreviation || p.athlete?.position?.abbreviation || ''));
+                const gks = starters.filter(isGk);
+                if (gks.length > 1) {
+                    const keep = gks[0];
+                    const extra = gks.slice(1);
+                    starters = starters.filter(p => !extra.includes(p));
+                    bench = [...extra, ...bench];
+                }
+            } else if (starters.length === 0) {
+                starters = teamRoster.roster.slice(0, Math.min(11, teamRoster.roster.length));
+                bench = teamRoster.roster.slice(11);
+            }
 
             return `
                 <div class="lineup-col" style="flex:1; min-width:240px;">
