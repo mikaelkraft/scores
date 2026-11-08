@@ -1292,7 +1292,7 @@ router.get('/predictions-context/:eventId', optionalApiKeyAuth, async (req, res)
         };
 
         // Run parallel queries: H2H, Home Recent Form, Away Recent Form, Standings
-        const [h2hMatches, homeRecentMatches, awayRecentMatches, standingsGroup, leagueDoc] = await Promise.all([
+        let [h2hMatches, homeRecentMatches, awayRecentMatches, standingsGroup, leagueDoc] = await Promise.all([
             // H2H past meetings - fetch complete lifetime encounters without artificial cap
             h2hOrClauses.length ? SoccerMatch.find({
                 $and: [
@@ -1323,6 +1323,36 @@ router.get('/predictions-context/:eventId', optionalApiKeyAuth, async (req, res)
             // League definition
             SoccerLeague.findOne({ slug: leagueSlug }).lean()
         ]);
+
+        // Fallback: looser name contains match when strict H2H query returned nothing
+        if ((!h2hMatches || !h2hMatches.length) && hName && aName && hName.length >= 4 && aName.length >= 4) {
+            try {
+                const loose = await SoccerMatch.find({
+                    $and: [
+                        finishedFilter,
+                        {
+                            $or: [
+                                {
+                                    $and: [
+                                        { $or: [{ 'home.name': new RegExp(hName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').split(/\s+/).slice(0, 2).join('.*'), 'i') }, { 'home.display_name': new RegExp(hName.split(/\s+/)[0], 'i') }] },
+                                        { $or: [{ 'away.name': new RegExp(aName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').split(/\s+/).slice(0, 2).join('.*'), 'i') }, { 'away.display_name': new RegExp(aName.split(/\s+/)[0], 'i') }] }
+                                    ]
+                                },
+                                {
+                                    $and: [
+                                        { $or: [{ 'home.name': new RegExp(aName.split(/\s+/)[0], 'i') }, { 'home.display_name': new RegExp(aName.split(/\s+/)[0], 'i') }] },
+                                        { $or: [{ 'away.name': new RegExp(hName.split(/\s+/)[0], 'i') }, { 'away.display_name': new RegExp(hName.split(/\s+/)[0], 'i') }] }
+                                    ]
+                                }
+                            ]
+                        }
+                    ]
+                }).sort({ date: -1 }).limit(40).lean();
+                if (loose?.length) h2hMatches = loose;
+            } catch (e) {
+                console.warn('Loose H2H fallback failed:', e.message);
+            }
+        }
 
         // Build deduplicated lifetime H2H map
         const h2hMap = new Map();
