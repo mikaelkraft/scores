@@ -584,10 +584,24 @@
         if (!hName && !aName) {
             return String(ev.id || Math.random());
         }
-        const dKey = ev.scoreboardDate || (ev.date ? String(ev.date).slice(0, 10) : '');
+        // Prefer calendar day; fall back to ISO date slice so timezone-shifted duplicates still collapse
+        let dKey = ev.scoreboardDate || '';
+        if (!dKey && ev.date) {
+            try {
+                const d = new Date(ev.date);
+                if (!isNaN(d.getTime())) {
+                    dKey = d.toISOString().slice(0, 10).replace(/-/g, '');
+                } else {
+                    dKey = String(ev.date).slice(0, 10);
+                }
+            } catch (_) {
+                dKey = String(ev.date).slice(0, 10);
+            }
+        }
         const tier = getEventMatchTierClient(ev);
         const isYouth = tier.endsWith('_y');
-        return [hName, aName].sort().join('_vs_') + '_' + dKey + (isYouth ? '_youth' : '');
+        const isWomen = tier.startsWith('w_');
+        return [hName, aName].sort().join('_vs_') + '_' + dKey + (isWomen ? '_w' : '') + (isYouth ? '_youth' : '');
     }
 
     function getEventQualityScore(ev) {
@@ -693,13 +707,9 @@
         'tza.1': 56,
         'jpn.1': 55,
         'kor.1': 54,
-        'chn.1': 53,
-        'aus.1': 52,
-        'kor.2': 47,
-        'chn.2': 46,
-        'eng.trophy': 45,
-        'bra.2': 51,
-        'esp.2': 50,
+        'aus.1': 53,
+        'bra.2': 52,
+        'esp.2': 51,
         'ger.2': 50,
         'ita.2': 49,
         'fra.2': 48,
@@ -1832,7 +1842,19 @@
                     }
                 }
             }
-            const dedupedEvents = Array.from(seenMatchSig.values()).map(e => e.event);
+            // Promote winners into global set so the same fixture cannot reappear under another league header
+            for (const [sig, entry] of seenMatchSig) {
+                if (!globalSeenMatchSig.has(sig) || (entry.score > (globalSeenMatchSig.get(sig).score || 0))) {
+                    globalSeenMatchSig.set(sig, { id: entry.event.id, score: entry.score });
+                }
+            }
+            const dedupedEvents = Array.from(seenMatchSig.values())
+                .filter(e => {
+                    const sig = getEventDedupSignature(e.event);
+                    const g = globalSeenMatchSig.get(sig);
+                    return !g || g.id === e.event.id;
+                })
+                .map(e => e.event);
             if (!dedupedEvents.length) return '';
 
             totalCount += dedupedEvents.length;
@@ -1895,12 +1917,20 @@
             elements['fixtures-list'].innerHTML = '';
         } else {
             if (elements['fixtures-empty']) elements['fixtures-empty'].hidden = true;
-            const nextContent = pinnedHtml + html;
-            if (elements['fixtures-list'].innerHTML !== nextContent) {
-                elements['fixtures-list'].innerHTML = nextContent;
-            }
+            elements['fixtures-list'].innerHTML = pinnedHtml + html;
 
-            if (fixturesContainer) fixturesContainer.style.minHeight = '';
+            if (prevScrollY > 0) {
+                window.scrollTo({ top: prevScrollY, behavior: 'instant' });
+                requestAnimationFrame(() => {
+                    if (prevScrollY > 0) window.scrollTo({ top: prevScrollY, behavior: 'instant' });
+                    setTimeout(() => {
+                        if (prevScrollY > 0 && Math.abs((window.scrollY || 0) - prevScrollY) > 5) {
+                            window.scrollTo({ top: prevScrollY, behavior: 'instant' });
+                        }
+                        if (fixturesContainer) fixturesContainer.style.minHeight = '';
+                    }, 150);
+                });
+            }
 
             elements['fixtures-list'].querySelectorAll('.fs-league-view-btn').forEach(btn => {
                 btn.addEventListener('click', (e) => {
@@ -2751,10 +2781,10 @@
                     const resColor = m.result === 'W' ? '#10b981' : m.result === 'D' ? '#9ca3af' : '#ef4444';
                     const resBg = m.result === 'W' ? 'rgba(16,185,129,0.12)' : m.result === 'D' ? 'rgba(156,163,175,0.12)' : 'rgba(239,68,68,0.12)';
                     const venueLabel = m.venue === 'Away' || m.atVs === '@' ? '@' : 'vs';
-                    const dateFormatted = m.date ? formatDate(m.date, { year: true, weekday: false }) : '';
+                    const dateFormatted = m.date ? formatDate(m.date, { year: false, weekday: false }) : '';
                     return `<div style="display:flex; justify-content:space-between; align-items:center; padding:6px 10px; background:var(--bg-surface-elevated); border:1px solid var(--border-subtle); border-radius:6px; font-size:12px;">
                         <div style="display:flex; align-items:center; gap:6px; overflow:hidden;">
-                            ${dateFormatted ? `<span style="font-size:10.5px; color:var(--text-muted); min-width:65px;">${dateFormatted}</span>` : ''}
+                            ${dateFormatted ? `<span style="font-size:10.5px; color:var(--text-muted); min-width:44px;">${dateFormatted}</span>` : ''}
                             <span style="font-size:11px; color:var(--text-muted); font-weight:700; min-width:16px;">${venueLabel}</span>
                             <span style="font-weight:600; color:var(--text-main); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;" title="${escapeHtml(m.opponent || '')}">${escapeHtml(m.opponent || 'Opponent')}</span>
                         </div>
@@ -2767,79 +2797,67 @@
         }
 
         // Calculate WDW records for both teams in their head-to-head encounters
-        let lifetimeHomeWins = Number(h2h.homeWins || 0);
-        let lifetimeAwayWins = Number(h2h.awayWins || 0);
-        let lifetimeDraws = Number(h2h.draws || 0);
-        let totalLifetimeMeetings = Number(h2h.totalMeetings || 0);
-
+        let calculatedHomeWins = 0;
+        let calculatedAwayWins = 0;
+        let calculatedDraws = 0;
         let homeH2hForm = [];
         let awayH2hForm = [];
 
-        const hClean = cleanTeamNameForDedup(home.team?.displayName || home.team?.name || '');
-        const aClean = cleanTeamNameForDedup(away.team?.displayName || away.team?.name || '');
+        if (recentH2h.length) {
+            const hClean = cleanTeamNameForDedup(home.team?.displayName || home.team?.name || '');
+            const aClean = cleanTeamNameForDedup(away.team?.displayName || away.team?.name || '');
 
-        const meetingsForForm = (h2h.allMeetings && h2h.allMeetings.length) ? h2h.allMeetings : (recentH2h.length ? recentH2h : []);
-        let localHomeWins = 0;
-        let localAwayWins = 0;
-        let localDraws = 0;
+            for (const meeting of recentH2h) {
+                const pastHClean = cleanTeamNameForDedup(meeting.homeTeam || '');
+                const pastAClean = cleanTeamNameForDedup(meeting.awayTeam || '');
+                const scoreParts = String(meeting.score || '').replace(/[–—]/g, '-').split('-').map(s => parseInt(String(s).trim(), 10));
+                const s1 = isNaN(scoreParts[0]) ? 0 : scoreParts[0];
+                const s2 = isNaN(scoreParts[1]) ? 0 : scoreParts[1];
 
-        for (const meeting of meetingsForForm) {
-            const pastHClean = cleanTeamNameForDedup(meeting.homeTeam || '');
-            const pastAClean = cleanTeamNameForDedup(meeting.awayTeam || '');
-            const scoreParts = String(meeting.score || '').split('-').map(s => parseInt(s.trim(), 10));
-            const s1 = isNaN(scoreParts[0]) ? 0 : scoreParts[0];
-            const s2 = isNaN(scoreParts[1]) ? 0 : scoreParts[1];
+                let isHomeSideH = true;
+                if (pastAClean === hClean || (pastAClean && hClean && (pastAClean.includes(hClean) || hClean.includes(pastAClean)) && !pastHClean.includes(hClean))) {
+                    isHomeSideH = false;
+                } else if (pastHClean === hClean || (pastHClean && hClean && (pastHClean.includes(hClean) || hClean.includes(pastHClean)))) {
+                    isHomeSideH = true;
+                } else if (meeting.isHomeOriginal !== undefined) {
+                    isHomeSideH = Boolean(meeting.isHomeOriginal);
+                }
 
-            let isHomeSideH = true;
-            if (pastAClean === hClean || (pastAClean && hClean && (pastAClean.includes(hClean) || hClean.includes(pastAClean)) && !pastHClean.includes(hClean))) {
-                isHomeSideH = false;
-            } else if (pastHClean === hClean || (pastHClean && hClean && (pastHClean.includes(hClean) || hClean.includes(pastHClean)))) {
-                isHomeSideH = true;
-            } else if (meeting.isHomeOriginal !== undefined) {
-                isHomeSideH = Boolean(meeting.isHomeOriginal);
+                const teamHomeGoals = isHomeSideH ? s1 : s2;
+                const teamAwayGoals = isHomeSideH ? s2 : s1;
+
+                if (teamHomeGoals > teamAwayGoals) {
+                    calculatedHomeWins++;
+                    homeH2hForm.push('W');
+                    awayH2hForm.push('L');
+                } else if (teamAwayGoals > teamHomeGoals) {
+                    calculatedAwayWins++;
+                    homeH2hForm.push('L');
+                    awayH2hForm.push('W');
+                } else {
+                    calculatedDraws++;
+                    homeH2hForm.push('D');
+                    awayH2hForm.push('D');
+                }
             }
-
-            const teamHomeGoals = isHomeSideH ? s1 : s2;
-            const teamAwayGoals = isHomeSideH ? s2 : s1;
-
-            if (teamHomeGoals > teamAwayGoals) {
-                localHomeWins++;
-                homeH2hForm.push('W');
-                awayH2hForm.push('L');
-            } else if (teamAwayGoals > teamHomeGoals) {
-                localAwayWins++;
-                homeH2hForm.push('L');
-                awayH2hForm.push('W');
-            } else {
-                localDraws++;
-                homeH2hForm.push('D');
-                awayH2hForm.push('D');
-            }
+        } else {
+            calculatedHomeWins = Number(h2h.homeWins) || 0;
+            calculatedAwayWins = Number(h2h.awayWins) || 0;
+            calculatedDraws = Number(h2h.draws) || 0;
+            homeH2hForm = Array.isArray(h2h.h2hFormHome) ? [...h2h.h2hFormHome] : [];
+            awayH2hForm = Array.isArray(h2h.h2hFormAway) ? [...h2h.h2hFormAway] : [];
         }
 
-        if (!totalLifetimeMeetings || totalLifetimeMeetings < meetingsForForm.length) {
-            totalLifetimeMeetings = Math.max(meetingsForForm.length, localHomeWins + localAwayWins + localDraws);
-            lifetimeHomeWins = localHomeWins;
-            lifetimeAwayWins = localAwayWins;
-            lifetimeDraws = localDraws;
-        } else if (lifetimeHomeWins === 0 && lifetimeAwayWins === 0 && lifetimeDraws === 0 && meetingsForForm.length > 0) {
-            lifetimeHomeWins = localHomeWins;
-            lifetimeAwayWins = localAwayWins;
-            lifetimeDraws = localDraws;
-        }
-
-        const calculatedHomeWins = lifetimeHomeWins;
-        const calculatedAwayWins = lifetimeAwayWins;
-        const calculatedDraws = lifetimeDraws;
+        const totalLifetimeMeetings = Math.max(
+            Number(h2h.totalMeetings || 0),
+            recentH2h.length,
+            (calculatedHomeWins || 0) + (calculatedAwayWins || 0) + (calculatedDraws || 0)
+        );
         const hasPastMeetings = totalLifetimeMeetings > 0;
 
-        const h2hMeetingsRows = recentH2h.length ? recentH2h.slice(0, 5).map(m => `
+        const h2hMeetingsRows = recentH2h.length ? recentH2h.slice(0, 15).map(m => `
             <div style="display:flex; justify-content:space-between; align-items:center; padding:8px 12px; background:var(--bg-canvas); border:1px solid var(--border-subtle); border-radius:6px; margin-bottom:8px; font-size:12.5px;">
-                <span style="color:var(--text-muted); font-size:11.5px; width:85px;">${formatDate(m.date, { year: true, weekday: false })}</span>
-                <span style="flex:1; text-align:right; font-weight:600; padding-right:10px;">${escapeHtml(m.homeTeam)}</span>
-                <span style="background:var(--bg-surface-elevated); border:1px solid var(--border-subtle); padding:2px 8px; border-radius:4px; font-weight:700; font-size:12px;">${escapeHtml(m.score)}</span>
-                <span style="flex:1; text-align:left; font-weight:600; padding-left:10px;">${escapeHtml(m.awayTeam)}</span>
-            </div>
+                <span style="color:var(--text-muted); font-size:11.5px; width:75px;">${formatDate(m.date, { year: false, weekday: false })}</span>
                 <span style="flex:1; text-align:right; font-weight:600; padding-right:10px;">${escapeHtml(m.homeTeam)}</span>
                 <span style="background:var(--bg-surface-elevated); border:1px solid var(--border-subtle); padding:2px 8px; border-radius:4px; font-weight:700; font-size:12px;">${escapeHtml(m.score)}</span>
                 <span style="flex:1; text-align:left; font-weight:600; padding-left:10px;">${escapeHtml(m.awayTeam)}</span>
@@ -3194,7 +3212,7 @@
                             <div style="background:var(--bg-canvas); border:1px solid var(--border-subtle); border-radius:8px; padding:14px;">
                                 <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:10px;">
                                     <div style="display:flex; align-items:center; gap:8px;">
-                                        ${teamLogo(home.team, 'team-crest')}
+                                        ${home.team?.logo ? `<img src="${home.team.logo}" alt="" style="width:20px; height:20px; object-fit:contain;">` : ''}
                                         <strong style="font-size:13.5px; color:var(--text-main);">${escapeHtml(home.team?.displayName || 'Home Team')}</strong>
                                     </div>
                                     <span style="font-size:11px; color:#10b981; font-weight:600;">${homeAnalytics.winRate ?? 0}% Win Rate</span>
@@ -3208,7 +3226,7 @@
                             <div style="background:var(--bg-canvas); border:1px solid var(--border-subtle); border-radius:8px; padding:14px;">
                                 <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:10px;">
                                     <div style="display:flex; align-items:center; gap:8px;">
-                                        ${teamLogo(away.team, 'team-crest')}
+                                        ${away.team?.logo ? `<img src="${away.team.logo}" alt="" style="width:20px; height:20px; object-fit:contain;">` : ''}
                                         <strong style="font-size:13.5px; color:var(--text-main);">${escapeHtml(away.team?.displayName || 'Away Team')}</strong>
                                     </div>
                                     <span style="font-size:11px; color:#3b82f6; font-weight:600;">${awayAnalytics.winRate ?? 0}% Win Rate</span>
@@ -4023,8 +4041,7 @@
         if (!list || !liveMatches || !liveMatches.length) return false;
         let matchedCount = 0;
         for (const m of liveMatches) {
-            const row = list.querySelector(`.fs-match-row[data-event-id="${m.id}"]`) ||
-                        list.querySelector(`.fs-match-row[data-event-id="${m.source?.event_id}"]`);
+            const row = list.querySelector(`.fs-match-row[data-event-id="${m.id}"]`);
             if (row) {
                 matchedCount++;
                 const scoreDigits = row.querySelectorAll('.fs-score-digit');
@@ -4047,8 +4064,7 @@
                 }
             }
         }
-        const renderedLiveRows = list.querySelectorAll('.fs-match-row .fs-status-live');
-        return matchedCount > 0 && (matchedCount >= renderedLiveRows.length || matchedCount === liveMatches.length);
+        return matchedCount > 0 && matchedCount === liveMatches.length;
     }
 
     function initLiveSync() {
@@ -4059,19 +4075,6 @@
                 syncLiveScores();
             });
         }
-
-        let isUserInteracting = false;
-        let userScrollTimeout = null;
-        window.addEventListener('scroll', () => {
-            isUserInteracting = true;
-            if (userScrollTimeout) clearTimeout(userScrollTimeout);
-            userScrollTimeout = setTimeout(() => { isUserInteracting = false; }, 600);
-        }, { passive: true });
-        window.addEventListener('touchstart', () => { isUserInteracting = true; }, { passive: true });
-        window.addEventListener('touchend', () => {
-            if (userScrollTimeout) clearTimeout(userScrollTimeout);
-            userScrollTimeout = setTimeout(() => { isUserInteracting = false; }, 600);
-        }, { passive: true });
 
         let isPolling = false;
         async function syncLiveScores() {
@@ -4115,11 +4118,6 @@
 
                 // If only existing live scores changed in-place, patch DOM without re-rendering container
                 if (digestChanged && patchLiveMatchRowsInDom(liveMatches)) {
-                    return;
-                }
-
-                // If user is currently touching, scrolling, or drawer modal is open, defer full reload
-                if (isUserInteracting || (elements['match-drawer'] && !elements['match-drawer'].hidden)) {
                     return;
                 }
 

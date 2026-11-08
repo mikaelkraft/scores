@@ -1938,13 +1938,26 @@ router.get('/h2h/:team1Id/:team2Id', optionalApiKeyAuth, async (req, res) => {
     if (!requireFeature(req, res, 'h2h', 'Head-to-head statistics')) return;
     try {
         const { team1Id, team2Id } = req.params;
+        const t1Name = String(req.query.team1 || req.query.home || '').trim();
+        const t2Name = String(req.query.team2 || req.query.away || '').trim();
+        // Prefer IDs; also allow name-based H2H so incomplete source_id records still count
+        const orClauses = [
+            { 'home.source_id': team1Id, 'away.source_id': team2Id },
+            { 'home.source_id': team2Id, 'away.source_id': team1Id }
+        ];
+        if (t1Name && t2Name) {
+            const esc = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+            const r1 = new RegExp(esc(t1Name).replace(/\s+/g, '.*'), 'i');
+            const r2 = new RegExp(esc(t2Name).replace(/\s+/g, '.*'), 'i');
+            orClauses.push(
+                { $and: [{ $or: [{ 'home.name': r1 }, { 'home.display_name': r1 }] }, { $or: [{ 'away.name': r2 }, { 'away.display_name': r2 }] }] },
+                { $and: [{ $or: [{ 'home.name': r2 }, { 'home.display_name': r2 }] }, { $or: [{ 'away.name': r1 }, { 'away.display_name': r1 }] }] }
+            );
+        }
         const matches = await SoccerMatch.find({
-            $or: [
-                { 'home.source_id': team1Id, 'away.source_id': team2Id },
-                { 'home.source_id': team2Id, 'away.source_id': team1Id }
-            ],
+            $or: orClauses,
             'status.state': 'post'
-        }).sort({ date: -1 }).limit(15).lean();
+        }).sort({ date: -1 }).limit(40).lean();
 
         let team1Wins = 0;
         let team2Wins = 0;

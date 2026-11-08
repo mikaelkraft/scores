@@ -584,10 +584,24 @@
         if (!hName && !aName) {
             return String(ev.id || Math.random());
         }
-        const dKey = ev.scoreboardDate || (ev.date ? String(ev.date).slice(0, 10) : '');
+        // Prefer calendar day; fall back to ISO date slice so timezone-shifted duplicates still collapse
+        let dKey = ev.scoreboardDate || '';
+        if (!dKey && ev.date) {
+            try {
+                const d = new Date(ev.date);
+                if (!isNaN(d.getTime())) {
+                    dKey = d.toISOString().slice(0, 10).replace(/-/g, '');
+                } else {
+                    dKey = String(ev.date).slice(0, 10);
+                }
+            } catch (_) {
+                dKey = String(ev.date).slice(0, 10);
+            }
+        }
         const tier = getEventMatchTierClient(ev);
         const isYouth = tier.endsWith('_y');
-        return [hName, aName].sort().join('_vs_') + '_' + dKey + (isYouth ? '_youth' : '');
+        const isWomen = tier.startsWith('w_');
+        return [hName, aName].sort().join('_vs_') + '_' + dKey + (isWomen ? '_w' : '') + (isYouth ? '_youth' : '');
     }
 
     function getEventQualityScore(ev) {
@@ -1828,7 +1842,19 @@
                     }
                 }
             }
-            const dedupedEvents = Array.from(seenMatchSig.values()).map(e => e.event);
+            // Promote winners into global set so the same fixture cannot reappear under another league header
+            for (const [sig, entry] of seenMatchSig) {
+                if (!globalSeenMatchSig.has(sig) || (entry.score > (globalSeenMatchSig.get(sig).score || 0))) {
+                    globalSeenMatchSig.set(sig, { id: entry.event.id, score: entry.score });
+                }
+            }
+            const dedupedEvents = Array.from(seenMatchSig.values())
+                .filter(e => {
+                    const sig = getEventDedupSignature(e.event);
+                    const g = globalSeenMatchSig.get(sig);
+                    return !g || g.id === e.event.id;
+                })
+                .map(e => e.event);
             if (!dedupedEvents.length) return '';
 
             totalCount += dedupedEvents.length;
@@ -2784,7 +2810,7 @@
             for (const meeting of recentH2h) {
                 const pastHClean = cleanTeamNameForDedup(meeting.homeTeam || '');
                 const pastAClean = cleanTeamNameForDedup(meeting.awayTeam || '');
-                const scoreParts = String(meeting.score || '').split('-').map(s => parseInt(s.trim(), 10));
+                const scoreParts = String(meeting.score || '').replace(/[–—]/g, '-').split('-').map(s => parseInt(String(s).trim(), 10));
                 const s1 = isNaN(scoreParts[0]) ? 0 : scoreParts[0];
                 const s2 = isNaN(scoreParts[1]) ? 0 : scoreParts[1];
 
@@ -2829,7 +2855,7 @@
         );
         const hasPastMeetings = totalLifetimeMeetings > 0;
 
-        const h2hMeetingsRows = recentH2h.length ? recentH2h.slice(0, 5).map(m => `
+        const h2hMeetingsRows = recentH2h.length ? recentH2h.slice(0, 15).map(m => `
             <div style="display:flex; justify-content:space-between; align-items:center; padding:8px 12px; background:var(--bg-canvas); border:1px solid var(--border-subtle); border-radius:6px; margin-bottom:8px; font-size:12.5px;">
                 <span style="color:var(--text-muted); font-size:11.5px; width:75px;">${formatDate(m.date, { year: false, weekday: false })}</span>
                 <span style="flex:1; text-align:right; font-weight:600; padding-right:10px;">${escapeHtml(m.homeTeam)}</span>
