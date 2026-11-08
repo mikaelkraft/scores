@@ -892,6 +892,52 @@ async function syncAllLeagues() {
     }
 }
 
+
+/** Map LiveScore country names → expected slug country prefix */
+const COUNTRY_SLUG_PREFIX = {
+    england: 'eng', spain: 'esp', italy: 'ita', germany: 'ger', france: 'fra',
+    netherlands: 'ned', portugal: 'por', belgium: 'bel', turkey: 'tur', 'türkiye': 'tur',
+    austria: 'aut', switzerland: 'sui', scotland: 'sco', wales: 'wal', ireland: 'irl',
+    mexico: 'mex', brazil: 'bra', argentina: 'arg', colombia: 'col', chile: 'chi',
+    australia: 'aus', japan: 'jpn', 'south korea': 'kor', korea: 'kor', 'republic of korea': 'kor',
+    china: 'chn', india: 'ind', indonesia: 'idn', malaysia: 'mys', thailand: 'tha',
+    nigeria: 'nga', 'south africa': 'rsa', egypt: 'egy', morocco: 'mar', ghana: 'gha',
+    romania: 'rou', greece: 'gre', poland: 'pol', ukraine: 'ukr', russia: 'rus',
+    sweden: 'swe', norway: 'nor', denmark: 'den', finland: 'fin', iceland: 'isl',
+    latvia: 'lva', lithuania: 'ltu', estonia: 'est', 'czech republic': 'cze', czechia: 'cze',
+    croatia: 'cro', serbia: 'srb', hungary: 'hun', bulgaria: 'bul', slovakia: 'svk',
+    'united states': 'usa', usa: 'usa', canada: 'can', peru: 'per', ecuador: 'ecu',
+    uruguay: 'uru', paraguay: 'par', venezuela: 'ven', bolivia: 'bol',
+    'saudi arabia': 'ksa', uae: 'uae', qatar: 'qat', iraq: 'irq', iran: 'irn',
+    vietnam: 'vie', singapore: 'sgp'
+};
+
+/**
+ * After resolveLeagueSlug, reject results that conflict with the stage country.
+ * Stops Korean matches landing in eng.*, Mexican in ita.*, Latvian under esp, etc.
+ */
+function enforceCountryOnSlug(slug, countryName = '', leagueName = '') {
+    const cLower = String(countryName || '').toLowerCase().trim();
+    if (!cLower || cLower === 'international' || cLower === 'world' || cLower === 'europe') return slug || null;
+    let expected = null;
+    for (const [key, prefix] of Object.entries(COUNTRY_SLUG_PREFIX)) {
+        if (cLower === key || cLower.includes(key)) { expected = prefix; break; }
+    }
+    if (!expected) return slug || null;
+    const actual = slug ? String(slug).split('.')[0] : '';
+    if (slug && actual === expected) return slug;
+    // Missing or mismatched: force country-correct slug from league name hints
+    const blob = `${slug || ''} ${leagueName || ''} ${countryName || ''}`;
+    const isWomen = /\.w\.|women|femen|frau|wsl/i.test(blob);
+    const isSecond = /2|second|championship|liga 2|league two|serie b|2\.?\s*bundesliga|hypermotion/i.test(blob);
+    const isThird = /3|league one|liga 3|serie c|primera rfef/i.test(blob);
+    let tier = '1';
+    if (isThird) tier = '3';
+    else if (isSecond) tier = '2';
+    if (isWomen) return `${expected}.w.1`;
+    return `${expected}.${tier}`;
+}
+
 function resolveLeagueSlug(altGameNote = '', compDesc = '', uid = '') {
     const leagueRaw = String(altGameNote || '').trim();
     const countryRaw = String(compDesc || '').trim();
@@ -1845,17 +1891,32 @@ function areTeamNamesMatching(nameA = '', nameB = '', leagueSlugA = '', leagueSl
     if (!nameA || !nameB) return false;
     const catA = getTeamCategory(nameA, leagueSlugA);
     const catB = getTeamCategory(nameB, leagueSlugB);
-    // Women vs Men teams must NEVER match
     if (catA.isWomen !== catB.isWomen) return false;
-    // Youth/Reserves vs Senior teams must NEVER match
     if (catA.isYouth !== catB.isYouth) return false;
+
+    // Block cross-country fuzzy matches (Korean teams must not match English fixtures etc.)
+    if (leagueSlugA && leagueSlugB) {
+        const cA = String(leagueSlugA).split('.')[0];
+        const cB = String(leagueSlugB).split('.')[0];
+        if (cA && cB && cA !== cB && cA !== 'intl' && cB !== 'intl') return false;
+    }
 
     const a = normalizeTeamName(nameA);
     const b = normalizeTeamName(nameB);
     if (!a || !b) return false;
     if (a === b) return true;
-    if (a.includes(b) || b.includes(a)) {
-        if (Math.min(a.length, b.length) >= 3) return true;
+
+    const shorter = a.length <= b.length ? a : b;
+    const longer = a.length > b.length ? a : b;
+    // Require substantial containment (min 5 chars) to avoid "fc" / short false positives
+    if (shorter.length >= 5 && longer.includes(shorter)) return true;
+
+    const tokensA = a.split(/\s+/).filter(t => t.length > 2);
+    const tokensB = b.split(/\s+/).filter(t => t.length > 2);
+    if (tokensA.length >= 2 && tokensB.length >= 2) {
+        const setB = new Set(tokensB);
+        const overlap = tokensA.filter(t => setB.has(t)).length;
+        if (overlap >= Math.min(tokensA.length, tokensB.length)) return true;
     }
     return false;
 }
@@ -2327,11 +2388,47 @@ async function syncLiveScoreInPlay() {
                 else if (cLower.includes('south africa')) targetSlug = 'rsa.1';
                 else if (cLower.includes('brazil')) targetSlug = 'bra.1';
                 else if (cLower.includes('argentina')) targetSlug = 'arg.1';
-                else if (cLower.includes('england')) targetSlug = 'eng.1';
-                else if (cLower.includes('spain')) targetSlug = 'esp.1';
-                else if (cLower.includes('italy')) targetSlug = 'ita.1';
-                else if (cLower.includes('germany')) targetSlug = 'ger.1';
-                else if (cLower.includes('france')) targetSlug = 'fra.1';
+                else if (cLower.includes('korea') || cLower.includes('republic of korea')) {
+                    targetSlug = /2|challenge/i.test(leagueName) ? 'kor.2' : 'kor.1';
+                }
+                else if (cLower.includes('china')) {
+                    targetSlug = /2|jia|league one/i.test(leagueName) ? 'chn.2' : 'chn.1';
+                }
+                else if (cLower.includes('latvia')) targetSlug = 'lva.1';
+                else if (cLower.includes('england')) {
+                    const ln = leagueName.toLowerCase();
+                    if (ln.includes('league two')) targetSlug = 'eng.4';
+                    else if (ln.includes('league one')) targetSlug = 'eng.3';
+                    else if (ln.includes('championship')) targetSlug = 'eng.2';
+                    else if (ln.includes('national league')) targetSlug = 'eng.5';
+                    else if (ln.includes('fa cup')) targetSlug = 'eng.fa';
+                    else if (ln.includes('efl cup') || ln.includes('league cup') || ln.includes('carabao')) targetSlug = 'eng.league_cup';
+                    else targetSlug = 'eng.1';
+                }
+                else if (cLower.includes('spain') || cLower.includes('españa')) {
+                    const ln = leagueName.toLowerCase();
+                    if (ln.includes('liga f') || ln.includes('femenina')) targetSlug = 'esp.w.1';
+                    else if (ln.includes('segunda') || ln.includes('laliga2') || ln.includes('hypermotion')) targetSlug = 'esp.2';
+                    else if (ln.includes('primera rfef') || ln.includes('primera rfe')) targetSlug = 'esp.3';
+                    else targetSlug = 'esp.1';
+                }
+                else if (cLower.includes('italy') || cLower.includes('italia')) {
+                    const ln = leagueName.toLowerCase();
+                    if (ln.includes('serie b')) targetSlug = 'ita.2';
+                    else if (ln.includes('serie c')) targetSlug = 'ita.3';
+                    else targetSlug = 'ita.1';
+                }
+                else if (cLower.includes('germany') || cLower.includes('deutschland')) {
+                    const ln = leagueName.toLowerCase();
+                    if (ln.includes('2. bundesliga') || ln.includes('2 bundesliga')) targetSlug = 'ger.2';
+                    else if (ln.includes('3. liga') || ln.includes('3 liga')) targetSlug = 'ger.3';
+                    else targetSlug = 'ger.1';
+                }
+                else if (cLower.includes('france')) {
+                    const ln = leagueName.toLowerCase();
+                    if (ln.includes('ligue 2')) targetSlug = 'fra.2';
+                    else targetSlug = 'fra.1';
+                }
                 else if (cLower.includes('peru')) targetSlug = 'per.1';
                 else if (cLower.includes('bolivia')) targetSlug = 'bol.1';
                 else if (cLower.includes('ecuador')) targetSlug = 'ecu.1';
@@ -2347,6 +2444,20 @@ async function syncLiveScoreInPlay() {
                     const sSlug = (stage.Scd || leagueName).toLowerCase().replace(/[^a-z0-9]+/g, '.').slice(0, 16);
                     targetSlug = `${cSlug}.${sSlug}`.replace(/^\.+|\.+$/g, '');
                 }
+            }
+
+            // Hard guard: slug country prefix must match stage country
+            targetSlug = enforceCountryOnSlug(targetSlug, country, leagueName);
+
+            // Never allow non-England stages to keep eng.* (common LiveScore mislabel)
+            if (targetSlug && targetSlug.startsWith('eng.') && !cLower.includes('england') && !cLower.includes('united kingdom')) {
+                targetSlug = enforceCountryOnSlug(null, country, leagueName) || targetSlug;
+            }
+            if (targetSlug && targetSlug.startsWith('esp.') && !cLower.includes('spain') && !cLower.includes('espa')) {
+                targetSlug = enforceCountryOnSlug(null, country, leagueName) || targetSlug;
+            }
+            if (targetSlug && targetSlug.startsWith('ita.') && !cLower.includes('italy') && !cLower.includes('italia')) {
+                targetSlug = enforceCountryOnSlug(null, country, leagueName) || targetSlug;
             }
 
             let displayName = leagueName;
@@ -2832,6 +2943,7 @@ module.exports = {
     fetchEspnMatchDetails,
     formatLiveScoreLogo,
     resolveLeagueSlug,
+    enforceCountryOnSlug,
     resolveMatchEspnId,
     TARGET_LEAGUES
 };
