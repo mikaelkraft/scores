@@ -1426,8 +1426,8 @@ router.get('/predictions-context/:eventId', optionalApiKeyAuth, async (req, res)
 
         const totalLifetimeMeetings = Math.max(parsedSeriesTotal, allLifetimeH2h.length, homeWins + awayWins + draws);
 
-        // Recent encounters limited to the last 5 meetings
-        const recentH2hMeetings = allLifetimeH2h.slice(0, 5);
+        // Recent encounters — show deeper history for accurate WDW form
+        const recentH2hMeetings = allLifetimeH2h.slice(0, 15);
 
         // Process team form guide helper
         function extractTeamForm(matchesList, teamId) {

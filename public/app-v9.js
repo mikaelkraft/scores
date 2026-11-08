@@ -426,16 +426,24 @@
     }
 
     function teamLogo(team, className = 'team-crest') {
-        const teamId = team?.id || team?.slug || team?.displayName || '';
+        const display = team?.displayName || team?.name || '';
+        const teamId = team?.id || team?.slug || '';
+        // Key by normalized name first so different clubs never share a crest slot
+        const nameKey = (typeof cleanTeamNameForDedup === 'function' ? cleanTeamNameForDedup(display) : '') || String(teamId || display);
         let logo = safeUrl(team?.logo || team?.logos?.[0]?.href);
-        if (!logo && teamId && crestMemory[String(teamId)]?.url) {
-            logo = crestMemory[String(teamId)].url;
+        // Only use cache when the cached entry was stored under this same name key
+        if (!logo && nameKey && crestMemory[nameKey]?.url) {
+            logo = crestMemory[nameKey].url;
         }
         if (logo.includes('static.livescore.com/')) {
             logo = logo.replace('static.livescore.com/', 'storage.livescore.com/images/team/medium/');
         }
+        // Reject obviously wrong generic placeholders re-used across clubs
+        if (logo && /placeholder|default.?crest|unknown|no.?logo/i.test(logo)) {
+            logo = '';
+        }
         if (logo && logo.startsWith('http')) {
-            rememberCrest(teamId, logo);
+            rememberCrest(nameKey, logo);
             logo = `/cdn/crest?url=${encodeURIComponent(logo)}`;
         }
         const initials = escapeHtml(getTeamInitials(team?.displayName || team?.name, team?.abbreviation));
@@ -543,6 +551,16 @@
     function setLoading(kind, loading) {
         if (elements[`${kind}-loading`]) elements[`${kind}-loading`].hidden = !loading;
         if (loading && elements[`${kind}-empty`]) elements[`${kind}-empty`].hidden = true;
+    }
+
+    function isReserveOrBTeam(name = '') {
+        const s = String(name || '').trim();
+        if (!s) return false;
+        // Olympiacos B, Real Madrid II, Team Reserves, U21/U23, Primavera
+        if (/\b(u-?2[0-3]|u-?1[5-9]|youth|primavera|reserves?|development|academy)\b/i.test(s)) return true;
+        if (/\s+[bB]$/.test(s) || /\s+II$/i.test(s) || /\s+2$/.test(s)) return true;
+        if (/\(b\)|\(ii\)|\(res\)/i.test(s)) return true;
+        return false;
     }
 
     function cleanTeamNameForDedup(name) {
@@ -1823,6 +1841,15 @@
             for (const ev of events) {
                 const sig = getEventDedupSignature(ev);
                 if (!sig || sig === '_vs_') continue;
+                // Drop B/reserve sides from senior top-flight boards
+                const slug = (league?.slug || ev.league_slug || '').toLowerCase();
+                const isSeniorTop = /\.[1]$/.test(slug) && !slug.includes('.w.') && !slug.includes('youth');
+                if (isSeniorTop) {
+                    const { home: hT, away: aT } = competitorsFromEvent(ev);
+                    const hn = hT.team?.displayName || hT.team?.name || '';
+                    const an = aT.team?.displayName || aT.team?.name || '';
+                    if (isReserveOrBTeam(hn) || isReserveOrBTeam(an)) continue;
+                }
 
                 if (globalSeenMatchSig.has(sig)) {
                     const canonical = globalSeenMatchSig.get(sig);
@@ -1920,9 +1947,11 @@
             elements['fixtures-list'].innerHTML = pinnedHtml + html;
 
             if (prevScrollY > 0) {
-                window.scrollTo({ top: prevScrollY, behavior: 'instant' });
+                // Lock scroll position across live re-renders (no jump-to-top)
+                const pin = () => { try { window.scrollTo({ top: prevScrollY, left: 0, behavior: 'instant' }); } catch(_) { window.scrollTo(0, prevScrollY); } };
+                pin();
                 requestAnimationFrame(() => {
-                    if (prevScrollY > 0) window.scrollTo({ top: prevScrollY, behavior: 'instant' });
+                    pin();
                     setTimeout(() => {
                         if (prevScrollY > 0 && Math.abs((window.scrollY || 0) - prevScrollY) > 5) {
                             window.scrollTo({ top: prevScrollY, behavior: 'instant' });
@@ -2855,14 +2884,22 @@
         );
         const hasPastMeetings = totalLifetimeMeetings > 0;
 
-        const h2hMeetingsRows = recentH2h.length ? recentH2h.slice(0, 15).map(m => `
-            <div style="display:flex; justify-content:space-between; align-items:center; padding:8px 12px; background:var(--bg-canvas); border:1px solid var(--border-subtle); border-radius:6px; margin-bottom:8px; font-size:12.5px;">
-                <span style="color:var(--text-muted); font-size:11.5px; width:75px;">${formatDate(m.date, { year: false, weekday: false })}</span>
-                <span style="flex:1; text-align:right; font-weight:600; padding-right:10px;">${escapeHtml(m.homeTeam)}</span>
-                <span style="background:var(--bg-surface-elevated); border:1px solid var(--border-subtle); padding:2px 8px; border-radius:4px; font-weight:700; font-size:12px;">${escapeHtml(m.score)}</span>
-                <span style="flex:1; text-align:left; font-weight:600; padding-left:10px;">${escapeHtml(m.awayTeam)}</span>
-            </div>
-        `).join('') : '';
+        const h2hMeetingsRows = (() => {
+            const seenH2hRow = new Set();
+            if (!recentH2h.length) return '';
+            return recentH2h.slice(0, 15).map(m => {
+                const rowKey = [m.date, m.homeTeam, m.awayTeam, m.score].join('|');
+                if (seenH2hRow.has(rowKey)) return '';
+                seenH2hRow.add(rowKey);
+                const dateLabel = formatDate(m.date, { year: true, weekday: false });
+                return `<div style="display:flex; justify-content:space-between; align-items:center; gap:8px; padding:10px 12px; background:var(--bg-canvas); border:1px solid var(--border-subtle); border-radius:8px; margin-bottom:8px; font-size:12.5px;">
+                <span style="color:var(--text-muted); font-size:11px; min-width:72px; flex-shrink:0;">${dateLabel}</span>
+                <span style="flex:1; text-align:right; font-weight:600; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${escapeHtml(m.homeTeam || '')}</span>
+                <span style="background:var(--bg-surface-elevated); border:1px solid var(--border-subtle); padding:3px 10px; border-radius:6px; font-weight:700; font-size:12px; flex-shrink:0;">${escapeHtml(m.score || '—')}</span>
+                <span style="flex:1; text-align:left; font-weight:600; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${escapeHtml(m.awayTeam || '')}</span>
+            </div>`;
+            }).filter(Boolean).join('');
+        })();
 
         const rosters = summary.rosters || [];
         const homeRoster = rosters.find(r => String(r.team?.id) === String(home.team?.id) || r.team?.side === 'home' || r.team?.homeAway === 'home') || rosters[0];
