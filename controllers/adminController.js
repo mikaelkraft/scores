@@ -274,6 +274,7 @@ router.get('/api/admin/norra-integration', requireAdmin, async (req, res) => {
             fixtures: `${siteUrl}/api/v1/football/fixtures?date=today`,
             predictionContext: `${siteUrl}/api/v1/football/predictions-context/{eventId}`,
             h2h: `${siteUrl}/api/v1/football/h2h/{team1Id}/{team2Id}`,
+            trainingData: `${siteUrl}/api/v1/football/training-data?limit=500&format=jsonl`,
             leagues: `${siteUrl}/api/v1/football/leagues`,
             standings: `${siteUrl}/api/v1/football/standings`
         },
@@ -297,13 +298,17 @@ router.post('/api/admin/keys', requireAdmin, async (req, res) => {
         }
 
         const planKey = (plan || 'pro').toLowerCase();
+        const isNorraTarget = /norra/i.test(email || '') || /norra/i.test(name || '') || planKey === 'internal' || planKey === 'admin';
         const defaultLimits = {
             free: { rateLimit: 120, isAdFree: false },
-            starter: { rateLimit: 600, isAdFree: true },
+            starter: { rateLimit: 500, isAdFree: true },
             pro: { rateLimit: 1500, isAdFree: true },
-            whitelabel: { rateLimit: 3000, isAdFree: true }
+            whitelabel: { rateLimit: isNorraTarget ? 0 : 5000, isAdFree: true },
+            enterprise: { rateLimit: isNorraTarget ? 0 : 5000, isAdFree: true },
+            internal: { rateLimit: 0, isAdFree: true },
+            admin: { rateLimit: 0, isAdFree: true }
         };
-        const limits = defaultLimits[planKey] || defaultLimits.pro;
+        const limits = defaultLimits[planKey] || defaultLimits.whitelabel;
 
         let expiresAt = null;
         if (Number(daysValid) > 0) {

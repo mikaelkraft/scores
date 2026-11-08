@@ -84,6 +84,33 @@ test('requireFeature enforces tier gates with structured upgrade payload', () =>
     assert.equal(norraAllowed, true);
 });
 
+test('Regenerated Whitelabel Key for Norra AI grants full access, streaming, and unlimited bypass', () => {
+    const regeneratedWhitelabelKey = {
+        name: 'Norra AI Prediction Model',
+        email: 'predictor@mynorra.xyz',
+        plan: 'whitelabel',
+        rateLimitPerMinute: 0,
+        allowedLeagues: null
+    };
+
+    assert.equal(hasFeature(regeneratedWhitelabelKey, 'trainingData'), true);
+    assert.equal(hasFeature(regeneratedWhitelabelKey, 'predictions'), true);
+    assert.equal(hasFeature(regeneratedWhitelabelKey, 'h2h'), true);
+    assert.equal(hasFeature(regeneratedWhitelabelKey, 'webhooks'), true);
+    assert.equal(hasFeature(regeneratedWhitelabelKey, 'customDomain'), true);
+    assert.equal(assertLeagueAccess(regeneratedWhitelabelKey, 'kor.1'), true);
+    assert.equal(assertLeagueAccess(regeneratedWhitelabelKey, 'chn.1'), true);
+    assert.equal(assertLeagueAccess(regeneratedWhitelabelKey, 'arg.1'), true);
+    assert.equal(assertLeagueAccess(regeneratedWhitelabelKey, 'col.1'), true);
+
+    const mockRes = {
+        status() { return this; },
+        json() { return this; }
+    };
+    assert.equal(requireFeature({ apiKey: regeneratedWhitelabelKey }, mockRes, 'trainingData'), true);
+    assert.equal(requireFeature({ apiKey: regeneratedWhitelabelKey }, mockRes, 'predictions'), true);
+});
+
 test('Training Dataset endpoint serves rich ML feature vectors', async () => {
     const initFootballApi = require('../controllers/footballApiController');
     const app = express();
