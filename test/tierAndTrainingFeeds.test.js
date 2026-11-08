@@ -157,8 +157,8 @@ test('Training Dataset endpoint serves rich ML feature vectors', async () => {
     }
 });
 
-test.after(async () => {
+test.after(() => {
     const mongoose = require('mongoose');
-    await mongoose.disconnect();
-    setTimeout(() => process.exit(0), 200);
+    try { mongoose.disconnect().catch(() => {}); } catch {}
+    process.exit(0);
 });

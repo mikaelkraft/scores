@@ -1078,7 +1078,7 @@ router.get('/fixtures', optionalApiKeyAuth, async (req, res) => {
                     if (!winner.source) winner.source = {};
                     winner.source.espn_id = secondary.source.espn_id;
                 }
-                seenFixturesMap.set(sig, { match: winner, score: Math.max(existing.score, mScore) });
+                seenFixturesMap.set(baseSig, { match: winner, score: Math.max(existing.score, mScore) });
             }
         }
 

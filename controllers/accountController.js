@@ -12,6 +12,7 @@ const SiteSetting = require('../models/siteSetting');
 const emailService = require('../services/emailService');
 const googleAuthService = require('../services/googleAuthService');
 const { requireUser, JWT_SECRET } = require('../middleware/auth');
+const { keyCache } = require('../middleware/apiKeyAuth');
 const { config } = require('../config/env');
 
 const PLAN_LIMITS = {
@@ -648,11 +649,17 @@ router.post('/api/account/keys/generate', requireUser, async (req, res) => {
         const plan = user.plan || 'free';
         const limits = PLAN_LIMITS[plan] || PLAN_LIMITS.free;
 
-        // Deactivate previous active keys for this user
+        // Deactivate previous active keys for this user and evict from cache
+        const prevKeys = await ApiKey.find(
+            { $or: [{ user: user._id }, { email: user.email }], active: true }
+        ).select('key').lean();
         await ApiKey.updateMany(
             { $or: [{ user: user._id }, { email: user.email }], active: true },
             { $set: { active: false } }
         );
+        if (keyCache && prevKeys?.length) {
+            prevKeys.forEach(k => { if (k.key) keyCache.delete(k.key); });
+        }
 
         const rawKey = ApiKey.generateKey();
         const apiKey = await ApiKey.create({
@@ -698,11 +705,17 @@ router.post('/api/account/keys/regenerate', requireUser, async (req, res) => {
         const plan = user.plan || 'free';
         const limits = PLAN_LIMITS[plan] || PLAN_LIMITS.free;
 
-        // Deactivate previous active keys
+        // Deactivate previous active keys and evict from cache
+        const prevKeys = await ApiKey.find(
+            { $or: [{ user: user._id }, { email: user.email }], active: true }
+        ).select('key').lean();
         await ApiKey.updateMany(
             { $or: [{ user: user._id }, { email: user.email }], active: true },
             { $set: { active: false } }
         );
+        if (keyCache && prevKeys?.length) {
+            prevKeys.forEach(k => { if (k.key) keyCache.delete(k.key); });
+        }
 
         const rawKey = ApiKey.generateKey();
         const apiKey = await ApiKey.create({
@@ -748,7 +761,11 @@ router.post('/api/account/keys/revoke', requireUser, async (req, res) => {
         };
         if (keyId) filter._id = keyId;
 
+        const keysToRevoke = await ApiKey.find(filter).select('key').lean();
         await ApiKey.updateMany(filter, { $set: { active: false } });
+        if (keyCache && keysToRevoke?.length) {
+            keysToRevoke.forEach(k => { if (k.key) keyCache.delete(k.key); });
+        }
         return res.json({
             status: 'success',
             message: 'API key revoked successfully.'

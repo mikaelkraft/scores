@@ -39,6 +39,8 @@ const connectWithRetry = () => {
         if (isProd && process.env.STRICT_DB === 'true') {
             console.error('❌ Exiting due to strict DB requirement in production.');
             process.exit(1);
+        } else if (process.env.NODE_ENV === 'test') {
+            return;
         } else {
             console.log('🔄 Will retry MongoDB connection in 5 seconds...');
             const retryTimer = setTimeout(connectWithRetry, 5000);

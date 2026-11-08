@@ -8,6 +8,7 @@ const mongoose = require('../database');
 
 const { config } = require('../config/env');
 const { requireAdmin, JWT_SECRET } = require('../middleware/auth');
+const { keyCache } = require('../middleware/apiKeyAuth');
 const { runInTransaction } = require('../services/transactionService');
 const SiteSetting = require('../models/siteSetting');
 const User = require('../models/user');
@@ -235,7 +236,7 @@ router.get('/api/admin/users', requireAdmin, async (req, res) => {
  */
 router.get('/api/admin/keys', requireAdmin, async (req, res) => {
     try {
-        const keys = await ApiKey.find()
+        const keys = await ApiKey.find({ active: { $ne: false } })
             .maxTimeMS(4000)
             .sort({ createdAt: -1 })
             .lean()
@@ -352,10 +353,13 @@ router.post('/api/admin/keys', requireAdmin, async (req, res) => {
  */
 router.delete('/api/admin/keys/:id', requireAdmin, async (req, res) => {
     try {
-        await ApiKey.findByIdAndUpdate(req.params.id, { active: false });
-        return res.json({ status: 'success', message: 'API key revoked.' });
+        const deleted = await ApiKey.findByIdAndDelete(req.params.id);
+        if (deleted && deleted.key && keyCache) {
+            keyCache.delete(deleted.key);
+        }
+        return res.json({ status: 'success', message: 'API key permanently deleted.' });
     } catch (err) {
-        return res.status(500).json({ error: 'Failed to revoke API key.' });
+        return res.status(500).json({ error: 'Failed to delete API key: ' + err.message });
     }
 });
 

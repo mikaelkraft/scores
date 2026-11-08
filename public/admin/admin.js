@@ -595,7 +595,7 @@ async function loadApiKeysAndUsers() {
                         <td>${k.totalRequests || 0}</td>
                         <td>${k.expiresAt ? new Date(k.expiresAt).toLocaleDateString() : 'Never'}</td>
                         <td>
-                            <button class="btn-secondary" style="color: #ef4444; padding: 4px 8px; font-size: 11px;" onclick="revokeKey('${k._id}')">Revoke</button>
+                            <button class="btn-secondary" style="color: #ef4444; padding: 4px 8px; font-size: 11px;" onclick="deleteApiKey('${k._id}')">🗑️ Delete</button>
                         </td>
                     </tr>
                 `).join('');
@@ -739,21 +739,26 @@ async function issueTxKey(id) {
     }
 }
 
-async function revokeKey(id) {
-    if (!confirm('Are you sure you want to revoke this API key?')) return;
+async function deleteApiKey(id) {
+    if (!confirm('Are you sure you want to permanently delete this API key?')) return;
     try {
         const res = await fetch(`/api/admin/keys/${id}`, {
             method: 'DELETE',
             headers: { Authorization: `Bearer ${adminToken}` }
         });
+        const data = await res.json().catch(() => ({}));
         if (res.ok) {
-            alert('API key revoked.');
+            alert(data.message || 'API key deleted successfully.');
             loadApiKeysAndUsers();
+        } else {
+            alert(data.error || 'Failed to delete API key.');
         }
     } catch (err) {
-        alert('Failed to revoke API key.');
+        alert('Failed to delete API key.');
     }
 }
+window.deleteApiKey = deleteApiKey;
+window.revokeKey = deleteApiKey;
 
 function toggleIssueKeyPanel(show) {
     const panel = document.getElementById('admin-issue-key-panel');
