@@ -57,8 +57,14 @@ const TARGET_LEAGUES = [
     { slug: 'nor.1', name: 'Norwegian Eliteserien', abbreviation: 'Eliteserien', country: 'Norway', kind: 'club', sort_order: 38 },
     { slug: 'jpn.1', name: 'Japanese J1 League', abbreviation: 'J1 League', country: 'Japan', kind: 'club', sort_order: 39 },
     { slug: 'aus.1', name: 'Australian A-League', abbreviation: 'A-League', country: 'Australia', kind: 'club', sort_order: 40 },
-    { slug: 'chn.1', name: 'Chinese Super League', abbreviation: 'CSL', country: 'China', kind: 'club', sort_order: 41 },
-    { slug: 'fin.1', name: 'Finnish Veikkausliiga', abbreviation: 'Veikkausliiga', country: 'Finland', kind: 'club', sort_order: 42 },
+    { slug: 'kor.1', name: 'South Korean K League 1', abbreviation: 'K League 1', country: 'South Korea', kind: 'club', sort_order: 41 },
+    { slug: 'kor.2', name: 'South Korean K League 2', abbreviation: 'K League 2', country: 'South Korea', kind: 'club', sort_order: 42 },
+    { slug: 'kor.cup', name: 'Korean FA Cup', abbreviation: 'Korea Cup', country: 'South Korea', kind: 'cup', sort_order: 43 },
+    { slug: 'chn.1', name: 'Chinese Super League', abbreviation: 'CSL', country: 'China', kind: 'club', sort_order: 44 },
+    { slug: 'chn.2', name: 'China League One', abbreviation: 'China L1', country: 'China', kind: 'club', sort_order: 45 },
+    { slug: 'chn.cup', name: 'Chinese FA Cup', abbreviation: 'Chinese FA Cup', country: 'China', kind: 'cup', sort_order: 46 },
+    { slug: 'eng.trophy', name: 'EFL Trophy', abbreviation: 'EFL Trophy', country: 'England', kind: 'cup', sort_order: 47 },
+    { slug: 'fin.1', name: 'Finnish Veikkausliiga', abbreviation: 'Veikkausliiga', country: 'Finland', kind: 'club', sort_order: 48 },
     { slug: 'concacaf.champions', name: 'CONCACAF Champions Cup', abbreviation: 'Champions Cup', country: 'International', kind: 'club', sort_order: 43 },
     { slug: 'caf.champions', name: 'CAF Champions League', abbreviation: 'CAF Champions', country: 'International', kind: 'club', sort_order: 44 },
     { slug: 'afc.champions', name: 'AFC Champions League Elite', abbreviation: 'AFC Champions', country: 'International', kind: 'club', sort_order: 45 },
@@ -1165,8 +1171,29 @@ function resolveLeagueSlug(altGameNote = '', compDesc = '', uid = '') {
         if (text.includes('i-league') || text.includes('ind.2')) return 'ind.2';
         return 'ind.1';
     }
-    if (country.includes('japan') || text.includes('jpn.1') || text.includes('j1') || text.includes('j.league')) return 'jpn.1';
-    if (country.includes('china') || text.includes('chn.1') || text.includes('csl')) return 'chn.1';
+    // SOUTH KOREA (K League 1 / K League 2 / Korea Cup)
+    const isKorea = country.includes('korea') || country.includes('south korea') || scd.includes('kor.') || /\b(k-?league|kleague|k league)\b/i.test(text);
+    if (isKorea) {
+        if (text.includes('k league 2') || text.includes('k-league 2') || text.includes('kleague 2') || text.includes('k2') || scd.includes('kor.2')) return 'kor.2';
+        if (text.includes('korea cup') || text.includes('fa cup') || text.includes('cup') || scd.includes('kor.cup')) return 'kor.cup';
+        return 'kor.1';
+    }
+
+    // CHINA (Chinese Super League / China League One / China FA Cup)
+    const isChina = country.includes('china') || country.includes('chinese') || scd.includes('chn.') || text.includes('csl');
+    if (isChina) {
+        if (text.includes('league 1') || text.includes('league one') || text.includes('league 2') || text.includes('league two') || scd.includes('chn.2')) return 'chn.2';
+        if (text.includes('fa cup') || text.includes('cup') || scd.includes('chn.cup')) return 'chn.cup';
+        return 'chn.1';
+    }
+
+    // JAPAN (J1 League / J2 League / Emperor's Cup)
+    const isJapan = country.includes('japan') || country.includes('japanese') || scd.includes('jpn.') || text.includes('j-league') || text.includes('j.league') || text.includes('j1');
+    if (isJapan) {
+        if (text.includes('j2') || text.includes('j-league 2') || text.includes('j.league 2') || scd.includes('jpn.2')) return 'jpn.2';
+        if (text.includes('cup') || text.includes('emperor') || scd.includes('jpn.cup')) return 'jpn.cup';
+        return 'jpn.1';
+    }
     if (country.includes('australia') || text.includes('aus.1') || text.includes('a-league')) return 'aus.1';
     if (country.includes('indonesia') || text.includes('idn.1') || text.includes('liga 1')) return 'idn.1';
     if (country.includes('thailand') || text.includes('tha.1') || text.includes('thai league')) return 'tha.1';
@@ -1285,9 +1312,9 @@ function resolveLeagueSlug(altGameNote = '', compDesc = '', uid = '') {
     // ENGLAND (EPL / Championship / League One / League Two / FA Cup / Carabao Cup / National Leagues)
     const isEngland = country.includes('england') || country.includes('english') || scd.includes('eng.');
     if (isEngland || (isNeutralCountry && (text.includes('premier league') || text.includes('championship') || text.includes('league 1') || text.includes('league 2') || text.includes('fa cup') || text.includes('efl')))) {
-        const foreignIndicators = ['egypt', 'ghana', 'kenya', 'uganda', 'singapore', 'bahrain', 'canada', 'scotland', 'russia', 'ukraine', 'kuwait', 'new zealand', 'ireland', 'wales', 'jamaica', 'india', 'nigeria', 'south africa', 'tanzania', 'zambia', 'zimbabwe', 'ethiopia', 'rwanda', 'congo', 'cameroon', 'ivory', 'algeria', 'tunisia', 'sudan', 'angola', 'botswana', 'malawi', 'bangladesh', 'hong kong', 'malta', 'israel', 'kazakhstan', 'northern ireland', 'armenia', 'azerbaijan', 'georgia', 'belarus', 'libya', 'nbc', 'ligi kuu', 'psl', 'npfl'];
+        const foreignIndicators = ['egypt', 'ghana', 'kenya', 'uganda', 'singapore', 'bahrain', 'canada', 'scotland', 'russia', 'ukraine', 'kuwait', 'new zealand', 'ireland', 'wales', 'jamaica', 'india', 'nigeria', 'south africa', 'tanzania', 'zambia', 'zimbabwe', 'ethiopia', 'rwanda', 'congo', 'cameroon', 'ivory', 'algeria', 'tunisia', 'sudan', 'angola', 'botswana', 'malawi', 'bangladesh', 'hong kong', 'malta', 'israel', 'kazakhstan', 'northern ireland', 'armenia', 'azerbaijan', 'georgia', 'belarus', 'libya', 'nbc', 'ligi kuu', 'psl', 'npfl', 'korea', 'south korea', 'k-league', 'kleague', 'china', 'chinese', 'csl', 'japan', 'j-league'];
         const hasForeign = foreignIndicators.some(f => text.includes(f) || country.includes(f));
-        if (!hasForeign) {
+        if (!hasForeign && !isKorea && !isChina && !isJapan) {
             if (text.includes('northern premier') || text.includes('eng.northern')) return 'eng.northern';
             if (text.includes('southern premier') || text.includes('eng.southern')) return 'eng.southern';
             if (text.includes('isthmian') || text.includes('eng.isthmian')) return 'eng.isthmian';
@@ -1298,7 +1325,7 @@ function resolveLeagueSlug(altGameNote = '', compDesc = '', uid = '') {
             if (text.includes('efl championship') || text.includes('english championship') || (text.includes('championship') && (text.includes('eng') || text.includes('efl') || text.includes('sky bet'))) || text.includes('eng.2') || scd === 'championship') return 'eng.2';
             if (text.includes('fa cup') || text.includes('eng.fa')) return 'eng.fa';
             if (text.includes('carabao') || text.includes('efl cup') || (text.includes('league cup') && !text.includes('scot') && !text.includes('thai') && !text.includes('egypt')) || text.includes('eng.league_cup')) return 'eng.league_cup';
-            if (text.includes('efl trophy') || scd.includes('efl-trophy')) return 'eng.trophy';
+            if ((text.includes('efl trophy') || scd.includes('efl-trophy') || (text.includes('trophy') && (text.includes('papa john') || text.includes('bristol') || isEngland))) && !text.includes('korea') && !text.includes('china')) return 'eng.trophy';
             if (text.includes('premier league') || text.includes('epl') || scd.includes('eng.1') || isEngland) return 'eng.1';
         }
     }

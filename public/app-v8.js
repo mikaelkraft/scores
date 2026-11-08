@@ -412,6 +412,19 @@
         } catch (_) { /* quota */ }
     }
 
+    function getTeamInitials(name = '', abbr = '') {
+        if (abbr && abbr.length >= 2 && abbr.length <= 4 && !/^\d+$/.test(abbr)) return abbr.toUpperCase().slice(0, 3);
+        const clean = String(name || '').replace(/\b(fc|cf|sc|ac|cd|ceif|afc|fk|sk|sv|ssc|as|rc|ud|rb|calcio|club|clube|deportivo)\b/gi, '').trim();
+        const parts = clean.split(/\s+/).filter(Boolean);
+        if (parts.length >= 2) return (parts[0][0] + parts[1][0]).toUpperCase();
+        if (parts.length === 1 && parts[0].length >= 2) return parts[0].slice(0, 2).toUpperCase();
+        return 'FC';
+    }
+
+    function renderCrestFallbackSvg(initials) {
+        return `<svg width="18" height="18" viewBox="0 0 18 18" style="vertical-align:middle; display:inline-block; flex-shrink:0;"><circle cx="9" cy="9" r="8" fill="#1e293b" stroke="#334155" stroke-width="1.2"/><text x="9" y="11.5" font-size="7.5" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,sans-serif" font-weight="700" fill="#94a3b8" text-anchor="middle">${initials}</text></svg>`;
+    }
+
     function teamLogo(team, className = 'team-crest') {
         const teamId = team?.id || team?.slug || team?.displayName || '';
         let logo = safeUrl(team?.logo || team?.logos?.[0]?.href);
@@ -425,8 +438,9 @@
             rememberCrest(teamId, logo);
             logo = `/cdn/crest?url=${encodeURIComponent(logo)}`;
         }
-        const abbreviation = escapeHtml(team?.abbreviation || 'FC');
-        return `<span class="${className}">${logo ? `<img src="${logo}" alt="${escapeHtml(team?.displayName || abbreviation)}" loading="lazy" decoding="async" onerror="this.onerror=null;this.style.display='none';this.parentElement.textContent='${abbreviation}';">` : abbreviation}</span>`;
+        const initials = escapeHtml(getTeamInitials(team?.displayName || team?.name, team?.abbreviation));
+        const svgFallback = renderCrestFallbackSvg(initials);
+        return `<span class="${className}">${logo ? `<img src="${logo}" alt="${escapeHtml(team?.displayName || initials)}" loading="lazy" decoding="async" onerror="this.onerror=null; this.outerHTML='${svgFallback}';">` : svgFallback}</span>`;
     }
 
     function competitionFromEvent(event) {
@@ -571,11 +585,9 @@
             return String(ev.id || Math.random());
         }
         const dKey = ev.scoreboardDate || (ev.date ? String(ev.date).slice(0, 10) : '');
-        const enrichedLeague = enrichLeagueMeta(ev.league, ev);
-        const slug = enrichedLeague?.slug || ev.league?.slug || ev.league_slug || '';
-        const countryCode = (enrichedLeague?.country || slug.split('.')[0] || '').toLowerCase();
         const tier = getEventMatchTierClient(ev);
-        return [hName, aName].sort().join('_vs_') + '_' + dKey + '_' + countryCode + '_' + tier;
+        const isYouth = tier.endsWith('_y');
+        return [hName, aName].sort().join('_vs_') + '_' + dKey + (isYouth ? '_youth' : '');
     }
 
     function getEventQualityScore(ev) {
@@ -584,10 +596,13 @@
         const aLogo = away.team?.logo || '';
         const hasEspnLogo = (hLogo.includes('espncdn') || aLogo.includes('espncdn')) ? 4 : 0;
         const hasCanonicalId = (/^\d{6,}$/.test(String(ev.id))) ? 3 : 0;
-        const slug = ev.league?.slug || ev.league_slug || '';
-        const hasSpecificSlug = (slug && slug !== 'other' && slug !== 'w.other') ? 2 : 0;
-        const hasClock = (ev.status?.clock || ev.status?.detail) ? 1 : 0;
-        return hasEspnLogo + hasCanonicalId + hasSpecificSlug + hasClock;
+        const enrichedLeague = enrichLeagueMeta(ev.league, ev);
+        const slug = enrichedLeague?.slug || ev.league?.slug || ev.league_slug || '';
+        const hasSpecificSlug = (slug && slug !== 'other' && slug !== 'w.other' && !slug.includes('eng.trophy')) ? 2 : 0;
+        const tier = getEventMatchTierClient(ev);
+        const isWomen = tier.startsWith('w_') ? 2 : 0;
+        const hasClock = isConcreteClock(ev.status?.clock || ev.status?.detail) ? 2 : (ev.status?.clock || ev.status?.detail ? 1 : 0);
+        return hasEspnLogo + hasCanonicalId + hasSpecificSlug + isWomen + hasClock;
     }
 
     function deduplicateMatchesList(matchList) {
@@ -604,11 +619,31 @@
                 seenMap.set(sig, { item: m, score });
             } else {
                 const existing = seenMap.get(sig);
-                if (score > existing.score) {
-                    seenMap.set(sig, { item: m, score });
+                const winner = score > existing.score ? m : existing.item;
+                const secondary = score > existing.score ? existing.item : m;
+
+                if (secondary.status?.isLive || secondary.status?.state === 'in') {
+                    if (!winner.status) winner.status = {};
+                    const secClock = secondary.status?.clock || secondary.status?.detail;
+                    if (isConcreteClock(secClock) && (!isConcreteClock(winner.status.clock) || winner.status.clock === "45'")) {
+                        winner.status.clock = secClock;
+                        winner.status.detail = secClock;
+                    }
+                    const secHomeScore = secondary.home?.score ?? secondary.competitions?.[0]?.competitors?.[0]?.score;
+                    const secAwayScore = secondary.away?.score ?? secondary.competitions?.[0]?.competitors?.[1]?.score;
+                    if (secHomeScore !== undefined && winner.home) winner.home.score = secHomeScore;
+                    if (secAwayScore !== undefined && winner.away) winner.away.score = secAwayScore;
                 }
+                if (secondary.source?.livescore_id && !winner.source?.livescore_id) {
+                    if (!winner.source) winner.source = {};
+                    winner.source.livescore_id = secondary.source.livescore_id;
+                }
+
+                seenMap.set(sig, { item: winner, score: Math.max(existing.score, score) });
             }
         }
+        return Array.from(seenMap.values()).map(v => v.item);
+    }
         return Array.from(seenMap.values()).map(v => v.item);
     }
 
@@ -832,6 +867,61 @@
                 slug = 'mda.1';
                 name = 'Moldovan Super Liga';
                 country = 'Moldova';
+            }
+        }
+
+        // 1f. Correct Korean matches mistakenly labeled as English leagues or EFL Trophy ('eng.trophy' / 'eng.3' / 'eng.4' / etc.)
+        if (slug === 'eng.trophy' || slug === 'eng.3' || slug === 'eng.4' || slug.startsWith('eng.')) {
+            const evText = `${ev?.name || ''} ${ev?.home?.name || ''} ${ev?.away?.name || ''} ${name || ''} ${country || ''}`.toLowerCase();
+            if (evText.includes('korea') || evText.includes('k-league') || evText.includes('kleague') || /\b(jeonbuk|ulsan|pohang|seoul|daegu|incheon|suwon|gangwon|gimcheon|daejeon|gwangju|jeju|bucheon|anyang|busan|seongnam|ansan|cheonan|chungnam|chungbuk|gimpo|gyeongnam)\b/i.test(evText)) {
+                if (evText.includes('k league 2') || evText.includes('k-league 2') || evText.includes('kleague 2') || /\b(bucheon|anyang|busan|seongnam|ansan|cheonan|chungnam|chungbuk|gimpo|gyeongnam)\b/i.test(evText)) {
+                    slug = 'kor.2';
+                    name = 'South Korean K League 2';
+                } else if (evText.includes('cup') || evText.includes('korea cup')) {
+                    slug = 'kor.cup';
+                    name = 'Korean FA Cup';
+                } else {
+                    slug = 'kor.1';
+                    name = 'South Korean K League 1';
+                }
+                country = 'South Korea';
+            } else if (evText.includes('china') || evText.includes('csl') || /\b(shanghai|beijing|shandong|chengdu|zhejiang|tianjin|wuhan|changchun|qingdao|meizhou|shenzhen|henan|cangzhou|guangzhou)\b/i.test(evText)) {
+                if (evText.includes('league 1') || evText.includes('league one')) {
+                    slug = 'chn.2';
+                    name = 'China League One';
+                } else if (evText.includes('cup')) {
+                    slug = 'chn.cup';
+                    name = 'Chinese FA Cup';
+                } else {
+                    slug = 'chn.1';
+                    name = 'Chinese Super League';
+                }
+                country = 'China';
+            }
+        }
+
+        // 1g. Correct Chinese matches mistakenly labeled as Korean lower tiers ('kor.2' / 'kor.1')
+        if (slug === 'kor.2' || slug === 'kor.1') {
+            const evText = `${ev?.name || ''} ${ev?.home?.name || ''} ${ev?.away?.name || ''} ${name || ''} ${country || ''}`.toLowerCase();
+            if (evText.includes('china') || evText.includes('csl') || /\b(shanghai|beijing|shandong|chengdu|zhejiang|tianjin|wuhan|changchun|qingdao|meizhou|shenzhen|henan|cangzhou|guangzhou)\b/i.test(evText)) {
+                if (evText.includes('league 1') || evText.includes('league one')) {
+                    slug = 'chn.2';
+                    name = 'China League One';
+                } else {
+                    slug = 'chn.1';
+                    name = 'Chinese Super League';
+                }
+                country = 'China';
+            }
+        }
+
+        // 1h. Correct Portuguese Segunda matches mistakenly labeled as Spanish Segunda ('esp.2')
+        if (slug === 'esp.2' || slug === 'esp.1') {
+            const evText = `${ev?.name || ''} ${ev?.home?.name || ''} ${ev?.away?.name || ''} ${name || ''} ${country || ''}`.toLowerCase();
+            if (/\b(felgueiras|leixoes|leix[oõ]es|penafiel|feirense|oliveirense|torreense|alverca|mafra|uniao de leiria|maritimo|academico)\b/i.test(evText)) {
+                slug = 'por.2';
+                name = 'Liga Portugal 2';
+                country = 'Portugal';
             }
         }
 

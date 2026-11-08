@@ -263,7 +263,11 @@ const LEAGUE_PRIORITY_MAP = {
     'tza.1': 59,
     'jpn.1': 58,
     'kor.1': 57,
-    'aus.1': 56
+    'chn.1': 56,
+    'aus.1': 55,
+    'kor.2': 47,
+    'chn.2': 46,
+    'eng.trophy': 45
 };
 
 function getLeaguePriority(slug = '') {
@@ -515,10 +519,14 @@ async function fetchFreshWorldwideLiveMatches() {
         const aNorm = normalizeTeamName(aName);
         const slug = m.league_slug || m.league?.slug || '';
         const tier = getMatchTier(hName, aName, slug);
-        const sig = [hNorm, aNorm].sort().join('_vs_') + '_' + tier;
+        const isYouth = tier.endsWith('_y');
+        const isWomen = tier.startsWith('w_');
+        const sig = [hNorm, aNorm].sort().join('_vs_') + (isYouth ? '_youth' : '');
 
         const mScore = (m.home?.logo?.includes('espncdn') ? 4 : 0) +
                        (m.source?.provider === 'espn' || (m.id && /^\d{6,}$/.test(m.id)) ? 3 : 0) +
+                       (isWomen ? 2 : 0) +
+                       (m.league?.slug && m.league.slug !== 'other' && m.league.slug !== 'w.other' ? 2 : 0) +
                        (m.recentEvents && m.recentEvents.length > 0 ? 2 : 0) +
                        (m.venue ? 1 : 0);
 
@@ -885,33 +893,35 @@ router.get('/fixtures', optionalApiKeyAuth, async (req, res) => {
                 if (liveCandidates.length > 0) {
                     const seenSignatures = new Set();
                     matches.forEach(m => {
-                        const h = (m.home?.name || m.home?.displayName || '').toLowerCase().replace(/[^a-z0-9]/g, '');
-                        const a = (m.away?.name || m.away?.displayName || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+                        const h = normalizeTeamName(m.home?.name || m.home?.displayName || '');
+                        const a = normalizeTeamName(m.away?.name || m.away?.displayName || '');
                         const id = String(m.source?.event_id || m.id || m._id || '');
                         const slug = m.league?.slug || m.league_slug || '';
                         const tier = getMatchTier(m.home?.name || m.home?.displayName || '', m.away?.name || m.away?.displayName || '', slug);
                         if (id) seenSignatures.add(id);
-                        if (h && a) seenSignatures.add(`${h}_vs_${a}_${tier}`);
+                        if (h && a) {
+                            seenSignatures.add(`${h}_vs_${a}`);
+                            seenSignatures.add(`${h}_vs_${a}_${tier}`);
+                        }
                     });
 
                     const liveToPrepend = [];
                     for (const lm of liveCandidates) {
-                        const h = (lm.home?.name || lm.home?.displayName || '').toLowerCase().replace(/[^a-z0-9]/g, '');
-                        const a = (lm.away?.name || lm.away?.displayName || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+                        const h = normalizeTeamName(lm.home?.name || lm.home?.displayName || '');
+                        const a = normalizeTeamName(lm.away?.name || lm.away?.displayName || '');
                         const id = String(lm.source?.event_id || lm.id || lm._id || '');
                         const slug = lm.league?.slug || lm.league_slug || '';
                         const tier = getMatchTier(lm.home?.name || lm.home?.displayName || '', lm.away?.name || lm.away?.displayName || '', slug);
                         const sig = `${h}_vs_${a}_${tier}`;
+                        const baseSig = `${h}_vs_${a}`;
 
-                        if ((id && seenSignatures.has(id)) || (h && a && seenSignatures.has(sig))) {
+                        if ((id && seenSignatures.has(id)) || (h && a && (seenSignatures.has(sig) || seenSignatures.has(baseSig)))) {
                             // Update existing match in array if it was found as scheduled but is now live
                             const idx = matches.findIndex(m => {
-                                const mh = (m.home?.name || m.home?.displayName || '').toLowerCase().replace(/[^a-z0-9]/g, '');
-                                const ma = (m.away?.name || m.away?.displayName || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+                                const mh = normalizeTeamName(m.home?.name || m.home?.displayName || '');
+                                const ma = normalizeTeamName(m.away?.name || m.away?.displayName || '');
                                 const mid = String(m.source?.event_id || m.id || m._id || '');
-                                const mSlug = m.league?.slug || m.league_slug || '';
-                                const mTier = getMatchTier(m.home?.name || m.home?.displayName || '', m.away?.name || m.away?.displayName || '', mSlug);
-                                return (id && mid === id) || (h && a && mh === h && ma === a && (mSlug === slug || !slug) && mTier === tier);
+                                return (id && mid === id) || (h && a && mh === h && ma === a);
                             });
                             if (idx !== -1) {
                                 // Never overwrite a completed match with an in-play candidate!
@@ -1025,18 +1035,22 @@ router.get('/fixtures', optionalApiKeyAuth, async (req, res) => {
             const aNorm = normalizeTeamName(aName);
             const slug = m.league?.slug || m.league_slug || '';
             const tier = getMatchTier(hName, aName, slug);
+            const isYouth = tier.endsWith('_y');
+            const isWomen = tier.startsWith('w_');
             const dKey = m.scoreboardDate || (m.date ? new Date(m.date).toISOString().slice(0, 10) : '');
-            const sig = [hNorm, aNorm].sort().join('_vs_') + '_' + dKey + '_' + tier;
+            const baseSig = [hNorm, aNorm].sort().join('_vs_') + '_' + dKey + (isYouth ? '_youth' : '');
 
             const mScore = (m.home?.logo?.includes('espncdn') ? 4 : 0) +
                            (m.source?.provider === 'espn' || (m.id && /^\d{6,}$/.test(m.id)) ? 3 : 0) +
+                           (isWomen ? 2 : 0) +
+                           (m.league?.slug && m.league.slug !== 'other' && m.league.slug !== 'w.other' ? 2 : 0) +
                            (m.odds && m.odds.length > 0 ? 1 : 0) +
                            (m.venue ? 1 : 0);
 
-            if (!seenFixturesMap.has(sig)) {
-                seenFixturesMap.set(sig, { match: m, score: mScore });
+            if (!seenFixturesMap.has(baseSig)) {
+                seenFixturesMap.set(baseSig, { match: m, score: mScore });
             } else {
-                const existing = seenFixturesMap.get(sig);
+                const existing = seenFixturesMap.get(baseSig);
                 const winner = mScore > existing.score ? m : existing.match;
                 const secondary = mScore > existing.score ? existing.match : m;
 
@@ -2325,20 +2339,20 @@ async function handleCrestProxy(req, res) {
                 });
             } else {
                 fs.unlink(localPath, () => {});
-                return res.redirect(rawUrl);
+                return res.status(404).send('Crest not found');
             }
         });
         upstreamReq.on('error', () => {
             fs.unlink(localPath, () => {});
-            return res.redirect(rawUrl);
+            return res.status(404).send('Crest not found');
         });
         upstreamReq.on('timeout', () => {
             upstreamReq.destroy();
             fs.unlink(localPath, () => {});
-            return res.redirect(rawUrl);
+            return res.status(404).send('Crest not found');
         });
     } catch {
-        return res.redirect(rawUrl);
+        return res.status(404).send('Crest not found');
     }
 }
 

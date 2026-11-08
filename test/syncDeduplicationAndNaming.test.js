@@ -372,3 +372,29 @@ test('syncLeagueFromLiveScoreStages handles LiveScore fallback stages gracefully
     assert.equal(typeof count, 'number');
     assert.equal(count, 1);
 });
+
+test('resolveLeagueSlug correctly resolves South Korean and Chinese competitions without English or lower-tier collisions', () => {
+    // South Korea K League 1, K League 2, and Korea Cup
+    assert.equal(resolveLeagueSlug('K League 1', 'South Korea', 'kor.1'), 'kor.1');
+    assert.equal(resolveLeagueSlug('K-League 1 Regular Season', 'Korea, Republic of', ''), 'kor.1');
+    assert.equal(resolveLeagueSlug('K League 2', 'South Korea', 'kor.2'), 'kor.2');
+    assert.equal(resolveLeagueSlug('K-League 2 Promotion Playoff', 'Korea', ''), 'kor.2');
+    assert.equal(resolveLeagueSlug('Korea Cup', 'South Korea', 'kor.cup'), 'kor.cup');
+    assert.equal(resolveLeagueSlug('Korean FA Cup Round of 16', 'South Korea', ''), 'kor.cup');
+
+    // Korean games must NEVER collide with English League 1, League 2, or EFL Trophy!
+    assert.notEqual(resolveLeagueSlug('K League 1', 'South Korea', ''), 'eng.3');
+    assert.notEqual(resolveLeagueSlug('K League 2', 'South Korea', ''), 'eng.4');
+    assert.notEqual(resolveLeagueSlug('Korean FA Cup', 'South Korea', ''), 'eng.trophy');
+
+    // Chinese Super League, China League One, and China FA Cup
+    assert.equal(resolveLeagueSlug('Chinese Super League', 'China', 'chn.1'), 'chn.1');
+    assert.equal(resolveLeagueSlug('CSL Matchday 12', 'China', ''), 'chn.1');
+    assert.equal(resolveLeagueSlug('China League One', 'China', 'chn.2'), 'chn.2');
+    assert.equal(resolveLeagueSlug('China League 1', 'China', ''), 'chn.2');
+    assert.equal(resolveLeagueSlug('Chinese FA Cup', 'China', 'chn.cup'), 'chn.cup');
+
+    // Chinese games must NEVER be lumped under Korean lower tiers or English divisions!
+    assert.notEqual(resolveLeagueSlug('China League 1', 'China', ''), 'kor.2');
+    assert.notEqual(resolveLeagueSlug('China League 1', 'China', ''), 'eng.3');
+});

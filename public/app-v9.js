@@ -412,6 +412,19 @@
         } catch (_) { /* quota */ }
     }
 
+    function getTeamInitials(name = '', abbr = '') {
+        if (abbr && abbr.length >= 2 && abbr.length <= 4 && !/^\d+$/.test(abbr)) return abbr.toUpperCase().slice(0, 3);
+        const clean = String(name || '').replace(/\b(fc|cf|sc|ac|cd|ceif|afc|fk|sk|sv|ssc|as|rc|ud|rb|calcio|club|clube|deportivo)\b/gi, '').trim();
+        const parts = clean.split(/\s+/).filter(Boolean);
+        if (parts.length >= 2) return (parts[0][0] + parts[1][0]).toUpperCase();
+        if (parts.length === 1 && parts[0].length >= 2) return parts[0].slice(0, 2).toUpperCase();
+        return 'FC';
+    }
+
+    function renderCrestFallbackSvg(initials) {
+        return `<svg width="18" height="18" viewBox="0 0 18 18" style="vertical-align:middle; display:inline-block; flex-shrink:0;"><circle cx="9" cy="9" r="8" fill="#1e293b" stroke="#334155" stroke-width="1.2"/><text x="9" y="11.5" font-size="7.5" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,sans-serif" font-weight="700" fill="#94a3b8" text-anchor="middle">${initials}</text></svg>`;
+    }
+
     function teamLogo(team, className = 'team-crest') {
         const teamId = team?.id || team?.slug || team?.displayName || '';
         let logo = safeUrl(team?.logo || team?.logos?.[0]?.href);
@@ -425,8 +438,9 @@
             rememberCrest(teamId, logo);
             logo = `/cdn/crest?url=${encodeURIComponent(logo)}`;
         }
-        const abbreviation = escapeHtml(team?.abbreviation || 'FC');
-        return `<span class="${className}">${logo ? `<img src="${logo}" alt="${escapeHtml(team?.displayName || abbreviation)}" loading="lazy" decoding="async" onerror="this.onerror=null;this.style.display='none';this.parentElement.textContent='${abbreviation}';">` : abbreviation}</span>`;
+        const initials = escapeHtml(getTeamInitials(team?.displayName || team?.name, team?.abbreviation));
+        const svgFallback = renderCrestFallbackSvg(initials);
+        return `<span class="${className}">${logo ? `<img src="${logo}" alt="${escapeHtml(team?.displayName || initials)}" loading="lazy" decoding="async" onerror="this.onerror=null; this.outerHTML='${svgFallback}';">` : svgFallback}</span>`;
     }
 
     function competitionFromEvent(event) {
@@ -571,11 +585,9 @@
             return String(ev.id || Math.random());
         }
         const dKey = ev.scoreboardDate || (ev.date ? String(ev.date).slice(0, 10) : '');
-        const enrichedLeague = enrichLeagueMeta(ev.league, ev);
-        const slug = enrichedLeague?.slug || ev.league?.slug || ev.league_slug || '';
-        const countryCode = (enrichedLeague?.country || slug.split('.')[0] || '').toLowerCase();
         const tier = getEventMatchTierClient(ev);
-        return [hName, aName].sort().join('_vs_') + '_' + dKey + '_' + countryCode + '_' + tier;
+        const isYouth = tier.endsWith('_y');
+        return [hName, aName].sort().join('_vs_') + '_' + dKey + (isYouth ? '_youth' : '');
     }
 
     function getEventQualityScore(ev) {
@@ -584,10 +596,13 @@
         const aLogo = away.team?.logo || '';
         const hasEspnLogo = (hLogo.includes('espncdn') || aLogo.includes('espncdn')) ? 4 : 0;
         const hasCanonicalId = (/^\d{6,}$/.test(String(ev.id))) ? 3 : 0;
-        const slug = ev.league?.slug || ev.league_slug || '';
-        const hasSpecificSlug = (slug && slug !== 'other' && slug !== 'w.other') ? 2 : 0;
-        const hasClock = (ev.status?.clock || ev.status?.detail) ? 1 : 0;
-        return hasEspnLogo + hasCanonicalId + hasSpecificSlug + hasClock;
+        const enrichedLeague = enrichLeagueMeta(ev.league, ev);
+        const slug = enrichedLeague?.slug || ev.league?.slug || ev.league_slug || '';
+        const hasSpecificSlug = (slug && slug !== 'other' && slug !== 'w.other' && !slug.includes('eng.trophy')) ? 2 : 0;
+        const tier = getEventMatchTierClient(ev);
+        const isWomen = tier.startsWith('w_') ? 2 : 0;
+        const hasClock = isConcreteClock(ev.status?.clock || ev.status?.detail) ? 2 : (ev.status?.clock || ev.status?.detail ? 1 : 0);
+        return hasEspnLogo + hasCanonicalId + hasSpecificSlug + isWomen + hasClock;
     }
 
     function deduplicateMatchesList(matchList) {
@@ -604,11 +619,31 @@
                 seenMap.set(sig, { item: m, score });
             } else {
                 const existing = seenMap.get(sig);
-                if (score > existing.score) {
-                    seenMap.set(sig, { item: m, score });
+                const winner = score > existing.score ? m : existing.item;
+                const secondary = score > existing.score ? existing.item : m;
+
+                if (secondary.status?.isLive || secondary.status?.state === 'in') {
+                    if (!winner.status) winner.status = {};
+                    const secClock = secondary.status?.clock || secondary.status?.detail;
+                    if (isConcreteClock(secClock) && (!isConcreteClock(winner.status.clock) || winner.status.clock === "45'")) {
+                        winner.status.clock = secClock;
+                        winner.status.detail = secClock;
+                    }
+                    const secHomeScore = secondary.home?.score ?? secondary.competitions?.[0]?.competitors?.[0]?.score;
+                    const secAwayScore = secondary.away?.score ?? secondary.competitions?.[0]?.competitors?.[1]?.score;
+                    if (secHomeScore !== undefined && winner.home) winner.home.score = secHomeScore;
+                    if (secAwayScore !== undefined && winner.away) winner.away.score = secAwayScore;
                 }
+                if (secondary.source?.livescore_id && !winner.source?.livescore_id) {
+                    if (!winner.source) winner.source = {};
+                    winner.source.livescore_id = secondary.source.livescore_id;
+                }
+
+                seenMap.set(sig, { item: winner, score: Math.max(existing.score, score) });
             }
         }
+        return Array.from(seenMap.values()).map(v => v.item);
+    }
         return Array.from(seenMap.values()).map(v => v.item);
     }
 
@@ -660,9 +695,13 @@
         'tza.1': 56,
         'jpn.1': 55,
         'kor.1': 54,
-        'aus.1': 53,
-        'bra.2': 52,
-        'esp.2': 51,
+        'chn.1': 53,
+        'aus.1': 52,
+        'kor.2': 47,
+        'chn.2': 46,
+        'eng.trophy': 45,
+        'bra.2': 51,
+        'esp.2': 50,
         'ger.2': 50,
         'ita.2': 49,
         'fra.2': 48,
@@ -832,6 +871,61 @@
                 slug = 'mda.1';
                 name = 'Moldovan Super Liga';
                 country = 'Moldova';
+            }
+        }
+
+        // 1f. Correct Korean matches mistakenly labeled as English leagues or EFL Trophy ('eng.trophy' / 'eng.3' / 'eng.4' / etc.)
+        if (slug === 'eng.trophy' || slug === 'eng.3' || slug === 'eng.4' || slug.startsWith('eng.')) {
+            const evText = `${ev?.name || ''} ${ev?.home?.name || ''} ${ev?.away?.name || ''} ${name || ''} ${country || ''}`.toLowerCase();
+            if (evText.includes('korea') || evText.includes('k-league') || evText.includes('kleague') || /\b(jeonbuk|ulsan|pohang|seoul|daegu|incheon|suwon|gangwon|gimcheon|daejeon|gwangju|jeju|bucheon|anyang|busan|seongnam|ansan|cheonan|chungnam|chungbuk|gimpo|gyeongnam)\b/i.test(evText)) {
+                if (evText.includes('k league 2') || evText.includes('k-league 2') || evText.includes('kleague 2') || /\b(bucheon|anyang|busan|seongnam|ansan|cheonan|chungnam|chungbuk|gimpo|gyeongnam)\b/i.test(evText)) {
+                    slug = 'kor.2';
+                    name = 'South Korean K League 2';
+                } else if (evText.includes('cup') || evText.includes('korea cup')) {
+                    slug = 'kor.cup';
+                    name = 'Korean FA Cup';
+                } else {
+                    slug = 'kor.1';
+                    name = 'South Korean K League 1';
+                }
+                country = 'South Korea';
+            } else if (evText.includes('china') || evText.includes('csl') || /\b(shanghai|beijing|shandong|chengdu|zhejiang|tianjin|wuhan|changchun|qingdao|meizhou|shenzhen|henan|cangzhou|guangzhou)\b/i.test(evText)) {
+                if (evText.includes('league 1') || evText.includes('league one')) {
+                    slug = 'chn.2';
+                    name = 'China League One';
+                } else if (evText.includes('cup')) {
+                    slug = 'chn.cup';
+                    name = 'Chinese FA Cup';
+                } else {
+                    slug = 'chn.1';
+                    name = 'Chinese Super League';
+                }
+                country = 'China';
+            }
+        }
+
+        // 1g. Correct Chinese matches mistakenly labeled as Korean lower tiers ('kor.2' / 'kor.1')
+        if (slug === 'kor.2' || slug === 'kor.1') {
+            const evText = `${ev?.name || ''} ${ev?.home?.name || ''} ${ev?.away?.name || ''} ${name || ''} ${country || ''}`.toLowerCase();
+            if (evText.includes('china') || evText.includes('csl') || /\b(shanghai|beijing|shandong|chengdu|zhejiang|tianjin|wuhan|changchun|qingdao|meizhou|shenzhen|henan|cangzhou|guangzhou)\b/i.test(evText)) {
+                if (evText.includes('league 1') || evText.includes('league one')) {
+                    slug = 'chn.2';
+                    name = 'China League One';
+                } else {
+                    slug = 'chn.1';
+                    name = 'Chinese Super League';
+                }
+                country = 'China';
+            }
+        }
+
+        // 1h. Correct Portuguese Segunda matches mistakenly labeled as Spanish Segunda ('esp.2')
+        if (slug === 'esp.2' || slug === 'esp.1') {
+            const evText = `${ev?.name || ''} ${ev?.home?.name || ''} ${ev?.away?.name || ''} ${name || ''} ${country || ''}`.toLowerCase();
+            if (/\b(felgueiras|leixoes|leix[oõ]es|penafiel|feirense|oliveirense|torreense|alverca|mafra|uniao de leiria|maritimo|academico)\b/i.test(evText)) {
+                slug = 'por.2';
+                name = 'Liga Portugal 2';
+                country = 'Portugal';
             }
         }
 
@@ -1803,20 +1897,12 @@
             elements['fixtures-list'].innerHTML = '';
         } else {
             if (elements['fixtures-empty']) elements['fixtures-empty'].hidden = true;
-            elements['fixtures-list'].innerHTML = pinnedHtml + html;
-
-            if (prevScrollY > 0) {
-                window.scrollTo({ top: prevScrollY, behavior: 'instant' });
-                requestAnimationFrame(() => {
-                    if (prevScrollY > 0) window.scrollTo({ top: prevScrollY, behavior: 'instant' });
-                    setTimeout(() => {
-                        if (prevScrollY > 0 && Math.abs((window.scrollY || 0) - prevScrollY) > 5) {
-                            window.scrollTo({ top: prevScrollY, behavior: 'instant' });
-                        }
-                        if (fixturesContainer) fixturesContainer.style.minHeight = '';
-                    }, 150);
-                });
+            const nextContent = pinnedHtml + html;
+            if (elements['fixtures-list'].innerHTML !== nextContent) {
+                elements['fixtures-list'].innerHTML = nextContent;
             }
+
+            if (fixturesContainer) fixturesContainer.style.minHeight = '';
 
             elements['fixtures-list'].querySelectorAll('.fs-league-view-btn').forEach(btn => {
                 btn.addEventListener('click', (e) => {
@@ -2667,10 +2753,10 @@
                     const resColor = m.result === 'W' ? '#10b981' : m.result === 'D' ? '#9ca3af' : '#ef4444';
                     const resBg = m.result === 'W' ? 'rgba(16,185,129,0.12)' : m.result === 'D' ? 'rgba(156,163,175,0.12)' : 'rgba(239,68,68,0.12)';
                     const venueLabel = m.venue === 'Away' || m.atVs === '@' ? '@' : 'vs';
-                    const dateFormatted = m.date ? formatDate(m.date, { year: false, weekday: false }) : '';
+                    const dateFormatted = m.date ? formatDate(m.date, { year: true, weekday: false }) : '';
                     return `<div style="display:flex; justify-content:space-between; align-items:center; padding:6px 10px; background:var(--bg-surface-elevated); border:1px solid var(--border-subtle); border-radius:6px; font-size:12px;">
                         <div style="display:flex; align-items:center; gap:6px; overflow:hidden;">
-                            ${dateFormatted ? `<span style="font-size:10.5px; color:var(--text-muted); min-width:44px;">${dateFormatted}</span>` : ''}
+                            ${dateFormatted ? `<span style="font-size:10.5px; color:var(--text-muted); min-width:65px;">${dateFormatted}</span>` : ''}
                             <span style="font-size:11px; color:var(--text-muted); font-weight:700; min-width:16px;">${venueLabel}</span>
                             <span style="font-weight:600; color:var(--text-main); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;" title="${escapeHtml(m.opponent || '')}">${escapeHtml(m.opponent || 'Opponent')}</span>
                         </div>
@@ -2683,67 +2769,79 @@
         }
 
         // Calculate WDW records for both teams in their head-to-head encounters
-        let calculatedHomeWins = 0;
-        let calculatedAwayWins = 0;
-        let calculatedDraws = 0;
+        let lifetimeHomeWins = Number(h2h.homeWins || 0);
+        let lifetimeAwayWins = Number(h2h.awayWins || 0);
+        let lifetimeDraws = Number(h2h.draws || 0);
+        let totalLifetimeMeetings = Number(h2h.totalMeetings || 0);
+
         let homeH2hForm = [];
         let awayH2hForm = [];
 
-        if (recentH2h.length) {
-            const hClean = cleanTeamNameForDedup(home.team?.displayName || home.team?.name || '');
-            const aClean = cleanTeamNameForDedup(away.team?.displayName || away.team?.name || '');
+        const hClean = cleanTeamNameForDedup(home.team?.displayName || home.team?.name || '');
+        const aClean = cleanTeamNameForDedup(away.team?.displayName || away.team?.name || '');
 
-            for (const meeting of recentH2h) {
-                const pastHClean = cleanTeamNameForDedup(meeting.homeTeam || '');
-                const pastAClean = cleanTeamNameForDedup(meeting.awayTeam || '');
-                const scoreParts = String(meeting.score || '').split('-').map(s => parseInt(s.trim(), 10));
-                const s1 = isNaN(scoreParts[0]) ? 0 : scoreParts[0];
-                const s2 = isNaN(scoreParts[1]) ? 0 : scoreParts[1];
+        const meetingsForForm = (h2h.allMeetings && h2h.allMeetings.length) ? h2h.allMeetings : (recentH2h.length ? recentH2h : []);
+        let localHomeWins = 0;
+        let localAwayWins = 0;
+        let localDraws = 0;
 
-                let isHomeSideH = true;
-                if (pastAClean === hClean || (pastAClean && hClean && (pastAClean.includes(hClean) || hClean.includes(pastAClean)) && !pastHClean.includes(hClean))) {
-                    isHomeSideH = false;
-                } else if (pastHClean === hClean || (pastHClean && hClean && (pastHClean.includes(hClean) || hClean.includes(pastHClean)))) {
-                    isHomeSideH = true;
-                } else if (meeting.isHomeOriginal !== undefined) {
-                    isHomeSideH = Boolean(meeting.isHomeOriginal);
-                }
+        for (const meeting of meetingsForForm) {
+            const pastHClean = cleanTeamNameForDedup(meeting.homeTeam || '');
+            const pastAClean = cleanTeamNameForDedup(meeting.awayTeam || '');
+            const scoreParts = String(meeting.score || '').split('-').map(s => parseInt(s.trim(), 10));
+            const s1 = isNaN(scoreParts[0]) ? 0 : scoreParts[0];
+            const s2 = isNaN(scoreParts[1]) ? 0 : scoreParts[1];
 
-                const teamHomeGoals = isHomeSideH ? s1 : s2;
-                const teamAwayGoals = isHomeSideH ? s2 : s1;
-
-                if (teamHomeGoals > teamAwayGoals) {
-                    calculatedHomeWins++;
-                    homeH2hForm.push('W');
-                    awayH2hForm.push('L');
-                } else if (teamAwayGoals > teamHomeGoals) {
-                    calculatedAwayWins++;
-                    homeH2hForm.push('L');
-                    awayH2hForm.push('W');
-                } else {
-                    calculatedDraws++;
-                    homeH2hForm.push('D');
-                    awayH2hForm.push('D');
-                }
+            let isHomeSideH = true;
+            if (pastAClean === hClean || (pastAClean && hClean && (pastAClean.includes(hClean) || hClean.includes(pastAClean)) && !pastHClean.includes(hClean))) {
+                isHomeSideH = false;
+            } else if (pastHClean === hClean || (pastHClean && hClean && (pastHClean.includes(hClean) || hClean.includes(pastHClean)))) {
+                isHomeSideH = true;
+            } else if (meeting.isHomeOriginal !== undefined) {
+                isHomeSideH = Boolean(meeting.isHomeOriginal);
             }
-        } else {
-            calculatedHomeWins = Number(h2h.homeWins) || 0;
-            calculatedAwayWins = Number(h2h.awayWins) || 0;
-            calculatedDraws = Number(h2h.draws) || 0;
-            homeH2hForm = Array.isArray(h2h.h2hFormHome) ? [...h2h.h2hFormHome] : [];
-            awayH2hForm = Array.isArray(h2h.h2hFormAway) ? [...h2h.h2hFormAway] : [];
+
+            const teamHomeGoals = isHomeSideH ? s1 : s2;
+            const teamAwayGoals = isHomeSideH ? s2 : s1;
+
+            if (teamHomeGoals > teamAwayGoals) {
+                localHomeWins++;
+                homeH2hForm.push('W');
+                awayH2hForm.push('L');
+            } else if (teamAwayGoals > teamHomeGoals) {
+                localAwayWins++;
+                homeH2hForm.push('L');
+                awayH2hForm.push('W');
+            } else {
+                localDraws++;
+                homeH2hForm.push('D');
+                awayH2hForm.push('D');
+            }
         }
 
-        const totalLifetimeMeetings = Math.max(
-            Number(h2h.totalMeetings || 0),
-            recentH2h.length,
-            (calculatedHomeWins || 0) + (calculatedAwayWins || 0) + (calculatedDraws || 0)
-        );
+        if (!totalLifetimeMeetings || totalLifetimeMeetings < meetingsForForm.length) {
+            totalLifetimeMeetings = Math.max(meetingsForForm.length, localHomeWins + localAwayWins + localDraws);
+            lifetimeHomeWins = localHomeWins;
+            lifetimeAwayWins = localAwayWins;
+            lifetimeDraws = localDraws;
+        } else if (lifetimeHomeWins === 0 && lifetimeAwayWins === 0 && lifetimeDraws === 0 && meetingsForForm.length > 0) {
+            lifetimeHomeWins = localHomeWins;
+            lifetimeAwayWins = localAwayWins;
+            lifetimeDraws = localDraws;
+        }
+
+        const calculatedHomeWins = lifetimeHomeWins;
+        const calculatedAwayWins = lifetimeAwayWins;
+        const calculatedDraws = lifetimeDraws;
         const hasPastMeetings = totalLifetimeMeetings > 0;
 
         const h2hMeetingsRows = recentH2h.length ? recentH2h.slice(0, 5).map(m => `
             <div style="display:flex; justify-content:space-between; align-items:center; padding:8px 12px; background:var(--bg-canvas); border:1px solid var(--border-subtle); border-radius:6px; margin-bottom:8px; font-size:12.5px;">
-                <span style="color:var(--text-muted); font-size:11.5px; width:75px;">${formatDate(m.date, { year: false, weekday: false })}</span>
+                <span style="color:var(--text-muted); font-size:11.5px; width:85px;">${formatDate(m.date, { year: true, weekday: false })}</span>
+                <span style="flex:1; text-align:right; font-weight:600; padding-right:10px;">${escapeHtml(m.homeTeam)}</span>
+                <span style="background:var(--bg-surface-elevated); border:1px solid var(--border-subtle); padding:2px 8px; border-radius:4px; font-weight:700; font-size:12px;">${escapeHtml(m.score)}</span>
+                <span style="flex:1; text-align:left; font-weight:600; padding-left:10px;">${escapeHtml(m.awayTeam)}</span>
+            </div>
                 <span style="flex:1; text-align:right; font-weight:600; padding-right:10px;">${escapeHtml(m.homeTeam)}</span>
                 <span style="background:var(--bg-surface-elevated); border:1px solid var(--border-subtle); padding:2px 8px; border-radius:4px; font-weight:700; font-size:12px;">${escapeHtml(m.score)}</span>
                 <span style="flex:1; text-align:left; font-weight:600; padding-left:10px;">${escapeHtml(m.awayTeam)}</span>
@@ -3098,7 +3196,7 @@
                             <div style="background:var(--bg-canvas); border:1px solid var(--border-subtle); border-radius:8px; padding:14px;">
                                 <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:10px;">
                                     <div style="display:flex; align-items:center; gap:8px;">
-                                        ${home.team?.logo ? `<img src="${home.team.logo}" alt="" style="width:20px; height:20px; object-fit:contain;">` : ''}
+                                        ${teamLogo(home.team, 'team-crest')}
                                         <strong style="font-size:13.5px; color:var(--text-main);">${escapeHtml(home.team?.displayName || 'Home Team')}</strong>
                                     </div>
                                     <span style="font-size:11px; color:#10b981; font-weight:600;">${homeAnalytics.winRate ?? 0}% Win Rate</span>
@@ -3112,7 +3210,7 @@
                             <div style="background:var(--bg-canvas); border:1px solid var(--border-subtle); border-radius:8px; padding:14px;">
                                 <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:10px;">
                                     <div style="display:flex; align-items:center; gap:8px;">
-                                        ${away.team?.logo ? `<img src="${away.team.logo}" alt="" style="width:20px; height:20px; object-fit:contain;">` : ''}
+                                        ${teamLogo(away.team, 'team-crest')}
                                         <strong style="font-size:13.5px; color:var(--text-main);">${escapeHtml(away.team?.displayName || 'Away Team')}</strong>
                                     </div>
                                     <span style="font-size:11px; color:#3b82f6; font-weight:600;">${awayAnalytics.winRate ?? 0}% Win Rate</span>
@@ -3904,7 +4002,8 @@
         if (!list || !liveMatches || !liveMatches.length) return false;
         let matchedCount = 0;
         for (const m of liveMatches) {
-            const row = list.querySelector(`.fs-match-row[data-event-id="${m.id}"]`);
+            const row = list.querySelector(`.fs-match-row[data-event-id="${m.id}"]`) ||
+                        list.querySelector(`.fs-match-row[data-event-id="${m.source?.event_id}"]`);
             if (row) {
                 matchedCount++;
                 const scoreDigits = row.querySelectorAll('.fs-score-digit');
@@ -3927,7 +4026,8 @@
                 }
             }
         }
-        return matchedCount > 0 && matchedCount === liveMatches.length;
+        const renderedLiveRows = list.querySelectorAll('.fs-match-row .fs-status-live');
+        return matchedCount > 0 && (matchedCount >= renderedLiveRows.length || matchedCount === liveMatches.length);
     }
 
     function initLiveSync() {
@@ -3938,6 +4038,19 @@
                 syncLiveScores();
             });
         }
+
+        let isUserInteracting = false;
+        let userScrollTimeout = null;
+        window.addEventListener('scroll', () => {
+            isUserInteracting = true;
+            if (userScrollTimeout) clearTimeout(userScrollTimeout);
+            userScrollTimeout = setTimeout(() => { isUserInteracting = false; }, 600);
+        }, { passive: true });
+        window.addEventListener('touchstart', () => { isUserInteracting = true; }, { passive: true });
+        window.addEventListener('touchend', () => {
+            if (userScrollTimeout) clearTimeout(userScrollTimeout);
+            userScrollTimeout = setTimeout(() => { isUserInteracting = false; }, 600);
+        }, { passive: true });
 
         let isPolling = false;
         async function syncLiveScores() {
@@ -3981,6 +4094,11 @@
 
                 // If only existing live scores changed in-place, patch DOM without re-rendering container
                 if (digestChanged && patchLiveMatchRowsInDom(liveMatches)) {
+                    return;
+                }
+
+                // If user is currently touching, scrolling, or drawer modal is open, defer full reload
+                if (isUserInteracting || (elements['match-drawer'] && !elements['match-drawer'].hidden)) {
                     return;
                 }
 
