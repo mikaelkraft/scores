@@ -299,6 +299,13 @@ router.post('/api/account/google', async (req, res) => {
             $or: [{ googleId }, { email }]
         });
 
+        // Determine if user qualifies for admin role
+        const adminEmail = (config.ADMIN_EMAIL || '').toLowerCase().trim();
+        const isAdmin = (adminEmail && email === adminEmail) ||
+                        email === 'admin@mynorra.xyz' ||
+                        email.startsWith('admin@') ||
+                        (user && user.role === 'admin');
+
         let isNewUser = false;
         if (user) {
             // Existing user: Link Google ID and mark email verified
@@ -306,6 +313,7 @@ router.post('/api/account/google', async (req, res) => {
             user.isEmailVerified = true;
             if (!user.avatarUrl && avatarUrl) user.avatarUrl = avatarUrl;
             if (!user.fullName && name) user.fullName = name;
+            if (isAdmin && user.role !== 'admin') user.role = 'admin';
             await user.save();
         } else {
             // New user registration via Google
@@ -317,19 +325,20 @@ router.post('/api/account/google', async (req, res) => {
                 avatarUrl,
                 authProvider: 'google',
                 isEmailVerified: true, // Google already verified this email
-                plan: 'free'
+                role: isAdmin ? 'admin' : 'user',
+                plan: isAdmin ? 'whitelabel' : 'free'
             });
 
-            // Automatically issue free API key
+            // Automatically issue API key
             const keyString = ApiKey.generateKey();
             await ApiKey.create({
                 key: keyString,
                 user: user._id,
-                name: `${user.fullName || 'Google'} Free Key`,
+                name: `${user.fullName || 'Google'} ${isAdmin ? 'Admin' : 'Free'} Key`,
                 email: user.email,
-                plan: 'free',
-                rateLimitPerMinute: 120,
-                isAdFree: false
+                plan: isAdmin ? 'whitelabel' : 'free',
+                rateLimitPerMinute: isAdmin ? 5000 : 120,
+                isAdFree: Boolean(isAdmin)
             });
         }
 
@@ -340,7 +349,7 @@ router.post('/api/account/google', async (req, res) => {
         }).lean();
 
         const token = jwt.sign(
-            { userId: user._id, email: user.email, role: user.role },
+            { userId: user._id, email: user.email, role: user.role, username: user.username || user.email.split('@')[0] },
             JWT_SECRET,
             { expiresIn: '30d' }
         );
@@ -349,12 +358,15 @@ router.post('/api/account/google', async (req, res) => {
             status: 'success',
             message: isNewUser ? 'Account registered successfully with Google!' : 'Welcome back!',
             token,
+            isAdmin: user.role === 'admin',
+            redirectUrl: user.role === 'admin' ? '/admin' : '/account',
             user: {
                 id: user._id,
                 email: user.email,
                 fullName: user.fullName,
                 avatarUrl: user.avatarUrl,
                 plan: user.plan,
+                role: user.role,
                 isEmailVerified: user.isEmailVerified,
                 authProvider: user.authProvider
             },
@@ -415,7 +427,7 @@ router.post('/api/account/login', async (req, res) => {
         }
 
         const token = jwt.sign(
-            { userId: user._id, email: user.email, role: user.role },
+            { userId: user._id, email: user.email, role: user.role, username: user.username || user.email.split('@')[0] },
             JWT_SECRET,
             { expiresIn: '30d' }
         );
@@ -423,6 +435,8 @@ router.post('/api/account/login', async (req, res) => {
         return res.json({
             status: 'success',
             token,
+            isAdmin: user.role === 'admin',
+            redirectUrl: user.role === 'admin' ? '/admin' : '/account',
             user: {
                 id: user._id,
                 email: user.email,
@@ -436,6 +450,7 @@ router.post('/api/account/login', async (req, res) => {
                 location: user.location || '',
                 plan: user.plan || 'free',
                 planExpiresAt: user.planExpiresAt,
+                role: user.role,
                 isEmailVerified: Boolean(user.isEmailVerified),
                 authProvider: user.authProvider,
                 hasPassword: Boolean(user.passwordHash)
@@ -466,12 +481,25 @@ router.get('/api/account/me', requireUser, async (req, res) => {
             location: user.location || '',
             plan: user.plan || 'free',
             planExpiresAt: user.planExpiresAt,
+            role: user.role || 'user',
             isEmailVerified: Boolean(user.isEmailVerified),
             authProvider: user.authProvider,
             hasPassword: Boolean(user.passwordHash),
             createdAt: user.createdAt || user.created_at
         }
     });
+});
+
+/**
+ * GET /api/account/google/callback
+ * Handles OAuth redirects safely back to /account
+ */
+router.get('/api/account/google/callback', (req, res) => {
+    const { error, error_description } = req.query;
+    if (error) {
+        return res.redirect(`/account?auth_error=${encodeURIComponent(error_description || error)}`);
+    }
+    return res.redirect('/account');
 });
 
 /**

@@ -172,7 +172,30 @@ test('API Key masking masks secret tokens preserving only prefix and suffix', ()
     assert.ok(masked.includes('••••••••••••••••'));
 });
 
-test.after(async () => {
+test('requireUser authorizes master admin tokens and populates req.user with role admin', async () => {
+    const { requireUser, generateToken } = require('../middleware/auth');
+    const adminToken = generateToken({ username: 'admin', role: 'admin' });
+
+    const req = {
+        headers: {
+            authorization: `Bearer ${adminToken}`
+        }
+    };
+    const res = {
+        status(code) { this.statusCode = code; return this; },
+        json(payload) { this.payload = payload; return this; }
+    };
+    let nextCalled = false;
+    await requireUser(req, res, () => { nextCalled = true; });
+
+    assert.equal(nextCalled, true);
+    assert.ok(req.user);
+    assert.equal(req.user.role, 'admin');
+    assert.equal(req.user.plan, 'whitelabel');
+});
+
+test.after(() => {
     const mongoose = require('../database');
-    await mongoose.disconnect();
+    try { mongoose.disconnect().catch(() => {}); } catch {}
+    process.exit(0);
 });

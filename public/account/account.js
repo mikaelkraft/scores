@@ -1,6 +1,6 @@
 // account.js - Customer Account & Developer Portal with Google Sign-In and Email Confirmation
 
-let userToken = localStorage.getItem('norra_user_token') || '';
+let userToken = localStorage.getItem('norra_user_token') || localStorage.getItem('norra_admin_token') || localStorage.getItem('admin_token') || '';
 let currentUser = null;
 let currentKey = null;
 let isRegisterMode = false;
@@ -92,9 +92,10 @@ async function handleAuthSubmit(event) {
         });
         const data = await res.json();
         if (res.ok && data.token) {
-            if (data.isAdmin || data.redirectUrl) {
+            if (data.isAdmin || data.redirectUrl === '/admin' || data.user?.role === 'admin') {
                 localStorage.setItem('norra_admin_token', data.token);
                 localStorage.setItem('admin_token', data.token);
+                localStorage.setItem('norra_user_token', data.token);
                 window.location.assign(data.redirectUrl || '/admin');
                 return;
             }
@@ -181,7 +182,7 @@ function triggerGoogleSignIn() {
 async function handleGoogleCredentialResponse(response) {
     if (!response || !response.credential) return;
     const errorEl = document.getElementById('auth-error');
-    errorEl.style.display = 'none';
+    if (errorEl) errorEl.style.display = 'none';
 
     try {
         const res = await fetch('/api/account/google', {
@@ -193,16 +194,29 @@ async function handleGoogleCredentialResponse(response) {
         if (res.ok && data.token) {
             userToken = data.token;
             localStorage.setItem('norra_user_token', userToken);
+
+            if (data.isAdmin || data.redirectUrl === '/admin' || data.user?.role === 'admin') {
+                localStorage.setItem('norra_admin_token', userToken);
+                localStorage.setItem('admin_token', userToken);
+                window.location.assign(data.redirectUrl || '/admin');
+                return;
+            }
+
             loadPortalData();
         } else {
-            errorEl.textContent = data.error || 'Google Sign-In failed.';
-            errorEl.style.display = 'block';
+            if (errorEl) {
+                errorEl.textContent = data.error || 'Google Sign-In failed.';
+                errorEl.style.display = 'block';
+            }
         }
     } catch (err) {
-        errorEl.textContent = 'Failed to connect to Google Auth endpoint.';
-        errorEl.style.display = 'block';
+        if (errorEl) {
+            errorEl.textContent = 'Failed to connect to Google Auth endpoint: ' + (err.message || 'Network error');
+            errorEl.style.display = 'block';
+        }
     }
 }
+window.handleGoogleCredentialResponse = handleGoogleCredentialResponse;
 
 // Email Verification Flow
 async function verifyEmailToken(token) {
@@ -285,6 +299,8 @@ function updateEmailBanner() {
 function handleUserLogout() {
     userToken = '';
     localStorage.removeItem('norra_user_token');
+    localStorage.removeItem('norra_admin_token');
+    localStorage.removeItem('admin_token');
     document.getElementById('portal-view').style.display = 'none';
     document.getElementById('auth-view').style.display = 'block';
 }
@@ -540,6 +556,20 @@ async function loadPortalData() {
 
         const meData = await meRes.json();
         currentUser = meData.user;
+
+        // Unified account routing: if user is admin, sync admin tokens and route to /admin unless developer view is explicitly requested
+        if (currentUser.role === 'admin') {
+            localStorage.setItem('norra_admin_token', userToken);
+            localStorage.setItem('admin_token', userToken);
+            const adminBanner = document.getElementById('admin-shortcut-banner');
+            if (adminBanner) adminBanner.style.display = 'flex';
+
+            const urlParams = new URLSearchParams(window.location.search);
+            if (!urlParams.get('view')) {
+                window.location.assign('/admin');
+                return;
+            }
+        }
 
         document.getElementById('auth-view').style.display = 'none';
         document.getElementById('portal-view').style.display = 'block';

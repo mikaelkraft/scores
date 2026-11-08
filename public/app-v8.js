@@ -644,8 +644,6 @@
         }
         return Array.from(seenMap.values()).map(v => v.item);
     }
-        return Array.from(seenMap.values()).map(v => v.item);
-    }
 
     const CLIENT_LEAGUE_PRIORITY = {
         'uefa.champions': 100,

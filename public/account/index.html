@@ -209,7 +209,6 @@
                 <a class="nav-link" href="/pricing">Pricing</a>
                 <a class="nav-link docs-link" href="/docs">Docs</a>
                 <a class="nav-link active" href="/account" id="nav-account-link">Account</a>
-                <a class="nav-link" href="/admin" id="nav-admin-link">Admin</a>
                 <button class="btn-icon-toggle" id="theme-toggle" type="button" aria-label="Toggle light/dark theme" title="Toggle theme">🌓</button>
             </div>
         </nav>
@@ -277,6 +276,20 @@
                 <button onclick="handleUserLogout()" class="btn-secondary">Log Out</button>
             </div>
         </header>
+
+        <!-- Admin Shortcut Banner -->
+        <div id="admin-shortcut-banner" style="display: none; background: linear-gradient(135deg, rgba(245, 158, 11, 0.15), rgba(234, 88, 12, 0.15)); border: 1px solid rgba(245, 158, 11, 0.45); border-radius: var(--card-radius); padding: 14px 20px; margin-bottom: 24px; font-size: 13.5px; color: #fbbf24; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px;">
+            <div style="display: flex; align-items: center; gap: 10px;">
+                <span style="font-size: 22px;">👑</span>
+                <div>
+                    <strong style="color: #ffffff; font-size: 14px;">Administrator Privileges Active</strong>
+                    <div style="font-size: 12px; color: var(--text-muted);">You have master administration access to platform configuration, live ingestion feeds, and developer tier controls.</div>
+                </div>
+            </div>
+            <a href="/admin" class="btn-primary" style="padding: 8px 18px; font-size: 13px; font-weight: 700; text-decoration: none; border-radius: 6px; display: inline-flex; align-items: center; gap: 6px;">
+                <span>Open Admin Console</span> <span>&rarr;</span>
+            </a>
+        </div>
 
         <!-- Email Verification Banner -->
         <div id="email-verification-banner" style="display: none; background: rgba(234, 179, 8, 0.1); border: 1px solid rgba(234, 179, 8, 0.35); border-radius: var(--card-radius); padding: 14px 20px; margin-bottom: 24px; font-size: 13px; color: #fde047; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px;">

@@ -1,6 +1,6 @@
 // admin.js - Norra Scores Admin Console Client
 
-let adminToken = localStorage.getItem('norra_admin_token') || localStorage.getItem('admin_token') || '';
+let adminToken = localStorage.getItem('norra_admin_token') || localStorage.getItem('admin_token') || localStorage.getItem('norra_user_token') || '';
 let globalSettings = null;
 
 function escapeHtml(str) {
@@ -76,6 +76,7 @@ function handleLogout() {
     adminToken = '';
     localStorage.removeItem('norra_admin_token');
     localStorage.removeItem('admin_token');
+    localStorage.removeItem('norra_user_token');
     document.getElementById('auth-overlay').style.display = 'grid';
 }
 

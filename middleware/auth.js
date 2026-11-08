@@ -67,7 +67,26 @@ async function requireUser(req, res, next) {
     }
 
     const decoded = verifyToken(token);
-    if (!decoded || !decoded.userId) {
+    if (!decoded) {
+        return res.status(401).json({ error: 'Invalid or expired session. Please log in again.' });
+    }
+
+    // Support admin token generated from .env admin credentials (which has role: 'admin')
+    if (decoded.role === 'admin' && !decoded.userId) {
+        req.user = {
+            _id: 'admin_master_account',
+            email: config.ADMIN_EMAIL || 'admin@mynorra.xyz',
+            username: config.ADMIN_USERNAME || 'admin',
+            fullName: 'Master Administrator',
+            role: 'admin',
+            plan: 'whitelabel',
+            active: true,
+            isEmailVerified: true
+        };
+        return next();
+    }
+
+    if (!decoded.userId) {
         return res.status(401).json({ error: 'Invalid or expired session. Please log in again.' });
     }
 

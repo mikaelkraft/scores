@@ -644,8 +644,6 @@
         }
         return Array.from(seenMap.values()).map(v => v.item);
     }
-        return Array.from(seenMap.values()).map(v => v.item);
-    }
 
     const CLIENT_LEAGUE_PRIORITY = {
         'uefa.champions': 100,
@@ -3656,6 +3654,29 @@
     }
 
     function bindEvents() {
+        const brandElements = document.querySelectorAll('.brand, a.brand, .brand-text, #header-logo-img, #header-brand-fallback');
+        brandElements.forEach(el => {
+            el.style.cursor = 'pointer';
+            el.addEventListener('click', (e) => {
+                if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+                const isHome = window.location.pathname === '/' || window.location.pathname === '';
+                if (isHome) {
+                    e.preventDefault();
+                    if (typeof closeDrawer === 'function') closeDrawer();
+                    if (elements['match-dialog'] && typeof elements['match-dialog'].close === 'function') {
+                        try { elements['match-dialog'].close(); } catch {}
+                    }
+                    if (window.location.search || window.location.hash) {
+                        window.history.pushState({}, '', '/');
+                    }
+                    selectAllLeagues();
+                    window.scrollTo({ top: 0, behavior: 'smooth' });
+                } else {
+                    window.location.href = '/';
+                }
+            });
+        });
+
         if (elements['country-select']) elements['country-select'].addEventListener('change', () => populateLeagues());
         if (elements['league-select']) {
             elements['league-select'].addEventListener('change', event => {
