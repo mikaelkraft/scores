@@ -594,51 +594,62 @@ router.post('/api/admin/sync', requireAdmin, async (req, res) => {
         let statsResult = null;
 
         if (syncType === 'stats') {
-            const limit = Math.min(500, Math.max(10, parseInt(req.body?.limit, 10) || 200));
+            const limit = Math.min(500, Math.max(10, parseInt(req.body?.limit, 10) || 300));
             statsResult = await syncInGameStats({ limit, forceAll: true });
-            message = `In-game statistics ingested for ${statsResult.statsUpdated} matches across ${statsResult.leaguesCovered} leagues (${statsResult.eventsInserted} key incidents recorded for Norra AI training).`;
+            message = `Norra AI Training Feed: Deep match telemetry ingested for ${statsResult.statsUpdated} matches across ${statsResult.leaguesCovered} leagues (${statsResult.eventsInserted} key incidents recorded for model training).`;
         } else if (syncType === 'infeed' || syncType === 'live') {
             await Promise.allSettled([syncLiveScoreboards(), syncLiveScoreInPlay()]);
-            statsResult = await syncInGameStats({ limit: 40, onlyLive: true });
-            message = `Real-time live infeed sync completed successfully (${statsResult.statsUpdated} in-play matches updated with live stats).`;
+            statsResult = await syncInGameStats({ limit: 60, onlyLive: true });
+            message = `Norra AI Live In-Play Telemetry: Real-time infeed sync completed (${statsResult.statsUpdated} active matches updated with live telemetry).`;
         } else {
             await Promise.allSettled([syncAllLeagues(), syncLiveScoreboards(), syncLiveScoreInPlay()]);
-            statsResult = await syncInGameStats({ limit: 100, onlyLive: false });
-            message = 'Comprehensive league, fixtures, infeed and in-game stats sync completed.';
+            statsResult = await syncInGameStats({ limit: 250, onlyLive: false });
+            message = 'Norra AI Multiverse Pipeline: Global league fixtures, tables, and rich match telemetry synchronized successfully.';
         }
 
         const [matchesCount, inPlayCount, leaguesCount, withStatsCount] = await Promise.all([
             SoccerMatch.countDocuments(),
             SoccerMatch.countDocuments({ 'status.state': 'in' }),
             SoccerLeague.countDocuments({ active: true }),
-            SoccerMatch.countDocuments({ 'home.stats': { $exists: true, $ne: null } })
+            SoccerMatch.countDocuments({
+                $or: [
+                    { 'home.stats': { $exists: true, $ne: null } },
+                    { 'key_events.0': { $exists: true } }
+                ]
+            })
         ]);
+
+        const trainingSamplesCount = withStatsCount;
 
         // Proactively push sync notification to Norra AI predictor backend so it ingests training samples immediately
         const norraPredictorUrl = process.env.NORRA_PREDICTOR_URL || 'https://i.mynorra.xyz';
         const norraSecretToken = process.env.CRON_TOKEN || process.env.NORRA_INTERNAL_API_KEY || 'norra_live_master_internal_access_2026';
-        setTimeout(async () => {
-            try {
-                const fetchFn = typeof fetch !== 'undefined' ? fetch : require('node-fetch');
-                await fetchFn(`${norraPredictorUrl}/api/admin/sync-scores-training-data`, {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'x-api-key': norraSecretToken
-                    },
-                    body: JSON.stringify({
-                        token: norraSecretToken,
-                        sync_type: syncType,
-                        source: 'scores.mynorra.xyz',
-                        limit: syncType === 'stats' ? 300 : 150,
-                        trigger_refit: (syncType === 'stats' || syncType === 'all')
-                    })
-                });
+        let norraWebhookDispatched = false;
+
+        try {
+            const fetchFn = typeof fetch !== 'undefined' ? fetch : require('node-fetch');
+            fetchFn(`${norraPredictorUrl}/api/admin/sync-scores-training-data`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'x-api-key': norraSecretToken
+                },
+                body: JSON.stringify({
+                    token: norraSecretToken,
+                    sync_type: syncType,
+                    source: 'scores.mynorra.xyz',
+                    limit: syncType === 'stats' ? 500 : 200,
+                    trigger_refit: (syncType === 'stats' || syncType === 'all')
+                })
+            }).then(() => {
                 console.log(`[LiveSync] Successfully dispatched background training sync webhook to Norra AI (${norraPredictorUrl}).`);
-            } catch (pErr) {
+            }).catch(pErr => {
                 console.warn('[LiveSync] Notice dispatching training sync webhook to Norra AI:', pErr.message);
-            }
-        }, 100);
+            });
+            norraWebhookDispatched = true;
+        } catch (dispatchErr) {
+            console.warn('[LiveSync] Failed to initiate webhook to Norra AI:', dispatchErr.message);
+        }
 
         return res.json({
             success: true,
@@ -648,6 +659,8 @@ router.post('/api/admin/sync', requireAdmin, async (req, res) => {
                 inPlayCount,
                 leaguesCount,
                 withStatsCount,
+                trainingSamplesCount,
+                norraWebhookDispatched,
                 statsResult,
                 syncedAt: new Date().toISOString()
             }

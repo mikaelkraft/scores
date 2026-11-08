@@ -419,9 +419,11 @@ async function triggerInfeedSync(type = 'infeed') {
         indicator.style.color = 'var(--color-primary)';
         indicator.style.border = '1px solid rgba(37, 99, 235, 0.3)';
         if (type === 'stats') {
-            indicator.innerHTML = '<span class="loader" style="display:inline-block; width:14px; height:14px; margin-right:8px; vertical-align:middle;"></span> Ingesting in-game telemetry & incidents across all worldwide leagues for Norra AI training...';
+            indicator.innerHTML = '<span class="loader" style="display:inline-block; width:14px; height:14px; margin-right:8px; vertical-align:middle;"></span> Ingesting rich in-game telemetry, xG & incidents for Norra AI sports predictor...';
+        } else if (type === 'all') {
+            indicator.innerHTML = '<span class="loader" style="display:inline-block; width:14px; height:14px; margin-right:8px; vertical-align:middle;"></span> Executing global multiverse sync & triggering Norra AI predictor retrain pipeline...';
         } else {
-            indicator.innerHTML = '<span class="loader" style="display:inline-block; width:14px; height:14px; margin-right:8px; vertical-align:middle;"></span> Synchronizing live games infeed across global feeds...';
+            indicator.innerHTML = '<span class="loader" style="display:inline-block; width:14px; height:14px; margin-right:8px; vertical-align:middle;"></span> Synchronizing live in-play telemetry & scoreboards across worldwide feeds for Norra AI...';
         }
     }
     if (btnInfeed) btnInfeed.disabled = true;
@@ -443,7 +445,8 @@ async function triggerInfeedSync(type = 'infeed') {
                 indicator.style.background = 'rgba(16, 185, 129, 0.1)';
                 indicator.style.color = '#10b981';
                 indicator.style.border = '1px solid rgba(16, 185, 129, 0.3)';
-                indicator.innerHTML = `✓ ${data.message} &bull; Total matches: <strong>${data.stats?.matchesCount || 0}</strong> | With in-game stats: <strong>${data.stats?.withStatsCount || 0}</strong> | In-Play live: <strong>${data.stats?.inPlayCount || 0}</strong> | Active competitions: <strong>${data.stats?.leaguesCount || 0}</strong>`;
+                const webhookBadge = data.stats?.norraWebhookDispatched !== false ? '<span style="color:#10b981; font-weight:700;">✓ Dispatched to Norra AI Predictor</span>' : '<span style="color:#f59e0b;">Pending Webhook</span>';
+                indicator.innerHTML = `<div>✓ <strong>${data.message}</strong></div><div style="font-size:12px; margin-top:6px; opacity:0.95;">Total Matches: <strong>${data.stats?.matchesCount || 0}</strong> &bull; With Telemetry/Stats: <strong>${data.stats?.withStatsCount || 0}</strong> &bull; In-Play Live: <strong>${data.stats?.inPlayCount || 0}</strong> &bull; Competitions: <strong>${data.stats?.leaguesCount || 0}</strong> &bull; Rich Training Samples: <strong>${data.stats?.trainingSamplesCount || data.stats?.withStatsCount || 0}</strong> &bull; ${webhookBadge}</div>`;
             }
             loadStats();
         } else {

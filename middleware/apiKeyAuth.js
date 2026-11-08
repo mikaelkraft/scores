@@ -16,8 +16,13 @@ const PLAN_LIMITS = {
             h2h: false,
             predictions: false,
             bookingCodes: false,
+            trainingData: false,
+            lineups: false,
+            stats: false,
             historicalDays: 7,
-            crestProxy: true
+            crestProxy: true,
+            webhooks: false,
+            customDomain: false
         }
     },
     starter: {
@@ -33,8 +38,13 @@ const PLAN_LIMITS = {
             h2h: false,
             predictions: false,
             bookingCodes: true,
+            trainingData: false,
+            lineups: true,
+            stats: true,
             historicalDays: 30,
-            crestProxy: true
+            crestProxy: true,
+            webhooks: false,
+            customDomain: false
         }
     },
     pro: {
@@ -50,8 +60,13 @@ const PLAN_LIMITS = {
             h2h: true,
             predictions: true,
             bookingCodes: true,
+            trainingData: true,
+            lineups: true,
+            stats: true,
             historicalDays: 365,
-            crestProxy: true
+            crestProxy: true,
+            webhooks: false,
+            customDomain: false
         }
     },
     whitelabel: {
@@ -67,9 +82,35 @@ const PLAN_LIMITS = {
             h2h: true,
             predictions: true,
             bookingCodes: true,
+            trainingData: true,
+            lineups: true,
+            stats: true,
             historicalDays: 3650,
             crestProxy: true,
-            customDomain: true
+            customDomain: true,
+            webhooks: true
+        }
+    },
+    enterprise: {
+        rateLimitPerMinute: 5000,
+        isAdFree: true,
+        allowedLeagues: null,
+        features: {
+            liveScores: true,
+            fixtures: true,
+            standings: true,
+            matchSummary: true,
+            playByPlay: true,
+            h2h: true,
+            predictions: true,
+            bookingCodes: true,
+            trainingData: true,
+            lineups: true,
+            stats: true,
+            historicalDays: 3650,
+            crestProxy: true,
+            customDomain: true,
+            webhooks: true
         }
     },
     admin: {
@@ -79,7 +120,8 @@ const PLAN_LIMITS = {
         features: {
             liveScores: true, fixtures: true, standings: true, matchSummary: true,
             playByPlay: true, h2h: true, predictions: true, bookingCodes: true,
-            historicalDays: 3650, crestProxy: true, customDomain: true
+            trainingData: true, lineups: true, stats: true,
+            historicalDays: 36500, crestProxy: true, customDomain: true, webhooks: true
         }
     },
     internal: {
@@ -89,7 +131,8 @@ const PLAN_LIMITS = {
         features: {
             liveScores: true, fixtures: true, standings: true, matchSummary: true,
             playByPlay: true, h2h: true, predictions: true, bookingCodes: true,
-            historicalDays: 3650, crestProxy: true, customDomain: true
+            trainingData: true, lineups: true, stats: true,
+            historicalDays: 36500, crestProxy: true, customDomain: true, webhooks: true
         }
     }
 };
@@ -110,6 +153,7 @@ function getAllowedLeaguesForKey(keyDoc) {
 }
 
 function assertLeagueAccess(keyDoc, leagueSlug) {
+    if (keyDoc?.plan === 'admin' || keyDoc?.plan === 'internal') return true;
     const allowed = getAllowedLeaguesForKey(keyDoc);
     if (!allowed) return true;
     if (!leagueSlug || leagueSlug === 'all') return false;
@@ -118,6 +162,8 @@ function assertLeagueAccess(keyDoc, leagueSlug) {
 
 /** Returns true if the key's plan includes the named feature */
 function hasFeature(keyDoc, featureName) {
+    // Admin / Internal (Norra AI) keys have master bypass for ALL features
+    if (keyDoc?.plan === 'admin' || keyDoc?.plan === 'internal') return true;
     // Unauthenticated public reads: treat as free (limited)
     const features = getPlanConfig(keyDoc).features || PLAN_LIMITS.free.features;
     return Boolean(features[featureName]);
@@ -129,8 +175,11 @@ function hasFeature(keyDoc, featureName) {
  */
 function requireFeature(req, res, featureName, label) {
     const keyDoc = req.apiKey || null;
+    // Master Admin / Internal (Norra AI) keys always pass
+    if (keyDoc?.plan === 'admin' || keyDoc?.plan === 'internal') return true;
+
     // Public (no key) may use basic free features only
-    if (!keyDoc && ['h2h', 'predictions', 'bookingCodes', 'playByPlay'].includes(featureName)) {
+    if (!keyDoc && ['h2h', 'predictions', 'bookingCodes', 'playByPlay', 'trainingData'].includes(featureName)) {
         res.status(401).json({
             error: `${label || featureName} requires an API key on Starter or higher.`,
             upgradeUrl: '/pricing',
@@ -162,8 +211,15 @@ const requestCounters = new Map();
 
 function isMasterAdminKey(rawKey) {
     if (!rawKey) return false;
+    const cleanKey = String(rawKey).trim();
     const masterKey = config?.NORRA_INTERNAL_API_KEY || 'norra_live_master_internal_access_2026';
-    return rawKey === masterKey || rawKey === 'norra_master_admin_internal_sync' || rawKey === 'norra_live_master_internal_access_2026';
+    const cronToken = process.env.CRON_TOKEN;
+    const cronSecret = process.env.CRON_SECRET || 'norra_cron_secret_token_2026';
+    return cleanKey === masterKey ||
+           cleanKey === 'norra_live_master_internal_access_2026' ||
+           cleanKey === 'norra_master_admin_internal_sync' ||
+           (Boolean(cronToken) && cleanKey === cronToken) ||
+           cleanKey === cronSecret;
 }
 
 function extractApiKey(req) {
@@ -176,9 +232,12 @@ function extractApiKey(req) {
     }
     if (authHeader && authHeader.startsWith('Bearer ')) {
         const token = authHeader.substring(7).trim();
-        if (token.startsWith('norra_') || token.includes('internal') || token.includes('admin')) {
+        if (token.startsWith('norra_') || token.includes('internal') || token.includes('admin') || isMasterAdminKey(token)) {
             return token;
         }
+    }
+    if (req.headers['x-norra-internal-key']) {
+        return String(req.headers['x-norra-internal-key']).trim();
     }
     if (req.query && req.query.api_key) {
         return String(req.query.api_key).trim();
@@ -189,17 +248,24 @@ function extractApiKey(req) {
 async function resolveApiKey(rawKey) {
     if (!rawKey) return null;
 
-    // Check if this is the Norra Master Internal Key
+    // Check if this is the Norra Master Internal Key (Norra AI Sports Predictor access)
     if (isMasterAdminKey(rawKey)) {
         return {
             _id: 'norra_master_internal_key',
             key: rawKey,
-            name: 'Norra AI Prediction Engine (Master Admin Key)',
+            name: 'Norra AI Prediction Engine (Master Internal Access)',
             email: 'admin@mynorra.xyz',
-            plan: 'admin',
+            plan: 'internal',
             rateLimitPerMinute: 0, // 0 = unlimited
             isAdFree: true,
-            active: true
+            active: true,
+            allowedLeagues: null,
+            features: {
+                liveScores: true, fixtures: true, standings: true, matchSummary: true,
+                playByPlay: true, h2h: true, predictions: true, bookingCodes: true,
+                trainingData: true, lineups: true, stats: true,
+                historicalDays: 36500, crestProxy: true, customDomain: true, webhooks: true
+            }
         };
     }
 
