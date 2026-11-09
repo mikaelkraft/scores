@@ -470,18 +470,52 @@
     }
 
     function competitorsFromEvent(event) {
-        if (event?.home && event?.away) {
-            return {
-                home: { team: event.home, score: event.home.score, winner: event.home.winner },
-                away: { team: event.away, score: event.away.score, winner: event.away.winner }
+        const competition = competitionFromEvent(event);
+        const competitors = competition.competitors || [];
+        if (competitors.length >= 1) {
+            const unwrap = (side, idx) => {
+                const c = competitors.find(item => item.homeAway === side) || competitors[idx] || {};
+                const base = c.team && typeof c.team === 'object' ? c.team : {};
+                const team = {
+                    ...base,
+                    id: base.id || c.id || '',
+                    displayName: base.displayName || base.name || c.displayName || c.name || '',
+                    name: base.name || base.displayName || c.name || '',
+                    logo: base.logo || c.logo || base.logos?.[0]?.href || '',
+                    abbreviation: base.abbreviation || c.abbreviation || '',
+                    source_id: base.source_id || base.id || c.id || '',
+                    espn_id: base.espn_id || c.espn_id || ''
+                };
+                return {
+                    ...c,
+                    team,
+                    score: c.score != null ? c.score : (side === 'home' ? event.home?.score : event.away?.score),
+                    winner: c.winner
+                };
             };
+            return { home: unwrap('home', 0), away: unwrap('away', 1) };
         }
-        const competitors = competitionFromEvent(event).competitors || [];
-        return {
-            home: competitors.find(item => item.homeAway === 'home') || competitors[0] || {},
-            away: competitors.find(item => item.homeAway === 'away') || competitors[1] || {}
-        };
+        if (event?.home || event?.away) {
+            const wrap = (side) => {
+                const raw = event[side] || {};
+                const base = raw.team && typeof raw.team === 'object' ? raw.team : raw;
+                return {
+                    team: {
+                        ...base,
+                        displayName: base.displayName || base.name || '',
+                        name: base.name || base.displayName || '',
+                        logo: base.logo || raw.logo || '',
+                        source_id: base.source_id || base.id || raw.id || ''
+                    },
+                    score: raw.score,
+                    winner: raw.winner
+                };
+            };
+            return { home: wrap('home'), away: wrap('away') };
+        }
+        return { home: { team: {} }, away: { team: {} } };
     }
+
 
     function isConcreteClock(str) {
         if (!str || typeof str !== 'string') return false;
@@ -576,6 +610,25 @@
         'por.1': ['benfica','porto','sporting','braga','guimaraes','boavista','famalicao','moreirense','casa pia','estoril','arouca','rio ave','gil vicente','santa clara'],
         'ned.1': ['ajax','psv','feyenoord','az','twente','utrecht','heerenveen','groningen','sparta','willem ii','nec','go ahead eagles','fortuna sittard','heracles','zwolle']
     };
+
+    const CLIENT_TEAM_COUNTRY_HINTS = [
+        [/botosani|otelul|galati|cfr cluj|fcsb|sepsi|farul/i, 'rou'],
+        [/al ahly|zamalek|pyramids|zed fc|\bzed\b|samanod|al masry|enppi/i, 'egy'],
+        [/napredak|partizan|crvena zvezda|ofk bor|vojvodina|cukaricki/i, 'srb'],
+        [/persija|persib|persebaya|arema|bali united|psm makassar|borneo/i, 'idn'],
+        [/hvidovre|aarhus|brondby|midtjylland|nordsjaelland|randers|viborg|agf/i, 'den'],
+        [/enugu rangers|rivers united|eyiimba|shooting stars|plateau united|remo stars/i, 'nga'],
+    ];
+
+    function clientTeamCountryConflict(slug, homeName, awayName) {
+        const prefix = String(slug || '').split('.')[0];
+        if (!prefix || /^(uefa|fifa|caf|afc|conmebol|concacaf|intl)/i.test(prefix)) return false;
+        const blob = `${homeName || ''} ${awayName || ''}`;
+        for (const [re, country] of CLIENT_TEAM_COUNTRY_HINTS) {
+            if (re.test(blob) && country !== prefix) return true;
+        }
+        return false;
+    }
 
     function clientHasTopFlightClub(slug, homeName, awayName) {
         const list = CLIENT_TOP_FLIGHT[String(slug || '').toLowerCase()];
@@ -697,26 +750,31 @@
         if (!hName && !aName) {
             return String(ev.id || Math.random());
         }
-        // Prefer calendar day; fall back to ISO date slice so timezone-shifted duplicates still collapse
-        let dKey = ev.scoreboardDate || '';
-        if (!dKey && ev.date) {
-            try {
-                const d = new Date(ev.date);
-                if (!isNaN(d.getTime())) {
-                    dKey = d.toISOString().slice(0, 10);
-                } else {
-                    dKey = String(ev.date).slice(0, 10);
+        // Normalize date key to YYYY-MM-DD always (scoreboardDate may be YYYYMMDD)
+        let dKey = '';
+        const rawDate = ev.scoreboardDate || ev.date || '';
+        if (rawDate) {
+            const s = String(rawDate);
+            if (/^\d{8}$/.test(s)) {
+                dKey = `${s.slice(0,4)}-${s.slice(4,6)}-${s.slice(6,8)}`;
+            } else if (/^\d{4}-\d{2}-\d{2}/.test(s)) {
+                dKey = s.slice(0, 10);
+            } else {
+                try {
+                    const d = new Date(s);
+                    if (!isNaN(d.getTime())) dKey = d.toISOString().slice(0, 10);
+                    else dKey = s.slice(0, 10);
+                } catch (_) {
+                    dKey = s.slice(0, 10);
                 }
-            } catch (_) {
-                dKey = String(ev.date).slice(0, 10);
             }
         }
-        dKey = String(dKey || '').replace(/[^0-9]/g, '').slice(0, 8);
         const tier = getEventMatchTierClient(ev);
         const isYouth = tier.endsWith('_y');
-        const isWomen = tier.startsWith('w_');
+        const isWomen = tier.startsWith('w_') || tier.includes('women');
         return [hName, aName].sort().join('_vs_') + '_' + dKey + (isWomen ? '_w' : '') + (isYouth ? '_youth' : '');
     }
+
 
     function getEventQualityScore(ev) {
         const { home, away } = competitorsFromEvent(ev);
@@ -1984,6 +2042,13 @@
                     const an = aT.team?.displayName || aT.team?.name || '';
                     const looksWomen = (n) => /\b(w|women|woman|ladies|femen|frau)\b|\(w\)/i.test(n);
                     if (!looksWomen(hn) && !looksWomen(an)) continue;
+                }
+                // Hide cross-country pollution (e.g. Romanian clubs under Indonesian header)
+                {
+                    const { home: hT, away: aT } = competitorsFromEvent(ev);
+                    const hn = hT.team?.displayName || hT.team?.name || '';
+                    const an = aT.team?.displayName || aT.team?.name || '';
+                    if (clientTeamCountryConflict(slug, hn, an)) continue;
                 }
 
                 if (globalSeenMatchSig.has(sig)) {
