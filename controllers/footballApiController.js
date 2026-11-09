@@ -193,82 +193,26 @@ function inferMatchCountry(m) {
 
 function makeFlexibleTeamRegex(rawName) {
     if (!rawName) return null;
-    const base = String(rawName)
+    const cleaned = String(rawName)
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
         .replace(/\b(18\d{2}|19\d{2}|20\d{2})\b/g, '')
         .replace(/\b(04|05|96|98)\b/g, '')
-        .replace(/\b(fc|cf|sc|ac|cd|afc|fk|sk|sv|ssc|as|rc|ud|rb|calcio)\b/gi, '')
+        .replace(/\b(fc|cf|sc|ac|cd|afc|fk|sk|sv|ssc|as|rc|ud|rb|calcio|club|women|woman|w)\b/gi, ' ')
         .replace(/\s+/g, ' ')
         .trim();
-    if (base.length >= 3) {
-        const escaped = base.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-        return new RegExp(`(^|\\b)${escaped}(\\b|$)`, 'i');
+    const tokens = cleaned.split(' ').filter(t => t.length >= 4);
+    if (tokens.length >= 1) {
+        const parts = tokens.slice(0, 3).map(t => t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
+        return new RegExp(parts.join('.*'), 'i');
     }
-    const escaped = String(rawName).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    return new RegExp(`^${escaped}$`, 'i');
+    if (cleaned.length >= 3) {
+        const escaped = cleaned.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        return new RegExp(escaped, 'i');
+    }
+    return null;
 }
 
-// Apply optional API key authentication on all football endpoints
-router.use(optionalApiKeyAuth);
-
-// High-speed in-memory cache for worldwide live in-play scores (15-second TTL)
-let liveFeedMemoryCache = {
-    timestamp: 0,
-    matches: [],
-    inFlightPromise: null
-};
-
-// Canonical League Tier Ranking for Prioritizing High-Profile Livescore Views
-const LEAGUE_PRIORITY_MAP = {
-    'uefa.champions': 100,
-    'eng.1': 99,
-    'esp.1': 98,
-    'ita.1': 97,
-    'ger.1': 96,
-    'fra.1': 95,
-    'uefa.europa': 94,
-    'uefa.europa.conf': 93,
-    'eng.fa': 92,
-    'esp.copa_del_rey': 91,
-    'ita.coppa_italia': 90,
-    'ger.dfb_pokal': 89,
-    'eng.league_cup': 88,
-    'eng.2': 87,
-    'ned.1': 86,
-    'por.1': 85,
-    'bra.1': 84,
-    'arg.1': 83,
-    'nga.1': 82,
-    'sau.1': 81,
-    'mex.1': 80,
-    'col.1': 79,
-    'tur.1': 78,
-    'bel.1': 77,
-    'sco.1': 76,
-    'caf.champions': 75,
-    'afc.champions': 74,
-    'usa.1': 73,
-    'conmebol.libertadores': 72,
-    'conmebol.sudamericana': 71,
-    'aut.1': 70,
-    'sui.1': 69,
-    'den.1': 68,
-    'swe.1': 67,
-    'nor.1': 66,
-    'gre.1': 65,
-    'egy.1': 64,
-    'rsa.1': 63,
-    'mar.1': 62,
-    'gha.1': 61,
-    'ken.1': 60,
-    'tza.1': 59,
-    'jpn.1': 58,
-    'kor.1': 57,
-    'chn.1': 56,
-    'aus.1': 55,
-    'kor.2': 47,
-    'chn.2': 46,
-    'eng.trophy': 45
-};
 
 function getLeaguePriority(slug = '') {
     if (!slug) return 30;

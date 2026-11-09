@@ -507,6 +507,8 @@ async function syncLeagueFromLiveScoreStages(leagueDef, stages, now = new Date()
             const awayName = a.Nm || 'Away Club';
             // Demote mis-tagged lower-division games off top-flight boards
             targetSlug = demoteIfNotTopFlight(targetSlug, homeName, awayName, leagueName);
+            // Fix cross-country pollution (Romanian clubs under Indonesia, Serbian under EPL, etc.)
+            targetSlug = inferCountryFromTeamNames(homeName, awayName, targetSlug);
             // Keep senior top-flight boards clean — no B/II/U21 sides mixed in
             const seniorSlug = String(targetSlug || '').toLowerCase();
             const isSeniorTop = /\.[1]$/.test(seniorSlug) && !seniorSlug.includes('.w.') && !seniorSlug.includes('youth');
@@ -1049,6 +1051,54 @@ function hasTopFlightClub(slug, homeName, awayName) {
 }
 
 /** Demote .1 slug to .lower when neither side is a known first-division club */
+
+/** Distinctive club name fragments → ISO-style country prefix for slug correction */
+const TEAM_COUNTRY_HINTS = [
+    // Romania
+    [/botosani|otelul|galati|cfr cluj|fcsb|rapid bucuresti|universitatea craiova|sepsi|farul/i, 'rou'],
+    // Egypt
+    [/al ahly|zamalek|pyramids|zed fc|\bzed\b|samanod|al masry|al mokawloon|enppi|ceramica cleopatra|future fc|national bank/i, 'egy'],
+    // Serbia
+    [/napredak|partizan|crvena zvezda|red star|ofk bor|vojvodina|tsc backa|cukaricki|radnicki/i, 'srb'],
+    // Indonesia
+    [/persija|persib|persebaya|arema|bali united|psm makassar|borneo|persita|persik|madura united/i, 'idn'],
+    // Denmark
+    [/hvidovre|aarfus|aarhus|fc copenhagen|brondby|midtjylland|nordsjaelland|randers|viborg|silkeborg|agf/i, 'den'],
+    // Colombia
+    [/america de cali|deportivo cali|atletico nacional|millonarios|independiente medellin|junior barranquilla|santa fe/i, 'col'],
+    // Nigeria
+    [/enugu rangers|rivers united|eyiimba|shooting stars|plateau united|remo stars|kwara united|bendel insurance|npfl/i, 'nga'],
+];
+
+/**
+ * If both clubs clearly belong to country X but slug is country Y, return corrected slug.
+ */
+function inferCountryFromTeamNames(homeName = '', awayName = '', currentSlug = '') {
+    const blob = `${homeName} ${awayName}`;
+    const hits = new Map();
+    for (const [re, prefix] of TEAM_COUNTRY_HINTS) {
+        if (re.test(blob)) hits.set(prefix, (hits.get(prefix) || 0) + 1);
+    }
+    if (!hits.size) return currentSlug;
+    // Prefer the country with most hits
+    let best = null; let bestN = 0;
+    for (const [p, n] of hits) {
+        if (n > bestN) { best = p; bestN = n; }
+    }
+    if (!best) return currentSlug;
+    const current = String(currentSlug || '').split('.')[0];
+    if (current === best) return currentSlug;
+    // Don't override UEFA/FIFA continental
+    if (/^(uefa|fifa|caf|afc|conmebol|concacaf)/i.test(String(currentSlug || ''))) return currentSlug;
+    // Preserve tier if present
+    const tier = (String(currentSlug || '').match(/\.(\w+)$/) || [])[1] || '1';
+    const isWomen = /\.w\.|women/i.test(String(currentSlug || '') + blob);
+    if (isWomen) return `${best}.w.1`;
+    // Map known second tiers lightly
+    if (tier === '2' || tier === '3' || tier === 'lower') return `${best}.${tier}`;
+    return `${best}.1`;
+}
+
 function demoteIfNotTopFlight(slug, homeName, awayName, leagueName = '') {
     if (!slug || !/\.1$/.test(slug)) return slug;
     if (!TOP_FLIGHT_CLUBS[slug]) return slug;
@@ -3113,6 +3163,7 @@ module.exports = {
     isReserveOrBTeamName,
     hasTopFlightClub,
     demoteIfNotTopFlight,
+    inferCountryFromTeamNames,
     applyTeamAlias,
     getMatchTier,
     normalizeTeamName,
