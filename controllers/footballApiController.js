@@ -1243,23 +1243,23 @@ router.get('/predictions-context/:eventId', optionalApiKeyAuth, async (req, res)
                     { $or: h2hOrClauses },
                     finishedFilter
                 ]
-            }).sort({ date: -1 }).limit(200).lean() : Promise.resolve([]),
+            }).sort({ date: -1 }).limit(500).lean() : Promise.resolve([]),
 
-            // Home team last 6 matches
+            // Home team last 12 matches
             homeNameOrId.length ? SoccerMatch.find({
                 $and: [
                     { $or: homeNameOrId },
                     finishedFilter
                 ]
-            }).sort({ date: -1 }).limit(6).lean() : Promise.resolve([]),
+            }).sort({ date: -1 }).limit(12).lean() : Promise.resolve([]),
 
-            // Away team last 6 matches
+            // Away team last 12 matches
             awayNameOrId.length ? SoccerMatch.find({
                 $and: [
                     { $or: awayNameOrId },
                     finishedFilter
                 ]
-            }).sort({ date: -1 }).limit(6).lean() : Promise.resolve([]),
+            }).sort({ date: -1 }).limit(12).lean() : Promise.resolve([]),
 
             // League standings
             SoccerStanding.findOne({ league_slug: leagueSlug }).sort({ season_year: -1 }).lean(),
@@ -1269,7 +1269,7 @@ router.get('/predictions-context/:eventId', optionalApiKeyAuth, async (req, res)
         ]);
 
         // Fallback: looser name contains match when strict H2H query returned nothing
-        if ((!h2hMatches || !h2hMatches.length) && hName && aName && hName.length >= 4 && aName.length >= 4) {
+        if ((!h2hMatches || h2hMatches.length < 8) && hName && aName) {
             try {
                 const loose = await SoccerMatch.find({
                     $and: [
@@ -1291,8 +1291,15 @@ router.get('/predictions-context/:eventId', optionalApiKeyAuth, async (req, res)
                             ]
                         }
                     ]
-                }).sort({ date: -1 }).limit(40).lean();
-                if (loose?.length) h2hMatches = loose;
+                }).sort({ date: -1 }).limit(500).lean();
+                if (loose?.length) {
+                    // Merge loose hits into primary set (prefer richer primary, fill gaps)
+                    const seen = new Set((h2hMatches || []).map(m => String(m.source?.event_id || m._id)));
+                    for (const m of loose) {
+                        const id = String(m.source?.event_id || m._id);
+                        if (!seen.has(id)) { h2hMatches.push(m); seen.add(id); }
+                    }
+                }
             } catch (e) {
                 console.warn('Loose H2H fallback failed:', e.message);
             }
@@ -1457,7 +1464,7 @@ router.get('/predictions-context/:eventId', optionalApiKeyAuth, async (req, res)
         const totalLifetimeMeetings = Math.max(parsedSeriesTotal, allLifetimeH2h.length, homeWins + awayWins + draws);
 
         // Recent encounters — show deeper history for accurate WDW form
-        const recentH2hMeetings = allLifetimeH2h.slice(0, 15);
+        const recentH2hMeetings = allLifetimeH2h; // full available history for UI + API consumers
 
         // Process team form guide helper
         function extractTeamForm(matchesList, teamId) {
@@ -1985,9 +1992,18 @@ router.get('/h2h/:team1Id/:team2Id', optionalApiKeyAuth, async (req, res) => {
             );
         }
         const matches = await SoccerMatch.find({
-            $or: orClauses,
-            'status.state': 'post'
-        }).sort({ date: -1 }).limit(40).lean();
+            $and: [
+                { $or: orClauses },
+                {
+                    $or: [
+                        { 'status.state': { $in: ['post', 'final', 'completed'] } },
+                        { 'status.completed': true },
+                        { 'status.name': { $in: ['STATUS_FINAL', 'STATUS_FULL_TIME', 'STATUS_AFTER_ET', 'STATUS_AFTER_PK', 'FT', 'AET', 'AP'] } },
+                        { date: { $lt: new Date(Date.now() - 2 * 3600 * 1000) } }
+                    ]
+                }
+            ]
+        }).sort({ date: -1 }).limit(500).lean();
 
         let team1Wins = 0;
         let team2Wins = 0;
@@ -2254,7 +2270,7 @@ router.get('/matches/:eventId', optionalApiKeyAuth, async (req, res) => {
                     { match_id: eventId },
                     ...(targetEspnId ? [{ event_id: targetEspnId }, { match_id: targetEspnId }] : [])
                 ]
-            }).sort({ sequence_number: 1, clock_seconds: 1 }).limit(200).lean()
+            }).sort({ sequence_number: 1, clock_seconds: 1 }).limit(500).lean()
         ]);
 
         const summary = serializeSummary(match, league || { slug: match.league_slug, name: match.note });
