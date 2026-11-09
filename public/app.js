@@ -430,13 +430,17 @@
         const teamId = team?.id || team?.slug || '';
         // Key by normalized name first so different clubs never share a crest slot
         const nameKey = (typeof cleanTeamNameForDedup === 'function' ? cleanTeamNameForDedup(display) : '') || String(teamId || display);
-        let logo = safeUrl(team?.logo || team?.logos?.[0]?.href);
+        let logo = safeUrl(team?.logo || team?.logos?.[0]?.href || team?.crest || '');
         // Only use cache when the cached entry was stored under this same name key
         if (!logo && nameKey && crestMemory[nameKey]?.url) {
             logo = crestMemory[nameKey].url;
         }
-        if (logo.includes('static.livescore.com/')) {
+        if (logo && logo.includes('static.livescore.com/')) {
             logo = logo.replace('static.livescore.com/', 'storage.livescore.com/images/team/medium/');
+        }
+        // LiveScore sometimes returns relative path without domain
+        if (logo && !logo.startsWith('http') && /\.(png|jpg|jpeg|svg|webp)$/i.test(logo)) {
+            logo = `https://storage.livescore.com/images/team/medium/${logo.replace(/^\/+/, '')}`;
         }
         // Reject obviously wrong generic placeholders re-used across clubs
         if (logo && /placeholder|default.?crest|unknown|no.?logo/i.test(logo)) {
@@ -604,20 +608,71 @@
             .normalize('NFD')
             .replace(/[\u0300-\u036f]/g, '')
             .toLowerCase()
+            .replace(/aa/g, 'a')
+            .replace(/ae/g, 'a')
+            .replace(/oe/g, 'o')
             .replace(/\([^)]*\)/g, ' ')
             .replace(/\b(18\d{2}|19\d{2}|20\d{2})\b/g, '')
             .replace(/\b(04|05|96|98)\b/g, '')
-            .replace(/\b(women|woman|ladies|femenin[oa]?|frauen|damen|vrouwen|fem|wfc|w)\b|\(w\)/gi, '')
+            .replace(/\b(women|woman|ladies|femenin[oa]?|frauen|damen|vrouwen|fem|wfc)\b|\(w\)/gi, '')
             .replace(/\b(u-?23|u-?21|u-?20|u-?19|u-?18|u-?17|u-?16|u-?15|youth|reserves?|development)\b/gi, '')
+            .replace(/\b(ii|iii|iv)\b/gi, ' ')
+            .replace(/\s+[bB]$/g, ' ')
             .replace(/\bsantos\s+laguna\b/g, 'santos')
             .replace(/\binternazionale\b|\binter\s+milan\b|\binter\b/g, 'inter')
             .replace(/\bcomo\s+1907\b|\bcalcio\s+como\b/g, 'como')
             .replace(/\bfeyenoord\s+rotterdam\b/g, 'feyenoord')
             .replace(/\bsc\s+heerenveen\b/g, 'heerenveen')
-            .replace(/\b(club|clube|csd|deportivo|fc|cf|sc|ac|cd|ceif|afc|fk|sk|sv|ssc|as|rc|ud|rb|calcio|sad|sa)\b/gi, '')
-            .replace(/\b(de\s+)?(junin|resistencia|cordoba|la\s+plata)\b/gi, '')
+            .replace(/\bclub\s+sport\s+herediano\b|\bcs\s+herediano\b/g, 'herediano')
+            .replace(/\binter\s+de\s+san\s+carlos\b|\binter\s+san\s+carlos\b/g, 'intersancarlos')
+            .replace(/\bantigua\s+gfc\b|\bantigua\s+guatemala\b/g, 'antigua')
+            .replace(/\bcd\s+malacateco\b|\bdeportivo\s+malacateco\b/g, 'malacateco')
+            .replace(/\balianza\s+fc\s+valledupar\b|\balianza\s+valledupar\b|\balianza\s+fc\b/g, 'alianza')
+            .replace(/\bvaalerenga\b|\bvalerenga\b/g, 'valerenga')
+            .replace(/\bkristiansund\s+bk\b/g, 'kristiansund')
+            .replace(/\btecnico\s+universitario\b/g, 'tecnicouniversitario')
+            .replace(/\bmanta\s+f\.?c\.?\b/g, 'manta')
+            .replace(/\bcd\s+sabadell\b/g, 'sabadell')
+            .replace(/\breal\s+sociedad\s+(b|ii)\b/g, 'realsociedadb')
+            .replace(/\b(club|clube|csd|deportivo|fc|cf|sc|ac|cd|ceif|afc|fk|sk|sv|ssc|as|rc|ud|rb|calcio|sad|sa|sport|gfc|bk)\b/gi, '')
+            .replace(/\b(de\s+)?(junin|resistencia|cordoba|la\s+plata|valledupar|guatemala)\b/gi, '')
             .replace(/[^a-z0-9]/g, '');
     }
+
+    function signatureFuzzyMatch(sigA, sigB) {
+        // sig form: home_vs_away_date[_w][_youth]
+        if (!sigA || !sigB || sigA === sigB) return sigA === sigB;
+        const parse = (sig) => {
+            const parts = String(sig).split('_');
+            // last token may be date or youth; find _vs_
+            const m = String(sig).match(/^(.+)_vs_(.+?)_(\d{4}-\d{2}-\d{2}|\d{8})(.*)$/);
+            if (m) return { h: m[1], a: m[2], d: m[3], rest: m[4] || '' };
+            return null;
+        };
+        const A = parse(sigA);
+        const B = parse(sigB);
+        if (!A || !B) return false;
+        if (A.d !== B.d) return false;
+        if (A.rest.includes('youth') !== B.rest.includes('youth')) return false;
+        if (A.rest.includes('_w') !== B.rest.includes('_w')) return false;
+        // teams match either orientation
+        const sameWay = teamNamesFuzzyEqual(A.h, B.h) && teamNamesFuzzyEqual(A.a, B.a);
+        const swapWay = teamNamesFuzzyEqual(A.h, B.a) && teamNamesFuzzyEqual(A.a, B.h);
+        return sameWay || swapWay;
+    }
+
+    function teamNamesFuzzyEqual(a, b) {
+        if (!a || !b) return false;
+        if (a === b) return true;
+        const shorter = a.length <= b.length ? a : b;
+        const longer = a.length > b.length ? a : b;
+        if (shorter.length >= 5 && (longer.startsWith(shorter) || longer.includes(shorter))) return true;
+        if (shorter.length >= 6 && longer.length >= 6 && Math.abs(longer.length - shorter.length) <= 2) {
+            if (longer.includes(shorter.slice(0, 6)) || shorter.includes(longer.slice(0, 6))) return true;
+        }
+        return false;
+    }
+
 
     function getEventMatchTierClient(ev) {
         const { home, away } = competitorsFromEvent(ev);
@@ -1904,9 +1959,13 @@
             for (const ev of events) {
                 const sig = getEventDedupSignature(ev);
                 if (!sig || sig === '_vs_') continue;
-                if (globallyRenderedSignatures.has(sig) || (ev.id && globallyRenderedIds.has(String(ev.id)))) {
-                    continue; // Skip: already rendered under another league
+                let alreadyShown = globallyRenderedSignatures.has(sig) || (ev.id && globallyRenderedIds.has(String(ev.id)));
+                if (!alreadyShown) {
+                    for (const prev of globallyRenderedSignatures) {
+                        if (signatureFuzzyMatch(sig, prev)) { alreadyShown = true; break; }
+                    }
                 }
+                if (alreadyShown) continue; // Skip: already rendered (exact or fuzzy name variant)
                 // Drop B/reserve sides from senior top-flight boards
                 const slug = (league?.slug || ev.league_slug || '').toLowerCase();
                 const isSeniorTop = /\.[1]$/.test(slug) && !slug.includes('.w.') && !slug.includes('youth');
@@ -1916,6 +1975,15 @@
                     const an = aT.team?.displayName || aT.team?.name || '';
                     if (isReserveOrBTeam(hn) || isReserveOrBTeam(an)) continue;
                     if (CLIENT_TOP_FLIGHT[slug] && !clientHasTopFlightClub(slug, hn, an)) continue;
+                }
+                // Women's competitions: drop men's sides (Liga F showing Atlético Madrid without W)
+                const isWomenLeague = slug.includes('.w.') || /liga f|wsl|nwsl|femenin|frauen|arkema/i.test(league?.name || '');
+                if (isWomenLeague) {
+                    const { home: hT, away: aT } = competitorsFromEvent(ev);
+                    const hn = hT.team?.displayName || hT.team?.name || '';
+                    const an = aT.team?.displayName || aT.team?.name || '';
+                    const looksWomen = (n) => /\b(w|women|woman|ladies|femen|frau)\b|\(w\)/i.test(n);
+                    if (!looksWomen(hn) && !looksWomen(an)) continue;
                 }
 
                 if (globalSeenMatchSig.has(sig)) {
@@ -1927,10 +1995,16 @@
                 const hLogo = home.team?.logo || ev.home?.logo || '';
                 const evScore = (hLogo.includes('espncdn') ? 3 : 0) + (/^\d{6,}$/.test(String(ev.id)) ? 2 : 0);
 
-                if (!seenMatchSig.has(sig)) {
+                let matchedKey = seenMatchSig.has(sig) ? sig : null;
+                if (!matchedKey) {
+                    for (const k of seenMatchSig.keys()) {
+                        if (signatureFuzzyMatch(sig, k)) { matchedKey = k; break; }
+                    }
+                }
+                if (!matchedKey) {
                     seenMatchSig.set(sig, { event: ev, score: evScore });
                 } else {
-                    const existing = seenMatchSig.get(sig);
+                    const existing = seenMatchSig.get(matchedKey);
                     const winner = evScore > existing.score ? ev : existing.event;
                     const secondary = evScore > existing.score ? existing.event : ev;
 
@@ -1946,6 +2020,7 @@
                         if (winner.away) winner.away.logo = sA.team.logo;
                     }
 
+                    seenMatchSig.delete(matchedKey);
                     seenMatchSig.set(sig, { event: winner, score: Math.max(existing.score, evScore) });
                 }
             }

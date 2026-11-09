@@ -540,8 +540,8 @@ async function syncLeagueFromLiveScoreStages(leagueDef, stages, now = new Date()
             }
 
             const scoreboardDate = formatDateToScoreboard(matchDate);
-            const homeCrest = formatLiveScoreLogo(h.Img);
-            const awayCrest = formatLiveScoreLogo(a.Img);
+            const homeCrest = formatLiveScoreLogo(h.Img || h.ImgUrl || h.logo || '');
+            const awayCrest = formatLiveScoreLogo(a.Img || a.ImgUrl || a.logo || '');
 
             const existingMatch = await findExistingMatch({
                 eventId: eid,
@@ -1988,10 +1988,17 @@ function normalizeTeamName(name = '') {
     let s = String(name).toLowerCase()
         .normalize('NFD')
         .replace(/[\u0300-\u036f]/g, '')
+        // Scandinavian / Dutch double vowels after accent strip
+        .replace(/aa/g, 'a')
+        .replace(/ae/g, 'a')
+        .replace(/oe/g, 'o')
+        .replace(/ue/g, 'u')
         .replace(/\([^)]*\)/g, ' ')
-        // Remove gender/youth markers from base name so e.g. "Arsenal Women" and "Arsenal Ladies" match each other
-        .replace(/\b(women|woman|ladies|femenin[oa]?|frauen|damen|vrouwen|fem|wfc|w)\b|\(w\)/gi, '')
-        .replace(/\b(u-?23|u-?21|u-?20|u-?19|u-?18|u-?17|u-?16|u-?15|youth|reserves?|development)\b/gi, '')
+        .replace(/\b(women|woman|ladies|femenin[oa]?|frauen|damen|vrouwen|fem|wfc)\b|\(w\)/gi, '')
+        .replace(/\b(u-?23|u-?21|u-?20|u-?19|u-?18|u-?17|u-?16|u-?15|youth|reserves?|development|primavera)\b/gi, '')
+        // Roman numerals / B-team markers (keep category separate via getTeamCategory)
+        .replace(/\b(ii|iii|iv)\b/gi, ' ')
+        .replace(/\s+[bB]$/g, ' ')
         // Canonical club aliases
         .replace(/\bman\s+utd\b|\bman\s+united\b|\bmanchester\s+utd\b/g, 'manchesterunited')
         .replace(/\bman\s+city\b|\bmanchester\s+city\b/g, 'manchestercity')
@@ -2006,43 +2013,31 @@ function normalizeTeamName(name = '') {
         .replace(/\bac\s+milan\b/g, 'acmilan')
         .replace(/\bsporting\s+cp\b|\bsporting\s+lisbon\b/g, 'sportingcp')
         .replace(/\bjuve\b|\bjuventus\b/g, 'juventus')
-        .replace(/\bnewcastle\s+united\b/g, 'newcastle')
-        .replace(/\bwest\s+ham\s+united\b/g, 'westham')
-        .replace(/\bbrighton\s+(and|&)\s+hove\s+albion\b/g, 'brighton')
-        .replace(/\bqpr\b|\bqueens\s+park\s+rangers\b/g, 'queensparkrangers')
-        .replace(/\bbodoe\b|\bbodo\b/g, 'bodo')
-        .replace(/\bblackburn\s+rovers\b/g, 'blackburn')
-        .replace(/\bbolton\s+wanderers\b/g, 'bolton')
-        .replace(/\bstoke\s+city\b/g, 'stoke')
-        .replace(/\bswansea\s+city\b/g, 'swansea')
-        .replace(/\bnorwich\s+city\b/g, 'norwich')
-        .replace(/\bderby\s+county\b/g, 'derby')
-        .replace(/\bpreston\s+north\s+end\b/g, 'preston')
-        .replace(/\bsheffield\s+united\b/g, 'sheffieldunited')
-        .replace(/\bsheffield\s+wednesday\b/g, 'sheffieldwednesday')
-        .replace(/\bwest\s+brom\b|\bwest\s+bromwich\s+albion\b/g, 'westbrom')
-        .replace(/\bbirmingham\s+city\b/g, 'birmingham')
-        .replace(/\bcharlton\s+athletic\b/g, 'charlton')
-        .replace(/\basante\s+kotoko\b/g, 'asantekotoko')
-        .replace(/\baduana\s+stars\b/g, 'aduanastars')
-        .replace(/\bhearts\s+of\s+oak\b/g, 'heartsofoak')
-        .replace(/\byoung\s+africans\b|\byanga\b/g, 'youngafricans')
-        .replace(/\bsimba\s+sc\b|\bsimba\b/g, 'simba')
-        .replace(/\bmbeya\s+city\b/g, 'mbeyacity')
-        .replace(/\bsingida\s+black\s+stars\b|\bsingida\s+bs\b/g, 'singidablackstars')
-        .replace(/\bsantos\s+laguna\b/g, 'santos')
         .replace(/\bfeyenoord\s+rotterdam\b/g, 'feyenoord')
         .replace(/\bsc\s+heerenveen\b/g, 'heerenveen')
         .replace(/\bcomo\s+1907\b|\bcalcio\s+como\b/g, 'como')
-        // Strip common non-distinct club markers like Club, FC, CF, etc. and foundation years (e.g. Como 1907 -> como)
-        .replace(/\b(club|clube|csd|deportivo|fc|cf|sc|ac|cd|ceif|afc|fk|sk|sv|ssc|as|rc|ud|rb|calcio|sad|sa)\b/gi, '')
-        .replace(/\b(de\s+)?(junin|resistencia|cordoba|la\s+plata)\b/gi, '')
+        .replace(/\bsantos\s+laguna\b/g, 'santos')
+        .replace(/\bclub\s+sport\s+herediano\b|\bcs\s+herediano\b/g, 'herediano')
+        .replace(/\binter\s+de\s+san\s+carlos\b|\binter\s+san\s+carlos\b/g, 'intersancarlos')
+        .replace(/\bantigua\s+gfc\b|\bantigua\s+guatemala\b/g, 'antigua')
+        .replace(/\bcd\s+malacateco\b|\bdeportivo\s+malacateco\b/g, 'malacateco')
+        .replace(/\balianza\s+fc\s+valledupar\b|\balianza\s+valledupar\b|\balianza\s+fc\b/g, 'alianza')
+        .replace(/\bvaalerenga\b|\bvalerenga\b/g, 'valerenga')
+        .replace(/\bkristiansund\s+bk\b/g, 'kristiansund')
+        .replace(/\btecnico\s+universitario\b|\bt[eé]cnico\s+universitario\b/g, 'tecnicouniversitario')
+        .replace(/\bmanta\s+f\.?c\.?\b/g, 'manta')
+        .replace(/\bcd\s+sabadell\b|\bsabadell\b/g, 'sabadell')
+        .replace(/\breal\s+sociedad\s+(b|ii)\b/g, 'realsociedadb')
+        // Strip generic club tokens INCLUDING "sport" / "gfc" / "bk"
+        .replace(/\b(club|clube|csd|deportivo|fc|cf|sc|ac|cd|ceif|afc|fk|sk|sv|ssc|as|rc|ud|rb|calcio|sad|sa|sport|gfc|bk|cf)\b/gi, '')
+        .replace(/\b(de\s+)?(junin|resistencia|cordoba|la\s+plata|valledupar|guatemala)\b/gi, '')
         .replace(/\b(18\d{2}|19\d{2}|20\d{2})\b/g, '')
         .replace(/\b(04|05|96|98)\b/g, '')
         .replace(/[^a-z0-9]/g, '')
         .trim();
     return s;
 }
+
 
 function areTeamNamesMatching(nameA = '', nameB = '', leagueSlugA = '', leagueSlugB = '') {
     if (!nameA || !nameB) return false;
@@ -2065,15 +2060,11 @@ function areTeamNamesMatching(nameA = '', nameB = '', leagueSlugA = '', leagueSl
 
     const shorter = a.length <= b.length ? a : b;
     const longer = a.length > b.length ? a : b;
-    // Require substantial containment (min 5 chars) to avoid "fc" / short false positives
-    if (shorter.length >= 5 && longer.includes(shorter)) return true;
-
-    const tokensA = a.split(/\s+/).filter(t => t.length > 2);
-    const tokensB = b.split(/\s+/).filter(t => t.length > 2);
-    if (tokensA.length >= 2 && tokensB.length >= 2) {
-        const setB = new Set(tokensB);
-        const overlap = tokensA.filter(t => setB.has(t)).length;
-        if (overlap >= Math.min(tokensA.length, tokensB.length)) return true;
+    // Substantial containment / prefix (Herediano ⊂ ClubSportHerediano after strip, Alianza ⊂ AlianzaValledupar)
+    if (shorter.length >= 5 && (longer === shorter || longer.startsWith(shorter) || longer.includes(shorter))) return true;
+    // Near-equal after stripping one extra vowel cluster (Vaalerenga / Valerenga already collapsed)
+    if (shorter.length >= 6 && longer.length >= 6 && Math.abs(longer.length - shorter.length) <= 2) {
+        if (longer.includes(shorter.slice(0, 6)) || shorter.includes(longer.slice(0, 6))) return true;
     }
     return false;
 }
@@ -2692,8 +2683,8 @@ async function syncLiveScoreInPlay() {
                 }
 
                 const scoreboardDate = formatDateToScoreboard(matchDate);
-                const homeCrest = formatLiveScoreLogo(h.Img);
-                const awayCrest = formatLiveScoreLogo(a.Img);
+                const homeCrest = formatLiveScoreLogo(h.Img || h.ImgUrl || h.logo || '');
+                const awayCrest = formatLiveScoreLogo(a.Img || a.ImgUrl || a.logo || '');
 
                 // Zero-latency in-memory lookup
                 const hNorm = normalizeTeamName(homeName);
