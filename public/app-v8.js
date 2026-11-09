@@ -2979,7 +2979,7 @@
 
         const predHints = predictions?.norraAiPredictionHints || {};
         const h2h = predictions?.h2h || {};
-        let recentH2h = h2h.recentMeetings || [];
+        let recentH2h = h2h.allMeetings || h2h.recentMeetings || [];
         if (!recentH2h.length && summary.seasonseries?.length) {
             const series = summary.seasonseries.find(s => s.type === 'head-to-head') || summary.seasonseries[0];
             if (series?.events?.length) {
@@ -3148,7 +3148,7 @@
         const h2hMeetingsRows = (() => {
             const seenH2hRow = new Set();
             if (!recentH2h.length) return '';
-            return recentH2h.slice(0, 15).map(m => {
+            return recentH2h.map(m => {
                 const rowKey = [m.date, m.homeTeam, m.awayTeam, m.score].join('|');
                 if (seenH2hRow.has(rowKey)) return '';
                 seenH2hRow.add(rowKey);
