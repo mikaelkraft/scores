@@ -382,6 +382,8 @@ async function fetchFreshWorldwideLiveMatches() {
                         description: 'In Progress',
                         clock: clock,
                         detail: clock,
+                        completed: false,
+                        isLive: true,
                         period: ev.Epr || 1,
                         completed: false,
                         isLive: true
@@ -2608,6 +2610,43 @@ router.get('/matches/:eventId', optionalApiKeyAuth, async (req, res) => {
                 participants: (ke.athletesInvolved || []).map(a => ({ athlete: a }))
             }));
         }
+        // LiveScore incidents when DB/ESPN timeline is empty (common for lower leagues)
+        if (timelinePlays.length === 0) {
+            try {
+                const lsId = match.source?.livescore_id || match.source?.event_id || eventId;
+                if (lsId && /^\d+$/.test(String(lsId))) {
+                    const inc = await fetchUpstreamJsonFast(
+                        `https://prod-public-api.livescore.com/v1/api/app/incidents/soccer/${lsId}`,
+                        5000
+                    );
+                    const rows = inc?.Incs || inc?.Incidents || inc?.incidents || [];
+                    if (Array.isArray(rows) && rows.length) {
+                        timelinePlays = rows.map((row, idx) => {
+                            const minute = row.Min ?? row.Mn ?? row.minute ?? row.T ?? '';
+                            const extra = row.MinEx ?? row.extra ?? '';
+                            const clockStr = extra ? `${minute}+${extra}'` : (minute !== '' ? `${minute}'` : '');
+                            const text = row.Na || row.Nm || row.Text || row.text || row.IT || 'Event';
+                            const scorer = row.Scn || row.Player || row.Pn || '';
+                            const fullText = scorer ? `${text}: ${scorer}` : text;
+                            const isGoal = /goal|score|pen/i.test(String(text)) || row.IT === 1 || row.Type === 1;
+                            return {
+                                id: `ls-inc-${idx}`,
+                                sequence: idx + 1,
+                                type: { text: isGoal ? 'Goal' : String(text) },
+                                text: fullText,
+                                clock: { displayValue: clockStr, value: parseInt(minute, 10) || 0 },
+                                scoringPlay: isGoal,
+                                team: row.Team === 1 || row.T1 ? { homeAway: 'home' } : (row.Team === 2 || row.T2 ? { homeAway: 'away' } : null),
+                                participants: scorer ? [{ athlete: { displayName: scorer } }] : []
+                            };
+                        });
+                    }
+                }
+            } catch (e) {
+                console.warn('LiveScore incidents fetch failed:', e.message);
+            }
+        }
+
 
         const isLive = match.status?.state === 'in';
         const ttl = isLive ? 5 : 60;
@@ -2761,11 +2800,18 @@ async function handleCrestProxy(req, res) {
         if (fs.existsSync(localPath) && fs.statSync(localPath).size > 0) {
             res.set('Cache-Control', 'public, max-age=31536000, immutable');
             return res.sendFile(localPath);
-        } else {
-            res.set('Cache-Control', 'no-cache, no-store, must-revalidate');
-            return res.status(404).send('Crest not found');
         }
+        // Azure disk may be ephemeral / not writable — still show crests via upstream
+        res.set('Cache-Control', 'public, max-age=3600');
+        return res.redirect(302, rawUrl);
     } catch {
+        try {
+            const rawUrl = req.query.url;
+            if (rawUrl && String(rawUrl).startsWith('http')) {
+                res.set('Cache-Control', 'public, max-age=600');
+                return res.redirect(302, String(rawUrl));
+            }
+        } catch (_) {}
         res.set('Cache-Control', 'no-cache, no-store, must-revalidate');
         return res.status(404).send('Crest not found');
     }
