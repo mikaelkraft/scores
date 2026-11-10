@@ -458,11 +458,16 @@
         }
         if (logo && logo.startsWith('http')) {
             rememberCrest(nameKey, logo);
-            logo = `/cdn/crest?url=${encodeURIComponent(logo)}`;
+            const direct = logo;
+            const proxied = `/cdn/crest?url=${encodeURIComponent(direct)}`;
+            const initials = escapeHtml(getTeamInitials(team?.displayName || team?.name, team?.abbreviation));
+            const svgFallback = renderCrestFallbackSvg(initials);
+            // Proxy first (cacheable); fall back to direct CDN then initials if proxy/disk fails
+            return `<span class="${className}"><img src="${proxied}" alt="${escapeHtml(team?.displayName || initials)}" loading="lazy" decoding="async" referrerpolicy="no-referrer" onerror="if(!this.dataset.fb){this.dataset.fb=1;this.src='${direct.replace(/'/g, "\'")}';}else{this.onerror=null;this.outerHTML='${svgFallback}';}"></span>`;
         }
         const initials = escapeHtml(getTeamInitials(team?.displayName || team?.name, team?.abbreviation));
         const svgFallback = renderCrestFallbackSvg(initials);
-        return `<span class="${className}">${logo ? `<img src="${logo}" alt="${escapeHtml(team?.displayName || initials)}" loading="lazy" decoding="async" onerror="this.onerror=null; this.outerHTML='${svgFallback}';">` : svgFallback}</span>`;
+        return `<span class="${className}">${svgFallback}</span>`;
     }
 
     function competitionFromEvent(event) {
@@ -585,11 +590,13 @@
         const status = event?.status || competitionFromEvent(event).status || {};
         const type = status.type || {};
         const stateName = status.state || type.state || (status.isLive ? 'in' : 'unknown');
-        if (stateName === 'in' || status.isLive) {
+        const clockHint = String(status.clock || status.displayClock || status.detail || type.detail || '');
+        const looksLive = stateName === 'in' || status.isLive || /\d|'|HT|ET|pen/i.test(clockHint) && !/FT|Final|AET|AP/i.test(clockHint);
+        if (looksLive && stateName !== 'post') {
             const clock = formatMatchClock(status, type);
-            return { state: 'live', label: clock, pillClass: 'in-play' };
+            return { state: 'live', label: clock || 'Live', pillClass: 'in-play' };
         }
-        if (stateName === 'post' || status.completed || type.completed) {
+        if (stateName === 'post' || ((status.completed || type.completed) && !looksLive)) {
             const label = type.shortDetail || status.detail || 'FT';
             return { state: 'finished', label: /^\d{3,}$/.test(label) ? 'FT' : label, pillClass: 'post' };
         }
@@ -687,6 +694,11 @@
             .replace(/\bmanta\s+f\.?c\.?\b/g, 'manta')
             .replace(/\bcd\s+sabadell\b/g, 'sabadell')
             .replace(/\breal\s+sociedad\s+(b|ii)\b/g, 'realsociedadb')
+            .replace(/\bmilton\s+keynes\s+dons\b|\bmk\s+dons\b/g, 'mkdons')
+            .replace(/\bbrentford\s+(u21|u-21|academy|b)\b/g, 'brentfordu21')
+            .replace(/\bmiddlesbrough\s+(u21|u-21|academy|b)\b/g, 'middlesbroughu21')
+            .replace(/\bderby\s+county\s+(u21|u-21|academy|b)\b/g, 'derbycountyu21')
+            .replace(/\bal\s+mokawloon(\s+al\s+arab)?\b/g, 'almokawloon')
             .replace(/\b(club|clube|csd|deportivo|fc|cf|sc|ac|cd|ceif|afc|fk|sk|sv|ssc|as|rc|ud|rb|calcio|sad|sa|sport|gfc|bk)\b/gi, '')
             .replace(/\b(de\s+)?(junin|resistencia|cordoba|la\s+plata|valledupar|guatemala)\b/gi, '')
             .replace(/[^a-z0-9]/g, '');
@@ -772,7 +784,12 @@
         const tier = getEventMatchTierClient(ev);
         const isYouth = tier.endsWith('_y');
         const isWomen = tier.startsWith('w_') || tier.includes('women');
-        return [hName, aName].sort().join('_vs_') + '_' + dKey + (isWomen ? '_w' : '') + (isYouth ? '_youth' : '');
+        const hId = String(home.team?.id || home.team?.source_id || home.id || '').replace(/\D/g,'');
+        const aId = String(away.team?.id || away.team?.source_id || away.id || '').replace(/\D/g,'');
+        const idPart = (hId && aId && hId.length >= 3 && aId.length >= 3)
+            ? [hId, aId].sort().join('_vs_')
+            : [hName, aName].sort().join('_vs_');
+        return idPart + '_' + dKey + (isWomen ? '_w' : '') + (isYouth ? '_youth' : '');
     }
 
 
@@ -1986,7 +2003,11 @@
                 const hLogo = home.team?.logo || ev.home?.logo || '';
                 const isEspn = hLogo.includes('espncdn') || /^\d{6,}$/.test(String(ev.id));
                 const isSpecificLeague = league?.slug && league.slug !== 'other' && league.slug !== 'w.other';
-                const evScore = (isEspn ? 4 : 0) + (isSpecificLeague ? 2 : 0) + (ev.status?.clock ? 1 : 0);
+                const clockNum = parseInt(String(ev.status?.clock || ev.status?.detail || '').replace(/\D/g, ''), 10) || 0;
+                const { home: hs, away: as_ } = competitorsFromEvent(ev);
+                const hasScore = (hs.score != null && hs.score !== '' && hs.score !== '-') || (as_?.score != null && as_?.score !== '');
+                const hasLogo = !!(hs.team?.logo || as_?.team?.logo);
+                const evScore = (isEspn ? 3 : 0) + (isSpecificLeague ? 2 : 0) + (ev.status?.state === 'in' ? 3 : 0) + Math.min(clockNum, 120) + (hasScore ? 5 : 0) + (hasLogo ? 2 : 0) + (ev.id ? 1 : 0);
 
                 if (!globalSeenMatchSig.has(sig)) {
                     globalSeenMatchSig.set(sig, { id: ev.id, score: evScore });
