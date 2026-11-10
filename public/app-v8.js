@@ -463,7 +463,7 @@
             const initials = escapeHtml(getTeamInitials(team?.displayName || team?.name, team?.abbreviation));
             const svgFallback = renderCrestFallbackSvg(initials);
             // Proxy first (cacheable); fall back to direct CDN then initials if proxy/disk fails
-            return `<span class="${className}"><img src="${proxied}" alt="${escapeHtml(team?.displayName || initials)}" loading="lazy" decoding="async" referrerpolicy="no-referrer" onerror="if(!this.dataset.fb){this.dataset.fb=1;this.src='${direct.replace(/'/g, "\'")}';}else{this.onerror=null;this.outerHTML='${svgFallback}';}"></span>`;
+            return `<span class="${className}"><img src="${direct}" alt="${escapeHtml(team?.displayName || initials)}" loading="lazy" decoding="async" referrerpolicy="no-referrer" onerror="if(!this.dataset.fb){this.dataset.fb=1;this.src='${direct.replace(/'/g, "\'")}';}else{this.onerror=null;this.outerHTML='${svgFallback}';}"></span>`;
         }
         const initials = escapeHtml(getTeamInitials(team?.displayName || team?.name, team?.abbreviation));
         const svgFallback = renderCrestFallbackSvg(initials);
@@ -481,15 +481,16 @@
             const unwrap = (side, idx) => {
                 const c = competitors.find(item => item.homeAway === side) || competitors[idx] || {};
                 const base = c.team && typeof c.team === 'object' ? c.team : {};
+                const sideRaw = side === 'home' ? (event.home || {}) : (event.away || {});
                 const team = {
                     ...base,
-                    id: base.id || c.id || '',
-                    displayName: base.displayName || base.name || c.displayName || c.name || '',
-                    name: base.name || base.displayName || c.name || '',
-                    logo: base.logo || c.logo || base.logos?.[0]?.href || '',
-                    abbreviation: base.abbreviation || c.abbreviation || '',
-                    source_id: base.source_id || base.id || c.id || '',
-                    espn_id: base.espn_id || c.espn_id || ''
+                    id: base.id || c.id || sideRaw.id || '',
+                    displayName: base.displayName || base.name || c.displayName || c.name || sideRaw.displayName || sideRaw.name || '',
+                    name: base.name || base.displayName || c.name || sideRaw.name || '',
+                    logo: base.logo || c.logo || base.logos?.[0]?.href || sideRaw.logo || sideRaw.team?.logo || '',
+                    abbreviation: base.abbreviation || c.abbreviation || sideRaw.abbreviation || '',
+                    source_id: base.source_id || base.id || c.id || sideRaw.source_id || sideRaw.id || '',
+                    espn_id: base.espn_id || c.espn_id || sideRaw.espn_id || ''
                 };
                 return {
                     ...c,
@@ -674,8 +675,10 @@
             .replace(/\([^)]*\)/g, ' ')
             .replace(/\b(18\d{2}|19\d{2}|20\d{2})\b/g, '')
             .replace(/\b(04|05|96|98)\b/g, '')
-            .replace(/\b(women|woman|ladies|femenin[oa]?|frauen|damen|vrouwen|fem|wfc)\b|\(w\)/gi, '')
-            .replace(/\b(u-?23|u-?21|u-?20|u-?19|u-?18|u-?17|u-?16|u-?15|youth|reserves?|development)\b/gi, '')
+            .replace(/\b(women|woman|ladies|femenin[oa]?|frauen|damen|vrouwen|fem|wfc)\b|\(w\)/gi, ' ')
+            .replace(/\s+[wW]$/g, ' ')
+            .replace(/\b[wW]\b/g, ' ')
+            .replace(/\b(u-?23|u-?21|u-?20|u-?19|u-?18|u-?17|u-?16|u-?15|youth|reserves?|development)\b/gi, ' ')
             .replace(/\b(ii|iii|iv)\b/gi, ' ')
             .replace(/\s+[bB]$/g, ' ')
             .replace(/\bsantos\s+laguna\b/g, 'santos')
@@ -699,7 +702,13 @@
             .replace(/\bmiddlesbrough\s+(u21|u-21|academy|b)\b/g, 'middlesbroughu21')
             .replace(/\bderby\s+county\s+(u21|u-21|academy|b)\b/g, 'derbycountyu21')
             .replace(/\bal\s+mokawloon(\s+al\s+arab)?\b/g, 'almokawloon')
-            .replace(/\b(club|clube|csd|deportivo|fc|cf|sc|ac|cd|ceif|afc|fk|sk|sv|ssc|as|rc|ud|rb|calcio|sad|sa|sport|gfc|bk)\b/gi, '')
+            .replace(/\blogroñ[eé]s\b|\blogrones\b/g, 'logrones')
+            .replace(/\bamorebieta\b/g, 'amorebieta')
+            .replace(/\bh[aä]cken\b/g, 'hacken')
+            .replace(/\bparis\s+(saint[- ]?germain|sg)\b/g, 'psg')
+            .replace(/\bmanchester\s+city\b/g, 'mancity')
+            .replace(/\bbayern(\s+munich|\s+munchen)?\b/g, 'bayern')
+            .replace(/\b(club|clube|csd|deportivo|fc|cf|sc|ac|cd|sd|ceif|afc|fk|sk|sv|ssc|as|rc|ud|rb|calcio|sad|sa|sport|gfc|bk|cf)\b/gi, ' ')
             .replace(/\b(de\s+)?(junin|resistencia|cordoba|la\s+plata|valledupar|guatemala)\b/gi, '')
             .replace(/[^a-z0-9]/g, '');
     }
