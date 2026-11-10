@@ -10,6 +10,14 @@ const SoccerClub = require('../models/soccerClub');
 const SoccerMatch = require('../models/soccerMatch');
 const SoccerMatchEvent = require('../models/soccerMatchEvent');
 const SoccerStanding = require('../models/soccerStanding');
+const {
+    ensureSportScoreCache,
+    enrichMatchLogos,
+    enrichMatchesLogos,
+    fetchSportScoreMatchDetail,
+    incidentsToTimelinePlays
+} = require('../services/sportScoreService');
+
 const { optionalApiKeyAuth, assertLeagueAccess, getAllowedLeaguesForKey, PLAN_LIMITS, hasFeature, requireFeature, getPlanConfig } = require('../middleware/apiKeyAuth');
 
 // High-speed in-memory cache for worldwide live in-play scores
@@ -324,6 +332,8 @@ async function fetchFreshWorldwideLiveMatches() {
         SoccerMatch.find(liveFilter).maxTimeMS(2500).sort({ date: 1 }).lean().catch(() => []),
         SoccerLeague.find({ active: true }).maxTimeMS(2500).lean().catch(() => [])
     ]);
+    // Additive SportScore warm (logos/telemetry) — never blocks or replaces primary feeds
+    try { ensureSportScoreCache().catch(() => {}); } catch (_) {}
 
     const leagueMap = new Map((storedLeagues || []).map(l => [l.slug, l]));
     const candidateMatches = [];
@@ -610,11 +620,17 @@ async function fetchFreshWorldwideLiveMatches() {
         if (pB !== pA) return pB - pA;
         return new Date(a.date) - new Date(b.date);
     });
-    return dedupedLive;
+    try { return enrichMatchesLogos(dedupedLive); } catch (_) { return dedupedLive; }
 }
 
 function filterLiveMatchesResponse(matches, league, isFreeRestricted) {
     let result = matches || [];
+    try {
+        // Fire-and-forget SportScore cache warm (does not block)
+        ensureSportScoreCache().catch(() => {});
+        result = enrichMatchesLogos(result);
+    } catch (_) {}
+
     if (isFreeRestricted) {
         if (league && league !== 'all') {
             const requestedSlug = String(league).toLowerCase();
@@ -1342,6 +1358,10 @@ router.get('/fixtures', optionalApiKeyAuth, async (req, res) => {
             return new Date(a.date) - new Date(b.date);
         });
 
+        try {
+            await ensureSportScoreCache();
+            for (const m of dedupedMatches) enrichMatchLogos(m);
+        } catch (_) {}
         const hasLive = dedupedMatches.some(m => m.status.isLive);
         if (hasLive || status === 'live') {
             res.set('Cache-Control', 'no-cache, no-store, must-revalidate');
@@ -2645,6 +2665,37 @@ router.get('/matches/:eventId', optionalApiKeyAuth, async (req, res) => {
             } catch (e) {
                 console.warn('LiveScore incidents fetch failed:', e.message);
             }
+        }
+        // SportScore supplemental timeline + logos (never removes existing data)
+        try {
+            const hName = match.home?.display_name || match.home?.name || match.home?.displayName || '';
+            const aName = match.away?.display_name || match.away?.name || match.away?.displayName || '';
+            if (hName && aName) {
+                const ssMatch = await fetchSportScoreMatchDetail({ homeName: hName, awayName: aName });
+                if (ssMatch) {
+                    if ((!match.home?.logo || /placeholder|unknown/i.test(String(match.home.logo))) && ssMatch.home_logo) {
+                        match.home.logo = ssMatch.home_logo;
+                    }
+                    if ((!match.away?.logo || /placeholder|unknown/i.test(String(match.away.logo))) && ssMatch.away_logo) {
+                        match.away.logo = ssMatch.away_logo;
+                    }
+                    if (timelinePlays.length === 0) {
+                        const ssPlays = incidentsToTimelinePlays(ssMatch);
+                        if (ssPlays.length) timelinePlays = ssPlays;
+                    }
+                    // Attach logos onto summary competitors if present
+                    if (summary?.boxscore?.teams) {
+                        for (const tm of summary.boxscore.teams) {
+                            const n = tm.team?.displayName || tm.team?.name || '';
+                            if (!n) continue;
+                            if (tm.homeAway === 'home' && ssMatch.home_logo && (!tm.team.logo || /placeholder/i.test(String(tm.team.logo)))) tm.team.logo = ssMatch.home_logo;
+                            if (tm.homeAway === 'away' && ssMatch.away_logo && (!tm.team.logo || /placeholder/i.test(String(tm.team.logo)))) tm.team.logo = ssMatch.away_logo;
+                        }
+                    }
+                }
+            }
+        } catch (e) {
+            console.warn('SportScore enrich failed:', e.message);
         }
 
 
