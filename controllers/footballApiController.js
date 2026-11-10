@@ -1350,7 +1350,39 @@ router.get('/fixtures', optionalApiKeyAuth, async (req, res) => {
             }
         }
 
-        const dedupedMatches = Array.from(seenFixturesMap.values()).map(e => e.match);
+        // Soft-collapse cup/trophy name variants (Amorebieta/SD Amorebieta, Team W vs Team, Häcken/Haecken)
+        const softKey = (m) => {
+            const h = normalizeTeamName(m.home?.name || m.home?.displayName || m.home?.display_name || '');
+            const a = normalizeTeamName(m.away?.name || m.away?.displayName || m.away?.display_name || '');
+            const pair = [h, a].filter(Boolean).sort().join('_vs_');
+            let d = String(m.scoreboard_date || m.scoreboardDate || '');
+            if (/^\d{8}$/.test(d)) d = `${d.slice(0,4)}-${d.slice(4,6)}-${d.slice(6,8)}`;
+            else if (m.date) {
+                try { d = new Date(m.date).toISOString().slice(0, 10); } catch { d = ''; }
+            }
+            const slug = String(m.league?.slug || m.league_slug || '').replace(/\.w\./g, '.').replace(/\.w$/,'');
+            return `${pair}_${d}_${slug}`;
+        };
+        const softScore = (m) => {
+            const hLogo = m.home?.logo || '';
+            const aLogo = m.away?.logo || '';
+            const clock = parseInt(String(m.status?.clock || m.status?.detail || '').replace(/\D/g, ''), 10) || 0;
+            const hasScore = m.home?.score != null || m.away?.score != null;
+            return (hLogo ? 3 : 0) + (aLogo ? 3 : 0) + (hasScore ? 4 : 0) + Math.min(clock, 120) + (m.status?.isLive || m.status?.state === 'in' ? 5 : 0);
+        };
+        const softMap = new Map();
+        for (const entry of seenFixturesMap.values()) {
+            const m = entry.match;
+            const k = softKey(m);
+            if (!k || k.startsWith('_vs_')) {
+                softMap.set(String(m.id || Math.random()), m);
+                continue;
+            }
+            const prev = softMap.get(k);
+            if (!prev || softScore(m) >= softScore(prev)) softMap.set(k, m);
+        }
+
+        const dedupedMatches = Array.from(softMap.values());
         dedupedMatches.sort((a, b) => {
             const pA = getLeaguePriority(a.league?.slug);
             const pB = getLeaguePriority(b.league?.slug);
