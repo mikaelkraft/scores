@@ -784,15 +784,36 @@ router.get('/fixtures', optionalApiKeyAuth, async (req, res) => {
 
         // Date filtering
         const sixHoursAgo = new Date(Date.now() - 6 * 3600 * 1000);
+        const todayKey = parseDateParam('today');
+        const dayStart = new Date();
+        dayStart.setUTCHours(0, 0, 0, 0);
+        const dayEnd = new Date();
+        dayEnd.setUTCHours(23, 59, 59, 999);
+        // Also cover local-calendar edge near UTC midnight (WAT = UTC+1 etc.)
+        const localDayStart = new Date();
+        localDayStart.setHours(0, 0, 0, 0);
+        const localDayEnd = new Date();
+        localDayEnd.setHours(23, 59, 59, 999);
         if (isQueryingToday && status === 'all') {
             filter.$or = [
-                { scoreboard_date: parseDateParam('today') },
+                { scoreboard_date: todayKey },
+                { scoreboard_date: `${todayKey.slice(0,4)}-${todayKey.slice(4,6)}-${todayKey.slice(6,8)}` },
+                { date: { $gte: dayStart, $lte: dayEnd } },
+                { date: { $gte: localDayStart, $lte: localDayEnd } },
                 { 'status.state': 'in', date: { $gte: sixHoursAgo } }
             ];
         } else if (date) {
-            filter.scoreboard_date = parseDateParam(date);
+            const key = parseDateParam(date);
+            filter.$or = [
+                { scoreboard_date: key },
+                { scoreboard_date: /^\d{8}$/.test(key) ? `${key.slice(0,4)}-${key.slice(4,6)}-${key.slice(6,8)}` : key }
+            ];
         } else if (isQueryingToday) {
-            filter.scoreboard_date = parseDateParam('today');
+            filter.$or = [
+                { scoreboard_date: todayKey },
+                { date: { $gte: dayStart, $lte: dayEnd } },
+                { 'status.state': 'in', date: { $gte: sixHoursAgo } }
+            ];
         } else if (from || to) {
             filter.scoreboard_date = {};
             if (from) filter.scoreboard_date.$gte = parseDateParam(from);
@@ -844,13 +865,13 @@ router.get('/fixtures', optionalApiKeyAuth, async (req, res) => {
         }
 
         let [totalCount, matches, storedLeagues] = await Promise.all([
-            SoccerMatch.countDocuments(filter).maxTimeMS(2500).catch(() => 0),
+            SoccerMatch.countDocuments(filter).maxTimeMS(8000).catch(() => 0),
             SoccerMatch.find(filter)
                 .select('source league_slug name short_name date scoreboard_date status home away note venue broadcasts attendance odds')
                 .sort({ date: 1 })
                 .skip((page - 1) * limit)
                 .limit(limit)
-                .maxTimeMS(2500)
+                .maxTimeMS(8000)
                 .lean()
                 .catch(() => []),
             SoccerLeague.find({ active: true }).select('slug name abbreviation country logo').maxTimeMS(2500).lean().catch(() => [])
@@ -1082,6 +1103,25 @@ router.get('/fixtures', optionalApiKeyAuth, async (req, res) => {
             }
         }
 
+        // If today's board is empty, force a live upstream refresh and merge (avoids rare "No games today")
+        if (isQueryingToday && seenFixturesMap.size === 0 && (status === 'all' || status === 'live')) {
+            try {
+                const freshLive = await getFormattedLiveMatches(null, false);
+                const liveList = Array.isArray(freshLive) ? freshLive : (freshLive?.matches || []);
+                for (const m of liveList) {
+                    const id = String(m.id || m.source?.event_id || '');
+                    const h = normalizeTeamName(m.home?.name || m.home?.displayName || m.competitions?.[0]?.competitors?.[0]?.team?.displayName || '');
+                    const a = normalizeTeamName(m.away?.name || m.away?.displayName || m.competitions?.[0]?.competitors?.[1]?.team?.displayName || '');
+                    const sig = id || `${h}_vs_${a}`;
+                    if (!seenFixturesMap.has(sig)) {
+                        seenFixturesMap.set(sig, { match: m, score: 10 });
+                    }
+                }
+            } catch (e) {
+                console.warn('Today empty-board live refresh failed:', e.message);
+            }
+        }
+
         const dedupedMatches = Array.from(seenFixturesMap.values()).map(e => e.match);
         dedupedMatches.sort((a, b) => {
             const pA = getLeaguePriority(a.league?.slug);
@@ -1113,9 +1153,11 @@ router.get('/fixtures', optionalApiKeyAuth, async (req, res) => {
             fixtures: dedupedMatches
         };
 
-        // Cache successful response in memory
+        // Cache successful response; never park empty "today" boards for long (stale empty caused "No games today")
+        const matchCount = responsePayload?.meta?.totalMatches ?? responsePayload?.matches?.length ?? 0;
+        const emptyToday = isQueryingToday && matchCount === 0;
         fixturesResponseCache.set(cacheKey, {
-            timestamp: Date.now(),
+            timestamp: emptyToday ? (Date.now() - cacheTtlMs + 2000) : Date.now(),
             hasLive,
             body: responsePayload
         });
@@ -1811,48 +1853,31 @@ router.get(['/training-data', '/analytics/training-data'], optionalApiKeyAuth, a
                 text: k.text || ''
             }));
 
-            // Guaranteed rich telemetry: intelligent baseline extraction from key events if raw boxscore is sparse
-            let hShotsOn = Number(hStats.shotsOnTarget);
-            let aShotsOn = Number(aStats.shotsOnTarget);
-            if (isNaN(hShotsOn)) hShotsOn = Math.max(hScore, Math.round(hScore * 1.5));
-            if (isNaN(aShotsOn)) aShotsOn = Math.max(aScore, Math.round(aScore * 1.5));
-
-            let hShots = Number(hStats.totalShots);
-            let aShots = Number(aStats.totalShots);
-            if (isNaN(hShots)) hShots = Math.max(hShotsOn, Math.round(hShotsOn * 2.2));
-            if (isNaN(aShots)) aShots = Math.max(aShotsOn, Math.round(aShotsOn * 2.2));
-
-            let hPoss = Number(hStats.possessionPct);
-            let aPoss = Number(aStats.possessionPct);
-            if (isNaN(hPoss)) {
-                hPoss = hScore === aScore ? 50 : (hScore > aScore ? 54 : 46);
-                aPoss = 100 - hPoss;
-            }
-            if (isNaN(aPoss)) aPoss = 100 - hPoss;
-
-            let hCorners = Number(hStats.wonCorners);
-            let aCorners = Number(aStats.wonCorners);
-            if (isNaN(hCorners)) hCorners = Math.max(0, Math.round(hShots * 0.35));
-            if (isNaN(aCorners)) aCorners = Math.max(0, Math.round(aShots * 0.35));
-
-            let hFouls = Number(hStats.foulsCommitted ?? hStats.foulsCommited);
-            let aFouls = Number(aStats.foulsCommitted ?? aStats.foulsCommited);
-            if (isNaN(hFouls)) hFouls = 10;
-            if (isNaN(aFouls)) aFouls = 10;
-
-            let hYellows = Number(hStats.yellowCards) || 0;
-            let aYellows = Number(aStats.yellowCards) || 0;
-            let hReds = Number(hStats.redCards) || redCardEvents.filter(r => r.side === 'home').length;
-            let aReds = Number(aStats.redCards) || redCardEvents.filter(r => r.side === 'away').length;
-
-            let hSaves = Number(hStats.saves) || Math.max(0, aShotsOn - aScore);
-            let aSaves = Number(aStats.saves) || Math.max(0, hShotsOn - hScore);
-
-            const hXg = Number(hStats.expectedGoals) || parseFloat(((hShotsOn * 0.32) + (Math.max(0, hShots - hShotsOn) * 0.05) + (hScore * 0.35)).toFixed(2));
-            const aXg = Number(aStats.expectedGoals) || parseFloat(((aShotsOn * 0.32) + (Math.max(0, aShots - aShotsOn) * 0.05) + (aScore * 0.35)).toFixed(2));
-
-            const hPressure = parseFloat(((hShots * 2) + (hShotsOn * 4) + (hCorners * 1.5) + (hPoss * 0.4)).toFixed(2));
-            const aPressure = parseFloat(((aShots * 2) + (aShotsOn * 4) + (aCorners * 1.5) + (aPoss * 0.4)).toFixed(2));
+            // Real stats only — never invent possession / shots / corners from scoreline
+            const numOrNull = (v) => {
+                const n = Number(v);
+                return Number.isFinite(n) ? n : null;
+            };
+            let hShotsOn = numOrNull(hStats.shotsOnTarget);
+            let aShotsOn = numOrNull(aStats.shotsOnTarget);
+            let hShots = numOrNull(hStats.totalShots);
+            let aShots = numOrNull(aStats.totalShots);
+            let hPoss = numOrNull(hStats.possessionPct);
+            let aPoss = numOrNull(aStats.possessionPct);
+            let hCorners = numOrNull(hStats.wonCorners);
+            let aCorners = numOrNull(aStats.wonCorners);
+            let hFouls = numOrNull(hStats.foulsCommitted ?? hStats.foulsCommited);
+            let aFouls = numOrNull(aStats.foulsCommitted ?? aStats.foulsCommited);
+            let hYellows = numOrNull(hStats.yellowCards) ?? 0;
+            let aYellows = numOrNull(aStats.yellowCards) ?? 0;
+            let hReds = numOrNull(hStats.redCards) ?? redCardEvents.filter(r => r.side === 'home').length;
+            let aReds = numOrNull(aStats.redCards) ?? redCardEvents.filter(r => r.side === 'away').length;
+            let hSaves = numOrNull(hStats.saves);
+            let aSaves = numOrNull(aStats.saves);
+            const hXg = numOrNull(hStats.expectedGoals);
+            const aXg = numOrNull(aStats.expectedGoals);
+            const hPressure = null;
+            const aPressure = null;
 
             return {
                 eventId: m.source?.event_id,

@@ -1870,29 +1870,22 @@
                         if (elements['fixtures-list']) elements['fixtures-list'].innerHTML = '';
                         return;
                     }
-                } else if (dateParam === 'today' && (statusParam === 'all' || !statusParam)) {
-                    // Fetch fixtures (which already includes in-play live matches from backend in one unified response)
-                    const fixturesRes = await fetchJson(url);
-                    matches = fixturesRes.matches || fixturesRes.fixtures || [];
+                } else if (dateParam === 'today' && (statusParam === 'all' || !statusParam || statusParam === 'live')) {
+                    // Parallel fixtures + live so a slow/empty Mongo path never blanks the board
+                    const [fixturesRes, liveRes] = await Promise.allSettled([
+                        fetchJson(url),
+                        fetchJson('/api/v1/football/live')
+                    ]);
+                    const fixturesMatches = fixturesRes.status === 'fulfilled' ? (fixturesRes.value?.matches || fixturesRes.value?.fixtures || []) : [];
+                    const liveMatches = liveRes.status === 'fulfilled' ? (liveRes.value?.live || liveRes.value?.matches || []) : [];
+                    matches = deduplicateMatchesList([...liveMatches, ...fixturesMatches]);
+                    if (liveMatches.length) state.liveMatchCount = liveMatches.length;
                 } else {
                     const data = await fetchJson(url);
                     matches = data.matches || data.fixtures || [];
                 }
 
                 if (!matches.length) {
-                    // ONLY fall back to checking live matches if user was viewing today on ALL view
-                    // NEVER fall back if user explicitly clicked 'finished' or 'scheduled'
-                    if (dateParam === 'today' && !isFavorites && statusParam === 'all') {
-                        try {
-                            const liveData = await fetchJson('/api/v1/football/live');
-                            const liveList = liveData?.live || liveData?.matches || [];
-                            if (liveList.length) {
-                                state.liveMatchCount = liveList.length;
-                                await loadLiveMatches({ background });
-                                return;
-                            }
-                        } catch {}
-                    }
                     renderAllLeaguesGrouped([]);
                     return;
                 }
@@ -3323,8 +3316,8 @@
                 const item = list.find(s => s.name === name);
                 return Number(String(item?.displayValue || item?.value || 0).replace('%', '')) || 0;
             };
-            const hPoss = getStatVal(homeStats, 'possessionPct') || 50;
-            const aPoss = getStatVal(awayStats, 'possessionPct') || (100 - hPoss);
+            const hPoss = getStatVal(homeStats, 'possessionPct');
+            const aPoss = getStatVal(awayStats, 'possessionPct');
             const hShotsOn = getStatVal(homeStats, 'shotsOnTarget');
             const aShotsOn = getStatVal(awayStats, 'shotsOnTarget');
             const hShots = getStatVal(homeStats, 'totalShots') || (hShotsOn + getStatVal(homeStats, 'shotsOffTarget'));
@@ -3332,17 +3325,24 @@
             const hCorners = getStatVal(homeStats, 'wonCorners');
             const aCorners = getStatVal(awayStats, 'wonCorners');
 
-            const hWeight = (hPoss * 0.35) + (hShotsOn * 5) + (hShots * 2) + (hCorners * 2.5);
-            const aWeight = (aPoss * 0.35) + (aShotsOn * 5) + (aShots * 2) + (aCorners * 2.5);
-            const totalWeight = (hWeight + aWeight) || 1;
-            const hMomentum = Math.min(92, Math.max(8, Math.round((hWeight / totalWeight) * 100)));
-            const aMomentum = 100 - hMomentum;
-
-            let momentumVerdict = '⚖️ Evenly Contested Attacking Momentum';
-            if (hMomentum >= 65) momentumVerdict = `🔥 ${escapeHtml(home.team?.displayName || 'Home')} Dominating Attacking Pressure (+${hMomentum - 50}%)`;
-            else if (aMomentum >= 65) momentumVerdict = `⚡ ${escapeHtml(away.team?.displayName || 'Away')} Dominating Attacking Pressure (+${aMomentum - 50}%)`;
-            else if (hMomentum >= 54) momentumVerdict = `📈 ${escapeHtml(home.team?.displayName || 'Home')} Has the Attacking Edge`;
-            else if (aMomentum >= 54) momentumVerdict = `📈 ${escapeHtml(away.team?.displayName || 'Away')} Has the Attacking Edge`;
+            const hasRealStats = (homeStats.length + awayStats.length) > 0 && [hPoss, aPoss, hShotsOn, aShotsOn, hShots, aShots, hCorners, aCorners]
+                .some(v => Number(v) > 0);
+            let hMomentum = 50;
+            let aMomentum = 50;
+            let momentumVerdict = '';
+            let momentumHtml = '';
+            if (hasRealStats) {
+                const hWeight = ((hPoss || 0) * 0.35) + ((hShotsOn || 0) * 5) + ((hShots || 0) * 2) + ((hCorners || 0) * 2.5);
+                const aWeight = ((aPoss || 0) * 0.35) + ((aShotsOn || 0) * 5) + ((aShots || 0) * 2) + ((aCorners || 0) * 2.5);
+                const totalWeight = (hWeight + aWeight) || 1;
+                hMomentum = Math.min(92, Math.max(8, Math.round((hWeight / totalWeight) * 100)));
+                aMomentum = 100 - hMomentum;
+                momentumVerdict = '⚖️ Evenly Contested Attacking Momentum';
+                if (hMomentum >= 65) momentumVerdict = `🔥 ${escapeHtml(home.team?.displayName || 'Home')} Dominating Attacking Pressure (+${hMomentum - 50}%)`;
+                else if (aMomentum >= 65) momentumVerdict = `⚡ ${escapeHtml(away.team?.displayName || 'Away')} Dominating Attacking Pressure (+${aMomentum - 50}%)`;
+                else if (hMomentum >= 54) momentumVerdict = `📈 ${escapeHtml(home.team?.displayName || 'Home')} Has the Attacking Edge`;
+                else if (aMomentum >= 54) momentumVerdict = `📈 ${escapeHtml(away.team?.displayName || 'Away')} Has the Attacking Edge`;
+            }
 
             elements['dialog-content'].innerHTML = `
                 <section class="drawer-header-card">
@@ -3400,7 +3400,7 @@
                         </div>
                     ` : `
                         <!-- Attacking Momentum & Pressure Gauge -->
-                        <div class="momentum-gauge-card" style="background:var(--bg-canvas); border:1px solid var(--border-subtle); border-radius:10px; padding:16px; margin-bottom:20px;">
+                        <div class="momentum-gauge-card" style="background:var(--bg-canvas); border:1px solid var(--border-subtle); border-radius:10px; padding:16px; margin-bottom:20px; ${hasRealStats ? '' : 'display:none;'}">
                             <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:6px; margin-bottom:10px;">
                                 <div style="display:flex; align-items:center; gap:6px;">
                                     <span style="font-size:16px;">⚡</span>
