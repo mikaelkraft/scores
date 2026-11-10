@@ -12,6 +12,67 @@ const SoccerMatchEvent = require('../models/soccerMatchEvent');
 const SoccerStanding = require('../models/soccerStanding');
 const { optionalApiKeyAuth, assertLeagueAccess, getAllowedLeaguesForKey, PLAN_LIMITS, hasFeature, requireFeature, getPlanConfig } = require('../middleware/apiKeyAuth');
 
+// High-speed in-memory cache for worldwide live in-play scores
+let liveFeedMemoryCache = {
+    timestamp: 0,
+    matches: [],
+    inFlightPromise: null
+};
+
+// Canonical league ranking for prioritizing high-profile livescore views
+const LEAGUE_PRIORITY_MAP = {
+    'uefa.champions': 100,
+    'eng.1': 99,
+    'esp.1': 98,
+    'ita.1': 97,
+    'ger.1': 96,
+    'fra.1': 95,
+    'uefa.europa': 94,
+    'uefa.europa.conf': 93,
+    'eng.fa': 92,
+    'esp.copa_del_rey': 91,
+    'ita.coppa_italia': 90,
+    'ger.dfb_pokal': 89,
+    'eng.league_cup': 88,
+    'eng.2': 87,
+    'ned.1': 86,
+    'por.1': 85,
+    'bra.1': 84,
+    'arg.1': 83,
+    'nga.1': 82,
+    'sau.1': 81,
+    'mex.1': 80,
+    'col.1': 79,
+    'tur.1': 78,
+    'bel.1': 77,
+    'sco.1': 76,
+    'caf.champions': 75,
+    'afc.champions': 74,
+    'usa.1': 73,
+    'conmebol.libertadores': 72,
+    'conmebol.sudamericana': 71,
+    'aut.1': 70,
+    'sui.1': 69,
+    'den.1': 68,
+    'swe.1': 67,
+    'nor.1': 66,
+    'gre.1': 65,
+    'egy.1': 64,
+    'rsa.1': 63,
+    'mar.1': 62,
+    'gha.1': 61,
+    'ken.1': 60,
+    'tza.1': 59,
+    'jpn.1': 58,
+    'kor.1': 57,
+    'chn.1': 56,
+    'aus.1': 55,
+    'kor.2': 47,
+    'chn.2': 46,
+    'eng.trophy': 45
+};
+
+
 /** Reject free-tier keys when they request leagues outside their allowlist */
 function enforceLeaguePlan(req, res, leagueSlug) {
     if (!req.apiKey) return true; // public unauthenticated reads still allowed (rate-limited by IP)
@@ -567,6 +628,137 @@ function filterLiveMatchesResponse(matches, league, isFreeRestricted) {
         result = result.filter(m => m.league?.slug === requestedSlug);
     }
     return { matches: result };
+
+
+/**
+ * Fetch LiveScore date scoreboard (scheduled + live + finished) and map to UI match shape.
+ * Used when Mongo has no rows for the day so the board is never falsely empty.
+ */
+async function fetchLiveScoreDayMatches(dateKey) {
+    const key = String(dateKey || parseDateParam('today')).replace(/-/g, '');
+    const url = `https://prod-public-api.livescore.com/v1/api/app/date/soccer/${key}/0`;
+    const data = await fetchUpstreamJsonFast(url, 8000);
+    if (!data || !Array.isArray(data.Stages)) return [];
+
+    let storedLeagues = [];
+    try {
+        storedLeagues = await SoccerLeague.find({ active: true }).maxTimeMS(2500).lean();
+    } catch (_) {}
+    const leagueMap = new Map((storedLeagues || []).map(l => [l.slug, l]));
+    const out = [];
+
+    for (const stage of data.Stages) {
+        const country = stage.Cnm || stage.Sdn || 'International';
+        const leagueName = stage.Snm || 'Football Competition';
+        let slug = resolveLeagueSlug(leagueName, country, stage.Scd || '');
+        if (!slug || slug === 'usa.ncaa') continue;
+        try {
+            slug = enforceCountryOnSlug(slug, country, leagueName);
+        } catch (_) {}
+        if (!slug || slug === 'usa.ncaa') continue;
+        const targetLg = (typeof TARGET_LEAGUES !== 'undefined' ? TARGET_LEAGUES : []).find(l => l.slug === slug) || {};
+        const lg = leagueMap.get(slug) || targetLg || {};
+
+        for (const ev of (stage.Events || [])) {
+            const eid = String(ev.Eid || '');
+            if (!eid) continue;
+            const h = ev.T1?.[0] || {};
+            const a = ev.T2?.[0] || {};
+            const hName = h.Nm || h.Name || 'Home';
+            const aName = a.Nm || a.Name || 'Away';
+            const hScore = ev.Tr1 != null && ev.Tr1 !== '' ? parseInt(ev.Tr1, 10) : null;
+            const aScore = ev.Tr2 != null && ev.Tr2 !== '' ? parseInt(ev.Tr2, 10) : null;
+            const rawClock = String(ev.Eps || ev.Epr || 'NS').trim();
+            const isNotStarted = rawClock === 'NS' || rawClock === 'Upcoming' || rawClock === '' || rawClock === 'Sched' || /^\d{1,2}:\d{2}/.test(rawClock);
+            const isFinished = rawClock === 'FT' || rawClock === 'AET' || rawClock === 'AP' || rawClock === 'Final';
+            const isPostponed = /postp|canc|aban/i.test(rawClock);
+            const isInPlay = !isNotStarted && !isFinished && !isPostponed;
+            const state = isInPlay ? 'in' : (isFinished ? 'post' : (isPostponed ? 'post' : 'pre'));
+            const clock = isInPlay
+                ? (rawClock === 'HT' ? 'HT' : (rawClock.includes("'") ? rawClock : `${rawClock}'`))
+                : (isFinished ? 'FT' : rawClock);
+
+            // Esd is often YYYYMMDDHHmmss
+            let matchDate = new Date();
+            if (ev.Esd) {
+                const s = String(ev.Esd);
+                if (/^\d{14}$/.test(s)) {
+                    matchDate = new Date(Date.UTC(
+                        +s.slice(0, 4), +s.slice(4, 6) - 1, +s.slice(6, 8),
+                        +s.slice(8, 10), +s.slice(10, 12), +s.slice(12, 14)
+                    ));
+                } else {
+                    const d = new Date(ev.Esd);
+                    if (!isNaN(d.getTime())) matchDate = d;
+                }
+            }
+
+            const homeLogo = h.Img ? `https://storage.livescore.com/images/team/medium/${String(h.Img).replace(/^\/+/, '')}` : '';
+            const awayLogo = a.Img ? `https://storage.livescore.com/images/team/medium/${String(a.Img).replace(/^\/+/, '')}` : '';
+
+            out.push({
+                id: eid,
+                uid: `ls:${eid}`,
+                league: {
+                    slug,
+                    name: lg.name || leagueName,
+                    abbreviation: lg.abbreviation || String(leagueName).slice(0, 16),
+                    country: lg.country || country,
+                    logo: lg.logo || ''
+                },
+                league_slug: slug,
+                scoreboard_date: key,
+                date: matchDate,
+                status: {
+                    state,
+                    name: isInPlay ? 'STATUS_IN_PROGRESS' : (isFinished ? 'STATUS_FINAL' : 'STATUS_SCHEDULED'),
+                    description: isInPlay ? 'In Progress' : (isFinished ? 'Full Time' : 'Scheduled'),
+                    clock,
+                    detail: clock,
+                    isLive: isInPlay,
+                    completed: isFinished
+                },
+                home: {
+                    source_id: String(h.ID || h.Id || ''),
+                    name: hName,
+                    displayName: hName,
+                    display_name: hName,
+                    score: hScore,
+                    logo: homeLogo,
+                    winner: isFinished && hScore != null && aScore != null ? hScore > aScore : false
+                },
+                away: {
+                    source_id: String(a.ID || a.Id || ''),
+                    name: aName,
+                    displayName: aName,
+                    display_name: aName,
+                    score: aScore,
+                    logo: awayLogo,
+                    winner: isFinished && hScore != null && aScore != null ? aScore > hScore : false
+                },
+                competitions: [{
+                    competitors: [
+                        {
+                            homeAway: 'home',
+                            score: hScore == null ? null : String(hScore),
+                            winner: isFinished && hScore != null && aScore != null && hScore > aScore,
+                            team: { id: String(h.ID || ''), displayName: hName, name: hName, logo: homeLogo }
+                        },
+                        {
+                            homeAway: 'away',
+                            score: aScore == null ? null : String(aScore),
+                            winner: isFinished && hScore != null && aScore != null && aScore > hScore,
+                            team: { id: String(a.ID || ''), displayName: aName, name: aName, logo: awayLogo }
+                        }
+                    ]
+                }],
+                source: { event_id: eid, provider: 'livescore', livescore_id: eid }
+            });
+        }
+    }
+    return out;
+}
+
 }
 
 async function getFormattedLiveMatches(league, isFreeRestricted) {
@@ -1103,15 +1295,33 @@ router.get('/fixtures', optionalApiKeyAuth, async (req, res) => {
             }
         }
 
-        // If today's board is empty, force a live upstream refresh and merge (avoids rare "No games today")
-        if (isQueryingToday && seenFixturesMap.size === 0 && (status === 'all' || status === 'live')) {
+        // If today's board is empty, pull LiveScore date scoreboard + live feed (Mongo may be empty/out of sync)
+        if (isQueryingToday && seenFixturesMap.size === 0 && (status === 'all' || status === 'live' || status === 'finished' || status === 'scheduled')) {
+            try {
+                const dayKey = parseDateParam('today');
+                const dayMatches = await fetchLiveScoreDayMatches(dayKey);
+                for (const m of dayMatches) {
+                    if (status === 'live' && m.status?.state !== 'in') continue;
+                    if (status === 'finished' && m.status?.state !== 'post') continue;
+                    if (status === 'scheduled' && m.status?.state !== 'pre') continue;
+                    const id = String(m.id || m.source?.event_id || '');
+                    const h = normalizeTeamName(m.home?.name || m.home?.displayName || '');
+                    const a = normalizeTeamName(m.away?.name || m.away?.displayName || '');
+                    const sig = id || `${h}_vs_${a}`;
+                    if (!seenFixturesMap.has(sig)) {
+                        seenFixturesMap.set(sig, { match: m, score: 12 });
+                    }
+                }
+            } catch (e) {
+                console.warn('Today LiveScore date fallback failed:', e.message);
+            }
             try {
                 const freshLive = await getFormattedLiveMatches(null, false);
                 const liveList = Array.isArray(freshLive) ? freshLive : (freshLive?.matches || []);
                 for (const m of liveList) {
                     const id = String(m.id || m.source?.event_id || '');
-                    const h = normalizeTeamName(m.home?.name || m.home?.displayName || m.competitions?.[0]?.competitors?.[0]?.team?.displayName || '');
-                    const a = normalizeTeamName(m.away?.name || m.away?.displayName || m.competitions?.[0]?.competitors?.[1]?.team?.displayName || '');
+                    const h = normalizeTeamName(m.home?.name || m.home?.displayName || '');
+                    const a = normalizeTeamName(m.away?.name || m.away?.displayName || '');
                     const sig = id || `${h}_vs_${a}`;
                     if (!seenFixturesMap.has(sig)) {
                         seenFixturesMap.set(sig, { match: m, score: 10 });
