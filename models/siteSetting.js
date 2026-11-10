@@ -129,12 +129,29 @@ const SiteSettingSchema = new mongoose.Schema({
         youtube: { type: String, default: '' },
         linkedin: { type: String, default: '' }
     },
+    /**
+     * Footer partner attributions (no section heading).
+     * Each item can be raw HTML and/or an image+link with optional size.
+     */
+    partnerAttributions: [{
+        active: { type: Boolean, default: true },
+        label: { type: String, default: '' },
+        html: { type: String, default: '' },
+        imageUrl: { type: String, default: '' },
+        linkUrl: { type: String, default: '' },
+        linkTitle: { type: String, default: '' },
+        width: { type: Number, default: 28 },
+        height: { type: Number, default: 28 },
+        rel: { type: String, default: 'dofollow' },
+        openInNewTab: { type: Boolean, default: true }
+    }],
     infeedSettings: {
         autoSyncEnabled: { type: Boolean, default: true },
         syncIntervalSeconds: { type: Number, default: 45 },
         providers: {
             espn: { type: Boolean, default: true },
-            livescore: { type: Boolean, default: true }
+            livescore: { type: Boolean, default: true },
+            sportscore: { type: Boolean, default: true }
         },
         infeedCard: {
             enabled: { type: Boolean, default: true },
@@ -192,7 +209,21 @@ SiteSettingSchema.statics.getGlobalSettings = async function() {
                         active: true
                     }
                 ],
-                featuredLeagues: ['eng.1', 'esp.1', 'uefa.champions', 'ita.1', 'ger.1']
+                featuredLeagues: ['eng.1', 'esp.1', 'uefa.champions', 'ita.1', 'ger.1'],
+                partnerAttributions: [
+                    {
+                        active: true,
+                        label: 'SportScore',
+                        html: '<a href="https://sportscore.com/" rel="dofollow" title="Powered by SportScore" aria-label="Powered by SportScore" style="display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;background:#0a1e3d;color:#fff;border-radius:50%;text-decoration:none;font:700 .78rem system-ui,sans-serif;">SS</a>',
+                        imageUrl: '',
+                        linkUrl: 'https://sportscore.com/',
+                        linkTitle: 'Powered by SportScore',
+                        width: 28,
+                        height: 28,
+                        rel: 'dofollow',
+                        openInNewTab: true
+                    }
+                ]
             });
         }
         return settings;

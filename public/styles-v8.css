@@ -3229,3 +3229,26 @@ dialog.match-dialog::backdrop {
     color: var(--color-primary);
 }
 
+
+
+.footer-partners {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: center;
+    gap: 12px 16px;
+    padding: 12px 0 4px;
+}
+.footer-partners[hidden] { display: none !important; }
+.footer-partner-item {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    line-height: 0;
+}
+.footer-partner-item img {
+    display: block;
+    object-fit: contain;
+    max-width: 100%;
+    height: auto;
+}

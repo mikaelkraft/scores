@@ -160,6 +160,9 @@ async function loadSettings() {
         document.getElementById('setting-tagline').value = globalSettings.tagline || '';
         document.getElementById('setting-announcement-active').checked = Boolean(globalSettings.announcementActive);
         document.getElementById('setting-announcement').value = globalSettings.announcement || '';
+        if (typeof renderPartnersEditor === 'function') {
+            renderPartnersEditor(globalSettings.partnerAttributions || []);
+        }
         if (globalSettings.headerLogoUrl) {
             document.getElementById('preview-header-logo').src = globalSettings.headerLogoUrl;
         }
@@ -362,12 +365,78 @@ function renderAdSlots(ads) {
     }).join('');
 }
 
+
+function collectPartnerAttributionsFromEditor() {
+    const rows = document.querySelectorAll('#partners-editor-list .partner-row');
+    const list = [];
+    rows.forEach(row => {
+        list.push({
+            active: row.querySelector('.partner-active')?.checked !== false,
+            label: row.querySelector('.partner-label')?.value.trim() || '',
+            html: row.querySelector('.partner-html')?.value || '',
+            imageUrl: row.querySelector('.partner-image')?.value.trim() || '',
+            linkUrl: row.querySelector('.partner-link')?.value.trim() || '',
+            linkTitle: row.querySelector('.partner-title')?.value.trim() || '',
+            width: Number(row.querySelector('.partner-width')?.value) || 28,
+            height: Number(row.querySelector('.partner-height')?.value) || 28,
+            rel: row.querySelector('.partner-rel')?.value.trim() || 'dofollow',
+            openInNewTab: row.querySelector('.partner-newtab')?.checked !== false
+        });
+    });
+    return list;
+}
+
+function renderPartnersEditor(items) {
+    const host = document.getElementById('partners-editor-list');
+    if (!host) return;
+    const list = Array.isArray(items) && items.length ? items : [{
+        active: true,
+        label: 'SportScore',
+        html: '<a href="https://sportscore.com/" rel="dofollow" title="Powered by SportScore" aria-label="Powered by SportScore" style="display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;background:#0a1e3d;color:#fff;border-radius:50%;text-decoration:none;font:700 .78rem system-ui,sans-serif;">SS</a>',
+        linkUrl: 'https://sportscore.com/',
+        linkTitle: 'Powered by SportScore',
+        width: 28,
+        height: 28,
+        rel: 'dofollow',
+        openInNewTab: true
+    }];
+    host.innerHTML = list.map((p) => {
+        const esc = (s) => String(s || '').replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;');
+        return `<div class="partner-row" style="border:1px solid var(--border-subtle);border-radius:8px;padding:12px;margin-bottom:10px;background:var(--bg-canvas);">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+                <label class="toggle-switch" style="margin:0;"><input type="checkbox" class="partner-active" ${p.active !== false ? 'checked' : ''}><span>Active</span></label>
+                <button type="button" class="btn-secondary" onclick="this.closest('.partner-row').remove()">Remove</button>
+            </div>
+            <div class="form-grid">
+                <div class="form-group"><label>Label</label><input class="partner-label" value="${esc(p.label)}"></div>
+                <div class="form-group"><label>Link URL</label><input class="partner-link" value="${esc(p.linkUrl)}"></div>
+                <div class="form-group"><label>Link title / aria</label><input class="partner-title" value="${esc(p.linkTitle)}"></div>
+                <div class="form-group"><label>Image URL (optional)</label><input class="partner-image" value="${esc(p.imageUrl)}"></div>
+                <div class="form-group"><label>Width (px)</label><input class="partner-width" type="number" min="12" max="200" value="${Number(p.width) || 28}"></div>
+                <div class="form-group"><label>Height (px)</label><input class="partner-height" type="number" min="12" max="200" value="${Number(p.height) || 28}"></div>
+                <div class="form-group"><label>rel</label><input class="partner-rel" value="${esc(p.rel || 'dofollow')}"></div>
+                <div class="form-group"><label class="toggle-switch"><input type="checkbox" class="partner-newtab" ${p.openInNewTab !== false ? 'checked' : ''}><span>Open in new tab</span></label></div>
+            </div>
+            <div class="form-group" style="margin-top:8px;"><label>Custom HTML (overrides image when set)</label>
+                <textarea class="partner-html" rows="3">${esc(p.html)}</textarea>
+            </div>
+        </div>`;
+    }).join('');
+}
+
+function addPartnerRow() {
+    const current = collectPartnerAttributionsFromEditor();
+    current.push({ active: true, label: '', html: '', imageUrl: '', linkUrl: '', linkTitle: '', width: 28, height: 28, rel: 'dofollow', openInNewTab: true });
+    renderPartnersEditor(current);
+}
+
 async function saveBrandingSettings() {
     const payload = {
         siteTitle: document.getElementById('setting-site-title').value.trim(),
         tagline: document.getElementById('setting-tagline').value.trim(),
         announcementActive: document.getElementById('setting-announcement-active').checked,
-        announcement: document.getElementById('setting-announcement').value.trim()
+        announcement: document.getElementById('setting-announcement').value.trim(),
+        partnerAttributions: collectPartnerAttributionsFromEditor()
     };
     await updateSettingsPayload(payload, 'Branding settings saved!');
 }

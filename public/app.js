@@ -3887,6 +3887,7 @@
             renderInfeedSlot(res.infeedSettings?.infeedCard, res.ads?.inFeed);
             renderAdSlot('ad-slot-drawer', res.ads?.drawer);
             renderAdSlot('ad-slot-footer', res.ads?.footer);
+            renderFooterPartners(res.partnerAttributions);
 
             // Universal Bet Booking Code Converter visibility (respects Admin toggle)
             const bookingConverterSection = document.getElementById('booking-converter-section');
@@ -3991,7 +3992,40 @@
         });
     }
 
-    function renderAdSlot(elementId, slotData) {
+    
+    function renderFooterPartners(items) {
+        const host = document.getElementById('footer-partners');
+        if (!host) return;
+        const list = Array.isArray(items) ? items.filter(p => p && p.active !== false) : [];
+        if (!list.length) {
+            host.hidden = true;
+            host.innerHTML = '';
+            return;
+        }
+        const html = list.map(p => {
+            const w = Number(p.width) > 0 ? Number(p.width) : 28;
+            const h = Number(p.height) > 0 ? Number(p.height) : 28;
+            const rel = escapeHtml(p.rel || 'dofollow');
+            const title = escapeHtml(p.linkTitle || p.label || 'Partner');
+            const target = p.openInNewTab === false ? '' : ' target="_blank"';
+            // Prefer custom HTML (allows full SportScore badge markup)
+            if (p.html && String(p.html).trim()) {
+                return `<span class="footer-partner-item">${p.html}</span>`;
+            }
+            const href = p.linkUrl || '#';
+            if (p.imageUrl) {
+                return `<span class="footer-partner-item"><a href="${escapeHtml(href)}" rel="${rel}" title="${title}" aria-label="${title}"${target}><img src="${escapeHtml(p.imageUrl)}" alt="${title}" width="${w}" height="${h}" style="width:${w}px;height:${h}px;object-fit:contain;" loading="lazy" decoding="async"></a></span>`;
+            }
+            if (href && href !== '#') {
+                return `<span class="footer-partner-item"><a href="${escapeHtml(href)}" rel="${rel}" title="${title}" aria-label="${title}"${target} style="display:inline-flex;align-items:center;justify-content:center;width:${w}px;height:${h}px;background:#0a1e3d;color:#fff;border-radius:50%;text-decoration:none;font:700 .78rem system-ui,sans-serif;">${escapeHtml((p.label || 'P').slice(0, 3))}</a></span>`;
+            }
+            return '';
+        }).filter(Boolean).join('');
+        host.innerHTML = html;
+        host.hidden = !html;
+    }
+
+function renderAdSlot(elementId, slotData) {
         const el = document.getElementById(elementId);
         if (!el) return;
         if (!slotData || !slotData.isEnabled) {
