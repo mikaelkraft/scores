@@ -803,6 +803,9 @@
         const tier = getEventMatchTierClient(ev);
         const isYouth = tier.endsWith('_y');
         const isWomen = tier.startsWith('w_') || tier.includes('women');
+        const isLive = ev.status?.state === 'in' || ev.status?.isLive || (ev.status?.clock && /\d|HT|ET/i.test(String(ev.status.clock)) && !/FT|Final/i.test(String(ev.status.clock)));
+        // Live matches: ignore date key so ESPN+LiveScore copies of the same in-play game collapse
+        if (isLive) dKey = 'live';
         const hId = String(home.team?.id || home.team?.source_id || home.id || '').replace(/\D/g,'');
         const aId = String(away.team?.id || away.team?.source_id || away.id || '').replace(/\D/g,'');
         const idPart = (hId && aId && hId.length >= 3 && aId.length >= 3)
@@ -829,6 +832,34 @@
 
     function deduplicateMatchesList(matchList) {
         if (!Array.isArray(matchList) || !matchList.length) return [];
+        // Pass 0: exact id uniqueness (fixes same event listed twice in /live)
+        const byId = new Map();
+        for (const m of matchList) {
+            const id = String(m?.id || m?.uid || m?.source?.event_id || '').trim();
+            if (!id) continue;
+            const score = getEventQualityScore(m);
+            if (!byId.has(id) || score > (byId.get(id)._q || 0)) {
+                m._q = score;
+                byId.set(id, m);
+            }
+        }
+        const idFiltered = matchList.filter((m) => {
+            const id = String(m?.id || m?.uid || m?.source?.event_id || '').trim();
+            if (!id) return true;
+            return byId.get(id) === m || byId.get(id)?.id === m.id;
+        });
+        // Prefer the winning id instance only once
+        const onceIds = new Set();
+        matchList = idFiltered.filter((m) => {
+            const id = String(m?.id || m?.uid || m?.source?.event_id || '').trim();
+            if (!id) return true;
+            if (onceIds.has(id)) return false;
+            const best = byId.get(id);
+            if (best && best !== m) return false;
+            onceIds.add(id);
+            return true;
+        });
+
         const seenMap = new Map();
         for (const m of matchList) {
             const sig = getEventDedupSignature(m);
@@ -2446,6 +2477,13 @@
 
     function renderFlashscoreMatchRow(event, league = null) {
         const { home, away } = competitorsFromEvent(event);
+        // Force crest URLs from any known path (API often has home.logo while team.logo empty)
+        if (home.team && !home.team.logo) {
+            home.team.logo = event.home?.logo || event.home?.team?.logo || home.logo || '';
+        }
+        if (away.team && !away.team.logo) {
+            away.team.logo = event.away?.logo || event.away?.team?.logo || away.logo || '';
+        }
         const status = statusInfo(event);
         const hasScore = status.state !== 'scheduled';
         const homeName = escapeHtml(home.team?.displayName || home.team?.name || 'Home');
