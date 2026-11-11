@@ -3261,3 +3261,21 @@ dialog.match-dialog::backdrop {
     justify-content: center;
     text-decoration: none;
 }
+
+.team-crest, .team-crest svg {
+    width: 16px !important;
+    height: 16px !important;
+    min-width: 16px;
+    min-height: 16px;
+    max-width: 16px;
+    max-height: 16px;
+}
+.team-crest img {
+    width: 16px !important;
+    height: 16px !important;
+    object-fit: contain;
+    display: block;
+}
+.fs-team-line .team-crest {
+    margin-right: 6px;
+}

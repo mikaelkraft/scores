@@ -1054,6 +1054,12 @@ function hasTopFlightClub(slug, homeName, awayName) {
 
 /** Distinctive club name fragments → ISO-style country prefix for slug correction */
 const TEAM_COUNTRY_HINTS = [
+    // Brazil
+    [/londrina|n[aá]utico|chapecoense|criciuma|guarani|operario|sport recife|vila nova|ponte preta|crb|csa|remov|sampaio corr[eê]a|botafogo.?sp|ituano|novorizontino/i, 'bra'],
+    // Mexico senior (avoid mis-slotting into women or foreign leagues)
+    [/pumas unam|tigres uanl|\bamerica\b|chivas|guadalajara|monterrey|cruz azul|santos laguna|toluca|leon|pachuca|necaxa|atlas|mazatlan|queretaro|tijuana|juarez/i, 'mex'],
+    // El Salvador
+    [/isidro metap[aá]n|platense municipal|alianza fc|fas\b|aguila|municipal limeno|firpo|once deportivo/i, 'slv'],
     // Romania
     [/botosani|otelul|galati|cfr cluj|fcsb|rapid bucuresti|universitatea craiova|sepsi|farul/i, 'rou'],
     // Egypt
@@ -2081,6 +2087,12 @@ function normalizeTeamName(name = '') {
         .replace(/\bal\s+mokawloon(\s+al\s+arab)?\b/g, 'almokawloon')
         .replace(/\blogroñ[eé]s\b|\blogrones\b/g, 'logrones')
         .replace(/\bh[aä]cken\b/g, 'hacken')
+        .replace(/\bpumas(\s+unam)?\b/g, 'pumas')
+        .replace(/\btigres(\s+uanl)?\b/g, 'tigres')
+        .replace(/\bisidro\s+metap[aá]n\b/g, 'metapan')
+        .replace(/\b(cd\s+)?platense(\s+municipal)?\b/g, 'platense')
+        .replace(/\blondrina(\s+ec)?\b/g, 'londrina')
+        .replace(/\bn[aá]utico\b/g, 'nautico')
         .replace(/\bparis\s+(saint[- ]?germain|sg)\b/g, 'psg')
         .replace(/\bmanchester\s+city\b/g, 'mancity')
         .replace(/\btecnico\s+universitario\b|\bt[eé]cnico\s+universitario\b/g, 'tecnicouniversitario')
