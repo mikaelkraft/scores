@@ -112,7 +112,9 @@ const TARGET_LEAGUES = [
     { slug: 'crc.1', name: 'Costa Rican Primera División', abbreviation: 'Primera Costa Rica', country: 'Costa Rica', kind: 'club', sort_order: 84 },
     { slug: 'hon.1', name: 'Honduran Liga Nacional', abbreviation: 'Liga Betcris', country: 'Honduras', kind: 'club', sort_order: 85 },
     { slug: 'gua.1', name: 'Guatemalan Liga Nacional', abbreviation: 'Liga Mayor', country: 'Guatemala', kind: 'club', sort_order: 86 },
-    { slug: 'vie.1', name: 'Vietnamese V.League 1', abbreviation: 'V.League 1', country: 'Vietnam', kind: 'club', sort_order: 87 },
+    { slug: 'slv.1', name: 'Primera División de El Salvador', abbreviation: 'Primera El Sal', country: 'El Salvador', kind: 'club', sort_order: 87, logo: 'https://a.espncdn.com/i/leaguelogos/soccer/500/slv.1.png' },
+    { slug: 'intl.friendly', name: 'International Friendlies', abbreviation: 'Intl Friendlies', country: 'International', kind: 'international', sort_order: 88, logo: 'https://a.espncdn.com/i/leaguelogos/soccer/500/friendly.png' },
+    { slug: 'vie.1', name: 'Vietnamese V.League 1', abbreviation: 'V.League 1', country: 'Vietnam', kind: 'club', sort_order: 89 },
     { slug: 'irn.1', name: 'Persian Gulf Pro League', abbreviation: 'Pro League', country: 'Iran', kind: 'club', sort_order: 88 },
     { slug: 'uae.1', name: 'UAE President\'s Cup', abbreviation: 'President\'s Cup', country: 'United Arab Emirates', kind: 'cup', sort_order: 89 },
     { slug: 'uzb.1', name: 'Uzbekistan Super League', abbreviation: 'Superliga', country: 'Uzbekistan', kind: 'club', sort_order: 90 },
@@ -1102,6 +1104,10 @@ function inferCountryFromTeamNames(homeName = '', awayName = '', currentSlug = '
     if (isWomen) return `${best}.w.1`;
     // Map known second tiers lightly
     if (tier === '2' || tier === '3' || tier === 'lower') return `${best}.${tier}`;
+    // Brazilian Serie B club hints should map to bra.2 even if falsely tagged as ita.1
+    if (best === 'bra' && /londrina|n[aá]utico|operario|vila nova|crb|ituano|novorizontino|ponte preta/i.test(blob)) {
+        return 'bra.2';
+    }
     return `${best}.1`;
 }
 
@@ -1247,8 +1253,16 @@ function resolveLeagueSlug(altGameNote = '', compDesc = '', uid = '') {
     if (text.includes('club world cup') || text.includes('fifa.cwc')) return 'fifa.cwc';
     if (text.includes('fifa world cup') || text.includes('fifa.world')) return 'fifa.world';
 
-    // 5. COUNTRY-SPECIFIC DOMESTIC COMPETITIONS (Evaluated before generic terms like Serie A / La Liga / Premier League!)
+    // 4b. Friendlies (Must run before domestic leagues so matches like "Friendly: Vietnam vs Chinese Taipei" resolve to intl.friendly)
     const isNeutralCountry = !country || country === 'international' || country === 'world' || country === 'europe' || country === 'global';
+    if (text.includes('international friendly') || ((text.includes('friendly') || scd.includes('friendly')) && !text.includes('club') && (country.includes('international') || text.includes('fifa') || isNeutralCountry))) {
+        return 'intl.friendly';
+    }
+    if (text.includes('club friendly') || ((text.includes('friendly') || scd.includes('friendly')) && text.includes('club'))) {
+        return 'club.friendly';
+    }
+
+    // 5. COUNTRY-SPECIFIC DOMESTIC COMPETITIONS (Evaluated before generic terms like Serie A / La Liga / Premier League!)
 
     // --- BRAZIL (Brasileirão Série A / Série B / Copa) ---
     const isBrazil = country.includes('brazil') || country.includes('brasil') || text.includes('brasileir') || scd.includes('bra.');
@@ -1337,7 +1351,7 @@ function resolveLeagueSlug(altGameNote = '', compDesc = '', uid = '') {
     // --- CENTRAL AMERICAN LEAGUES ---
     if (country.includes('costa rica') || scd.includes('crc.')) return 'crc.1';
     if (country.includes('honduras') || scd.includes('hon.')) return 'hon.1';
-    if (country.includes('el salvador') || scd.includes('slv.')) return 'slv.1';
+    if (country.includes('el salvador') || scd.includes('slv.') || text.includes('el salvador') || text.includes('salvadoran') || text.includes('primera division de el salvador') || (text.includes('apertura') && (text.includes('metapan') || text.includes('platense')))) return 'slv.1';
 
     // --- AFRICAN DOMESTIC COMPETITIONS ---
     if (country.includes('tanzan') || text.includes('tza.1') || text.includes('nbc premier') || text.includes('ligi kuu') || text.includes('mbeya') || text.includes('singida') || text.includes('simba') || text.includes('yanga') || text.includes('azam')) return 'tza.1';
@@ -1425,8 +1439,8 @@ function resolveLeagueSlug(altGameNote = '', compDesc = '', uid = '') {
     if (country.includes('thailand') || text.includes('tha.1') || text.includes('thai league')) return 'tha.1';
     if (country.includes('malaysia') || text.includes('mys.1')) return 'mys.1';
     if (country.includes('singapore') || text.includes('sgp.1')) return 'sgp.1';
-    if (country.includes('vietnam') || text.includes('vie.1')) return 'vie.1';
-    if (country.includes('taiwan') || country.includes('chinese taipei') || text.includes('twn.1') || text.includes('taipei') || text.includes('taichung') || text.includes('tainan')) return 'twn.1';
+    if ((country.includes('vietnam') || text.includes('vie.1')) && !country.includes('international') && !text.includes('friendly')) return 'vie.1';
+    if ((country.includes('taiwan') || country.includes('chinese taipei') || text.includes('twn.1') || text.includes('taipei') || text.includes('taichung') || text.includes('tainan')) && !country.includes('international') && !text.includes('friendly')) return 'twn.1';
     if (country.includes('uzbekistan') || text.includes('uzb.1')) return 'uzb.1';
     if (country.includes('bangladesh') || text.includes('bgd.1')) return 'bgd.1';
     if (country.includes('hong kong') || text.includes('hkg.1')) return 'hkg.1';
@@ -1519,6 +1533,10 @@ function resolveLeagueSlug(altGameNote = '', compDesc = '', uid = '') {
 
     // ITALY (Serie A / Serie B / Serie C / Serie D / Coppa Italia)
     const isItaly = country.includes('italy') || country.includes('italian') || country.includes('italia') || scd.includes('ita.');
+    // Check if neutral "Serie B" / "Serie A" actually refers to Brazil
+    if (isNeutralCountry && /\bserie\s*[ab]\b/i.test(text) && /\b(?:brazil|brasileir|londrina|n[aá]utico|coritiba|chapecoense|guarani|operario|vila nova|crb|ituano|novorizontino|ponte preta)\b/i.test(text)) {
+        return /\bserie\s*b\b/i.test(text) ? 'bra.2' : 'bra.1';
+    }
     if (isItaly || (isNeutralCountry && /\b(?:serie\s+a|serie\s+b|serie\s+c|serie\s+d|coppa italia)\b/i.test(text))) {
         if (text.includes('coppa italia serie c')) return 'ita.coppa_serie_c';
         if (text.includes('coppa italia') || scd.includes('coppa-italia') || scd.includes('ita.coppa_italia')) return 'ita.coppa_italia';
@@ -1578,6 +1596,9 @@ function resolveLeagueSlug(altGameNote = '', compDesc = '', uid = '') {
     }
 
     // 10. Friendlies
+    if (text.includes('international friendly') || ((text.includes('friendly') || scd.includes('friendly')) && !text.includes('club') && (country.includes('international') || text.includes('fifa') || isNeutralCountry))) {
+        return 'intl.friendly';
+    }
     if (text.includes('club friendly') || text.includes('friendly') || scd.includes('friendly')) return 'club.friendly';
 
     // 11. Foreign Country Fallback: if a specific foreign country was provided, map to that country's tier 1
@@ -2048,9 +2069,11 @@ function normalizeTeamName(name = '') {
         .replace(/aa/g, 'a')
         .replace(/ae/g, 'a')
         .replace(/oe/g, 'o')
-        .replace(/ue/g, 'u')
+        .replace(/\bmuenchen\b/g, 'munchen')
+        .replace(/\bfuerth\b/g, 'furth')
+        .replace(/\bmuenster\b/g, 'munster')
         .replace(/\([^)]*\)/g, ' ')
-        .replace(/\b(women|woman|ladies|femenin[oa]?|frauen|damen|vrouwen|fem|wfc)\b|\(w\)/gi, '')
+        .replace(/\b(women|woman|ladies|femenin[oa]?|frauen|damen|vrouwen|fem|wfc|w)\b|\(w\)/gi, '')
         .replace(/\b(u-?23|u-?21|u-?20|u-?19|u-?18|u-?17|u-?16|u-?15|youth|reserves?|development|primavera)\b/gi, '')
         // Roman numerals / B-team markers (keep category separate via getTeamCategory)
         .replace(/\b(ii|iii|iv)\b/gi, ' ')
@@ -2095,6 +2118,8 @@ function normalizeTeamName(name = '') {
         .replace(/\bn[aá]utico\b/g, 'nautico')
         .replace(/\bparis\s+(saint[- ]?germain|sg)\b/g, 'psg')
         .replace(/\bmanchester\s+city\b/g, 'mancity')
+        .replace(/\bqpr\b|\bqueens\s+park\s+rangers\b/g, 'queensparkrangers')
+        .replace(/\bbodoe\b|\bbodo\b/g, 'bodo')
         .replace(/\btecnico\s+universitario\b|\bt[eé]cnico\s+universitario\b/g, 'tecnicouniversitario')
         .replace(/\bmanta\s+f\.?c\.?\b/g, 'manta')
         .replace(/\bcd\s+sabadell\b|\bsabadell\b/g, 'sabadell')
@@ -2129,13 +2154,29 @@ function areTeamNamesMatching(nameA = '', nameB = '', leagueSlugA = '', leagueSl
     if (!a || !b) return false;
     if (a === b) return true;
 
+    // Distinct city rivals must not collide (e.g. Bristol City vs Bristol Rovers)
+    const rivals = [
+        ['bristolcity', 'bristolrovers'],
+        ['manchesterunited', 'manchestercity'],
+        ['sheffieldunited', 'sheffieldwednesday'],
+        ['acmilan', 'intermilan', 'inter'],
+        ['realmadrid', 'atleticomadrid']
+    ];
+    for (const r of rivals) {
+        if (r.includes(a) && r.includes(b)) return false;
+    }
+
     const shorter = a.length <= b.length ? a : b;
     const longer = a.length > b.length ? a : b;
     // Substantial containment / prefix (Herediano ⊂ ClubSportHerediano after strip, Alianza ⊂ AlianzaValledupar)
     if (shorter.length >= 5 && (longer === shorter || longer.startsWith(shorter) || longer.includes(shorter))) return true;
-    // Near-equal after stripping one extra vowel cluster (Vaalerenga / Valerenga already collapsed)
-    if (shorter.length >= 6 && longer.length >= 6 && Math.abs(longer.length - shorter.length) <= 2) {
-        if (longer.includes(shorter.slice(0, 6)) || shorter.includes(longer.slice(0, 6))) return true;
+
+    const tokensA = a.split(/\s+/).filter(t => t.length > 2);
+    const tokensB = b.split(/\s+/).filter(t => t.length > 2);
+    if (tokensA.length >= 2 && tokensB.length >= 2) {
+        const setB = new Set(tokensB);
+        const overlap = tokensA.filter(t => setB.has(t)).length;
+        if (overlap >= Math.min(tokensA.length, tokensB.length)) return true;
     }
     return false;
 }
@@ -2725,23 +2766,6 @@ async function syncLiveScoreInPlay() {
                 const homeName = h.Nm || 'Home Club';
                 const awayName = a.Nm || 'Away Club';
 
-                // Keep senior top-flight boards clean — no B/II/U21 sides mixed in
-                const seniorSlug = String(targetSlug || '').toLowerCase();
-                const isSeniorTop = /\.[1]$/.test(seniorSlug) && !seniorSlug.includes('.w.') && !seniorSlug.includes('youth');
-                if (isSeniorTop && (isReserveOrBTeamName(homeName) || isReserveOrBTeamName(awayName))) {
-                    continue;
-                }
-                const homeScore = parseInt(ev.Tr1 || 0, 10);
-                const awayScore = parseInt(ev.Tr2 || 0, 10);
-                const rawClock = String(ev.Eps || ev.Epr || 'NS');
-
-                const isNotStarted = rawClock === 'NS' || rawClock === 'Upcoming' || rawClock === '' || rawClock === 'Sched' || rawClock.includes(':');
-                const isFinished = rawClock === 'FT' || rawClock === 'AET' || rawClock === 'AP';
-                const isPostponed = rawClock.includes('Postp') || rawClock.includes('Canc');
-                const isInPlay = !isNotStarted && !isFinished && !isPostponed;
-                const state = isInPlay ? 'in' : (isFinished || isPostponed) ? 'post' : 'pre';
-                const displayClock = isFinished ? 'FT' : isPostponed ? 'Postp.' : (isInPlay ? (rawClock === 'HT' ? 'HT' : (rawClock.includes("'") ? rawClock : `${rawClock}'`)) : 'NS');
-
                 let matchDate = now;
                 if (ev.Esd && String(ev.Esd).length >= 12) {
                     const s = String(ev.Esd);
@@ -2752,6 +2776,27 @@ async function syncLiveScoreInPlay() {
                     const mi = parseInt(s.slice(10, 12), 10);
                     matchDate = new Date(Date.UTC(yr, mo, da, hr, mi));
                 }
+
+                targetSlug = inferCountryFromTeamNames(homeName, awayName, targetSlug) || targetSlug;
+
+                // Keep senior top-flight boards clean — no B/II/U21 sides mixed in
+                const seniorSlug = String(targetSlug || '').toLowerCase();
+                const isSeniorTop = /\.[1]$/.test(seniorSlug) && !seniorSlug.includes('.w.') && !seniorSlug.includes('youth');
+                if (isSeniorTop && (isReserveOrBTeamName(homeName) || isReserveOrBTeamName(awayName))) {
+                    continue;
+                }
+                const homeScore = parseInt(ev.Tr1 || 0, 10);
+                const awayScore = parseInt(ev.Tr2 || 0, 10);
+                const rawClock = String(ev.Eps || '').trim() || (ev.Epr === 0 ? 'NS' : String(ev.Epr || 'NS')).trim();
+
+                const isZeroOrSched = rawClock === '0' || rawClock === "0'" || rawClock === '00' || rawClock === '00:00';
+                const isFutureMatch = matchDate && (matchDate.getTime() - now.getTime() > 5 * 60 * 1000);
+                const isNotStarted = rawClock === 'NS' || rawClock === 'Upcoming' || rawClock === '' || rawClock === 'Sched' || rawClock.includes(':') || isZeroOrSched || isFutureMatch;
+                const isFinished = rawClock === 'FT' || rawClock === 'AET' || rawClock === 'AP';
+                const isPostponed = rawClock.includes('Postp') || rawClock.includes('Canc');
+                const isInPlay = !isNotStarted && !isFinished && !isPostponed;
+                const state = isInPlay ? 'in' : (isFinished || isPostponed) ? 'post' : 'pre';
+                const displayClock = isFinished ? 'FT' : isPostponed ? 'Postp.' : (isInPlay ? (rawClock === 'HT' ? 'HT' : (rawClock.includes("'") ? rawClock : `${rawClock}'`)) : 'NS');
 
                 const scoreboardDate = formatDateToScoreboard(matchDate);
                 const homeCrest = formatLiveScoreLogo(h.Img || h.ImgUrl || h.logo || '');
@@ -2883,12 +2928,12 @@ async function syncLiveScoreInPlay() {
             await SoccerMatch.bulkWrite(matchBulkOps, { ordered: false }).catch(e => console.warn('[LiveSync] bulkWrite matches notice:', e.message));
         }
 
-        // Auto-finalize ANY stuck in-play matches that have concluded (started > 180 minutes ago)
-        const threeHoursAgo = new Date(Date.now() - 180 * 60 * 1000);
+        // Auto-finalize ANY stuck in-play matches that have concluded (started > 135 minutes ago)
+        const conclusionCutoff = new Date(Date.now() - 135 * 60 * 1000);
         await SoccerMatch.updateMany(
             {
                 'status.state': 'in',
-                date: { $lt: threeHoursAgo }
+                date: { $lt: conclusionCutoff }
             },
             {
                 $set: {

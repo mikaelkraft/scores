@@ -39,19 +39,25 @@ router.get(['/api/v1/ads', '/api/ads/active', '/api/v1/settings/public'], option
                 bookmakerPromos: [],
                 socialLinks: settings.socialLinks || {},
                 partnerAttributions: (() => {
-                    const list = (settings.partnerAttributions || []).filter(p => p && p.active !== false);
-                    if (list.length) return list;
-                    return [{
-                        active: true,
-                        label: 'SportScore',
-                        html: '<a href="https://sportscore.com/" rel="dofollow" title="Powered by SportScore" aria-label="Powered by SportScore" style="display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;background:#0a1e3d;color:#fff;border-radius:50%;text-decoration:none;font:700 .78rem system-ui,sans-serif;">SS</a>',
-                        linkUrl: 'https://sportscore.com/',
-                        linkTitle: 'Powered by SportScore',
-                        width: 28,
-                        height: 28,
-                        rel: 'dofollow',
-                        openInNewTab: true
-                    }];
+                    let list = (settings.partnerAttributions || []).filter(p => p && p.active !== false);
+                    const hasSportScore = list.some(p => String(p.label || p.linkTitle || p.linkUrl).toLowerCase().includes('sportscore'));
+                    if (!hasSportScore) {
+                        list = [
+                            ...list,
+                            {
+                                active: true,
+                                label: 'SportScore',
+                                html: '<a href="https://sportscore.com/" rel="dofollow" title="Powered by SportScore" aria-label="Powered by SportScore" style="display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;background:#0a1e3d;color:#fff;border-radius:50%;text-decoration:none;font:700 .78rem system-ui,sans-serif;">SS</a>',
+                                linkUrl: 'https://sportscore.com/',
+                                linkTitle: 'Powered by SportScore',
+                                width: 28,
+                                height: 28,
+                                rel: 'dofollow',
+                                openInNewTab: true
+                            }
+                        ];
+                    }
+                    return list;
                 })()
             });
         }

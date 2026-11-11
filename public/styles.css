@@ -3262,20 +3262,78 @@ dialog.match-dialog::backdrop {
     text-decoration: none;
 }
 
-.team-crest, .team-crest svg {
-    width: 16px !important;
-    height: 16px !important;
+/* Compact 16px crest badges on match list rows */
+.fs-team-line .team-crest,
+.match-card .team-crest,
+.flashscore-match-row .team-crest,
+.compact-crest .team-crest {
+    width: 16px;
+    height: 16px;
     min-width: 16px;
     min-height: 16px;
     max-width: 16px;
     max-height: 16px;
+    border-radius: 50%;
+    overflow: hidden;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    vertical-align: middle;
 }
-.team-crest img {
-    width: 16px !important;
-    height: 16px !important;
+
+.fs-team-line .team-crest img,
+.match-card .team-crest img,
+.flashscore-match-row .team-crest img,
+.compact-crest .team-crest img {
+    width: 16px;
+    height: 16px;
     object-fit: contain;
     display: block;
+    overflow: hidden;
+    font-size: 0;
+    line-height: 0;
+    color: transparent;
 }
+
+.fs-team-line .team-crest svg,
+.match-card .team-crest svg,
+.flashscore-match-row .team-crest svg {
+    width: 16px;
+    height: 16px;
+    display: block;
+    flex-shrink: 0;
+}
+
 .fs-team-line .team-crest {
     margin-right: 6px;
+}
+
+/* Modal Drawer Crest Badges: Full 48px size */
+.team-side .team-crest {
+    width: 48px;
+    height: 48px;
+    min-width: 48px;
+    min-height: 48px;
+    max-width: 48px;
+    max-height: 48px;
+    border-radius: 50%;
+    overflow: hidden;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    background: transparent;
+}
+
+.team-side .team-crest img,
+.team-side .team-crest svg {
+    width: 48px;
+    height: 48px;
+    object-fit: contain;
+    display: block;
+    overflow: hidden;
+    font-size: 0;
+    line-height: 0;
+    color: transparent;
 }

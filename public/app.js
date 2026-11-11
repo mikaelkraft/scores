@@ -464,8 +464,8 @@
             const proxied = `/cdn/crest?url=${encodeURIComponent(direct)}`;
             const initials = escapeHtml(getTeamInitials(team?.displayName || team?.name, team?.abbreviation));
             const svgFallback = renderCrestFallbackSvg(initials);
-            // Proxy first (cacheable); fall back to direct CDN then initials if proxy/disk fails
-            return `<span class="${className}"><img src="${direct}" alt="${escapeHtml(team?.displayName || initials)}" loading="lazy" decoding="async" referrerpolicy="no-referrer" onerror="if(!this.dataset.fb){this.dataset.fb=1;this.src='${direct.replace(/'/g, "\'")}';}else{this.onerror=null;this.outerHTML='${svgFallback}';}"></span>`;
+            // Proxy first (cacheable); fall back to direct CDN then SVG shield if proxy/disk fails
+            return `<span class="${className}"><img src="${proxied}" alt="" aria-hidden="true" loading="lazy" decoding="async" referrerpolicy="no-referrer" onerror="if(!this.dataset.fb){this.dataset.fb='1';this.src='${direct.replace(/'/g, "\\'")}';}else{this.onerror=null;this.outerHTML='${svgFallback.replace(/'/g, "\\'")}';}"></span>`;
         }
         const initials = escapeHtml(getTeamInitials(team?.displayName || team?.name, team?.abbreviation));
         const svgFallback = renderCrestFallbackSvg(initials);
@@ -729,7 +729,7 @@
         const parse = (sig) => {
             const parts = String(sig).split('_');
             // last token may be date or youth; find _vs_
-            const m = String(sig).match(/^(.+)_vs_(.+?)_(\d{4}-\d{2}-\d{2}|\d{8})(.*)$/);
+            const m = String(sig).match(/^(.+)_vs_(.+?)_(\d{4}-\d{2}-\d{2}|\d{8}|live)(.*)$/);
             if (m) return { h: m[1], a: m[2], d: m[3], rest: m[4] || '' };
             return null;
         };
@@ -803,15 +803,11 @@
         const tier = getEventMatchTierClient(ev);
         const isYouth = tier.endsWith('_y');
         const isWomen = tier.startsWith('w_') || tier.includes('women');
-        const isLive = ev.status?.state === 'in' || ev.status?.isLive || (ev.status?.clock && /\d|HT|ET/i.test(String(ev.status.clock)) && !/FT|Final/i.test(String(ev.status.clock)));
+        const isLive = (ev.status?.state === 'in' || ev.status?.isLive) && !/FT|Final|NS|Sched|Upcoming/i.test(String(ev.status?.clock || '')) && String(ev.status?.clock || '').trim() !== "0'" && String(ev.status?.clock || '').trim() !== '0';
         // Live matches: ignore date key so ESPN+LiveScore copies of the same in-play game collapse
         if (isLive) dKey = 'live';
-        const hId = String(home.team?.id || home.team?.source_id || home.id || '').replace(/\D/g,'');
-        const aId = String(away.team?.id || away.team?.source_id || away.id || '').replace(/\D/g,'');
-        const idPart = (hId && aId && hId.length >= 3 && aId.length >= 3)
-            ? [hId, aId].sort().join('_vs_')
-            : [hName, aName].sort().join('_vs_');
-        return idPart + '_' + dKey + (isWomen ? '_w' : '') + (isYouth ? '_youth' : '');
+        const pairKey = [hName, aName].sort().join('_vs_');
+        return pairKey + '_' + dKey + (isWomen ? '_w' : '') + (isYouth ? '_youth' : '');
     }
 
 
@@ -1089,7 +1085,7 @@
         // 1c. Correct foreign matches mistakenly labeled as Italian Serie A/B ('ita.1' / 'ita.2')
         if (slug === 'ita.1' || slug === 'ita.2') {
             const evText = `${ev?.name || ''} ${ev?.home?.name || ''} ${ev?.away?.name || ''} ${name || ''} ${country || ''}`.toLowerCase();
-            if (evText.includes('brazil') || evText.includes('brasileir') || evText.includes('coritiba') || evText.includes('sport recife') || evText.includes('novorizontino') || evText.includes('mirassol') || evText.includes('guarani') || evText.includes('chapecoense') || evText.includes('santos') || evText.includes('vila nova') || evText.includes('operario') || evText.includes('crb') || evText.includes('brusque') || evText.includes('ituano') || evText.includes('botafogo sp') || evText.includes('amazonas') || evText.includes('paysandu') || evText.includes('ponte preta')) {
+            if (evText.includes('brazil') || evText.includes('brasileir') || /\b(londrina|n[aá]utico|coritiba|sport recife|novorizontino|mirassol|guarani|chapecoense|santos|vila nova|operario|crb|brusque|ituano|botafogo.?sp|amazonas|paysandu|ponte preta|goi[aá]s|cear[aá]|ava[ií]|crici[uú]ma|csa|remo)\b/i.test(evText)) {
                 slug = slug === 'ita.1' ? 'bra.1' : 'bra.2';
                 name = slug === 'bra.1' ? 'Brasileirão Série A' : 'Brasileirão Série B';
                 country = 'Brazil';
@@ -1215,7 +1211,7 @@
                 isr: 'Israel', aze: 'Azerbaijan', blr: 'Belarus', arm: 'Armenia',
                 bih: 'Bosnia and Herzegovina', nir: 'Northern Ireland', wal: 'Wales',
                 irl: 'Ireland', hkg: 'Hong Kong', bgd: 'Bangladesh', mlt: 'Malta',
-                kaz: 'Kazakhstan', mda: 'Moldova', mol: 'Moldova'
+                kaz: 'Kazakhstan', mda: 'Moldova', mol: 'Moldova', slv: 'El Salvador'
             };
             if (countryMap[prefix]) {
                 country = countryMap[prefix];
@@ -1873,7 +1869,7 @@
     }
 
     let inFlightAllFixturesPromise = null;
-    async function loadAllLeagueFixtures({ background = false, favoritesOnly = false } = {}) {
+    async function loadAllLeagueFixtures({ background = false, favoritesOnly = false, initialLive = null } = {}) {
         if (inFlightAllFixturesPromise) {
             return inFlightAllFixturesPromise;
         }
@@ -1938,15 +1934,17 @@
                         return;
                     }
                 } else if (dateParam === 'today' && (statusParam === 'all' || !statusParam || statusParam === 'live')) {
-                    // Parallel fixtures + live so a slow/empty Mongo path never blanks the board
-                    const [fixturesRes, liveRes] = await Promise.allSettled([
-                        fetchJson(url),
-                        fetchJson('/api/v1/football/live')
-                    ]);
-                    const fixturesMatches = fixturesRes.status === 'fulfilled' ? (fixturesRes.value?.matches || fixturesRes.value?.fixtures || []) : [];
-                    const liveMatches = liveRes.status === 'fulfilled' ? (liveRes.value?.live || liveRes.value?.matches || []) : [];
-                    matches = deduplicateMatchesList([...liveMatches, ...fixturesMatches]);
-                    if (liveMatches.length) state.liveMatchCount = liveMatches.length;
+                    // /fixtures?date=today already merges real-time live matches on the server.
+                    // Reuse initialLive if supplied to eliminate double network fetches
+                    if (initialLive && Array.isArray(initialLive) && initialLive.length > 0) {
+                        const fixturesRes = await fetchJson(url).catch(() => ({}));
+                        const fixturesMatches = fixturesRes.matches || fixturesRes.fixtures || [];
+                        matches = deduplicateMatchesList([...initialLive, ...fixturesMatches]);
+                        state.liveMatchCount = initialLive.length;
+                    } else {
+                        const fixturesRes = await fetchJson(url).catch(() => ({}));
+                        matches = fixturesRes.matches || fixturesRes.fixtures || [];
+                    }
                 } else {
                     const data = await fetchJson(url);
                     matches = data.matches || data.fixtures || [];
@@ -3466,6 +3464,13 @@
                             <span>⚽ <strong>${escapeHtml(athleteName)}</strong>${teamName ? ` <span style="color:var(--text-muted);">(${escapeHtml(teamName)})</span>` : ''}</span>
                         </div>`;
                     }).join('') : '<p style="color:var(--text-muted); font-size:13px;">No play-by-play events recorded yet.</p>')}</div>
+                    <div style="margin-top:14px; padding-top:10px; border-top:1px solid var(--border-subtle); display:flex; justify-content:space-between; align-items:center; font-size:11px; color:var(--text-muted);">
+                        <span>Live telemetry &amp; incidents</span>
+                        <a href="https://sportscore.com/" rel="dofollow" target="_blank" title="Powered by SportScore" aria-label="Powered by SportScore" style="display:inline-flex; align-items:center; gap:5px; text-decoration:none; color:inherit; font-weight:600;">
+                            <span>Powered by</span>
+                            <span style="display:inline-flex;align-items:center;justify-content:center;width:20px;height:20px;background:#0a1e3d;color:#fff;border-radius:50%;font:700 0.62rem system-ui,sans-serif;">SS</span>
+                        </a>
+                    </div>
                 </div>
 
                 <div id="drawer-tab-stats" class="drawer-tab-content" ${activeTab === 'stats' ? '' : 'hidden'}>
@@ -4053,11 +4058,20 @@
     function renderFooterPartners(items) {
         const host = document.getElementById('footer-partners');
         if (!host) return;
-        const list = Array.isArray(items) ? items.filter(p => p && p.active !== false) : [];
-        if (!list.length) {
-            host.hidden = true;
-            host.innerHTML = '';
-            return;
+        let list = Array.isArray(items) ? items.filter(p => p && p.active !== false) : [];
+        const hasSS = list.some(p => String(p.label || p.linkTitle || p.linkUrl).toLowerCase().includes('sportscore'));
+        if (!hasSS) {
+            list = [
+                ...list,
+                {
+                    active: true,
+                    label: 'SportScore',
+                    html: '<a href="https://sportscore.com/" rel="dofollow" target="_blank" title="Powered by SportScore" aria-label="Powered by SportScore" style="display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;background:#0a1e3d;color:#fff;border-radius:50%;text-decoration:none;font:700 .78rem system-ui,sans-serif;">SS</a>',
+                    linkUrl: 'https://sportscore.com/',
+                    linkTitle: 'Powered by SportScore',
+                    rel: 'dofollow'
+                }
+            ];
         }
         const html = list.map(p => {
             const w = Number(p.width) > 0 ? Number(p.width) : 28;
@@ -4558,7 +4572,7 @@ function renderAdSlot(elementId, slotData) {
                     if (state.selectedLeagueSlug === 'live' || state.currentStatus === 'live') {
                         loadLiveMatches({ background: true, initialLive: liveMatches });
                     } else if (state.selectedLeagueSlug === 'all') {
-                        loadAllLeagueFixtures({ background: true });
+                        loadAllLeagueFixtures({ background: true, initialLive: liveMatches });
                     } else if (state.league) {
                         loadFixtures({ background: true });
                     }

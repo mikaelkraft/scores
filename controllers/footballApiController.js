@@ -319,10 +319,11 @@ function fetchUpstreamJsonFast(url, timeoutMs = 3500) {
 }
 
 async function fetchFreshWorldwideLiveMatches() {
-    const sixHoursAgo = new Date(Date.now() - 6 * 3600 * 1000);
+    const liveCutoff = new Date(Date.now() - 135 * 60 * 1000);
+    const futureCutoff = new Date(Date.now() + 5 * 60 * 1000);
     const liveFilter = {
         'status.state': 'in',
-        date: { $gte: sixHoursAgo }
+        date: { $gte: liveCutoff, $lte: futureCutoff }
     };
 
     // Parallel fetch from upstream LiveScore worldwide feed, ESPN scoreboard, and MongoDB
@@ -363,15 +364,22 @@ async function fetchFreshWorldwideLiveMatches() {
                 }
                 const hScore = parseInt(ev.Tr1 || 0, 10);
                 const aScore = parseInt(ev.Tr2 || 0, 10);
-                const rawClock = String(ev.Eps || ev.Epr || 'NS').trim();
+                const rawClock = String(ev.Eps || '').trim() || (ev.Epr === 0 ? 'NS' : String(ev.Epr || 'NS')).trim();
+                const matchDate = ev.Esd ? new Date(ev.Esd) : new Date();
 
-                const isNotStarted = rawClock === 'NS' || rawClock === 'Upcoming' || rawClock === '' || rawClock === 'Sched' || rawClock.includes(':');
+                const isZeroOrSched = rawClock === '0' || rawClock === "0'" || rawClock === '00' || rawClock === '00:00';
+                const isFutureMatch = matchDate && (matchDate.getTime() - Date.now() > 5 * 60 * 1000);
+                const isNotStarted = rawClock === 'NS' || rawClock === 'Upcoming' || rawClock === '' || rawClock === 'Sched' || rawClock.includes(':') || isZeroOrSched || isFutureMatch;
                 const isFinished = rawClock === 'FT' || rawClock === 'AET' || rawClock === 'AP';
                 const isPostponed = rawClock.includes('Postp') || rawClock.includes('Canc');
                 const isInPlay = !isNotStarted && !isFinished && !isPostponed;
 
                 // For the dedicated in-play feed, only collect active live matches
                 if (!isInPlay) continue;
+
+                if (typeof inferCountryFromTeamNames === 'function') {
+                    slug = inferCountryFromTeamNames(h.Nm, a.Nm, slug) || slug;
+                }
 
                 const clock = rawClock === 'HT' ? 'HT' : (rawClock.includes("'") ? rawClock : `${rawClock}'`);
 
@@ -438,6 +446,9 @@ async function fetchFreshWorldwideLiveMatches() {
             if (!targetSlug || targetSlug === 'usa.ncaa') continue;
             targetSlug = enforceCountryOnSlug(targetSlug, comp.notes?.[0]?.headline || '', comp.altGameNote || '');
             if (!targetSlug || targetSlug === 'usa.ncaa') continue;
+            if (typeof inferCountryFromTeamNames === 'function') {
+                targetSlug = inferCountryFromTeamNames(homeComp.team?.name || homeComp.team?.displayName, awayComp.team?.name || awayComp.team?.displayName, targetSlug) || targetSlug;
+            }
             const targetLg = TARGET_LEAGUES.find(l => l.slug === targetSlug);
             const lg = leagueMap.get(targetSlug) || targetLg || {};
             const clock = ev.status?.displayClock || ev.status?.type?.detail || "45'";
@@ -489,15 +500,28 @@ async function fetchFreshWorldwideLiveMatches() {
     // 3. Ingest in-play matches from MongoDB
     if (Array.isArray(dbLiveMatches)) {
         for (const m of dbLiveMatches) {
-            const targetLg = TARGET_LEAGUES.find(l => l.slug === m.league_slug);
-            const lg = leagueMap.get(m.league_slug) || targetLg || {};
+            // Drop any match whose kickoff was > 135 minutes ago or in future
+            if (m.date) {
+                const diff = Date.now() - new Date(m.date).getTime();
+                if (diff > 135 * 60 * 1000) {
+                    SoccerMatch.updateOne({ _id: m._id }, { $set: { 'status.state': 'post', 'status.completed': true, 'status.clock': 'FT', 'status.description': 'Full Time' } }).catch(() => {});
+                    continue;
+                }
+                if (diff < -5 * 60 * 1000) continue;
+            }
+            let mSlug = m.league_slug;
+            if (typeof inferCountryFromTeamNames === 'function') {
+                mSlug = inferCountryFromTeamNames(m.home?.name || m.home?.display_name, m.away?.name || m.away?.display_name, mSlug) || mSlug;
+            }
+            const targetLg = TARGET_LEAGUES.find(l => l.slug === mSlug);
+            const lg = leagueMap.get(mSlug) || targetLg || {};
             candidateMatches.push({
                 id: m.source?.event_id || String(m._id),
                 uid: m.source?.uid || '',
                 league: {
-                    slug: m.league_slug,
-                    name: lg.name || (targetLg?.name) || m.note || m.league_slug,
-                    abbreviation: lg.abbreviation || (targetLg?.abbreviation) || m.league_slug,
+                    slug: mSlug,
+                    name: lg.name || (targetLg?.name) || m.note || mSlug,
+                    abbreviation: lg.abbreviation || (targetLg?.abbreviation) || mSlug,
                     country: lg.country || (targetLg?.country) || inferMatchCountry(m),
                     logo: lg.logo || (targetLg?.logo) || ''
                 },
@@ -632,8 +656,9 @@ async function fetchFreshWorldwideLiveMatches() {
     const finalMap = new Map();
     for (const entry of byPair.values()) {
         const m = entry.match;
+        const pKey = pairKeyOf(m);
         const id = String(m.id || m.uid || entry.id || '').trim();
-        const key = id || pairKeyOf(m) || `x_${finalMap.size}`;
+        const key = pKey || id || `x_${finalMap.size}`;
         const prev = finalMap.get(key);
         if (!prev) finalMap.set(key, m);
         else finalMap.set(key, mergeLive(liveScoreOf(m) >= liveScoreOf(prev) ? m : prev, liveScoreOf(m) >= liveScoreOf(prev) ? prev : m));
@@ -853,7 +878,7 @@ async function getFormattedLiveMatches(league, isFreeRestricted) {
             liveFeedMemoryCache.inFlightPromise = (async () => {
                 try {
                     const matches = await fetchFreshWorldwideLiveMatches();
-                    if (matches && matches.length > 0) {
+                    if (Array.isArray(matches)) {
                         liveFeedMemoryCache.matches = matches;
                         liveFeedMemoryCache.timestamp = Date.now();
                     }
@@ -870,7 +895,7 @@ async function getFormattedLiveMatches(league, isFreeRestricted) {
         liveFeedMemoryCache.inFlightPromise = (async () => {
             try {
                 const matches = await fetchFreshWorldwideLiveMatches();
-                if (matches && matches.length > 0) {
+                if (Array.isArray(matches)) {
                     liveFeedMemoryCache.matches = matches;
                     liveFeedMemoryCache.timestamp = Date.now();
                 }
@@ -890,7 +915,7 @@ async function getFormattedLiveMatches(league, isFreeRestricted) {
 // Proactive background cache warming & continuous refresh loop
 setTimeout(() => {
     fetchFreshWorldwideLiveMatches().then(m => {
-        if (m && m.length > 0) {
+        if (Array.isArray(m)) {
             liveFeedMemoryCache.matches = m;
             liveFeedMemoryCache.timestamp = Date.now();
         }
@@ -899,7 +924,7 @@ setTimeout(() => {
 
 setInterval(() => {
     fetchFreshWorldwideLiveMatches().then(m => {
-        if (m && m.length > 0) {
+        if (Array.isArray(m)) {
             liveFeedMemoryCache.matches = m;
             liveFeedMemoryCache.timestamp = Date.now();
         }
@@ -3012,17 +3037,9 @@ async function handleCrestProxy(req, res) {
             res.set('Cache-Control', 'public, max-age=31536000, immutable');
             return res.sendFile(localPath);
         }
-        // Azure disk may be ephemeral / not writable — still show crests via upstream
-        res.set('Cache-Control', 'public, max-age=3600');
-        return res.redirect(302, rawUrl);
+        res.set('Cache-Control', 'no-cache, no-store, must-revalidate');
+        return res.status(404).send('Crest not found');
     } catch {
-        try {
-            const rawUrl = req.query.url;
-            if (rawUrl && String(rawUrl).startsWith('http')) {
-                res.set('Cache-Control', 'public, max-age=600');
-                return res.redirect(302, String(rawUrl));
-            }
-        } catch (_) {}
         res.set('Cache-Control', 'no-cache, no-store, must-revalidate');
         return res.status(404).send('Crest not found');
     }
