@@ -539,81 +539,125 @@ async function fetchFreshWorldwideLiveMatches() {
     }
 
     // 4. Deduplicate across feeds into canonical matches
-    const seenLiveMap = new Map();
-    for (const m of candidateMatches) {
+    // Primary: unique by event id (prevents exact double rows from multi-source ingest)
+    // Secondary: unique by normalized team pair (collapses ESPN+LiveScore variants)
+    const byId = new Map();
+    const byPair = new Map();
+
+    const liveScoreOf = (m) => {
+        const clockN = parseInt(String(m.status?.clock || m.status?.detail || '').replace(/\D/g, ''), 10) || 0;
+        return (
+            (m.home?.logo ? 3 : 0) + (m.away?.logo ? 3 : 0) +
+            (m.source?.provider === 'espn' ? 2 : 0) +
+            (m.recentEvents?.length ? 2 : 0) +
+            (m.venue ? 1 : 0) +
+            (m.status?.state === 'in' ? 4 : 0) +
+            Math.min(clockN, 120)
+        );
+    };
+
+    const pairKeyOf = (m) => {
         const hName = m.home?.displayName || m.home?.name || '';
         const aName = m.away?.displayName || m.away?.name || '';
         const hNorm = normalizeTeamName(hName);
         const aNorm = normalizeTeamName(aName);
-        const slug = m.league_slug || m.league?.slug || '';
-        const tier = getMatchTier(hName, aName, slug);
-        const isYouth = tier.endsWith('_y');
-        const isWomen = tier.startsWith('w_');
-        const rawD = m.scoreboardDate || (m.date ? new Date(m.date).toISOString().slice(0, 10) : '');
-        const dKey = String(rawD).replace(/[^0-9]/g, '').slice(0, 8);
-        const sig = [hNorm, aNorm].sort().join('_vs_') + '_' + dKey + (isWomen ? '_w' : '') + (isYouth ? '_youth' : '');
+        if (!hNorm && !aNorm) return '';
+        const slug = String(m.league_slug || m.league?.slug || '');
+        const isWomen = /\.w\.|women|femen/i.test(slug) || /\bW\b|\(W\)|women/i.test(hName + ' ' + aName);
+        const isYouth = /u-?1[789]|u-?2[01]|youth/i.test(hName + ' ' + aName + ' ' + slug);
+        // Do NOT depend on fragile date keys for live — same pair in-play is one match
+        return [hNorm, aNorm].sort().join('_vs_') + (isWomen ? '_w' : '') + (isYouth ? '_y' : '');
+    };
 
-        const mScore = (m.home?.logo?.includes('espncdn') ? 4 : 0) +
-                       (m.source?.provider === 'espn' || (m.id && /^\d{6,}$/.test(m.id)) ? 3 : 0) +
-                       (isWomen ? 2 : 0) +
-                       (m.league?.slug && m.league.slug !== 'other' && m.league.slug !== 'w.other' ? 2 : 0) +
-                       (m.recentEvents && m.recentEvents.length > 0 ? 2 : 0) +
-                       (m.venue ? 1 : 0);
-
-        if (!seenLiveMap.has(sig)) {
-            seenLiveMap.set(sig, { match: m, score: mScore });
-        } else {
-            const existing = seenLiveMap.get(sig);
-            const winner = mScore > existing.score ? m : existing.match;
-            const secondary = mScore > existing.score ? existing.match : m;
-
+    const mergeLive = (winner, secondary) => {
+        if (!winner || !secondary || winner === secondary) return winner;
+        try {
             const secClock = secondary.status?.clock;
-            const secDetail = secondary.status?.detail;
-            if (secClock && isConcreteClock(secClock) && secClock !== "45'") {
-                winner.status.clock = secClock;
-                if (secDetail && isConcreteClock(secDetail)) {
-                    winner.status.detail = secDetail;
+            if (secClock && String(secClock).match(/\d|HT|ET/) && secClock !== "45'") {
+                const wClock = winner.status?.clock;
+                const wN = parseInt(String(wClock || '').replace(/\D/g, ''), 10) || 0;
+                const sN = parseInt(String(secClock || '').replace(/\D/g, ''), 10) || 0;
+                if (sN >= wN) {
+                    winner.status = winner.status || {};
+                    winner.status.clock = secClock;
+                    if (secondary.status?.detail) winner.status.detail = secondary.status.detail;
                 }
-            } else if (!isConcreteClock(winner.status?.clock)) {
-                if (secClock && secClock !== "45'") winner.status.clock = secClock;
-                if (secDetail) winner.status.detail = secDetail;
             }
-            if (secondary.home?.score !== undefined) winner.home.score = secondary.home.score;
-            if (secondary.away?.score !== undefined) winner.away.score = secondary.away.score;
-            if (secondary.source?.livescore_id && !winner.source?.livescore_id) {
-                if (!winner.source) winner.source = {};
-                winner.source.livescore_id = secondary.source.livescore_id;
-            }
-            if (secondary.source?.espn_id && !winner.source?.espn_id) {
-                if (!winner.source) winner.source = {};
-                winner.source.espn_id = secondary.source.espn_id;
-            }
-
-            // Merge crest logos so neither club nor league loses its logo
-            if ((!winner.home?.logo || /placeholder|default.?crest|unknown/i.test(winner.home.logo)) && secondary.home?.logo) {
-                if (!winner.home) winner.home = {};
-                winner.home.logo = secondary.home.logo;
-            } else if (winner.home?.logo && secondary.home?.logo && secondary.home.logo.includes('espncdn') && !winner.home.logo.includes('espncdn')) {
-                winner.home.logo = secondary.home.logo;
-            }
-
-            if ((!winner.away?.logo || /placeholder|default.?crest|unknown/i.test(winner.away.logo)) && secondary.away?.logo) {
-                if (!winner.away) winner.away = {};
-                winner.away.logo = secondary.away.logo;
-            } else if (winner.away?.logo && secondary.away?.logo && secondary.away.logo.includes('espncdn') && !winner.away.logo.includes('espncdn')) {
-                winner.away.logo = secondary.away.logo;
-            }
-
+            if (winner.home && secondary.home?.logo && !winner.home.logo) winner.home.logo = secondary.home.logo;
+            if (winner.away && secondary.away?.logo && !winner.away.logo) winner.away.logo = secondary.away.logo;
+            if (secondary.home?.logo?.includes('espncdn') && winner.home) winner.home.logo = secondary.home.logo;
+            if (secondary.away?.logo?.includes('espncdn') && winner.away) winner.away.logo = secondary.away.logo;
             if (!winner.league?.logo && secondary.league?.logo) {
                 if (!winner.league) winner.league = {};
                 winner.league.logo = secondary.league.logo;
             }
+            if ((!winner.recentEvents || !winner.recentEvents.length) && secondary.recentEvents?.length) {
+                winner.recentEvents = secondary.recentEvents;
+            }
+        } catch (_) {}
+        return winner;
+    };
 
-            seenLiveMap.set(sig, { match: winner, score: Math.max(existing.score, mScore) });
+    for (const m of candidateMatches) {
+        if (!m) continue;
+        const id = String(m.id || m.uid || m.source?.event_id || m.source?.livescore_id || '').trim();
+        const score = liveScoreOf(m);
+        const pair = pairKeyOf(m);
+
+        if (id) {
+            const prev = byId.get(id);
+            if (!prev) byId.set(id, { match: m, score });
+            else {
+                const win = score >= prev.score ? m : prev.match;
+                const lose = score >= prev.score ? prev.match : m;
+                byId.set(id, { match: mergeLive(win, lose), score: Math.max(score, prev.score) });
+            }
+        }
+
+        if (pair) {
+            const prev = byPair.get(pair);
+            if (!prev) byPair.set(pair, { match: m, score, id });
+            else {
+                const win = score >= prev.score ? m : prev.match;
+                const lose = score >= prev.score ? prev.match : m;
+                byPair.set(pair, { match: mergeLive(win, lose), score: Math.max(score, prev.score), id: id || prev.id });
+            }
+        } else if (!id) {
+            // last resort unique slot
+            byPair.set(`rand_${byPair.size}`, { match: m, score, id: '' });
         }
     }
 
-    const dedupedLive = Array.from(seenLiveMap.values()).map(e => e.match);
+    // Prefer pair-collapsed set, then ensure no duplicate ids
+    const finalMap = new Map();
+    for (const entry of byPair.values()) {
+        const m = entry.match;
+        const id = String(m.id || m.uid || entry.id || '').trim();
+        const key = id || pairKeyOf(m) || `x_${finalMap.size}`;
+        const prev = finalMap.get(key);
+        if (!prev) finalMap.set(key, m);
+        else finalMap.set(key, mergeLive(liveScoreOf(m) >= liveScoreOf(prev) ? m : prev, liveScoreOf(m) >= liveScoreOf(prev) ? prev : m));
+    }
+    // Include any id-only entries not covered
+    for (const entry of byId.values()) {
+        const m = entry.match;
+        const id = String(m.id || '').trim();
+        if (id && !finalMap.has(id)) {
+            // check pair collision
+            const p = pairKeyOf(m);
+            let found = false;
+            if (p) {
+                for (const [k, existing] of finalMap) {
+                    if (pairKeyOf(existing) === p) { found = true; break; }
+                }
+            }
+            if (!found) finalMap.set(id, m);
+        }
+    }
+
+    const seenLiveMap = finalMap; // name kept for minimal churn below
+
+    const dedupedLive = Array.from(seenLiveMap.values()).map(e => (e && e.match) ? e.match : e);
     dedupedLive.sort((a, b) => {
         const pA = getLeaguePriority(a.league?.slug);
         const pB = getLeaguePriority(b.league?.slug);
@@ -626,9 +670,28 @@ async function fetchFreshWorldwideLiveMatches() {
 function filterLiveMatchesResponse(matches, league, isFreeRestricted) {
     let result = matches || [];
     try {
-        // Fire-and-forget SportScore cache warm (does not block)
         ensureSportScoreCache().catch(() => {});
         result = enrichMatchesLogos(result);
+    } catch (_) {}
+    // Final safety: never return the same event id twice
+    try {
+        const seen = new Set();
+        const pairSeen = new Set();
+        result = result.filter((m) => {
+            const id = String(m?.id || m?.uid || '').trim();
+            const h = normalizeTeamName(m?.home?.name || m?.home?.displayName || '');
+            const a = normalizeTeamName(m?.away?.name || m?.away?.displayName || '');
+            const pair = [h, a].filter(Boolean).sort().join('_vs_');
+            if (id) {
+                if (seen.has(id)) return false;
+                seen.add(id);
+            }
+            if (pair) {
+                if (pairSeen.has(pair)) return false;
+                pairSeen.add(pair);
+            }
+            return true;
+        });
     } catch (_) {}
 
     if (isFreeRestricted) {
@@ -1439,7 +1502,27 @@ router.get('/fixtures', optionalApiKeyAuth, async (req, res) => {
             await ensureSportScoreCache();
             for (const m of dedupedMatches) enrichMatchLogos(m);
         } catch (_) {}
-        const hasLive = dedupedMatches.some(m => m.status.isLive);
+        
+        // Absolute unique by id + pair (Metapan / cup variants)
+        {
+            const seenId = new Set();
+            const seenPair = new Set();
+            const out = [];
+            for (const m of dedupedMatches) {
+                const id = String(m.id || m.uid || m.source?.event_id || '').trim();
+                const h = normalizeTeamName(m.home?.name || m.home?.displayName || '');
+                const a = normalizeTeamName(m.away?.name || m.away?.displayName || '');
+                const pair = [h, a].filter(Boolean).sort().join('_vs_');
+                if (id && seenId.has(id)) continue;
+                if (pair && seenPair.has(pair)) continue;
+                if (id) seenId.add(id);
+                if (pair) seenPair.add(pair);
+                out.push(m);
+            }
+            dedupedMatches.length = 0;
+            out.forEach(m => dedupedMatches.push(m));
+        }
+const hasLive = dedupedMatches.some(m => m.status.isLive);
         if (hasLive || status === 'live') {
             res.set('Cache-Control', 'no-cache, no-store, must-revalidate');
             res.set('Pragma', 'no-cache');
