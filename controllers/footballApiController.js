@@ -120,7 +120,7 @@ const {
     isConcreteClock,
     formatMatchClock
 } = require('../services/soccerSerializer');
-const { normalizeTeamName, getTeamCategory, getMatchTier, resolveMatchEspnId, resolveLeagueSlug, enforceCountryOnSlug, isReserveOrBTeamName, formatLiveScoreLogo, TARGET_LEAGUES } = require('../services/soccerSyncService');
+const { normalizeTeamName, getTeamCategory, getMatchTier, resolveMatchEspnId, resolveLeagueSlug, enforceCountryOnSlug, isReserveOrBTeamName, formatLiveScoreLogo, TARGET_LEAGUES, inferCountryFromTeamNames } = require('../services/soccerSyncService');
 
 function formatDateKey(d = new Date()) {
     const y = d.getUTCFullYear();
@@ -1351,17 +1351,32 @@ router.get('/fixtures', optionalApiKeyAuth, async (req, res) => {
         }
 
         // Soft-collapse cup/trophy name variants (Amorebieta/SD Amorebieta, Team W vs Team, Häcken/Haecken)
+        const looksWomenBlob = (s) => /\b(women|woman|femenil|femenino|ladies|wfc)\b|\sW\b|\(W\)/i.test(String(s || ''));
+        const leagueFamily = (slug) => {
+            let s = String(slug || '').toLowerCase();
+            // Alias El Salvador / duplicate competition ids
+            if (/salvador|slv\./.test(s)) s = 'slv.1';
+            // Keep gender in family key
+            const women = /\.w\./.test(s) || /women|femenil/.test(s);
+            s = s.replace(/\.w\./g, '.').replace(/\.w$/,'');
+            // Drop ultra-specific suffixes for soft match
+            s = s.replace(/salvadoran\.primera.*/, 'slv.1');
+            return (women ? 'w:' : 'm:') + s;
+        };
         const softKey = (m) => {
-            const h = normalizeTeamName(m.home?.name || m.home?.displayName || m.home?.display_name || '');
-            const a = normalizeTeamName(m.away?.name || m.away?.displayName || m.away?.display_name || '');
+            const hRaw = m.home?.name || m.home?.displayName || m.home?.display_name || '';
+            const aRaw = m.away?.name || m.away?.displayName || m.away?.display_name || '';
+            const h = normalizeTeamName(hRaw);
+            const a = normalizeTeamName(aRaw);
             const pair = [h, a].filter(Boolean).sort().join('_vs_');
             let d = String(m.scoreboard_date || m.scoreboardDate || '');
             if (/^\d{8}$/.test(d)) d = `${d.slice(0,4)}-${d.slice(4,6)}-${d.slice(6,8)}`;
             else if (m.date) {
                 try { d = new Date(m.date).toISOString().slice(0, 10); } catch { d = ''; }
             }
-            const slug = String(m.league?.slug || m.league_slug || '').replace(/\.w\./g, '.').replace(/\.w$/,'');
-            return `${pair}_${d}_${slug}`;
+            const slug = String(m.league?.slug || m.league_slug || '');
+            const women = /\.w\./.test(slug) || looksWomenBlob(hRaw) || looksWomenBlob(aRaw) || looksWomenBlob(m.league?.name);
+            return `${pair}_${d}_${leagueFamily(slug)}_${women ? 'w' : 'm'}`;
         };
         const softScore = (m) => {
             const hLogo = m.home?.logo || '';
@@ -1382,7 +1397,37 @@ router.get('/fixtures', optionalApiKeyAuth, async (req, res) => {
             if (!prev || softScore(m) >= softScore(prev)) softMap.set(k, m);
         }
 
-        const dedupedMatches = Array.from(softMap.values());
+        const dedupedMatches = Array.from(softMap.values()).map((m) => {
+            try {
+                const hName = m.home?.name || m.home?.displayName || '';
+                const aName = m.away?.name || m.away?.displayName || '';
+                let slug = m.league?.slug || m.league_slug || '';
+                // Men teams must not sit under women's league slugs
+                const womenSlug = /\.w\./i.test(slug) || /femenil|women/i.test(m.league?.name || '');
+                const womenTeams = looksWomenBlob(hName) || looksWomenBlob(aName);
+                if (womenSlug && !womenTeams) {
+                    slug = String(slug).replace(/\.w\./g, '.').replace(/\.w\./, '.');
+                    if (slug.endsWith('.w')) slug = slug.slice(0, -2) + '.1';
+                    if (m.league) m.league.slug = slug;
+                    m.league_slug = slug;
+                }
+                // Country correction (e.g. Londrina/Náutico under ita.2 → bra.2)
+                if (typeof inferCountryFromTeamNames === 'function') {
+                    const corrected = inferCountryFromTeamNames(hName, aName, slug);
+                    if (corrected && corrected !== slug) {
+                        slug = corrected;
+                        if (m.league) m.league.slug = slug;
+                        m.league_slug = slug;
+                        // Update league display name lightly when country flips
+                        if (m.league && /^bra\./.test(slug)) {
+                            m.league.country = 'Brazil';
+                            if (/ita\.|italian/i.test(m.league.name || '')) m.league.name = slug.endsWith('.2') ? 'Brasileirão Série B' : 'Brasileirão';
+                        }
+                    }
+                }
+            } catch (_) {}
+            return m;
+        });
         dedupedMatches.sort((a, b) => {
             const pA = getLeaguePriority(a.league?.slug);
             const pB = getLeaguePriority(b.league?.slug);

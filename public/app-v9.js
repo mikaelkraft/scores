@@ -413,7 +413,7 @@
     }
 
     function getTeamInitials(name = '', abbr = '') {
-        if (abbr && abbr.length >= 2 && abbr.length <= 4 && !/^\d+$/.test(abbr)) return abbr.toUpperCase().slice(0, 3);
+        if (abbr && abbr.length >= 2 && abbr.length <= 4 && !/^\d+$/.test(abbr)) return abbr.toUpperCase().slice(0, 2);
         const clean = String(name || '').replace(/\b(fc|cf|sc|ac|cd|ceif|afc|fk|sk|sv|ssc|as|rc|ud|rb|calcio|club|clube|deportivo)\b/gi, '').trim();
         const parts = clean.split(/\s+/).filter(Boolean);
         if (parts.length >= 2) return (parts[0][0] + parts[1][0]).toUpperCase();
@@ -422,7 +422,9 @@
     }
 
     function renderCrestFallbackSvg(initials) {
-        return `<svg width="18" height="18" viewBox="0 0 18 18" style="vertical-align:middle; display:inline-block; flex-shrink:0;"><circle cx="9" cy="9" r="8" fill="#1e293b" stroke="#334155" stroke-width="1.2"/><text x="9" y="11.5" font-size="7.5" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,sans-serif" font-weight="700" fill="#94a3b8" text-anchor="middle">${initials}</text></svg>`;
+        const label = String(initials || '?').slice(0, 2).toUpperCase();
+        // Compact 16px badge — smaller, cleaner than raw abbreviation text
+        return `<svg width="16" height="16" viewBox="0 0 16 16" xmlns="http://www.w3.org/2000/svg" style="vertical-align:middle;display:inline-block;flex-shrink:0;border-radius:50%;"><circle cx="8" cy="8" r="7.5" fill="#0f172a"/><circle cx="8" cy="8" r="7.5" fill="none" stroke="#334155" stroke-width="1"/><text x="8" y="10.5" text-anchor="middle" font-size="5.5" font-family="system-ui,-apple-system,sans-serif" font-weight="600" fill="#94a3b8" letter-spacing="-0.02em">${label}</text></svg>`;
     }
 
     function teamLogo(team, className = 'team-crest') {
@@ -704,6 +706,14 @@
             .replace(/\bal\s+mokawloon(\s+al\s+arab)?\b/g, 'almokawloon')
             .replace(/\blogroñ[eé]s\b|\blogrones\b/g, 'logrones')
             .replace(/\bamorebieta\b/g, 'amorebieta')
+            .replace(/\bpumas(\s+unam)?\b/g, 'pumas')
+            .replace(/\btigres(\s+uanl)?\b/g, 'tigres')
+            .replace(/\bguadalajara\b|\bchivas\b/g, 'chivas')
+            .replace(/\bju[aá]rez\b/g, 'juarez')
+            .replace(/\bisidro\s+metap[aá]n\b/g, 'metapan')
+            .replace(/\b(cd\s+)?platense(\s+municipal)?\b/g, 'platense')
+            .replace(/\blondrina(\s+ec)?\b/g, 'londrina')
+            .replace(/\bn[aá]utico\b/g, 'nautico')
             .replace(/\bh[aä]cken\b/g, 'hacken')
             .replace(/\bparis\s+(saint[- ]?germain|sg)\b/g, 'psg')
             .replace(/\bmanchester\s+city\b/g, 'mancity')
