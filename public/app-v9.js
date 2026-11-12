@@ -421,10 +421,10 @@
         return 'FC';
     }
 
-    function renderCrestFallbackSvg(initials) {
-        const label = String(initials || '?').slice(0, 2).toUpperCase();
-        // Compact 16px badge — smaller, cleaner than raw abbreviation text
-        return `<svg width="16" height="16" viewBox="0 0 16 16" xmlns="http://www.w3.org/2000/svg" style="vertical-align:middle;display:inline-block;flex-shrink:0;border-radius:50%;"><circle cx="8" cy="8" r="7.5" fill="#0f172a"/><circle cx="8" cy="8" r="7.5" fill="none" stroke="#334155" stroke-width="1"/><text x="8" y="10.5" text-anchor="middle" font-size="5.5" font-family="system-ui,-apple-system,sans-serif" font-weight="600" fill="#94a3b8" letter-spacing="-0.02em">${label}</text></svg>`;
+    function renderCrestFallbackSvg(size = 16) {
+        const s = Number(size) || 16;
+        // Clean vector soccer shield — no broken/clipped text letters
+        return `<svg width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" style="vertical-align:middle;display:inline-block;flex-shrink:0;border-radius:4px;" aria-hidden="true"><rect width="24" height="24" rx="4" fill="#0f172a"/><path d="M12 3L4 6V12C4 16.5 7.5 20.5 12 21.5C16.5 20.5 20 16.5 20 12V6L12 3Z" fill="#1e293b" stroke="#3b82f6" stroke-width="1.2"/><circle cx="12" cy="12" r="3.2" fill="#38bdf8"/><path d="M12 8.8L12.9 10.7L15 11L13.5 12.4L13.8 14.5L12 13.5L10.2 14.5L10.5 12.4L9 11L11.1 10.7L12 8.8Z" fill="#ffffff"/></svg>`;
     }
 
     function teamLogo(team, className = 'team-crest') {
@@ -442,7 +442,8 @@
         }
         // LiveScore sometimes returns relative path without domain
         if (logo && !logo.startsWith('http') && /\.(png|jpg|jpeg|svg|webp)$/i.test(logo)) {
-            logo = `https://storage.livescore.com/images/team/medium/${logo.replace(/^\/+/, '')}`;
+            const clean = logo.replace(/^\/+/, '');
+            logo = `https://storage.livescore.com/images/team/medium/${/^\d+\.png$/i.test(clean) ? 'enet/' + clean : clean}`;
         }
         // Reject obviously wrong generic placeholders re-used across clubs
         if (logo && /placeholder|default.?crest|unknown|no.?logo/i.test(logo)) {
@@ -452,23 +453,20 @@
         if (!logo) {
             const sid = team?.source_id || team?.id || team?.uid || '';
             if (/^\d{4,}$/.test(String(sid))) {
-                logo = `https://storage.livescore.com/images/team/medium/${sid}.png`;
+                logo = `https://storage.livescore.com/images/team/medium/enet/${sid}.png`;
             }
         }
         if (!logo && team?.espn_id && /^\d+$/.test(String(team.espn_id))) {
             logo = `https://a.espncdn.com/i/teamlogos/soccer/500/${team.espn_id}.png`;
         }
+        const svgFallback = renderCrestFallbackSvg(16);
         if (logo && logo.startsWith('http')) {
             rememberCrest(nameKey, logo);
             const direct = logo;
             const proxied = `/cdn/crest?url=${encodeURIComponent(direct)}`;
-            const initials = escapeHtml(getTeamInitials(team?.displayName || team?.name, team?.abbreviation));
-            const svgFallback = renderCrestFallbackSvg(initials);
             // Proxy first (cacheable); fall back to direct CDN then SVG shield if proxy/disk fails
             return `<span class="${className}"><img src="${proxied}" alt="" aria-hidden="true" loading="lazy" decoding="async" referrerpolicy="no-referrer" onerror="if(!this.dataset.fb){this.dataset.fb='1';this.src='${direct.replace(/'/g, "\\'")}';}else{this.onerror=null;this.outerHTML='${svgFallback.replace(/'/g, "\\'")}';}"></span>`;
         }
-        const initials = escapeHtml(getTeamInitials(team?.displayName || team?.name, team?.abbreviation));
-        const svgFallback = renderCrestFallbackSvg(initials);
         return `<span class="${className}">${svgFallback}</span>`;
     }
 
@@ -528,10 +526,11 @@
     function isConcreteClock(str) {
         if (!str || typeof str !== 'string') return false;
         const clean = str.trim();
-        if (!clean) return false;
-        if (/^(live|in\s*progress|status_in_progress|scheduled|upcoming|pre|in|post)$/i.test(clean)) {
+        if (!clean || clean === '0' || clean === "0'" || clean === '00' || clean === '00:00') return false;
+        if (/^(live|in\s*progress|status_in_progress|scheduled|upcoming|pre|in|post|ns|sched)$/i.test(clean)) {
             return false;
         }
+        if (/^\d{1,2}:\d{2}$/.test(clean)) return false; // Kickoff time e.g. 19:45
         if (/\d/.test(clean)) return true;
         if (/^(ht|half\s*time|halftime|et|aet|pen\.?|penalties|break)$/i.test(clean)) return true;
         return false;
@@ -540,7 +539,7 @@
     function formatClockString(val) {
         if (val === undefined || val === null) return '';
         const s = String(val).trim();
-        if (!s) return '';
+        if (!s || s === '0' || s === "0'" || s === '00' || s === '00:00') return '';
         // If raw seconds (e.g. 2700 -> 45', 5400 -> 90')
         if (/^\d{3,}$/.test(s)) {
             const num = Number(s);
@@ -571,7 +570,7 @@
             type?.clock
         ];
 
-        // 1. First priority: Find the first CONCRETE clock (contains digits, HT, etc., NOT generic 'Live')
+        // 1. First priority: Find the first CONCRETE clock (contains digits, HT, etc., NOT generic 'Live' or zero)
         for (const cand of candidates) {
             const formatted = formatClockString(cand);
             if (isConcreteClock(formatted)) {
@@ -579,7 +578,7 @@
             }
         }
 
-        // 2. Second priority: If status has numeric clock_seconds
+        // 2. Second priority: If status has numeric clock_seconds > 0
         const clockSec = Number(status?.clock_seconds);
         if (!isNaN(clockSec) && clockSec > 0) {
             return `${Math.floor(clockSec / 60)}'`;
@@ -593,17 +592,22 @@
         const status = event?.status || competitionFromEvent(event).status || {};
         const type = status.type || {};
         const stateName = status.state || type.state || (status.isLive ? 'in' : 'unknown');
-        const clockHint = String(status.clock || status.displayClock || status.detail || type.detail || '');
-        const looksLive = stateName === 'in' || status.isLive || /\d|'|HT|ET|pen/i.test(clockHint) && !/FT|Final|AET|AP/i.test(clockHint);
-        if (looksLive && stateName !== 'post') {
+        const clockHint = String(status.clock || status.displayClock || status.detail || type.detail || '').trim();
+        const isClockZeroOrSched = /^(0|0'|00|00:00|ns|sched|upcoming)$/i.test(clockHint) || /^\d{1,2}:\d{2}$/.test(clockHint);
+        const kickoffMs = event?.date ? new Date(event.date).getTime() : 0;
+        const isKickoffFuture = kickoffMs && (kickoffMs - Date.now() > 2 * 60 * 1000);
+
+        const looksLive = (stateName === 'in' || status.isLive) && !isClockZeroOrSched && !isKickoffFuture && stateName !== 'post' && !status.completed && !type.completed;
+        if (looksLive) {
             const clock = formatMatchClock(status, type);
             return { state: 'live', label: clock || 'Live', pillClass: 'in-play' };
         }
-        if (stateName === 'post' || ((status.completed || type.completed) && !looksLive)) {
+        if (stateName === 'post' || status.completed || type.completed) {
             const label = type.shortDetail || status.detail || 'FT';
             return { state: 'finished', label: /^\d{3,}$/.test(label) ? 'FT' : label, pillClass: 'post' };
         }
-        return { state: 'scheduled', label: status.detail || type.shortDetail || 'Upcoming', pillClass: 'pre' };
+        const kickoffTime = formatTime(event?.date);
+        return { state: 'scheduled', label: kickoffTime || status.detail || type.shortDetail || 'Upcoming', pillClass: 'pre' };
     }
 
     function setLoading(kind, loading) {
@@ -3949,7 +3953,7 @@
             renderInfeedSlot(res.infeedSettings?.infeedCard, res.ads?.inFeed);
             renderAdSlot('ad-slot-drawer', res.ads?.drawer);
             renderAdSlot('ad-slot-footer', res.ads?.footer);
-            renderFooterPartners(res.partnerAttributions);
+            renderFooterPartners(res.partnerAttributions, res.partnerSectionTitle);
 
             // Universal Bet Booking Code Converter visibility (respects Admin toggle)
             const bookingConverterSection = document.getElementById('booking-converter-section');
@@ -4055,7 +4059,7 @@
     }
 
     
-    function renderFooterPartners(items) {
+    function renderFooterPartners(items, sectionTitle = '') {
         const host = document.getElementById('footer-partners');
         if (!host) return;
         let list = Array.isArray(items) ? items.filter(p => p && p.active !== false) : [];
@@ -4065,6 +4069,7 @@
                 ...list,
                 {
                     active: true,
+                    category: 'Partner',
                     label: 'SportScore',
                     html: '<a href="https://sportscore.com/" rel="dofollow" target="_blank" title="Powered by SportScore" aria-label="Powered by SportScore" style="display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;background:#0a1e3d;color:#fff;border-radius:50%;text-decoration:none;font:700 .78rem system-ui,sans-serif;">SS</a>',
                     linkUrl: 'https://sportscore.com/',
@@ -4073,7 +4078,7 @@
                 }
             ];
         }
-        const html = list.map(p => {
+        const itemsHtml = list.map(p => {
             const w = Number(p.width) > 0 ? Number(p.width) : 28;
             const h = Number(p.height) > 0 ? Number(p.height) : 28;
             const rel = escapeHtml(p.rel || 'dofollow');
@@ -4092,8 +4097,19 @@
             }
             return '';
         }).filter(Boolean).join('');
-        host.innerHTML = html;
-        host.hidden = !html;
+
+        if (!itemsHtml) {
+            host.innerHTML = '';
+            host.hidden = true;
+            return;
+        }
+
+        const headingHtml = sectionTitle && String(sectionTitle).trim()
+            ? `<div class="footer-partners-heading" style="width:100%;text-align:center;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.06em;color:var(--text-muted);margin-bottom:8px;">${escapeHtml(sectionTitle)}</div>`
+            : '';
+
+        host.innerHTML = headingHtml + `<div class="footer-partners-row" style="display:inline-flex;align-items:center;justify-content:center;gap:12px 16px;flex-wrap:wrap;">${itemsHtml}</div>`;
+        host.hidden = false;
     }
 
 function renderAdSlot(elementId, slotData) {

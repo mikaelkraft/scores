@@ -130,11 +130,13 @@ const SiteSettingSchema = new mongoose.Schema({
         linkedin: { type: String, default: '' }
     },
     /**
-     * Footer partner attributions (no section heading).
+     * Footer partner attributions & sponsored brand logos.
      * Each item can be raw HTML and/or an image+link with optional size.
      */
+    partnerSectionTitle: { type: String, default: 'Supported & Sponsored' },
     partnerAttributions: [{
         active: { type: Boolean, default: true },
+        category: { type: String, default: 'Supported' },
         label: { type: String, default: '' },
         html: { type: String, default: '' },
         imageUrl: { type: String, default: '' },

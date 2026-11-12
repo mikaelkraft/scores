@@ -523,14 +523,6 @@ async function syncLeagueFromLiveScoreStages(leagueDef, stages, now = new Date()
             }
             const homeScore = parseInt(ev.Tr1 || 0, 10);
             const awayScore = parseInt(ev.Tr2 || 0, 10);
-            const rawClock = String(ev.Eps || ev.Epr || 'NS');
-
-            const isNotStarted = rawClock === 'NS' || rawClock === 'Upcoming' || rawClock === '' || rawClock === 'Sched' || rawClock.includes(':');
-            const isFinished = rawClock === 'FT' || rawClock === 'AET' || rawClock === 'AP';
-            const isPostponed = rawClock.includes('Postp') || rawClock.includes('Canc');
-            const isInPlay = !isNotStarted && !isFinished && !isPostponed;
-            const state = isInPlay ? 'in' : (isFinished || isPostponed) ? 'post' : 'pre';
-            const displayClock = isFinished ? 'FT' : isPostponed ? 'Postp.' : (isInPlay ? (rawClock === 'HT' ? 'HT' : (rawClock.includes("'") ? rawClock : `${rawClock}'`)) : 'NS');
 
             let matchDate = now;
             if (ev.Esd && String(ev.Esd).length >= 12) {
@@ -542,6 +534,16 @@ async function syncLeagueFromLiveScoreStages(leagueDef, stages, now = new Date()
                 const mi = parseInt(s.slice(10, 12), 10);
                 matchDate = new Date(Date.UTC(yr, mo, da, hr, mi));
             }
+
+            const rawClock = String(ev.Eps || '').trim() || (ev.Epr === 0 ? 'NS' : String(ev.Epr || 'NS')).trim();
+            const isZeroOrSched = rawClock === '0' || rawClock === "0'" || rawClock === '00' || rawClock === '00:00';
+            const isFutureMatch = matchDate && (matchDate.getTime() - now.getTime() > 2 * 60 * 1000);
+            const isNotStarted = rawClock === 'NS' || rawClock === 'Upcoming' || rawClock === '' || rawClock === 'Sched' || rawClock.includes(':') || isZeroOrSched || isFutureMatch;
+            const isFinished = rawClock === 'FT' || rawClock === 'AET' || rawClock === 'AP';
+            const isPostponed = rawClock.includes('Postp') || rawClock.includes('Canc');
+            const isInPlay = !isNotStarted && !isFinished && !isPostponed;
+            const state = isInPlay ? 'in' : (isFinished || isPostponed) ? 'post' : 'pre';
+            const displayClock = isFinished ? 'FT' : isPostponed ? 'Postp.' : (isInPlay ? (rawClock === 'HT' ? 'HT' : (rawClock.includes("'") ? rawClock : `${rawClock}'`)) : 'NS');
 
             const scoreboardDate = formatDateToScoreboard(matchDate);
             const homeCrest = formatLiveScoreLogo(h.Img || h.ImgUrl || h.logo || '');
@@ -1624,6 +1626,10 @@ function formatLiveScoreLogo(img) {
         return img.replace('https://static.livescore.com/', 'https://storage.livescore.com/images/team/medium/');
     }
     const clean = img.replace(/^\/+/, '');
+    if (/^\d+\.png$/i.test(clean) || /^\d+$/.test(clean)) {
+        const file = clean.endsWith('.png') ? clean : `${clean}.png`;
+        return `https://storage.livescore.com/images/team/medium/enet/${file}`;
+    }
     return `https://storage.livescore.com/images/team/medium/${clean}`;
 }
 

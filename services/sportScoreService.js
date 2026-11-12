@@ -242,6 +242,108 @@ function incidentsToTimelinePlays(ssMatch) {
     });
 }
 
+/**
+ * Generate sensible SportScore slug variants for a given club name.
+ */
+function generateTeamSlugVariants(name = '') {
+    if (!name) return [];
+    const clean = String(name)
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, '-')
+        .replace(/^-+|-+$/g, '');
+    if (!clean) return [];
+
+    const variants = new Set();
+    variants.add(clean);
+
+    // Strip common FC/CF/CD/SC prefixes and suffixes
+    const stripped = clean
+        .replace(/^(fc|cf|cd|sc|afc|ac|as|rc|ud|sk|fk|ca)-/, '')
+        .replace(/-(fc|cf|cd|sc|afc|ac|as|rc|ud|sk|fk|ca)$/, '');
+    if (stripped && stripped !== clean) {
+        variants.add(stripped);
+    }
+
+    // Try prepending "fc-" if not present
+    if (!clean.startsWith('fc-')) {
+        variants.add(`fc-${clean}`);
+        if (stripped && stripped !== clean) {
+            variants.add(`fc-${stripped}`);
+        }
+    }
+
+    // Common German / European naming variants
+    if (clean.includes('munich')) {
+        variants.add(clean.replace('munich', 'munchen'));
+        variants.add(`fc-${clean.replace('munich', 'munchen')}`);
+    }
+
+    return Array.from(variants);
+}
+
+const h2hMemoryCache = new Map();
+
+/**
+ * Fetch H2H past encounters and summary from SportScore open developer API.
+ * Docs: https://sportscore.com/developer / https://sportscore.com/api/v1/h2h/
+ */
+async function fetchSportScoreH2H({ homeName, awayName } = {}) {
+    if (!homeName || !awayName) return null;
+    const cacheKey = [normalizeKey(homeName), normalizeKey(awayName)].sort().join('::');
+    if (h2hMemoryCache.has(cacheKey)) {
+        const cached = h2hMemoryCache.get(cacheKey);
+        if (Date.now() - cached.ts < 30 * 60 * 1000) {
+            return cached.data;
+        }
+    }
+
+    const homeVariants = generateTeamSlugVariants(homeName);
+    const awayVariants = generateTeamSlugVariants(awayName);
+
+    // Build ordered pairs to test (try canonical primary first, then variants)
+    const pairs = [];
+    for (const h of homeVariants) {
+        for (const a of awayVariants) {
+            pairs.push([h, a]);
+            pairs.push([a, h]);
+        }
+    }
+
+    const tested = new Set();
+    for (const [t1, t2] of pairs) {
+        const pairKey = `${t1}::${t2}`;
+        if (tested.has(pairKey)) continue;
+        tested.add(pairKey);
+
+        const url = `${BASE}/api/v1/h2h/?team1=${encodeURIComponent(t1)}&team2=${encodeURIComponent(t2)}`;
+        const data = await fetchJson(url, 6000);
+        if (data?.matches && Array.isArray(data.matches) && data.matches.length > 0) {
+            // Index logos from past H2H encounters
+            indexLogosFromMatches(data.matches);
+            const result = {
+                summary: data.summary || {
+                    team1_wins: 0,
+                    team2_wins: 0,
+                    draws: 0,
+                    meetings: data.matches.length
+                },
+                matches: data.matches,
+                team1Slug: t1,
+                team2Slug: t2
+            };
+            h2hMemoryCache.set(cacheKey, { ts: Date.now(), data: result });
+            return result;
+        }
+        // Limit attempts per team to prevent excessive upstream calls
+        if (tested.size >= 8) break;
+    }
+
+    h2hMemoryCache.set(cacheKey, { ts: Date.now(), data: null });
+    return null;
+}
+
 module.exports = {
     ensureSportScoreCache,
     refreshSportScoreMatches,
@@ -249,6 +351,7 @@ module.exports = {
     enrichMatchLogos,
     enrichMatchesLogos,
     fetchSportScoreMatchDetail,
+    fetchSportScoreH2H,
     incidentsToTimelinePlays,
     normalizeKey
 };

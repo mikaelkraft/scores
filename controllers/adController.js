@@ -38,6 +38,7 @@ router.get(['/api/v1/ads', '/api/ads/active', '/api/v1/settings/public'], option
                 bookiePromos: [],
                 bookmakerPromos: [],
                 socialLinks: settings.socialLinks || {},
+                partnerSectionTitle: settings.partnerSectionTitle || 'Supported & Sponsored',
                 partnerAttributions: (() => {
                     let list = (settings.partnerAttributions || []).filter(p => p && p.active !== false);
                     const hasSportScore = list.some(p => String(p.label || p.linkTitle || p.linkUrl).toLowerCase().includes('sportscore'));

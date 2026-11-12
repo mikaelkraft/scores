@@ -500,14 +500,21 @@ async function fetchFreshWorldwideLiveMatches() {
     // 3. Ingest in-play matches from MongoDB
     if (Array.isArray(dbLiveMatches)) {
         for (const m of dbLiveMatches) {
-            // Drop any match whose kickoff was > 135 minutes ago or in future
+            // Drop any match whose kickoff was > 135 minutes ago or in future, or has zero clock
+            const rawMClock = String(m.status?.clock || m.status?.detail || '').trim();
+            const isZeroClock = rawMClock === '0' || rawMClock === "0'" || rawMClock === '00' || rawMClock === '00:00' || rawMClock === 'NS';
             if (m.date) {
                 const diff = Date.now() - new Date(m.date).getTime();
                 if (diff > 135 * 60 * 1000) {
                     SoccerMatch.updateOne({ _id: m._id }, { $set: { 'status.state': 'post', 'status.completed': true, 'status.clock': 'FT', 'status.description': 'Full Time' } }).catch(() => {});
                     continue;
                 }
-                if (diff < -5 * 60 * 1000) continue;
+                if (diff < -2 * 60 * 1000 || (diff < 15 * 60 * 1000 && isZeroClock)) {
+                    SoccerMatch.updateOne({ _id: m._id }, { $set: { 'status.state': 'pre', 'status.completed': false, 'status.clock': 'NS', 'status.detail': 'Scheduled', 'status.description': 'Scheduled' } }).catch(() => {});
+                    continue;
+                }
+            } else if (isZeroClock) {
+                continue;
             }
             let mSlug = m.league_slug;
             if (typeof inferCountryFromTeamNames === 'function') {
@@ -774,16 +781,6 @@ async function fetchLiveScoreDayMatches(dateKey) {
             const aName = a.Nm || a.Name || 'Away';
             const hScore = ev.Tr1 != null && ev.Tr1 !== '' ? parseInt(ev.Tr1, 10) : null;
             const aScore = ev.Tr2 != null && ev.Tr2 !== '' ? parseInt(ev.Tr2, 10) : null;
-            const rawClock = String(ev.Eps || ev.Epr || 'NS').trim();
-            const isNotStarted = rawClock === 'NS' || rawClock === 'Upcoming' || rawClock === '' || rawClock === 'Sched' || /^\d{1,2}:\d{2}/.test(rawClock);
-            const isFinished = rawClock === 'FT' || rawClock === 'AET' || rawClock === 'AP' || rawClock === 'Final';
-            const isPostponed = /postp|canc|aban/i.test(rawClock);
-            const isInPlay = !isNotStarted && !isFinished && !isPostponed;
-            const state = isInPlay ? 'in' : (isFinished ? 'post' : (isPostponed ? 'post' : 'pre'));
-            const clock = isInPlay
-                ? (rawClock === 'HT' ? 'HT' : (rawClock.includes("'") ? rawClock : `${rawClock}'`))
-                : (isFinished ? 'FT' : rawClock);
-
             // Esd is often YYYYMMDDHHmmss
             let matchDate = new Date();
             if (ev.Esd) {
@@ -799,8 +796,29 @@ async function fetchLiveScoreDayMatches(dateKey) {
                 }
             }
 
-            const homeLogo = h.Img ? `https://storage.livescore.com/images/team/medium/${String(h.Img).replace(/^\/+/, '')}` : '';
-            const awayLogo = a.Img ? `https://storage.livescore.com/images/team/medium/${String(a.Img).replace(/^\/+/, '')}` : '';
+            const rawClock = String(ev.Eps || '').trim() || (ev.Epr === 0 ? 'NS' : String(ev.Epr || 'NS')).trim();
+            const isZeroOrSched = rawClock === '0' || rawClock === "0'" || rawClock === '00' || rawClock === '00:00';
+            const isFutureMatch = matchDate && (matchDate.getTime() - Date.now() > 2 * 60 * 1000);
+            const isNotStarted = rawClock === 'NS' || rawClock === 'Upcoming' || rawClock === '' || rawClock === 'Sched' || /^\d{1,2}:\d{2}/.test(rawClock) || isZeroOrSched || isFutureMatch;
+            const isFinished = rawClock === 'FT' || rawClock === 'AET' || rawClock === 'AP' || rawClock === 'Final';
+            const isPostponed = /postp|canc|aban/i.test(rawClock);
+            const isInPlay = !isNotStarted && !isFinished && !isPostponed;
+            const state = isInPlay ? 'in' : (isFinished ? 'post' : (isPostponed ? 'post' : 'pre'));
+            const clock = isInPlay
+                ? (rawClock === 'HT' ? 'HT' : (rawClock.includes("'") ? rawClock : `${rawClock}'`))
+                : (isFinished ? 'FT' : (isZeroOrSched ? 'NS' : rawClock));
+
+            const formatLsImg = (img) => {
+                if (!img) return '';
+                const clean = String(img).replace(/^\/+/, '');
+                if (/^\d+\.png$/i.test(clean) || /^\d+$/.test(clean)) {
+                    const file = clean.endsWith('.png') ? clean : `${clean}.png`;
+                    return `https://storage.livescore.com/images/team/medium/enet/${file}`;
+                }
+                return `https://storage.livescore.com/images/team/medium/${clean}`;
+            };
+            const homeLogo = formatLsImg(h.Img);
+            const awayLogo = formatLsImg(a.Img);
 
             out.push({
                 id: eid,
@@ -1851,6 +1869,49 @@ router.get('/predictions-context/:eventId', optionalApiKeyAuth, async (req, res)
         } catch {}
     }
 
+        // Enrich with SportScore Open Developer API H2H encounters (https://sportscore.com/developer)
+        const curHName = match.home?.displayName || match.home?.name || '';
+        const curAName = match.away?.displayName || match.away?.name || '';
+        if (h2hMap.size < 8 && curHName && curAName) {
+            try {
+                const { fetchSportScoreH2H } = require('../services/sportScoreService');
+                const ssData = await fetchSportScoreH2H({ homeName: curHName, awayName: curAName });
+                if (ssData?.matches && Array.isArray(ssData.matches) && ssData.matches.length > 0) {
+                    for (const sm of ssData.matches) {
+                        const smId = sm.url || `${sm.home}_vs_${sm.away}_${sm.time}`;
+                        if (!h2hMap.has(smId)) {
+                            const smHScore = Number(sm.home_score || 0);
+                            const smAScore = Number(sm.away_score || 0);
+                            const smHName = sm.home || 'Home';
+                            const smAName = sm.away || 'Away';
+                            const smWinner = smHScore === smAScore ? 'Draw' : (smHScore > smAScore ? smHName : smAName);
+                            const isHomeTeamOrig = normalizeTeamName(smHName) === normalizeTeamName(curHName);
+                            h2hMap.set(smId, {
+                                id: smId,
+                                date: sm.time || new Date().toISOString(),
+                                homeTeam: smHName,
+                                awayTeam: smAName,
+                                homeLogo: sm.home_logo || '',
+                                awayLogo: sm.away_logo || '',
+                                score: `${smHScore} - ${smAScore}`,
+                                winner: smWinner,
+                                homeScore: smHScore,
+                                awayScore: smAScore,
+                                isHomeOriginal: isHomeTeamOrig,
+                                competition: sm.competition || 'League',
+                                source: 'sportscore'
+                            });
+                        }
+                    }
+                    if (ssData.summary?.meetings && !parsedSeriesTotal) {
+                        parsedSeriesTotal = ssData.summary.meetings;
+                    }
+                }
+            } catch (ssErr) {
+                console.warn('SportScore H2H enrichment failed:', ssErr.message);
+            }
+        }
+
         // Parse lifetime series total from summary/seriesScore if available
         let parsedSeriesTotal = 0;
         if (seriesSummary) {
@@ -2474,6 +2535,43 @@ router.get('/h2h/:team1Id/:team2Id', optionalApiKeyAuth, async (req, res) => {
                 score: `${hScore} - ${aScore}`
             };
         });
+
+        // If local DB returned no matches, query SportScore Developer H2H
+        if (!results.length && (t1Name || team1Id) && (t2Name || team2Id)) {
+            try {
+                const { fetchSportScoreH2H } = require('../services/sportScoreService');
+                const ssName1 = t1Name || String(team1Id).replace(/[-_]+/g, ' ');
+                const ssName2 = t2Name || String(team2Id).replace(/[-_]+/g, ' ');
+                const ssData = await fetchSportScoreH2H({ homeName: ssName1, awayName: ssName2 });
+                if (ssData?.matches && Array.isArray(ssData.matches) && ssData.matches.length > 0) {
+                    for (const sm of ssData.matches) {
+                        const hScore = Number(sm.home_score || 0);
+                        const aScore = Number(sm.away_score || 0);
+                        totalGoals += (hScore + aScore);
+                        if (hScore === aScore) {
+                            draws++;
+                        } else if (normalizeTeamName(sm.home) === normalizeTeamName(ssName1)) {
+                            if (hScore > aScore) team1Wins++; else team2Wins++;
+                        } else {
+                            if (aScore > hScore) team1Wins++; else team2Wins++;
+                        }
+                        results.push({
+                            id: sm.url || `${sm.home}_vs_${sm.away}_${sm.time}`,
+                            date: sm.time,
+                            league: sm.competition || 'Official Competition',
+                            homeTeam: sm.home,
+                            awayTeam: sm.away,
+                            homeLogo: sm.home_logo || '',
+                            awayLogo: sm.away_logo || '',
+                            score: `${hScore} - ${aScore}`,
+                            source: 'sportscore'
+                        });
+                    }
+                }
+            } catch (ssErr) {
+                console.warn('SportScore /h2h route enrichment failed:', ssErr.message);
+            }
+        }
 
         const count = results.length;
         res.set('Cache-Control', 'public, max-age=60');

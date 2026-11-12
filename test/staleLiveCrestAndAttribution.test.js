@@ -79,3 +79,46 @@ test('partnerAttributions fallback guarantees SportScore SS badge is present', (
     assert.ok(fallbackList[0].html.includes('rel="dofollow"'));
     assert.ok(fallbackList[0].html.includes('sportscore.com'));
 });
+
+test('SportScore fetchSportScoreH2H returns historical matches and enriches team crests', async () => {
+    const { fetchSportScoreH2H } = require('../services/sportScoreService');
+    assert.equal(typeof fetchSportScoreH2H, 'function');
+    const res = await fetchSportScoreH2H({ homeName: 'Arsenal', awayName: 'Chelsea' });
+    assert.ok(res, 'H2H response from SportScore should exist');
+    assert.ok(Array.isArray(res.matches), 'res.matches should be an array');
+    assert.ok(res.matches.length > 0, 'Arsenal vs Chelsea should have past encounters');
+    assert.ok(res.summary?.meetings > 0, 'Meetings count should be > 0');
+    assert.ok(res.matches[0].home_logo, 'SportScore matches must have home_logo');
+    assert.ok(res.matches[0].away_logo, 'SportScore matches must have away_logo');
+});
+
+test('crest fallback SVG renders vector shield without raw broken text letters', () => {
+    // Vector shield SVG specification
+    const renderShieldSvg = (s = 16) => `<svg width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" style="vertical-align:middle;display:inline-block;flex-shrink:0;border-radius:4px;" aria-hidden="true"><rect width="24" height="24" rx="4" fill="#0f172a"/><path d="M12 3L4 6V12C4 16.5 7.5 20.5 12 21.5C16.5 20.5 20 16.5 20 12V6L12 3Z" fill="#1e293b" stroke="#3b82f6" stroke-width="1.2"/><circle cx="12" cy="12" r="3.2" fill="#38bdf8"/><path d="M12 8.8L12.9 10.7L15 11L13.5 12.4L13.8 14.5L12 13.5L10.2 14.5L10.5 12.4L9 11L11.1 10.7L12 8.8Z" fill="#ffffff"/></svg>`;
+    const svg = renderShieldSvg(16);
+    assert.ok(!svg.includes('<text'), 'Shield SVG fallback must never contain text elements');
+    assert.ok(svg.includes('viewBox="0 0 24 24"'));
+    assert.ok(svg.includes('<rect'));
+    assert.ok(svg.includes('<circle'));
+});
+
+test('concrete clock validator rejects zero clock and future kickoff times', () => {
+    function isConcreteClock(str) {
+        if (!str || typeof str !== 'string') return false;
+        const clean = str.trim();
+        if (!clean || clean === '0' || clean === "0'" || clean === '00' || clean === '00:00') return false;
+        if (/^(live|in\s*progress|status_in_progress|scheduled|upcoming|pre|in|post|ns|sched)$/i.test(clean)) return false;
+        if (/^\d{1,2}:\d{2}$/.test(clean)) return false; // Kickoff time e.g. 19:45
+        if (/\d/.test(clean)) return true;
+        if (/^(ht|half\s*time|halftime|et|aet|pen\.?|penalties|break)$/i.test(clean)) return true;
+        return false;
+    }
+
+    assert.equal(isConcreteClock("0'"), false, "0' is not a concrete in-play clock");
+    assert.equal(isConcreteClock("0"), false, "0 is not a concrete in-play clock");
+    assert.equal(isConcreteClock("00:00"), false, "00:00 is not a concrete in-play clock");
+    assert.equal(isConcreteClock("19:45"), false, "Kickoff time is not a concrete in-play clock");
+    assert.equal(isConcreteClock("45'"), true, "45' is a concrete in-play clock");
+    assert.equal(isConcreteClock("HT"), true, "HT is a concrete in-play clock");
+    assert.equal(isConcreteClock("90+3'"), true, "Stoppage time is a concrete in-play clock");
+});

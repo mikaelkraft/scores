@@ -9,7 +9,7 @@
     <meta name="robots" content="{{SEO_ROBOTS}}">
     <meta name="theme-color" content="#0b0f19">
     <link rel="canonical" href="{{SEO_CANONICAL}}">
-    <link rel="stylesheet" href="/assets/styles-v9.css?v=9.25">
+    <link rel="stylesheet" href="/assets/styles-v9.css?v=9.26">
     <script>
         (function() {
             var theme = localStorage.getItem('norra_theme') || localStorage.getItem('theme') || 'dark';
@@ -557,8 +557,13 @@
 
             <hr class="footer-divider">
 
-            <!-- Partner attributions (no heading) — editable from Admin → Branding -->
-            <div id="footer-partners" class="footer-partners" aria-label="Data partners"><span class="footer-partner-item"><a href="https://sportscore.com/" rel="dofollow" target="_blank" title="Powered by SportScore" aria-label="Powered by SportScore" style="display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;background:#0a1e3d;color:#fff;border-radius:50%;text-decoration:none;font:700 .78rem system-ui,sans-serif;">SS</a></span></div>
+            <!-- Supported, Sponsored & Partner brands — editable from Admin → Branding -->
+            <div id="footer-partners" class="footer-partners" aria-label="Supported and sponsored partners">
+                <div class="footer-partners-heading" style="width:100%;text-align:center;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.06em;color:var(--text-muted);margin-bottom:8px;">Supported &amp; Sponsored</div>
+                <div class="footer-partners-row" style="display:inline-flex;align-items:center;justify-content:center;gap:12px 16px;flex-wrap:wrap;">
+                    <span class="footer-partner-item"><a href="https://sportscore.com/" rel="dofollow" target="_blank" title="Powered by SportScore" aria-label="Powered by SportScore" style="display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;background:#0a1e3d;color:#fff;border-radius:50%;text-decoration:none;font:700 .78rem system-ui,sans-serif;">SS</a></span>
+                </div>
+            </div>
 
             <div class="footer-bottom">
                 <div>
@@ -641,6 +646,6 @@
             }
         })();
     </script>
-    <script src="/assets/app-v9.js?v=9.25" defer></script>
+    <script src="/assets/app-v9.js?v=9.26" defer></script>
 </body>
 </html>
