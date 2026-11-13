@@ -268,8 +268,8 @@
         <header class="portal-header">
             <div>
                 <a href="/" style="font-size: 13px; color: var(--text-muted); text-decoration: none;">← Back to Scores</a>
-                <h1 style="margin: 6px 0 2px; font-size: 24px;">🔌 Developer &amp; Partner Portal</h1>
-                <span style="font-size: 13px; color: var(--text-muted);">Manage your sports data API keys, rate limits, and white-label widgets</span>
+                <h1 style="margin: 6px 0 2px; font-size: 24px;">👤 Unified Account Center</h1>
+                <span style="font-size: 13px; color: var(--text-muted);">Manage your profile, security, subscription tier, and developer API credentials</span>
             </div>
             <div style="display: flex; gap: 10px; align-items: center;">
                 <button onclick="toggleTheme()" class="btn-secondary">🌓</button>
@@ -301,22 +301,22 @@
         </div>
         <div id="email-verified-alert" style="display: none; background: rgba(16, 185, 129, 0.1); border: 1px solid rgba(16, 185, 129, 0.35); border-radius: var(--card-radius); padding: 14px 20px; margin-bottom: 24px; font-size: 13px; color: #6ee7b7; align-items: center; gap: 8px;">
             <span style="font-size: 16px;">✅</span>
-            <span>Your developer email has been verified! Full platform privileges are active.</span>
+            <span>Your email address has been verified! Full account and API privileges are active.</span>
         </div>
 
         <nav class="portal-nav">
-            <button class="portal-tab-btn active" onclick="switchPortalTab('keys')">🔑 My API Keys</button>
-            <button class="portal-tab-btn" onclick="switchPortalTab('profile')">👤 My Profile</button>
-            <button class="portal-tab-btn" onclick="switchPortalTab('upgrade')">⚡ Upgrade Plans</button>
-            <button class="portal-tab-btn" onclick="switchPortalTab('sdks')">💻 Code Generator &amp; SDKs</button>
+            <button class="portal-tab-btn active" onclick="switchPortalTab('profile')">👤 Account &amp; Profile</button>
+            <button class="portal-tab-btn" onclick="switchPortalTab('keys')">🔑 My API Keys</button>
+            <button class="portal-tab-btn" onclick="switchPortalTab('upgrade')">⚡ Subscription &amp; Tier</button>
+            <button class="portal-tab-btn" onclick="switchPortalTab('invoices')">🧾 Invoices &amp; Receipts</button>
+            <button class="portal-tab-btn" onclick="switchPortalTab('sdks')">💻 Developer SDKs</button>
             <button class="portal-tab-btn" onclick="switchPortalTab('webhooks')">🪝 Webhook Tester</button>
             <button class="portal-tab-btn" onclick="switchPortalTab('whitelabel')">🖼️ Whitelabel Embeds</button>
-            <button class="portal-tab-btn" onclick="switchPortalTab('invoices')">🧾 Receipts</button>
             <a href="/api-docs/" target="_blank" class="portal-tab-btn" style="text-decoration: none;">📚 API Docs ↗</a>
         </nav>
 
         <!-- Tab 1: Keys -->
-        <section id="portal-tab-keys" class="portal-tab-content">
+        <section id="portal-tab-keys" class="portal-tab-content" style="display: none;">
             <!-- One-Time API Key Reveal Info Box (Displayed ONLY upon generation/regeneration) -->
             <div id="new-key-reveal-box" class="portal-card" style="display: none; border: 2px solid #10b981; background: rgba(16, 185, 129, 0.08); box-shadow: 0 0 24px rgba(16, 185, 129, 0.25); margin-bottom: 24px; animation: fadeIn 0.3s ease;">
                 <div style="display: flex; align-items: flex-start; gap: 12px; margin-bottom: 12px;">
@@ -458,8 +458,8 @@ console.log(`Synced ${live.length} live matches into Norra prediction engine.`);
             </div>
         </section>
 
-        <!-- Tab 2: Profile -->
-        <section id="portal-tab-profile" class="portal-tab-content" style="display: none;">
+        <!-- Tab 2: Profile & Account Controls -->
+        <section id="portal-tab-profile" class="portal-tab-content" style="display: block;">
             <div class="portal-card">
                 <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px; flex-wrap: wrap; gap: 16px; border-bottom: 1px solid var(--border-subtle); padding-bottom: 20px;">
                     <div style="display: flex; align-items: center; gap: 18px;">

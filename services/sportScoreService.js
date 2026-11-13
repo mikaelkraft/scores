@@ -302,25 +302,56 @@ async function fetchSportScoreH2H({ homeName, awayName } = {}) {
     const homeVariants = generateTeamSlugVariants(homeName);
     const awayVariants = generateTeamSlugVariants(awayName);
 
-    // Build ordered pairs to test (try canonical primary first, then variants)
+    // 1. Fast parallel check on canonical primary pair
+    const primaryPairs = [
+        [homeVariants[0], awayVariants[0]],
+        [awayVariants[0], homeVariants[0]]
+    ].filter(([a, b]) => a && b && a !== b);
+
+    const primaryResults = await Promise.all(
+        primaryPairs.map(([t1, t2]) => {
+            const url = `${BASE}/api/v1/h2h/?team1=${encodeURIComponent(t1)}&team2=${encodeURIComponent(t2)}`;
+            return fetchJson(url, 4000).then(data => ({ t1, t2, data })).catch(() => null);
+        })
+    );
+
+    for (const r of primaryResults) {
+        if (r?.data?.matches && Array.isArray(r.data.matches) && r.data.matches.length > 0) {
+            indexLogosFromMatches(r.data.matches);
+            const result = {
+                summary: r.data.summary || {
+                    team1_wins: 0,
+                    team2_wins: 0,
+                    draws: 0,
+                    meetings: r.data.matches.length
+                },
+                matches: r.data.matches,
+                team1Slug: r.t1,
+                team2Slug: r.t2
+            };
+            h2hMemoryCache.set(cacheKey, { ts: Date.now(), data: result });
+            return result;
+        }
+    }
+
+    // 2. Secondary fallback on variants if primary didn't match
+    const tested = new Set(primaryPairs.map(([a, b]) => `${a}::${b}`));
     const pairs = [];
-    for (const h of homeVariants) {
-        for (const a of awayVariants) {
+    for (const h of homeVariants.slice(0, 3)) {
+        for (const a of awayVariants.slice(0, 3)) {
             pairs.push([h, a]);
             pairs.push([a, h]);
         }
     }
 
-    const tested = new Set();
     for (const [t1, t2] of pairs) {
         const pairKey = `${t1}::${t2}`;
         if (tested.has(pairKey)) continue;
         tested.add(pairKey);
 
         const url = `${BASE}/api/v1/h2h/?team1=${encodeURIComponent(t1)}&team2=${encodeURIComponent(t2)}`;
-        const data = await fetchJson(url, 6000);
+        const data = await fetchJson(url, 3500);
         if (data?.matches && Array.isArray(data.matches) && data.matches.length > 0) {
-            // Index logos from past H2H encounters
             indexLogosFromMatches(data.matches);
             const result = {
                 summary: data.summary || {
@@ -336,8 +367,7 @@ async function fetchSportScoreH2H({ homeName, awayName } = {}) {
             h2hMemoryCache.set(cacheKey, { ts: Date.now(), data: result });
             return result;
         }
-        // Limit attempts per team to prevent excessive upstream calls
-        if (tested.size >= 8) break;
+        if (tested.size >= 5) break;
     }
 
     h2hMemoryCache.set(cacheKey, { ts: Date.now(), data: null });

@@ -13,5 +13,10 @@ build/
 atlas*
 *credentials*
 
+# Dynamic locally cached team crests (keep directory and fallback SVG shield)
+public/crests/*
+!public/crests/.gitkeep
+!public/crests/fallback-shield.svg
+
 # MongoDB user creation script (contains passwords)
 create-mongodb-user.js

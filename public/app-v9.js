@@ -355,7 +355,14 @@
 
         const fetchPromise = (async () => {
             try {
-                const response = await fetch(path, { headers: { Accept: 'application/json' }, ...options });
+                const response = await fetch(path, {
+                    ...options,
+                    headers: {
+                        Accept: 'application/json',
+                        'x-web-client': '1',
+                        ...(options.headers || {})
+                    }
+                });
                 const body = await response.json().catch(() => ({}));
                 if (!response.ok) {
                     const message = typeof body.error === 'string'
@@ -427,6 +434,23 @@
         return `<svg width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" style="vertical-align:middle;display:inline-block;flex-shrink:0;border-radius:4px;" aria-hidden="true"><rect width="24" height="24" rx="4" fill="#0f172a"/><path d="M12 3L4 6V12C4 16.5 7.5 20.5 12 21.5C16.5 20.5 20 16.5 20 12V6L12 3Z" fill="#1e293b" stroke="#3b82f6" stroke-width="1.2"/><circle cx="12" cy="12" r="3.2" fill="#38bdf8"/><path d="M12 8.8L12.9 10.7L15 11L13.5 12.4L13.8 14.5L12 13.5L10.2 14.5L10.5 12.4L9 11L11.1 10.7L12 8.8Z" fill="#ffffff"/></svg>`;
     }
 
+    window.handleLogoError = function(img) {
+        if (!img) return;
+        const direct = img.getAttribute('data-direct') || '';
+        if (!img.dataset.fb && direct && img.src !== direct) {
+            img.dataset.fb = '1';
+            img.src = direct;
+            return;
+        }
+        img.onerror = null;
+        const parent = img.parentElement;
+        if (parent) {
+            parent.innerHTML = renderCrestFallbackSvg(16);
+        } else {
+            img.style.display = 'none';
+        }
+    };
+
     function teamLogo(team, className = 'team-crest') {
         const display = team?.displayName || team?.name || '';
         const teamId = team?.id || team?.slug || '';
@@ -464,8 +488,9 @@
             rememberCrest(nameKey, logo);
             const direct = logo;
             const proxied = `/cdn/crest?url=${encodeURIComponent(direct)}`;
-            // Proxy first (cacheable); fall back to direct CDN then SVG shield if proxy/disk fails
-            return `<span class="${className}"><img src="${proxied}" alt="" aria-hidden="true" loading="lazy" decoding="async" referrerpolicy="no-referrer" onerror="if(!this.dataset.fb){this.dataset.fb='1';this.src='${direct.replace(/'/g, "\\'")}';}else{this.onerror=null;this.outerHTML='${svgFallback.replace(/'/g, "\\'")}';}"></span>`;
+            const safeDirect = escapeHtml(direct);
+            // Proxy first (cacheable); fall back to direct CDN then SVG shield via clean event handler (no unescaped markup leak)
+            return `<span class="${className}"><img src="${proxied}" alt="" aria-hidden="true" loading="lazy" decoding="async" referrerpolicy="no-referrer" data-direct="${safeDirect}" onerror="window.handleLogoError(this)"></span>`;
         }
         return `<span class="${className}">${svgFallback}</span>`;
     }
@@ -778,11 +803,20 @@
         return `${isWomen ? 'w' : 'm'}_${isYouth ? 'y' : 's'}`;
     }
 
-    function getEventDedupSignature(ev) {
+    function getPairBaseKey(ev) {
         const { home, away } = competitorsFromEvent(ev);
         const hName = cleanTeamNameForDedup(home.team?.displayName || home.team?.name || ev.home?.name || '');
         const aName = cleanTeamNameForDedup(away.team?.displayName || away.team?.name || ev.away?.name || '');
-        if (!hName && !aName) {
+        if (!hName && !aName) return '';
+        const tier = getEventMatchTierClient(ev);
+        const isYouth = tier.endsWith('_y');
+        const isWomen = tier.startsWith('w_') || tier.includes('women');
+        return [hName, aName].sort().join('_vs_') + (isWomen ? '_w' : '') + (isYouth ? '_youth' : '');
+    }
+
+    function getEventDedupSignature(ev) {
+        const pairKey = getPairBaseKey(ev);
+        if (!pairKey) {
             return String(ev.id || Math.random());
         }
         // Normalize date key to YYYY-MM-DD always (scoreboardDate may be YYYYMMDD)
@@ -804,14 +838,9 @@
                 }
             }
         }
-        const tier = getEventMatchTierClient(ev);
-        const isYouth = tier.endsWith('_y');
-        const isWomen = tier.startsWith('w_') || tier.includes('women');
         const isLive = (ev.status?.state === 'in' || ev.status?.isLive) && !/FT|Final|NS|Sched|Upcoming/i.test(String(ev.status?.clock || '')) && String(ev.status?.clock || '').trim() !== "0'" && String(ev.status?.clock || '').trim() !== '0';
-        // Live matches: ignore date key so ESPN+LiveScore copies of the same in-play game collapse
         if (isLive) dKey = 'live';
-        const pairKey = [hName, aName].sort().join('_vs_');
-        return pairKey + '_' + dKey + (isWomen ? '_w' : '') + (isYouth ? '_youth' : '');
+        return pairKey + '_' + dKey;
     }
 
 
@@ -827,7 +856,8 @@
         const tier = getEventMatchTierClient(ev);
         const isWomen = tier.startsWith('w_') ? 2 : 0;
         const hasClock = isConcreteClock(ev.status?.clock || ev.status?.detail) ? 2 : (ev.status?.clock || ev.status?.detail ? 1 : 0);
-        return hasEspnLogo + hasCanonicalId + hasSpecificSlug + isWomen + hasClock;
+        const isLiveBonus = (ev.status?.state === 'in' || ev.status?.isLive) && !/FT|Final|Postp|Canc/i.test(String(ev.status?.clock || '')) ? 6 : 0;
+        return hasEspnLogo + hasCanonicalId + hasSpecificSlug + isWomen + hasClock + isLiveBonus;
     }
 
     function deduplicateMatchesList(matchList) {
@@ -860,58 +890,98 @@
             return true;
         });
 
+        const mergeMatches = (winner, secondary) => {
+            if (secondary.status?.isLive || secondary.status?.state === 'in') {
+                if (!winner.status) winner.status = {};
+                const secClock = secondary.status?.clock || secondary.status?.detail;
+                if (isConcreteClock(secClock) && (!isConcreteClock(winner.status.clock) || winner.status.clock === "45'")) {
+                    winner.status.clock = secClock;
+                    winner.status.detail = secClock;
+                }
+                const secHomeScore = secondary.home?.score ?? secondary.competitions?.[0]?.competitors?.[0]?.score;
+                const secAwayScore = secondary.away?.score ?? secondary.competitions?.[0]?.competitors?.[1]?.score;
+                if (secHomeScore !== undefined && winner.home) winner.home.score = secHomeScore;
+                if (secAwayScore !== undefined && winner.away) winner.away.score = secAwayScore;
+                winner.status.state = 'in';
+                winner.status.isLive = true;
+            }
+            if (secondary.source?.livescore_id && !winner.source?.livescore_id) {
+                if (!winner.source) winner.source = {};
+                winner.source.livescore_id = secondary.source.livescore_id;
+            }
+
+            // Merge crest logos so neither club loses its logo
+            const { home: wH, away: wA } = competitorsFromEvent(winner);
+            const { home: sH, away: sA } = competitorsFromEvent(secondary);
+            if ((!wH.team?.logo || /placeholder|default.?crest|unknown/i.test(wH.team.logo)) && sH.team?.logo) {
+                if (wH.team) wH.team.logo = sH.team.logo;
+                if (winner.home) winner.home.logo = sH.team.logo;
+            } else if (wH.team?.logo && sH.team?.logo && sH.team.logo.includes('espncdn') && !wH.team.logo.includes('espncdn')) {
+                if (wH.team) wH.team.logo = sH.team.logo;
+                if (winner.home) winner.home.logo = sH.team.logo;
+            }
+
+            if ((!wA.team?.logo || /placeholder|default.?crest|unknown/i.test(wA.team.logo)) && sA.team?.logo) {
+                if (wA.team) wA.team.logo = sA.team.logo;
+                if (winner.away) winner.away.logo = sA.team.logo;
+            } else if (wA.team?.logo && sA.team?.logo && sA.team.logo.includes('espncdn') && !wA.team.logo.includes('espncdn')) {
+                if (wA.team) wA.team.logo = sA.team.logo;
+                if (winner.away) winner.away.logo = sA.team.logo;
+            }
+            return winner;
+        };
+
         const seenMap = new Map();
+        const pairMap = new Map();
+
         for (const m of matchList) {
             const sig = getEventDedupSignature(m);
+            const pairBase = getPairBaseKey(m);
+            const score = getEventQualityScore(m);
+
+            // 1. Check pairBase collapse (collapses live match with its scheduled fixture or cross-provider variant)
+            let matchedPairKey = null;
+            if (pairBase && pairMap.has(pairBase)) {
+                matchedPairKey = pairBase;
+            }
+
+            if (matchedPairKey) {
+                const existing = pairMap.get(matchedPairKey);
+                const exItem = existing.item;
+                const mTime = m.date ? new Date(m.date).getTime() : 0;
+                const exTime = exItem.date ? new Date(exItem.date).getTime() : 0;
+                const eitherLive = (m.status?.state === 'in' || m.status?.isLive || exItem.status?.state === 'in' || exItem.status?.isLive);
+                const closeInTime = (mTime && exTime) ? Math.abs(mTime - exTime) <= 36 * 3600 * 1000 : true;
+
+                if (eitherLive || closeInTime) {
+                    const winner = score > existing.score ? m : exItem;
+                    const secondary = score > existing.score ? exItem : m;
+                    const merged = mergeMatches(winner, secondary);
+                    const newScore = Math.max(existing.score, score);
+                    pairMap.set(matchedPairKey, { item: merged, score: newScore, sig: existing.sig });
+                    seenMap.set(existing.sig, { item: merged, score: newScore });
+                    continue;
+                }
+            }
+
+            // 2. Signature match
             if (!sig || sig === '_vs_') {
                 seenMap.set(`m_${m.id || Math.random()}`, { item: m, score: 0 });
                 continue;
             }
-            const score = getEventQualityScore(m);
+
             if (!seenMap.has(sig)) {
-                seenMap.set(sig, { item: m, score });
+                const entry = { item: m, score, sig };
+                seenMap.set(sig, entry);
+                if (pairBase) pairMap.set(pairBase, entry);
             } else {
                 const existing = seenMap.get(sig);
                 const winner = score > existing.score ? m : existing.item;
                 const secondary = score > existing.score ? existing.item : m;
-
-                if (secondary.status?.isLive || secondary.status?.state === 'in') {
-                    if (!winner.status) winner.status = {};
-                    const secClock = secondary.status?.clock || secondary.status?.detail;
-                    if (isConcreteClock(secClock) && (!isConcreteClock(winner.status.clock) || winner.status.clock === "45'")) {
-                        winner.status.clock = secClock;
-                        winner.status.detail = secClock;
-                    }
-                    const secHomeScore = secondary.home?.score ?? secondary.competitions?.[0]?.competitors?.[0]?.score;
-                    const secAwayScore = secondary.away?.score ?? secondary.competitions?.[0]?.competitors?.[1]?.score;
-                    if (secHomeScore !== undefined && winner.home) winner.home.score = secHomeScore;
-                    if (secAwayScore !== undefined && winner.away) winner.away.score = secAwayScore;
-                }
-                if (secondary.source?.livescore_id && !winner.source?.livescore_id) {
-                    if (!winner.source) winner.source = {};
-                    winner.source.livescore_id = secondary.source.livescore_id;
-                }
-
-                // Merge crest logos so neither club loses its logo
-                const { home: wH, away: wA } = competitorsFromEvent(winner);
-                const { home: sH, away: sA } = competitorsFromEvent(secondary);
-                if ((!wH.team?.logo || /placeholder|default.?crest|unknown/i.test(wH.team.logo)) && sH.team?.logo) {
-                    if (wH.team) wH.team.logo = sH.team.logo;
-                    if (winner.home) winner.home.logo = sH.team.logo;
-                } else if (wH.team?.logo && sH.team?.logo && sH.team.logo.includes('espncdn') && !wH.team.logo.includes('espncdn')) {
-                    if (wH.team) wH.team.logo = sH.team.logo;
-                    if (winner.home) winner.home.logo = sH.team.logo;
-                }
-
-                if ((!wA.team?.logo || /placeholder|default.?crest|unknown/i.test(wA.team.logo)) && sA.team?.logo) {
-                    if (wA.team) wA.team.logo = sA.team.logo;
-                    if (winner.away) winner.away.logo = sA.team.logo;
-                } else if (wA.team?.logo && sA.team?.logo && sA.team.logo.includes('espncdn') && !wA.team.logo.includes('espncdn')) {
-                    if (wA.team) wA.team.logo = sA.team.logo;
-                    if (winner.away) winner.away.logo = sA.team.logo;
-                }
-
-                seenMap.set(sig, { item: winner, score: Math.max(existing.score, score) });
+                const merged = mergeMatches(winner, secondary);
+                const newScore = Math.max(existing.score, score);
+                seenMap.set(sig, { item: merged, score: newScore });
+                if (pairBase) pairMap.set(pairBase, { item: merged, score: newScore, sig });
             }
         }
         return Array.from(seenMap.values()).map(v => v.item);

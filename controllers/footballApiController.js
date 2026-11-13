@@ -696,7 +696,14 @@ async function fetchFreshWorldwideLiveMatches() {
         if (pB !== pA) return pB - pA;
         return new Date(a.date) - new Date(b.date);
     });
-    try { return enrichMatchesLogos(dedupedLive); } catch (_) { return dedupedLive; }
+    try {
+        const enriched = enrichMatchesLogos(dedupedLive);
+        setTimeout(() => preCacheMatchCrests(enriched), 200);
+        return enriched;
+    } catch (_) {
+        setTimeout(() => preCacheMatchCrests(dedupedLive), 200);
+        return dedupedLive;
+    }
 }
 
 function filterLiveMatchesResponse(matches, league, isFreeRestricted) {
@@ -1565,7 +1572,10 @@ router.get('/fixtures', optionalApiKeyAuth, async (req, res) => {
             dedupedMatches.length = 0;
             out.forEach(m => dedupedMatches.push(m));
         }
-const hasLive = dedupedMatches.some(m => m.status.isLive);
+
+        try { setTimeout(() => preCacheMatchCrests(dedupedMatches), 300); } catch (_) {}
+
+        const hasLive = dedupedMatches.some(m => m.status.isLive);
         if (hasLive || status === 'live') {
             res.set('Cache-Control', 'no-cache, no-store, must-revalidate');
             res.set('Pragma', 'no-cache');
@@ -1869,6 +1879,21 @@ router.get('/predictions-context/:eventId', optionalApiKeyAuth, async (req, res)
         } catch {}
     }
 
+        // Parse lifetime series total from summary/seriesScore if available
+        let parsedSeriesTotal = 0;
+        if (seriesSummary) {
+            const m = seriesSummary.match(/(\d+)[\s-]+(\d+)(?:[\s-]+(\d+))?/);
+            if (m) {
+                parsedSeriesTotal = (parseInt(m[1], 10) || 0) + (parseInt(m[2], 10) || 0) + (parseInt(m[3], 10) || 0);
+            }
+        }
+        if (!parsedSeriesTotal && seriesScore) {
+            const m = seriesScore.match(/(\d+)[\s-]+(\d+)(?:[\s-]+(\d+))?/);
+            if (m) {
+                parsedSeriesTotal = (parseInt(m[1], 10) || 0) + (parseInt(m[2], 10) || 0) + (parseInt(m[3], 10) || 0);
+            }
+        }
+
         // Enrich with SportScore Open Developer API H2H encounters (https://sportscore.com/developer)
         const curHName = match.home?.displayName || match.home?.name || '';
         const curAName = match.away?.displayName || match.away?.name || '';
@@ -1909,21 +1934,6 @@ router.get('/predictions-context/:eventId', optionalApiKeyAuth, async (req, res)
                 }
             } catch (ssErr) {
                 console.warn('SportScore H2H enrichment failed:', ssErr.message);
-            }
-        }
-
-        // Parse lifetime series total from summary/seriesScore if available
-        let parsedSeriesTotal = 0;
-        if (seriesSummary) {
-            const m = seriesSummary.match(/(\d+)[\s-]+(\d+)(?:[\s-]+(\d+))?/);
-            if (m) {
-                parsedSeriesTotal = (parseInt(m[1], 10) || 0) + (parseInt(m[2], 10) || 0) + (parseInt(m[3], 10) || 0);
-            }
-        }
-        if (!parsedSeriesTotal && seriesScore) {
-            const m = seriesScore.match(/(\d+)[\s-]+(\d+)(?:[\s-]+(\d+))?/);
-            if (m) {
-                parsedSeriesTotal = (parseInt(m[1], 10) || 0) + (parseInt(m[2], 10) || 0) + (parseInt(m[3], 10) || 0);
             }
         }
 
@@ -3042,6 +3052,64 @@ router.get('/teams/:teamId', async (req, res) => {
 
 const CREST_DIR = path.join(__dirname, '..', 'public', 'crests');
 try { fs.mkdirSync(CREST_DIR, { recursive: true }); } catch {}
+
+const FALLBACK_SVG_PATH = path.join(CREST_DIR, 'fallback-shield.svg');
+const FALLBACK_SVG_CONTENT = `<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 24 24" fill="none"><rect width="24" height="24" rx="4" fill="#0f172a"/><path d="M12 3L4 6V12C4 16.5 7.5 20.5 12 21.5C16.5 20.5 20 16.5 20 12V6L12 3Z" fill="#1e293b" stroke="#3b82f6" stroke-width="1.2"/><circle cx="12" cy="12" r="3.2" fill="#38bdf8"/><path d="M12 8.8L12.9 10.7L15 11L13.5 12.4L13.8 14.5L12 13.5L10.2 14.5L10.5 12.4L9 11L11.1 10.7L12 8.8Z" fill="#ffffff"/></svg>`;
+try {
+    if (!fs.existsSync(FALLBACK_SVG_PATH)) {
+        fs.writeFileSync(FALLBACK_SVG_PATH, FALLBACK_SVG_CONTENT, 'utf8');
+    }
+} catch {}
+
+const crestPreCacheQueue = new Set();
+async function downloadCrestToDisk(rawUrl) {
+    if (!rawUrl || typeof rawUrl !== 'string' || !rawUrl.startsWith('http')) return;
+    if (crestPreCacheQueue.has(rawUrl)) return;
+    const hash = crypto.createHash('md5').update(rawUrl).digest('hex');
+    const extMatch = rawUrl.match(/\.(png|jpg|jpeg|svg|webp)/i);
+    const ext = extMatch ? extMatch[1].toLowerCase() : 'png';
+    const filename = `${hash}.${ext}`;
+    const localPath = path.join(CREST_DIR, filename);
+
+    if (fs.existsSync(localPath)) {
+        try {
+            if (fs.statSync(localPath).size > 0) return;
+        } catch {}
+    }
+
+    crestPreCacheQueue.add(rawUrl);
+    try {
+        const tmpPath = `${localPath}.tmp.${Date.now()}`;
+        const stream = await fetchStreamWithRedirects(rawUrl);
+        await new Promise((resolve, reject) => {
+            const fileStream = fs.createWriteStream(tmpPath);
+            stream.pipe(fileStream);
+            fileStream.on('finish', resolve);
+            fileStream.on('error', reject);
+            stream.on('error', reject);
+        });
+        if (fs.existsSync(tmpPath) && fs.statSync(tmpPath).size > 0) {
+            fs.renameSync(tmpPath, localPath);
+        } else {
+            try { fs.unlinkSync(tmpPath); } catch {}
+        }
+    } catch (_) {
+        // Silently ignore upstream CDN network error during background pre-warming
+    } finally {
+        crestPreCacheQueue.delete(rawUrl);
+    }
+}
+
+function preCacheMatchCrests(matches) {
+    if (!Array.isArray(matches) || !matches.length) return;
+    for (const m of matches) {
+        if (!m) continue;
+        const hLogo = m.home?.logo || '';
+        const aLogo = m.away?.logo || '';
+        if (hLogo && hLogo.startsWith('http')) downloadCrestToDisk(hLogo);
+        if (aLogo && aLogo.startsWith('http')) downloadCrestToDisk(aLogo);
+    }
+}
 
 function fetchStreamWithRedirects(targetUrl, maxRedirects = 3) {
     return new Promise((resolve, reject) => {

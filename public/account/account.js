@@ -578,6 +578,7 @@ async function loadPortalData() {
 
         updateEmailBanner();
         populateProfileTab();
+        switchPortalTab('profile');
         await loadKeys();
     } catch (err) {
         handleUserLogout();

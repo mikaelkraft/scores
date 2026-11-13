@@ -170,6 +170,35 @@ function hasFeature(keyDoc, featureName) {
 }
 
 /**
+ * Detect whether the request originates from the application's own web UI
+ * (e.g. browser user navigating the match drawer on scores.mynorra.xyz).
+ */
+function isWebClientRequest(req) {
+    if (!req || !req.headers) return false;
+    // Explicit header sent by internal frontend fetchJson
+    if (req.headers['x-web-client'] === '1' || req.headers['x-requested-with'] === 'XMLHttpRequest') {
+        return true;
+    }
+    // Sec-Fetch-Site: same-origin or same-site
+    const sfs = req.headers['sec-fetch-site'];
+    if (sfs === 'same-origin' || sfs === 'same-site') {
+        return true;
+    }
+    // Matching Host and Referer/Origin
+    const host = req.headers['host'];
+    const referer = req.headers['referer'] || req.headers['origin'];
+    if (host && referer) {
+        try {
+            const refUrl = new URL(referer);
+            if (refUrl.host === host || host.includes(refUrl.host) || refUrl.host.includes(host)) {
+                return true;
+            }
+        } catch {}
+    }
+    return false;
+}
+
+/**
  * Enforce a feature gate. Sends 403 and returns false when blocked.
  * When keyDoc is null (public), free-tier rules apply for gated premium features.
  */
@@ -177,6 +206,11 @@ function requireFeature(req, res, featureName, label) {
     const keyDoc = req.apiKey || null;
     // Master Admin / Internal keys always pass
     if (keyDoc?.plan === 'admin' || keyDoc?.plan === 'internal') return true;
+
+    // Web UI visitors always have access to match drawer telemetry (H2H, predictions, play-by-play)
+    if (isWebClientRequest(req) && ['h2h', 'predictions', 'playByPlay', 'matchSummary'].includes(featureName)) {
+        return true;
+    }
 
     // Public (no key) may use basic free features only
     if (!keyDoc && ['h2h', 'predictions', 'bookingCodes', 'playByPlay', 'trainingData'].includes(featureName)) {
