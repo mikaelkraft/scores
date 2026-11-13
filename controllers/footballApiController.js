@@ -1722,13 +1722,20 @@ router.get('/predictions-context/:eventId', optionalApiKeyAuth, async (req, res)
             ]
         };
 
+        const excludeCurrentMatch = {
+            _id: { $ne: match._id },
+            ...(match.source?.event_id ? { 'source.event_id': { $ne: match.source.event_id } } : {}),
+            ...(eventId ? { 'source.event_id': { $ne: eventId } } : {})
+        };
+
         // Run parallel queries: H2H, Home Recent Form, Away Recent Form, Standings
         let [h2hMatches, homeRecentMatches, awayRecentMatches, standingsGroup, leagueDoc] = await Promise.all([
             // H2H past meetings - fetch complete lifetime encounters without artificial cap
             h2hOrClauses.length ? SoccerMatch.find({
                 $and: [
                     { $or: h2hOrClauses },
-                    finishedFilter
+                    finishedFilter,
+                    excludeCurrentMatch
                 ]
             }).sort({ date: -1 }).limit(500).lean() : Promise.resolve([]),
 
@@ -1736,17 +1743,19 @@ router.get('/predictions-context/:eventId', optionalApiKeyAuth, async (req, res)
             homeNameOrId.length ? SoccerMatch.find({
                 $and: [
                     { $or: homeNameOrId },
-                    finishedFilter
+                    finishedFilter,
+                    excludeCurrentMatch
                 ]
-            }).sort({ date: -1 }).limit(12).lean() : Promise.resolve([]),
+            }).sort({ date: -1 }).limit(16).lean() : Promise.resolve([]),
 
             // Away team last 12 matches
             awayNameOrId.length ? SoccerMatch.find({
                 $and: [
                     { $or: awayNameOrId },
-                    finishedFilter
+                    finishedFilter,
+                    excludeCurrentMatch
                 ]
-            }).sort({ date: -1 }).limit(12).lean() : Promise.resolve([]),
+            }).sort({ date: -1 }).limit(16).lean() : Promise.resolve([]),
 
             // League standings
             SoccerStanding.findOne({ league_slug: leagueSlug }).sort({ season_year: -1 }).lean(),
@@ -1755,24 +1764,48 @@ router.get('/predictions-context/:eventId', optionalApiKeyAuth, async (req, res)
             SoccerLeague.findOne({ slug: leagueSlug }).lean()
         ]);
 
+        function extractSignificantToken(name) {
+            if (!name) return '';
+            const cleaned = String(name)
+                .normalize('NFD')
+                .replace(/[\u0300-\u036f]/g, '')
+                .replace(/\b(fc|cf|sc|ac|cd|afc|fk|sk|sv|ssc|as|rc|ud|rb|cs|csd|sporting|club|clube|real|deportivo|calcio|st|saint)\b/gi, ' ')
+                .replace(/\s+/g, ' ')
+                .trim();
+            const tokens = cleaned.split(' ').filter(t => t.length >= 4);
+            if (tokens.length > 0) return tokens[0];
+            if (cleaned.length >= 3) return cleaned;
+            return '';
+        }
+
+        const hToken = extractSignificantToken(hName);
+        const aToken = extractSignificantToken(aName);
+
         // Fallback: looser name contains match when strict H2H query returned nothing
-        if ((!h2hMatches || h2hMatches.length < 8) && hName && aName) {
+        // Only run loose query if BOTH teams have a significant distinctive token of at least 4 characters!
+        if ((!h2hMatches || h2hMatches.length < 8) && hToken && aToken && hToken.length >= 4 && aToken.length >= 4) {
             try {
+                const hEsc = hToken.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+                const aEsc = aToken.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+                const hRegexLoose = new RegExp('\\b' + hEsc, 'i');
+                const aRegexLoose = new RegExp('\\b' + aEsc, 'i');
+
                 const loose = await SoccerMatch.find({
                     $and: [
                         finishedFilter,
+                        excludeCurrentMatch,
                         {
                             $or: [
                                 {
                                     $and: [
-                                        { $or: [{ 'home.name': new RegExp(hName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').split(/\s+/).slice(0, 2).join('.*'), 'i') }, { 'home.display_name': new RegExp(hName.split(/\s+/)[0], 'i') }] },
-                                        { $or: [{ 'away.name': new RegExp(aName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').split(/\s+/).slice(0, 2).join('.*'), 'i') }, { 'away.display_name': new RegExp(aName.split(/\s+/)[0], 'i') }] }
+                                        { $or: [{ 'home.name': hRegexLoose }, { 'home.display_name': hRegexLoose }] },
+                                        { $or: [{ 'away.name': aRegexLoose }, { 'away.display_name': aRegexLoose }] }
                                     ]
                                 },
                                 {
                                     $and: [
-                                        { $or: [{ 'home.name': new RegExp(aName.split(/\s+/)[0], 'i') }, { 'home.display_name': new RegExp(aName.split(/\s+/)[0], 'i') }] },
-                                        { $or: [{ 'away.name': new RegExp(hName.split(/\s+/)[0], 'i') }, { 'away.display_name': new RegExp(hName.split(/\s+/)[0], 'i') }] }
+                                        { $or: [{ 'home.name': aRegexLoose }, { 'home.display_name': aRegexLoose }] },
+                                        { $or: [{ 'away.name': hRegexLoose }, { 'away.display_name': hRegexLoose }] }
                                     ]
                                 }
                             ]
@@ -1938,7 +1971,16 @@ router.get('/predictions-context/:eventId', optionalApiKeyAuth, async (req, res)
         }
 
         // Compute Lifetime H2H statistics across all deduplicated historical encounters
-        const allLifetimeH2h = Array.from(h2hMap.values()).sort((a, b) => new Date(b.date) - new Date(a.date));
+        const allLifetimeH2h = Array.from(h2hMap.values())
+            .filter(m => {
+                if (String(m.id) === String(eventId) || String(m.id) === String(match.source?.event_id) || String(m.id) === String(match._id)) return false;
+                if (match.date && m.date) {
+                    const timeDiff = Math.abs(new Date(m.date).getTime() - new Date(match.date).getTime());
+                    if (timeDiff < 12 * 3600 * 1000) return false;
+                }
+                return true;
+            })
+            .sort((a, b) => new Date(b.date) - new Date(a.date));
 
         let homeWins = 0;
         let awayWins = 0;
@@ -1996,6 +2038,22 @@ router.get('/predictions-context/:eventId', optionalApiKeyAuth, async (req, res)
         // Recent encounters — show deeper history for accurate WDW form
         const recentH2hMeetings = allLifetimeH2h; // full available history for UI + API consumers
 
+        function deduplicateRecentMatches(matchesList, teamId) {
+            const seen = new Set();
+            const result = [];
+            for (const m of (matchesList || [])) {
+                const isHome = String(m.home?.source_id) === teamId;
+                const opp = (isHome ? (m.away?.display_name || m.away?.name) : (m.home?.display_name || m.home?.name)) || '';
+                const oppNorm = normalizeTeamName(opp);
+                const day = m.date ? new Date(m.date).toISOString().slice(0, 10) : '';
+                const key = `${day}_${oppNorm}`;
+                if (key && seen.has(key)) continue;
+                if (key) seen.add(key);
+                result.push(m);
+            }
+            return result;
+        }
+
         // Process team form guide helper
         function extractTeamForm(matchesList, teamId) {
             let wins = 0;
@@ -2006,7 +2064,9 @@ router.get('/predictions-context/:eventId', optionalApiKeyAuth, async (req, res)
             let cleanSheets = 0;
             const formGuide = [];
 
-            const formattedRecent = matchesList.map(m => {
+            const dedupedMatches = deduplicateRecentMatches(matchesList, teamId);
+
+            const formattedRecent = dedupedMatches.slice(0, 10).map(m => {
                 const isHome = String(m.home?.source_id) === teamId;
                 const teamScore = Number(isHome ? m.home?.score : m.away?.score) || 0;
                 const oppScore = Number(isHome ? m.away?.score : m.home?.score) || 0;
@@ -2066,8 +2126,20 @@ router.get('/predictions-context/:eventId', optionalApiKeyAuth, async (req, res)
             const hL5 = espnSummary.lastFiveGames.find(g => String(g.team?.id) === homeId || isMatchClubName(g.team?.displayName || g.team?.name, hName)) || espnSummary.lastFiveGames[0];
             const aL5 = espnSummary.lastFiveGames.find(g => String(g.team?.id) === awayId || isMatchClubName(g.team?.displayName || g.team?.name, aName)) || espnSummary.lastFiveGames[1];
 
+            const dedupL5 = (evList) => {
+                const seen = new Set();
+                const out = [];
+                for (const ev of (evList || [])) {
+                    const key = `${String(ev.gameDate).slice(0, 10)}_${String(ev.opponent?.displayName || '').toLowerCase().replace(/[^a-z0-9]/g, '')}`;
+                    if (seen.has(key)) continue;
+                    seen.add(key);
+                    out.push(ev);
+                }
+                return out;
+            };
+
             if (hL5?.events?.length) {
-                const formattedL5 = hL5.events.map(ev => ({
+                const formattedL5 = dedupL5(hL5.events).map(ev => ({
                     id: String(ev.id),
                     date: ev.gameDate,
                     opponent: ev.opponent?.displayName || 'Opponent',
@@ -2089,7 +2161,7 @@ router.get('/predictions-context/:eventId', optionalApiKeyAuth, async (req, res)
             }
 
             if (aL5?.events?.length) {
-                const formattedL5 = aL5.events.map(ev => ({
+                const formattedL5 = dedupL5(aL5.events).map(ev => ({
                     id: String(ev.id),
                     date: ev.gameDate,
                     opponent: ev.opponent?.displayName || 'Opponent',

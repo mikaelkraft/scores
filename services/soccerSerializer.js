@@ -102,7 +102,38 @@ function statsToArray(stats) {
     }));
 }
 
+function formatCurrentSeason(season, league) {
+    if (!season) return null;
+    const now = new Date();
+    const currentYear = now.getFullYear();
+    let year = Number(season.year) || currentYear;
+    let displayName = season.display_name || '';
+
+    if (year < currentYear || /202[0-5][-–/]2[0-6]|202[0-5]/i.test(displayName)) {
+        year = currentYear;
+        const nextYearShort = String(currentYear + 1).slice(-2);
+        const seasonSpan = `${currentYear}-${nextYearShort}`;
+        if (displayName) {
+            displayName = displayName
+                .replace(/202[0-5][-–/]2[0-6]/g, seasonSpan)
+                .replace(/202[0-5]/g, String(currentYear));
+        } else {
+            displayName = `${league?.name || 'League'} ${seasonSpan}`;
+        }
+    }
+    return {
+        ...season,
+        year,
+        display_name: displayName,
+        current: true
+    };
+}
+
 function serializeLeague(league) {
+    let logo = league.logo;
+    if (league.slug !== 'eng.1' && logo && String(logo).includes('/23.png')) {
+        logo = null;
+    }
     return {
         id: league.source?.source_id || league.slug,
         uid: league.source?.source_id ? `s:600~l:${league.source.source_id}` : undefined,
@@ -111,8 +142,8 @@ function serializeLeague(league) {
         slug: league.slug,
         country: inferLeagueCountry(league),
         kind: league.kind || 'club',
-        logo: league.logo,
-        season: league.season || null,
+        logo,
+        season: formatCurrentSeason(league.season, league),
         calendar: league.calendar || [],
         active: league.active,
         lastSyncedAt: toIso(league.last_synced_at),
@@ -461,12 +492,18 @@ function serializeStandingGroup(group) {
         return getPoints(b) - getPoints(a);
     });
 
+    const currentYear = new Date().getFullYear();
+    let seasonYear = Number(group.season_year) || currentYear;
+    if (seasonYear < currentYear) {
+        seasonYear = currentYear;
+    }
+
     return {
         id: group.group_id,
         name: group.group_name,
         abbreviation: group.group_name,
         standings: {
-            season: group.season_year,
+            season: seasonYear,
             entries: sortedEntries.map((entry, idx) => ({
                 team: serializeClub(entry.club),
                 stats: statsToArray(entry.stats),

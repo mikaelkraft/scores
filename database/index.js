@@ -1,4 +1,6 @@
 const mongoose = require('mongoose');
+const { loadEnvConfig } = require('../config/env');
+loadEnvConfig();
 
 // Set strictQuery before connection
 mongoose.set('strictQuery', false);

@@ -32,6 +32,7 @@ const LEAGUE_NAME_OVERRIDES = {
     'caf.champions': 'CAF Champions League',
     'caf.confed': 'CAF Confederation Cup',
     'caf.nations': 'Africa Cup of Nations',
+    'concacaf.nations': 'CONCACAF Nations League',
     'rsa.1': 'South African Premiership',
     'egy.1': 'Egyptian Premier League',
     'mar.1': 'Moroccan Botola Pro',

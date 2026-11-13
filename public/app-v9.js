@@ -24,6 +24,22 @@
         collapsedLeagues: new Set()
     };
 
+    let isUserInteracting = false;
+    let userInteractionTimeout = null;
+    function markUserInteracting() {
+        isUserInteracting = true;
+        if (userInteractionTimeout) clearTimeout(userInteractionTimeout);
+        userInteractionTimeout = setTimeout(() => {
+            isUserInteracting = false;
+        }, 1200);
+    }
+    if (typeof window !== 'undefined') {
+        window.addEventListener('scroll', markUserInteracting, { passive: true });
+        window.addEventListener('touchstart', markUserInteracting, { passive: true });
+        window.addEventListener('touchmove', markUserInteracting, { passive: true });
+        window.addEventListener('wheel', markUserInteracting, { passive: true });
+    }
+
     const statLabels = {
         gamesPlayed: 'Played', wins: 'Wins', ties: 'Draws', losses: 'Losses',
         points: 'Points', pointDifferential: 'Goal difference', goalDifference: 'Goal difference',
@@ -115,6 +131,7 @@
         'caf.champions': '🌍',
         'caf.confed': '🌍',
         'caf.nations': '🌍',
+        'concacaf.nations': '🌎',
         'rsa.1': '🇿🇦',
         'egy.1': '🇪🇬',
         'mar.1': '🇲🇦',
@@ -700,6 +717,8 @@
             .normalize('NFD')
             .replace(/[\u0300-\u036f]/g, '')
             .toLowerCase()
+            .replace(/\bst[.]?\s+/gi, 'saint ')
+            .replace(/\bst[-]/gi, 'saint-')
             .replace(/aa/g, 'a')
             .replace(/ae/g, 'a')
             .replace(/oe/g, 'o')
@@ -1064,6 +1083,19 @@
 
         const lowerName = name.toLowerCase();
         const lowerSlug = slug.toLowerCase();
+        const allEvText = `${ev?.name || ''} ${ev?.home?.name || ''} ${ev?.away?.name || ''} ${name || ''} ${country || ''}`.toLowerCase();
+        const CONCACAF_NATIONS_RE = /\b(curacao|curaçao|panama|bermuda|saint\s*lucia|st\.?\s*lucia|puerto\s*rico|dominica|dominican\s*republic|grenada|saint\s*kitts|st\.?\s*kitts|saint\s*martin|st\.?\s*martin|sint\s*maarten|el\s*salvador|jamaica|haiti|trinidad|costa\s*rica|honduras|guatemala|suriname|guyana|barbados|aruba|antigua|belize|bahamas|cayman|anguilla|turks|bonaire|nicaragua|cuba|martinique|guadeloupe)\b/i;
+
+        // 0. Continental and international Nations League mapping (CONCACAF vs AFCON vs UEFA)
+        if (lowerName.includes('concacaf nations') || (lowerName.includes('concacaf') && lowerName.includes('nations')) || ((lowerName.includes('nations league') || lowerSlug.includes('nations')) && CONCACAF_NATIONS_RE.test(allEvText))) {
+            slug = 'concacaf.nations';
+            name = 'CONCACAF Nations League';
+            country = 'International';
+        } else if (slug === 'caf.nations' && CONCACAF_NATIONS_RE.test(allEvText)) {
+            slug = 'concacaf.nations';
+            name = 'CONCACAF Nations League';
+            country = 'International';
+        }
 
         // 1. Identify domestic women's leagues and map them to their correct country and slug
         if (lowerName.includes("women's super league") || lowerName.includes("wsl players cup") || lowerName.includes("wsl cup") || lowerName.includes("women's fa cup")) {
@@ -1292,10 +1324,20 @@
             }
         }
 
+        let logo = league?.logo || null;
+        if (league?.slug && slug !== league.slug) {
+            const known = (state.leagues || []).find(l => l.slug === slug);
+            logo = known?.logo || null;
+        }
+        if (slug.startsWith('chn.') && logo && logo.includes('/23.png')) {
+            logo = null;
+        }
+
         return {
             ...league,
             slug: slug || 'other',
             name: name || 'Competition',
+            logo,
             country: country || (slug.startsWith('uefa.') ? 'Europe' : (slug.startsWith('conmebol.') ? 'South America' : 'International'))
         };
     }
@@ -1385,7 +1427,10 @@
         if (!league) return `<span class="${className}">⚽</span>`;
         const slug = (league.slug || '').toLowerCase();
         const name = escapeHtml(league.name || 'League');
-        const logoUrl = safeUrl(league.logo);
+        let logoUrl = safeUrl(league.logo);
+        if (slug.startsWith('chn.') && logoUrl && logoUrl.includes('/23.png')) {
+            logoUrl = '';
+        }
         const countryCode = getLeagueCountryCode(league);
         const flagFallbackUrl = countryCode ? `https://flagcdn.com/w40/${countryCode}.png` : '';
         const isContinental = slug.startsWith('uefa') || slug.startsWith('caf') || slug.startsWith('fifa') || slug.startsWith('conmebol') || slug.startsWith('afc') || (league.name && /champions|cup|afc|uefa|caf|copa/i.test(league.name));
@@ -2306,22 +2351,32 @@
             if (elements['fixture-count']) elements['fixture-count'].textContent = '0';
             elements['fixtures-list'].innerHTML = '';
         } else {
-            if (elements['fixtures-empty']) elements['fixtures-empty'].hidden = true;
-            elements['fixtures-list'].innerHTML = pinnedHtml + html;
+            const nextHtml = pinnedHtml + html;
+            if (elements['fixtures-list'].innerHTML === nextHtml) {
+                if (fixturesContainer) fixturesContainer.style.minHeight = '';
+                return;
+            }
 
-            if (prevScrollY > 0) {
-                // Lock scroll position across live re-renders (no jump-to-top)
-                const pin = () => { try { window.scrollTo({ top: prevScrollY, left: 0, behavior: 'instant' }); } catch(_) { window.scrollTo(0, prevScrollY); } };
-                pin();
+            if (isUserInteracting) {
+                setTimeout(() => {
+                    if (!isUserInteracting && elements['fixtures-list']) {
+                        renderAllLeaguesGrouped(groupedData);
+                    }
+                }, 1200);
+                return;
+            }
+
+            if (elements['fixtures-empty']) elements['fixtures-empty'].hidden = true;
+            elements['fixtures-list'].innerHTML = nextHtml;
+
+            if (prevScrollY > 0 && !isUserInteracting) {
+                // Lock scroll position across live re-renders without jumping
+                try { window.scrollTo({ top: prevScrollY, left: 0, behavior: 'instant' }); } catch(_) { window.scrollTo(0, prevScrollY); }
                 requestAnimationFrame(() => {
-                    pin();
-                    setTimeout(() => {
-                        if (prevScrollY > 0 && Math.abs((window.scrollY || 0) - prevScrollY) > 5) {
-                            window.scrollTo({ top: prevScrollY, behavior: 'instant' });
-                        }
-                        if (fixturesContainer) fixturesContainer.style.minHeight = '';
-                    }, 150);
+                    if (fixturesContainer) fixturesContainer.style.minHeight = '';
                 });
+            } else if (fixturesContainer) {
+                fixturesContainer.style.minHeight = '';
             }
 
             elements['fixtures-list'].querySelectorAll('.fs-league-view-btn').forEach(btn => {
@@ -2518,7 +2573,7 @@
 
         const flagHtml = renderLeagueAvatarHtml(state.league, { size: 18, className: 'fs-league-flag-img' });
 
-        elements['fixtures-list'].innerHTML = `
+        const nextHtml = `
             <div class="fs-league-section">
                 <div class="fs-league-header">
                     <div class="fs-league-title">
@@ -2533,17 +2588,29 @@
             </div>
         `;
 
-        if (prevScrollY > 0) {
-            window.scrollTo({ top: prevScrollY, behavior: 'instant' });
+        if (elements['fixtures-list'].innerHTML === nextHtml) {
+            if (fixturesContainer) fixturesContainer.style.minHeight = '';
+            return;
+        }
+
+        if (isUserInteracting) {
+            setTimeout(() => {
+                if (!isUserInteracting && elements['fixtures-list']) {
+                    renderFixtures(fixtures);
+                }
+            }, 1200);
+            return;
+        }
+
+        elements['fixtures-list'].innerHTML = nextHtml;
+
+        if (prevScrollY > 0 && !isUserInteracting) {
+            try { window.scrollTo({ top: prevScrollY, left: 0, behavior: 'instant' }); } catch(_) { window.scrollTo(0, prevScrollY); }
             requestAnimationFrame(() => {
-                if (prevScrollY > 0) window.scrollTo({ top: prevScrollY, behavior: 'instant' });
-                setTimeout(() => {
-                    if (prevScrollY > 0 && Math.abs((window.scrollY || 0) - prevScrollY) > 5) {
-                        window.scrollTo({ top: prevScrollY, behavior: 'instant' });
-                    }
-                    if (fixturesContainer) fixturesContainer.style.minHeight = '';
-                }, 150);
+                if (fixturesContainer) fixturesContainer.style.minHeight = '';
             });
+        } else if (fixturesContainer) {
+            fixturesContainer.style.minHeight = '';
         }
     }
 
@@ -2833,11 +2900,11 @@
     }
 
     function matchEventKind(event) {
-        const type = `${event.type?.type || ''} ${event.type?.text || ''}`.toLowerCase();
+        const type = `${event.type?.type || ''} ${event.type?.text || ''} ${event.text || ''}`.toLowerCase();
         if (event.scoringPlay || type.includes('goal')) return 'goal';
         if (event.redCard || type.includes('red card')) return 'red-card';
         if (event.yellowCard || type.includes('yellow card')) return 'yellow-card';
-        if (event.substitution || type.includes('substitution')) return 'substitution';
+        if (event.substitution || type.includes('substitution') || type.includes('sub')) return 'substitution';
         return 'event';
     }
 
@@ -3060,28 +3127,51 @@
         }).join('');
 
         const timelineRows = (() => {
-            const seenTimeline = new Set();
-            const dedupedEvents = [];
+            const seenTimeline = new Map();
             for (const event of events) {
-                const key = [
-                    String(event.clock || event.minute || ''),
-                    String(event.kind || event.type || '').toLowerCase(),
-                    String(event.athlete?.displayName || event.player || event.text || '').toLowerCase().slice(0, 48)
-                ].join('|');
-                if (seenTimeline.has(key)) continue;
-                seenTimeline.add(key);
-                dedupedEvents.push(event);
+                const minute = parseInt(String(event.clock || event.minute || event.clockValue || '0').replace(/\D/g, ''), 10) || 0;
+                let kind = String(event.kind || event.type || '').toLowerCase();
+                const eventText = String(event.text || '').toLowerCase();
+                if (event.scoringPlay || eventText.includes('goal') || kind.includes('goal')) {
+                    kind = 'goal';
+                    event.kind = 'goal';
+                } else if (event.redCard || eventText.includes('red card') || kind.includes('red')) {
+                    kind = 'red-card';
+                    event.kind = 'red-card';
+                } else if (event.yellowCard || eventText.includes('yellow card') || kind.includes('yellow')) {
+                    kind = 'yellow-card';
+                    event.kind = 'yellow-card';
+                } else if (event.substitution || eventText.includes('substitut') || kind.includes('sub')) {
+                    kind = 'substitution';
+                    event.kind = 'substitution';
+                }
+                const side = event.team?.side || (event.team?.id && String(event.team.id) === String(home.team?.id) ? 'home' : (event.team?.id && String(event.team.id) === String(away.team?.id) ? 'away' : ''));
+                const player = (event.athlete?.displayName || event.athlete?.fullName || event.player || '').trim();
+                const hasDetailedPlayer = Boolean(player && !/^event$/i.test(player));
+
+                // Deduplicate by minute, kind and side (suppress generic events when detailed ones exist)
+                const key = `${minute}|${kind}|${side}`;
+                if (seenTimeline.has(key)) {
+                    const existing = seenTimeline.get(key);
+                    const existingHasPlayer = Boolean((existing.athlete?.displayName || existing.player || '').trim());
+                    if (!existingHasPlayer && hasDetailedPlayer) {
+                        seenTimeline.set(key, event);
+                    }
+                    continue;
+                }
+                seenTimeline.set(key, event);
             }
+            const dedupedEvents = Array.from(seenTimeline.values());
             dedupedEvents.sort((x, y) => {
-                const ma = parseInt(String(x.clock || x.minute || '0').replace(/\D/g, ''), 10) || 0;
-                const mb = parseInt(String(y.clock || y.minute || '0').replace(/\D/g, ''), 10) || 0;
+                const ma = parseInt(String(x.clock || x.minute || x.clockValue || '0').replace(/\D/g, ''), 10) || 0;
+                const mb = parseInt(String(y.clock || y.minute || y.clockValue || '0').replace(/\D/g, ''), 10) || 0;
                 return ma - mb;
             });
             return dedupedEvents.map(event => {
                 let text = String(event.text || '').trim();
                 const kind = String(event.kind || event.type || '').toLowerCase();
                 const player = event.athlete?.displayName || event.player || '';
-                if (!text || /^event$/i.test(text)) {
+                if (!text || /^event$/i.test(text) || /^goal$/i.test(text)) {
                     if (kind.includes('goal')) text = player ? `Goal! ${player}` : 'Goal!';
                     else if (kind.includes('yellow')) text = player ? `Yellow card — ${player}` : 'Yellow card';
                     else if (kind.includes('red')) text = player ? `Red card — ${player}` : 'Red card';
@@ -3209,8 +3299,18 @@
 
         function renderRecentMatchesList(recentMatches) {
             if (!recentMatches || !recentMatches.length) return '<div style="color:var(--text-muted); font-size:12px; font-style:italic; padding:6px 0;">No recorded recent matches</div>';
+            const seen = new Set();
+            const deduped = [];
+            for (const m of recentMatches) {
+                const day = m.date ? String(m.date).slice(0, 10) : '';
+                const opp = cleanTeamNameForDedup(m.opponent || '');
+                const key = `${day}_${opp}`;
+                if (key && seen.has(key)) continue;
+                if (key) seen.add(key);
+                deduped.push(m);
+            }
             return `<div style="display:flex; flex-direction:column; gap:6px;">` +
-                recentMatches.slice(0, 5).map(m => {
+                deduped.slice(0, 5).map(m => {
                     const resColor = m.result === 'W' ? '#10b981' : m.result === 'D' ? '#9ca3af' : '#ef4444';
                     const resBg = m.result === 'W' ? 'rgba(16,185,129,0.12)' : m.result === 'D' ? 'rgba(156,163,175,0.12)' : 'rgba(239,68,68,0.12)';
                     const venueLabel = m.venue === 'Away' || m.atVs === '@' ? '@' : 'vs';
@@ -3494,6 +3594,21 @@
                 else if (aMomentum >= 54) momentumVerdict = `📈 ${escapeHtml(away.team?.displayName || 'Away')} Has the Attacking Edge`;
             }
 
+            const rawVenueCity = venue?.address?.city || '';
+            const cityIsComp = /league|cup|friendl|championship|tournament|afcon|nations/i.test(rawVenueCity);
+            const compCity = cityIsComp ? rawVenueCity : '';
+            const cleanVenueCity = !cityIsComp ? rawVenueCity : '';
+            const rawVenueName = venue?.fullName || '';
+            const cleanVenueName = (!rawVenueName || rawVenueName.toLowerCase() === 'stadium') ? (cleanVenueCity ? `Stadium (${cleanVenueCity})` : 'Stadium Venue') : rawVenueName;
+
+            const competitionName = competition.league?.name ||
+                summary.header?.league?.name ||
+                summary.league?.name ||
+                summary.league_name ||
+                compCity ||
+                (state.league?.slug && (state.league.slug === competition.league?.slug) ? state.league.name : '') ||
+                (summary.note || summary.header?.season?.displayName || 'Football Competition');
+
             elements['dialog-content'].innerHTML = `
                 <section class="drawer-header-card">
                     <div class="team-vs-team-row">
@@ -3511,8 +3626,8 @@
                         </div>
                     </div>
                     <div style="margin-top:14px; font-size:12px; color:var(--text-muted);">
-                        ${venue?.fullName ? `Stadium: ${escapeHtml(venue.fullName)} · ` : ''}
-                        ${venue?.address?.city ? `${escapeHtml(venue.address.city)}` : ''}
+                        ${cleanVenueName ? `${escapeHtml(cleanVenueName)} · ` : ''}
+                        ${escapeHtml(competitionName)}
                     </div>
                 </section>
 
@@ -3732,9 +3847,9 @@
                 <div id="drawer-tab-info" class="drawer-tab-content" ${activeTab === 'info' ? '' : 'hidden'}>
                     <h4 style="margin:0 0 12px; font-size:14px; color:var(--text-main);">Match Information</h4>
                     <div style="background:var(--bg-canvas); border:1px solid var(--border-subtle); border-radius:8px; padding:16px; font-size:13px;">
-                        <p style="margin:6px 0;"><strong>Competition:</strong> ${escapeHtml(competition.league?.name || state.league?.name || 'Football Competition')}</p>
+                        <p style="margin:6px 0;"><strong>Competition:</strong> ${escapeHtml(competitionName)}</p>
                         <p style="margin:6px 0;"><strong>Date &amp; Time:</strong> ${formatDate(competition.date, { year: true })} at ${formatTime(competition.date)}</p>
-                        <p style="margin:6px 0;"><strong>Venue / Stadium:</strong> ${escapeHtml(venue?.fullName || 'Stadium Venue')}${venue?.address?.city ? ` (${escapeHtml(venue.address.city)})` : ''}</p>
+                        <p style="margin:6px 0;"><strong>Venue / Stadium:</strong> ${escapeHtml(cleanVenueName)}${cleanVenueCity ? ` (${escapeHtml(cleanVenueCity)})` : ''}</p>
                         ${competition.attendance ? `<p style="margin:6px 0;"><strong>Attendance:</strong> ${Number(competition.attendance).toLocaleString()} spectators</p>` : ''}
                         ${summary.gameInfo?.officials?.length ? `<p style="margin:6px 0;"><strong>Referee:</strong> ${escapeHtml(summary.gameInfo.officials.map(o => o.displayName).join(', '))}</p>` : ''}
                     </div>
@@ -4593,7 +4708,7 @@ function renderAdSlot(elementId, slotData) {
                 }
             }
         }
-        return matchedCount > 0 && matchedCount === liveMatches.length;
+        return matchedCount > 0;
     }
 
     function initLiveSync() {

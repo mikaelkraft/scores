@@ -62,10 +62,11 @@ const TARGET_LEAGUES = [
     { slug: 'kor.cup', name: 'Korean FA Cup', abbreviation: 'Korea Cup', country: 'South Korea', kind: 'cup', sort_order: 43 },
     { slug: 'chn.1', name: 'Chinese Super League', abbreviation: 'CSL', country: 'China', kind: 'club', sort_order: 44 },
     { slug: 'chn.2', name: 'China League One', abbreviation: 'China L1', country: 'China', kind: 'club', sort_order: 45 },
-    { slug: 'chn.cup', name: 'Chinese FA Cup', abbreviation: 'Chinese FA Cup', country: 'China', kind: 'cup', sort_order: 46 },
+    { slug: 'chn.cup', name: 'Chinese FA Cup', abbreviation: 'Chinese FA Cup', country: 'China', kind: 'cup', sort_order: 46, logo: 'https://flagcdn.com/w80/cn.png' },
     { slug: 'eng.trophy', name: 'EFL Trophy', abbreviation: 'EFL Trophy', country: 'England', kind: 'cup', sort_order: 47 },
     { slug: 'fin.1', name: 'Finnish Veikkausliiga', abbreviation: 'Veikkausliiga', country: 'Finland', kind: 'club', sort_order: 48 },
     { slug: 'concacaf.champions', name: 'CONCACAF Champions Cup', abbreviation: 'Champions Cup', country: 'International', kind: 'club', sort_order: 43 },
+    { slug: 'concacaf.nations', name: 'CONCACAF Nations League', abbreviation: 'Nations League', country: 'International', kind: 'international', sort_order: 44, logo: 'https://a.espncdn.com/i/leaguelogos/soccer/500/2060.png' },
     { slug: 'caf.champions', name: 'CAF Champions League', abbreviation: 'CAF Champions', country: 'International', kind: 'club', sort_order: 44 },
     { slug: 'afc.champions', name: 'AFC Champions League Elite', abbreviation: 'AFC Champions', country: 'International', kind: 'club', sort_order: 45 },
     { slug: 'fifa.cwc', name: 'FIFA Club World Cup', abbreviation: 'Club World Cup', country: 'International', kind: 'club', sort_order: 46 },
@@ -80,7 +81,7 @@ const TARGET_LEAGUES = [
     { slug: 'rsa.1', name: 'South African Premiership', abbreviation: 'PSL', country: 'South Africa', kind: 'club', sort_order: 55 },
     { slug: 'egy.1', name: 'Egyptian Premier League', abbreviation: 'Egyptian PL', country: 'Egypt', kind: 'club', sort_order: 56 },
     { slug: 'mar.1', name: 'Moroccan Botola Pro', abbreviation: 'Botola Pro', country: 'Morocco', kind: 'club', sort_order: 57 },
-    { slug: 'nga.1', name: 'Nigeria Premier Football League', abbreviation: 'NPFL', country: 'Nigeria', kind: 'club', sort_order: 58 },
+    { slug: 'nga.1', name: 'Nigeria Premier Football League', abbreviation: 'NPFL', country: 'Nigeria', kind: 'club', sort_order: 58, logo: 'https://flagcdn.com/w80/ng.png' },
     { slug: 'eng.3', name: 'EFL League One', abbreviation: 'League One', country: 'England', kind: 'club', sort_order: 59 },
     { slug: 'eng.4', name: 'EFL League Two', abbreviation: 'League Two', country: 'England', kind: 'club', sort_order: 60 },
     { slug: 'col.1', name: 'Colombian Primera A', abbreviation: 'Liga BetPlay', country: 'Colombia', kind: 'club', sort_order: 61 },
@@ -690,6 +691,22 @@ async function syncLeague(leagueDef) {
         const season = espnLeague.season || {};
         const logoUrl = espnLeague.logos?.[0]?.href || '';
 
+        const currentYear = now.getFullYear();
+        let sYear = season.year || currentYear;
+        let sDisplayName = season.displayName || `${leagueDef.name} ${sYear}`;
+        if (sYear < currentYear || /202[0-5][-–/]2[0-6]|202[0-5]/i.test(sDisplayName)) {
+            sYear = currentYear;
+            const nextYearShort = String(currentYear + 1).slice(-2);
+            const seasonSpan = `${currentYear}-${nextYearShort}`;
+            sDisplayName = sDisplayName
+                .replace(/202[0-5][-–/]2[0-6]/g, seasonSpan)
+                .replace(/202[0-5]/g, String(currentYear));
+        }
+
+        const safeLogo = (slug !== 'eng.1' && (logoUrl.includes('/23.png') || (!logoUrl && String(espnLeague.id) === '23')))
+            ? (leagueDef.logo || '')
+            : (logoUrl || leagueDef.logo || (espnLeague.id ? `https://a.espncdn.com/i/leaguelogos/soccer/500/${espnLeague.id}.png` : ''));
+
         // Upsert League Record
         await SoccerLeague.updateOne(
             { slug },
@@ -699,13 +716,13 @@ async function syncLeague(leagueDef) {
                     abbreviation: leagueDef.abbreviation,
                     country: leagueDef.country,
                     kind: leagueDef.kind,
-                    logo: logoUrl || `https://a.espncdn.com/i/leaguelogos/soccer/500/${espnLeague.id || '23'}.png`,
+                    logo: safeLogo,
                     active: true,
                     sort_order: leagueDef.sort_order,
                     source: { provider: 'upstream', source_id: String(espnLeague.id || '') },
                     season: {
-                        year: season.year || 2026,
-                        display_name: season.displayName || `${leagueDef.name} ${season.year || 2026}`,
+                        year: sYear,
+                        display_name: sDisplayName,
                         current: true,
                         type_id: String(season.type?.id || '1'),
                         type_name: season.type?.name || 'Regular Season'
@@ -1085,6 +1102,13 @@ const TEAM_COUNTRY_HINTS = [
  */
 function inferCountryFromTeamNames(homeName = '', awayName = '', currentSlug = '') {
     const blob = `${homeName} ${awayName}`;
+
+    // American Concacaf teams mistakenly placed in AFCON (caf.nations) or UEFA Nations League (uefa.nations)
+    if (String(currentSlug || '') === 'caf.nations' || String(currentSlug || '') === 'uefa.nations' || String(currentSlug || '').includes('nations')) {
+        const CONCACAF_RE = /\b(curacao|curaçao|panama|bermuda|saint\s*lucia|st\.?\s*lucia|puerto\s*rico|dominica|dominican\s*republic|grenada|saint\s*kitts|st\.?\s*kitts|saint\s*martin|st\.?\s*martin|sint\s*maarten|el\s*salvador|jamaica|haiti|trinidad|costa\s*rica|honduras|guatemala|suriname|guyana|barbados|aruba|antigua|belize|bahamas|cayman|anguilla|turks|bonaire|nicaragua|cuba|martinique|guadeloupe)\b/i;
+        if (CONCACAF_RE.test(blob)) return 'concacaf.nations';
+    }
+
     const hits = new Map();
     for (const [re, prefix] of TEAM_COUNTRY_HINTS) {
         if (re.test(blob)) hits.set(prefix, (hits.get(prefix) || 0) + 1);
@@ -1233,15 +1257,25 @@ function resolveLeagueSlug(altGameNote = '', compDesc = '', uid = '') {
     }
 
     // 4. Continental Club & International Tournaments
-    if (text.includes('caf champions') || text.includes('caf.champions') || text.includes('totalenergies caf cl') || (text.includes('caf') && text.includes('champions'))) return 'caf.champions';
-    if (text.includes('caf confederation') || text.includes('caf confed') || text.includes('caf.confed') || (text.includes('caf') && text.includes('confed'))) return 'caf.confed';
-    if (text.includes('africa cup') || text.includes('afcon') || text.includes('caf.nations') || (text.includes('caf') && text.includes('nations'))) return 'caf.nations';
+    const CONCACAF_NATIONS_TEAMS_RE = /\b(curacao|curaçao|panama|bermuda|saint\s*lucia|st\.?\s*lucia|puerto\s*rico|dominica|dominican\s*republic|grenada|saint\s*kitts|st\.?\s*kitts|saint\s*martin|st\.?\s*martin|sint\s*maarten|el\s*salvador|jamaica|haiti|trinidad|costa\s*rica|honduras|guatemala|suriname|guyana|barbados|aruba|antigua|belize|bahamas|cayman|anguilla|turks|bonaire|nicaragua|cuba|martinique|guadeloupe|french\s*guiana)\b/i;
+
+    if (text.includes('concacaf nations') || (text.includes('concacaf') && text.includes('nations')) || scd.includes('concacaf.nations') || scd.includes('concacaf-nations') || ((text.includes('nations league') || scd.includes('nations')) && CONCACAF_NATIONS_TEAMS_RE.test(text))) {
+        return 'concacaf.nations';
+    }
+    if (text.includes('concacaf champions') || text.includes('concacaf.champions') || text.includes('concacaf cl') || text.includes('concacaf cup')) return 'concacaf.champions';
+    if (text.includes('concacaf')) {
+        if (text.includes('nations')) return 'concacaf.nations';
+        return 'concacaf.champions';
+    }
+
+    if (text.includes('caf champions') || text.includes('caf.champions') || text.includes('totalenergies caf cl') || (/\bcaf\b/.test(text) && text.includes('champions') && !text.includes('concacaf'))) return 'caf.champions';
+    if (text.includes('caf confederation') || text.includes('caf confed') || text.includes('caf.confed') || (/\bcaf\b/.test(text) && text.includes('confed') && !text.includes('concacaf'))) return 'caf.confed';
+    if (text.includes('africa cup') || text.includes('afcon') || text.includes('caf.nations') || (/\bcaf\b/.test(text) && text.includes('nations') && !text.includes('concacaf') && !CONCACAF_NATIONS_TEAMS_RE.test(text))) return 'caf.nations';
     if (text.includes('chan') || text.includes('african nations championship') || text.includes('caf.championship')) return 'caf.championship';
     if (text.includes('cosafa') || text.includes('caf.cosafa')) return 'caf.cosafa';
 
     if (text.includes('afc champions league two') || text.includes('acl two') || text.includes('afc.cup')) return 'afc.cup';
     if (text.includes('afc champions') || text.includes('afc.champions') || (text.includes('afc') && text.includes('champions'))) return 'afc.champions';
-    if (text.includes('concacaf') || text.includes('concacaf.champions')) return 'concacaf.champions';
 
     if (text.includes('libertadores') || text.includes('conmebol.libertadores')) return 'conmebol.libertadores';
     if (text.includes('sudamericana') || text.includes('conmebol.sudamericana')) return 'conmebol.sudamericana';
@@ -1250,7 +1284,7 @@ function resolveLeagueSlug(altGameNote = '', compDesc = '', uid = '') {
     if (text.includes('uefa.champions') || (text.includes('champions league') && !text.includes('caf') && !text.includes('afc') && !text.includes('concacaf'))) return 'uefa.champions';
     if (text.includes('uefa.europa.conf') || text.includes('conference league')) return 'uefa.europa.conf';
     if (text.includes('uefa.europa') || text.includes('europa league')) return 'uefa.europa';
-    if (text.includes('uefa.nations') || text.includes('nations league')) return 'uefa.nations';
+    if (text.includes('uefa.nations') || (text.includes('nations league') && !text.includes('concacaf') && !CONCACAF_NATIONS_TEAMS_RE.test(text))) return 'uefa.nations';
     if (text.includes('super cup') || text.includes('uefa.super_cup')) return 'uefa.super_cup';
     if (text.includes('club world cup') || text.includes('fifa.cwc')) return 'fifa.cwc';
     if (text.includes('fifa world cup') || text.includes('fifa.world')) return 'fifa.world';
@@ -1680,33 +1714,56 @@ async function fetchLiveScoreMatchDetails(eventId) {
             const keyEvents = [];
             const periods = Object.keys(incsData.Incs);
             for (const p of periods) {
-                for (const inc of (incsData.Incs[p] || [])) {
+                const rawItems = incsData.Incs[p] || [];
+                const flattened = [];
+                for (const item of rawItems) {
+                    if (Array.isArray(item.Incs) && item.Incs.length > 0) {
+                        const goalscorer = item.Incs.find(sub => sub.IT === 35 || sub.IT === 36 || sub.IT === 37 || sub.IT === 38 || sub.IT === 39) || item.Incs[0];
+                        const assist = item.Incs.find(sub => sub.IT === 63);
+                        flattened.push({
+                            ...item,
+                            ...goalscorer,
+                            Sc: item.Sc || goalscorer.Sc,
+                            assistName: assist ? (assist.Pn || assist.Fn ? `${assist.Fn || ''} ${assist.Ln || assist.Pn || ''}`.trim() : '') : null
+                        });
+                    } else {
+                        flattened.push(item);
+                    }
+                }
+
+                for (const inc of flattened) {
                     const min = inc.Min || 0;
                     const isHome = inc.Nm === 1;
                     let type = 'event';
-                    let text = inc.Pn || inc.Fn ? `${inc.Fn || ''} ${inc.Ln || inc.Pn || ''}`.trim() : 'Event';
+                    let playerName = inc.Pn || inc.Fn ? `${inc.Fn || ''} ${inc.Ln || inc.Pn || ''}`.trim() : '';
+                    let text = playerName || 'Event';
                     let scoringPlay = false;
                     let yellowCard = false;
                     let redCard = false;
                     let substitution = false;
 
-                    if (inc.IT === 36 || inc.IT === 37) {
+                    const isGoal = inc.IT === 35 || inc.IT === 36 || inc.IT === 37 || inc.IT === 38 || inc.IT === 39 || (inc.Sc && (!inc.IT || inc.IT === 36));
+                    if (isGoal) {
                         type = 'Goal';
                         scoringPlay = true;
-                        text = `Goal! ${text}`;
+                        const isOg = inc.IT === 37;
+                        const isPen = inc.IT === 38;
+                        const label = isOg ? 'Own Goal' : (isPen ? 'Penalty' : 'Goal');
+                        text = playerName ? `${label}! ${playerName}` : `${label}!`;
+                        if (inc.assistName) text += ` (assist: ${inc.assistName})`;
                         if (inc.Sc) text += ` (${inc.Sc[0]}-${inc.Sc[1]})`;
                     } else if (inc.IT === 43) {
                         type = 'Yellow Card';
                         yellowCard = true;
-                        text = `Yellow Card: ${text}`;
+                        text = playerName ? `Yellow Card: ${playerName}` : 'Yellow Card';
                     } else if (inc.IT === 44 || inc.IT === 45) {
                         type = 'Red Card';
                         redCard = true;
-                        text = `Red Card: ${text}`;
+                        text = playerName ? `Red Card: ${playerName}` : 'Red Card';
                     } else if (inc.IT === 46 || inc.IT === 47) {
                         type = 'Substitution';
                         substitution = true;
-                        text = `Substitution: ${text}`;
+                        text = playerName ? `Substitution: ${playerName}` : 'Substitution';
                     }
 
                     keyEvents.push({
@@ -1720,7 +1777,7 @@ async function fetchLiveScoreMatchDetails(eventId) {
                         text,
                         type: { text: type, type },
                         team: { side: isHome ? 'home' : 'away' },
-                        athletesInvolved: inc.Pn ? [{ displayName: inc.Pn, shortName: inc.Ln || inc.Pn }] : []
+                        athletesInvolved: playerName ? [{ displayName: playerName, shortName: inc.Ln || inc.Pn || playerName }] : []
                     });
                 }
             }
@@ -2071,6 +2128,9 @@ function normalizeTeamName(name = '') {
     let s = String(name).toLowerCase()
         .normalize('NFD')
         .replace(/[\u0300-\u036f]/g, '')
+        // Normalize St. / Saint
+        .replace(/\bst[.]?\s+/gi, 'saint ')
+        .replace(/\bst[-]/gi, 'saint-')
         // Scandinavian / Dutch double vowels after accent strip
         .replace(/aa/g, 'a')
         .replace(/ae/g, 'a')
@@ -2658,7 +2718,8 @@ async function syncLiveScoreInPlay() {
                     targetSlug = /2|challenge/i.test(leagueName) ? 'kor.2' : 'kor.1';
                 }
                 else if (cLower.includes('china')) {
-                    targetSlug = /2|jia|league one/i.test(leagueName) ? 'chn.2' : 'chn.1';
+                    if (/cup|fa cup/i.test(leagueName)) targetSlug = 'chn.cup';
+                    else targetSlug = /2|jia|league one/i.test(leagueName) ? 'chn.2' : 'chn.1';
                 }
                 else if (cLower.includes('latvia')) targetSlug = 'lva.1';
                 else if (cLower.includes('england')) {
