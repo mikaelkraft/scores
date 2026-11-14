@@ -73,10 +73,12 @@ async function availableLeagues() {
     availableLeaguesCache.inFlight = (async () => {
         try {
             const minimumSeason = new Date().getUTCFullYear() - 1;
+            const matchDistinct = SoccerMatch.distinct('league_slug');
+            const standingDistinct = SoccerStanding.distinct('league_slug', { season_year: { $gte: minimumSeason } });
             const [catalog, leagueSlugsWithMatches, leagueSlugsWithStandings] = await Promise.all([
                 activeLeagues().catch(() => []),
-                SoccerMatch.distinct('league_slug').maxTimeMS(2500).catch(() => []),
-                SoccerStanding.distinct('league_slug', { season_year: { $gte: minimumSeason } }).maxTimeMS(2500).catch(() => [])
+                Promise.resolve(matchDistinct && typeof matchDistinct.maxTimeMS === 'function' ? matchDistinct.maxTimeMS(2500) : matchDistinct).catch(() => []),
+                Promise.resolve(standingDistinct && typeof standingDistinct.maxTimeMS === 'function' ? standingDistinct.maxTimeMS(2500) : standingDistinct).catch(() => [])
             ]);
             const availableSlugs = new Set(leagueSlugsWithMatches);
             const standingSlugs = new Set(leagueSlugsWithStandings);
@@ -108,24 +110,26 @@ async function currentMatchContent(leagues) {
     const slugs = leagues.map(league => league.slug);
     if (!slugs.length) return { todayMatches: [], recentMatches: [] };
 
+    const todayQuery = SoccerMatch.find({
+        league_slug: { $in: slugs },
+        scoreboard_date: utcScoreboardDate()
+    })
+        .sort({ date: 1 })
+        .select('league_slug source date status home away last_synced_at');
+
+    const recentQuery = SoccerMatch.find({
+        league_slug: { $in: slugs },
+        'status.state': 'post'
+    })
+        .sort({ date: -1 })
+        .limit(12)
+        .select('league_slug source date status home away last_synced_at');
+
     const [todayMatches, recentMatches] = await Promise.all([
-        SoccerMatch.find({
-            league_slug: { $in: slugs },
-            scoreboard_date: utcScoreboardDate()
-        })
-            .sort({ date: 1 })
-            .select('league_slug source date status home away last_synced_at')
-            .maxTimeMS(2500)
+        (typeof todayQuery.maxTimeMS === 'function' ? todayQuery.maxTimeMS(2500) : todayQuery)
             .lean()
             .catch(() => []),
-        SoccerMatch.find({
-            league_slug: { $in: slugs },
-            'status.state': 'post'
-        })
-            .sort({ date: -1 })
-            .limit(12)
-            .select('league_slug source date status home away last_synced_at')
-            .maxTimeMS(2500)
+        (typeof recentQuery.maxTimeMS === 'function' ? recentQuery.maxTimeMS(2500) : recentQuery)
             .lean()
             .catch(() => [])
     ]);
@@ -572,7 +576,8 @@ module.exports = app => {
         const disallow = [
             'Disallow: /get/',
             'Disallow: /health',
-            'Disallow: /api/health'
+            'Disallow: /api/health',
+            'Disallow: /admin/'
         ];
         // Wildcard access covers search engines. Naming common answer and
         // user-retrieval agents makes the citation policy explicit as well.

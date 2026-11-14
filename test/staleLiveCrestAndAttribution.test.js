@@ -1,11 +1,21 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
+const mongoose = require('mongoose');
 const {
     resolveLeagueSlug,
     inferCountryFromTeamNames,
     normalizeTeamName,
     TARGET_LEAGUES
 } = require('../services/soccerSyncService');
+
+test.after(async () => {
+    try {
+        if (mongoose.connection && mongoose.connection.readyState !== 0) {
+            await mongoose.disconnect();
+        }
+    } catch (_) {}
+    process.exit(0);
+});
 
 test('slv.1 and intl.friendly are registered in TARGET_LEAGUES', () => {
     const slv = TARGET_LEAGUES.find(l => l.slug === 'slv.1');

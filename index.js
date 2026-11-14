@@ -155,7 +155,8 @@ const ROOT_ASSETS = {
     '/favicon.svg': 'favicon.svg',
     '/apple-touch-icon.png': 'apple-touch-icon.png',
     '/apple-touch-icon-precomposed.png': 'apple-touch-icon.png',
-    '/og-image.png': 'og-image.png'
+    '/og-image.png': 'og-image.png',
+    '/robots.txt': 'robots.txt'
 };
 for (const [route, file] of Object.entries(ROOT_ASSETS)) {
     app.get(route, (req, res) => {

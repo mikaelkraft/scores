@@ -94,6 +94,7 @@ function queryResult(value) {
         select(projection) { fields = projection; return query; },
         limit() { return query; },
         skip() { return query; },
+        maxTimeMS() { return query; },
         lean() { return Promise.resolve(project(value, fields)); }
     };
     return query;

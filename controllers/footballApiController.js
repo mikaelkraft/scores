@@ -1645,7 +1645,7 @@ router.get('/predictions-context/:eventId', optionalApiKeyAuth, async (req, res)
     try {
         const eventId = String(req.params.eventId).trim();
         const isMongoId = /^[0-9a-fA-F]{24}$/.test(eventId);
-        const match = await SoccerMatch.findOne({
+        let match = await SoccerMatch.findOne({
             $or: [
                 { 'source.event_id': eventId },
                 { 'source.competition_id': eventId },
@@ -1654,6 +1654,41 @@ router.get('/predictions-context/:eventId', optionalApiKeyAuth, async (req, res)
                 ...(isMongoId ? [{ _id: eventId }] : [])
             ]
         }).lean();
+
+        if (!match) {
+            // Fallback 1: in-memory live matches cache
+            if (Array.isArray(liveFeedMemoryCache?.matches) && liveFeedMemoryCache.matches.length > 0) {
+                const found = liveFeedMemoryCache.matches.find(m =>
+                    String(m.id || m.source?.event_id || m.source?.livescore_id) === eventId
+                );
+                if (found) {
+                    match = {
+                        _id: found._id || eventId,
+                        source: found.source || { event_id: eventId, provider: 'livescore' },
+                        league_slug: found.league_slug || found.league?.slug || 'intl.friendly',
+                        home: found.home || { name: 'Home', display_name: 'Home' },
+                        away: found.away || { name: 'Away', display_name: 'Away' },
+                        date: found.date ? new Date(found.date) : new Date(),
+                        name: found.name || `${found.home?.name || 'Home'} vs ${found.away?.name || 'Away'}`
+                    };
+                }
+            }
+        }
+
+        if (!match && req.query.home && req.query.away) {
+            const qHome = String(req.query.home).trim();
+            const qAway = String(req.query.away).trim();
+            const qLeague = String(req.query.league || 'intl.friendly').trim();
+            match = {
+                _id: eventId,
+                source: { event_id: eventId, provider: 'live' },
+                league_slug: qLeague,
+                home: { name: qHome, display_name: qHome, source_id: qHome.toLowerCase().replace(/[^a-z0-9]/g, '-') },
+                away: { name: qAway, display_name: qAway, source_id: qAway.toLowerCase().replace(/[^a-z0-9]/g, '-') },
+                date: new Date(),
+                name: `${qHome} vs ${qAway}`
+            };
+        }
 
         if (!match) {
             return res.status(404).json({ error: 'Match not found for ID: ' + eventId });
@@ -2712,6 +2747,78 @@ router.get('/leagues', async (req, res) => {
  * GET /api/v1/football/standings & /api/v1/football/standings/:league
  * Full league standings tables.
  */
+async function synthesizeStandingsFromMatches(leagueSlug) {
+    try {
+        const matches = await SoccerMatch.find({
+            league_slug: leagueSlug,
+            'status.completed': true,
+            'home.score': { $ne: null },
+            'away.score': { $ne: null }
+        }).lean();
+        if (!matches || !matches.length) return null;
+
+        const table = new Map();
+        for (const m of matches) {
+            const hName = m.home?.name || m.home?.display_name || 'Home';
+            const aName = m.away?.name || m.away?.display_name || 'Away';
+            const hId = String(m.home?.source_id || hName.toLowerCase().replace(/[^a-z0-9]/g, '-'));
+            const aId = String(m.away?.source_id || aName.toLowerCase().replace(/[^a-z0-9]/g, '-'));
+            const hScore = Number(m.home?.score || 0);
+            const aScore = Number(m.away?.score || 0);
+
+            if (!table.has(hId)) {
+                table.set(hId, { team: { id: hId, name: hName, displayName: hName, logo: m.home?.logo || '' }, stats: { gamesPlayed: 0, wins: 0, ties: 0, losses: 0, pointsFor: 0, pointsAgainst: 0, pointDifferential: 0, points: 0 } });
+            }
+            if (!table.has(aId)) {
+                table.set(aId, { team: { id: aId, name: aName, displayName: aName, logo: m.away?.logo || '' }, stats: { gamesPlayed: 0, wins: 0, ties: 0, losses: 0, pointsFor: 0, pointsAgainst: 0, pointDifferential: 0, points: 0 } });
+            }
+
+            const hEntry = table.get(hId);
+            const aEntry = table.get(aId);
+
+            hEntry.stats.gamesPlayed += 1;
+            aEntry.stats.gamesPlayed += 1;
+            hEntry.stats.pointsFor += hScore;
+            hEntry.stats.pointsAgainst += aScore;
+            aEntry.stats.pointsFor += aScore;
+            aEntry.stats.pointsAgainst += hScore;
+            hEntry.stats.pointDifferential = hEntry.stats.pointsFor - hEntry.stats.pointsAgainst;
+            aEntry.stats.pointDifferential = aEntry.stats.pointsFor - aEntry.stats.pointsAgainst;
+
+            if (hScore > aScore) {
+                hEntry.stats.wins += 1;
+                hEntry.stats.points += 3;
+                aEntry.stats.losses += 1;
+            } else if (aScore > hScore) {
+                aEntry.stats.wins += 1;
+                aEntry.stats.points += 3;
+                hEntry.stats.losses += 1;
+            } else {
+                hEntry.stats.ties += 1;
+                hEntry.stats.points += 1;
+                aEntry.stats.ties += 1;
+                aEntry.stats.points += 1;
+            }
+        }
+
+        const entries = Array.from(table.values()).sort((a, b) => {
+            if (b.stats.points !== a.stats.points) return b.stats.points - a.stats.points;
+            if (b.stats.pointDifferential !== a.stats.pointDifferential) return b.stats.pointDifferential - a.stats.pointDifferential;
+            return b.stats.pointsFor - a.stats.pointsFor;
+        });
+
+        return {
+            league_slug: leagueSlug,
+            season_year: new Date().getUTCFullYear(),
+            group_name: 'Standings',
+            group_id: 'default',
+            entries
+        };
+    } catch (_) {
+        return null;
+    }
+}
+
 router.get(['/standings', '/standings/:league'], async (req, res) => {
     try {
         const filter = {};
@@ -2736,11 +2843,29 @@ router.get(['/standings', '/standings/:league'], async (req, res) => {
         }
 
         const groups = await SoccerStanding.find(filter).sort({ season_year: -1, group_name: 1 }).lean();
+        // Deduplicate groups keeping ONLY the latest season_year per league and group
+        const seenGroups = new Set();
+        const dedupedGroups = [];
+        for (const g of groups) {
+            const key = `${g.league_slug}_${g.group_id || g.group_name || 'default'}`;
+            if (!seenGroups.has(key)) {
+                seenGroups.add(key);
+                dedupedGroups.push(g);
+            }
+        }
+
+        if (dedupedGroups.length === 0 && requestedSlug && requestedSlug !== 'all') {
+            const synthesized = await synthesizeStandingsFromMatches(requestedSlug);
+            if (synthesized) {
+                dedupedGroups.push(synthesized);
+            }
+        }
+
         res.set('Cache-Control', 'public, max-age=30');
         return res.json({
             status: 'success',
-            count: groups.length,
-            standings: groups.map(serializeStandingGroup)
+            count: dedupedGroups.length,
+            standings: dedupedGroups.map(serializeStandingGroup)
         });
     } catch (err) {
         return res.status(500).json({ error: 'Failed to fetch standings: ' + err.message });

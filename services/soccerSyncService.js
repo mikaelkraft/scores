@@ -186,7 +186,8 @@ const TARGET_LEAGUES = [
     { slug: 'mli.1', name: 'Mali Première Division', abbreviation: 'Mali L1', country: 'Mali', kind: 'club', sort_order: 146 },
     { slug: 'gin.1', name: 'Guinea Ligue 1', abbreviation: 'Guinea L1', country: 'Guinea', kind: 'club', sort_order: 147 },
     { slug: 'twn.1', name: 'Taiwan Football Premier League', abbreviation: 'Taiwan PL', country: 'Taiwan', kind: 'club', sort_order: 148 },
-    { slug: 'mda.1', name: 'Moldovan Super Liga', abbreviation: 'Super Liga', country: 'Moldova', kind: 'club', sort_order: 149 }
+    { slug: 'mda.1', name: 'Moldovan Super Liga', abbreviation: 'Super Liga', country: 'Moldova', kind: 'club', sort_order: 149 },
+    { slug: 'kvx.1', name: 'Kosovar Superliga', abbreviation: 'Superliga Kosovo', country: 'Kosovo', kind: 'club', sort_order: 150, logo: 'https://flagcdn.com/w80/xk.png' }
 ];
 
 function fetchJson(url) {
@@ -644,7 +645,7 @@ async function syncLeagueFromLiveScoreStages(leagueDef, stages, now = new Date()
                                     winner: isFinished && awayScore > homeScore,
                                     form: ''
                                 },
-                                venue: { name: 'Stadium', city: country, country },
+                                venue: stage.Vnm ? { name: stage.Vnm, city: country, country } : undefined,
                                 attendance: 0,
                                 note: leagueDef.name,
                                 play_by_play_available: true,
@@ -1041,7 +1042,19 @@ const TOP_FLIGHT_CLUBS = {
     'fra.1': new Set(['psg','marseille','monaco','lyon','lille','nice','rennes','lens','strasbourg','nantes','montpellier','reims','toulouse','brest','angers','auxerre','le havre','saint etienne','st etienne','metz','clermont','lorient','troyes']),
     'por.1': new Set(['benfica','porto','sporting','braga','guimaraes','vitoria guimaraes','boavista','famalicao','moreirense','casa pia','estoril','arouca','rio ave','gil vicente','santa clara','nacional','tondela','chaves','vizela','portimonense','farense']),
     'ned.1': new Set(['ajax','psv','feyenoord','az','az alkmaar','twente','utrecht','heerenveen','groningen','sparta rotterdam','sparta','willem ii','nec','nijmegen','go ahead eagles','fortuna sittard','heracles','pec zwolle','zwolle','excelsior','volendam','rkc','waalwijk','almere']),
+    'tur.1': new Set(['galatasaray','fenerbahce','besiktas','trabzonspor','istanbul basaksehir','basaksehir','kasimpasa','sivasspor','alanyaspor','rizespor','caykur rizespor','antalyaspor','gaziantep','gaziantep fk','konyaspor','samsunspor','kayserispor','hatayspor','adana demirspor','goztepe','göztepe','bodrum fk','bodrum','eyupspor','eyüpspor','pendikspor','karagumruk','fatih karagumruk','istanbulspor','ankaragucu','ümraniyespor','umraniyespor','giresunspor']),
+    'bih.1': new Set(['zrinjski','zrinjski mostar','borac','borac banja luka','sarajevo','fk sarajevo','velez','velez mostar','zeljeznicar','siroki brijeg','posusje','sloga doboj','sloga','igman konjic','igman','radnik bijeljina','radnik','gosk gabela','gosk','sloboda tuzla','sloboda','tuzla city']),
+    'aut.1': new Set(['salzburg','red bull salzburg','sturm graz','lask','lask linz','rapid wien','rapid vienna','austria wien','austria vienna','wolfsberger ac','wac','tsv hartberg','hartberg','austria klagenfurt','blau-weiss linz','blau weiss linz','bw linz','altach','scr altach','rheindorf altach','wsg tirol','tirol','grazer ak','gak','austria lustenau','sv ried','ried','admira wacker']),
+    'kvx.1': new Set(['ballkani','fc ballkani','drita','fc drita','prishtina','fc prishtina','llapi','kf llapi','gjilani','sc gjilani','ferizaj','dukagjini','malisheva','suhareka','fushe kosova','fushë kosova','trepca 89','trepça 89'])
 };
+
+function cleanCompetitionName(name) {
+    if (!name) return '';
+    let cleaned = String(name).trim();
+    // Collapse duplicate adjacent words: e.g. "Friendlies Friendlies" -> "Friendlies"
+    cleaned = cleaned.replace(/\b([A-Za-z]+)(?:\s+\1\b)+/gi, '$1');
+    return cleaned;
+}
 
 function applyTeamAlias(normalized = '') {
     const n = String(normalized || '').trim().toLowerCase();
@@ -1060,8 +1073,13 @@ function hasTopFlightClub(slug, homeName, awayName) {
     if (!list) return true; // unknown leagues: don't filter
     const h = applyTeamAlias(normalizeTeamName(homeName));
     const a = applyTeamAlias(normalizeTeamName(awayName));
+    const sLower = String(slug || '').toLowerCase();
     const hit = (name) => {
         if (!name) return false;
+        // Specific lower-division clubs that share substrings/cities with top flight clubs must not match
+        if (sLower === 'bih.1' && (name.includes('slavija') || name.includes('zvijezda 09') || name.includes('potkozarje'))) return false;
+        if (sLower === 'tur.1' && (name.includes('iskenderun') || name.includes('erbaaspor') || name.includes('mus spor') || name.includes('fethiye'))) return false;
+        if (sLower === 'aut.1' && (name.includes('liefering') || name.includes('stripfing') || name.includes('first vienna') || name.includes('fac wien'))) return false;
         if (list.has(name)) return true;
         for (const club of list) {
             if (name.includes(club) || club.includes(name)) return true;
@@ -1095,6 +1113,12 @@ const TEAM_COUNTRY_HINTS = [
     [/america de cali|deportivo cali|atletico nacional|millonarios|independiente medellin|junior barranquilla|santa fe/i, 'col'],
     // Nigeria
     [/enugu rangers|rivers united|eyiimba|shooting stars|plateau united|remo stars|kwara united|bendel insurance|npfl/i, 'nga'],
+    // Kosovo
+    [/ballkani|drita|prishtina|llapi|gjilani|ferizaj|dukagjini|malisheva|suhareka|fush[eë] kosov[aë]|trep[cç]a/i, 'kvx'],
+    // Austria lower / second tier
+    [/liefering|stripfing|first vienna|fac wien|floridsdorfer|lafnitz|sv horn|amstetten|bregenz|voitsberg|kapfenberg/i, 'aut.2'],
+    // Bosnia second tier (RS / FBiH)
+    [/zvijezda 09|potkozarje|slavija sarajevo|drina zvornik|stupcanica|celik zenica|jedinstvo bihac|buducnost banovici|gradina|tosk tesanj/i, 'bih.2'],
 ];
 
 /**
@@ -1439,7 +1463,11 @@ function resolveLeagueSlug(altGameNote = '', compDesc = '', uid = '') {
     if (country.includes('israel') || text.includes('isr.1')) return 'isr.1';
     const isTurkey = country.includes('turkey') || country.includes('turkish') || country.includes('türkiye') || scd.includes('tur.');
     if (isTurkey || (isNeutralCountry && (/\b(?:s[uü]per\s+lig|t[uü]rkiye\s+kupas[iı])\b/i.test(text) || text.includes('galatasaray') || text.includes('fenerbahce') || text.includes('besiktas')))) {
-        if (text.includes('turkiye kupasi') || text.includes('türkiye kupası') || text.includes('tur.cup')) return 'tur.cup';
+        if (text.includes('turkiye kupasi') || text.includes('türkiye kupası') || text.includes('tur.cup') || text.includes('ziraat')) return 'tur.cup';
+        if (text.includes('3. lig') || text.includes('3.lig') || text.includes('tff 3') || text.includes('tur.4') || /\bgrup\s*[1-4]\b/i.test(text)) return 'tur.4';
+        if (text.includes('2. lig') || text.includes('2.lig') || text.includes('tff 2') || text.includes('tur.3') || text.includes('beyaz') || text.includes('kirmizi') || text.includes('kırmızı')) return 'tur.3';
+        if (text.includes('1. lig') || text.includes('1.lig') || text.includes('tff 1') || text.includes('tur.2')) return 'tur.2';
+        if (text.includes('amateur') || text.includes('amator') || text.includes('amatör') || text.includes('bal\b') || text.includes('u19') || text.includes('u21')) return 'tur.lower';
         return 'tur.1';
     }
 
@@ -1492,7 +1520,12 @@ function resolveLeagueSlug(altGameNote = '', compDesc = '', uid = '') {
     if (country.includes('jamaica') || text.includes('jam.1')) return 'jam.1';
 
     // --- OTHER EUROPEAN LEAGUES (Checked before Big 5 to avoid keyword overlap) ---
-    if (country.includes('austria') || text.includes('aut.1') || (text.includes('bundesliga') && country.includes('austria'))) return 'aut.1';
+    if (country.includes('austria') || text.includes('aut.1') || (text.includes('bundesliga') && country.includes('austria'))) {
+        if (text.includes('ofb cup') || text.includes('öfb cup') || text.includes('ofb-cup') || text.includes('öfb-cup') || (text.includes('cup') && !text.includes('world cup'))) return 'aut.cup';
+        if (text.includes('2. liga') || text.includes('2.liga') || text.includes('second league') || text.includes('admiral 2') || text.includes('aut.2')) return 'aut.2';
+        if (text.includes('regionalliga') || text.includes('landesliga') || text.includes('aut.3') || text.includes('aut.lower')) return 'aut.lower';
+        return 'aut.1';
+    }
     if (country.includes('switzerland') || country.includes('swiss') || text.includes('sui.1')) return 'sui.1';
     if (country.includes('greece') || country.includes('greek') || text.includes('gre.1') || text.includes('olympiacos') || text.includes('panathinaikos') || text.includes('paok')) return 'gre.1';
     if (country.includes('scotland') || country.includes('scottish') || text.includes('sco.1') || text.includes('celtic') || text.includes('rangers')) {
@@ -1543,7 +1576,15 @@ function resolveLeagueSlug(altGameNote = '', compDesc = '', uid = '') {
     if (country.includes('belarus') || text.includes('blr.1')) return 'blr.1';
     if (country.includes('azerbaijan') || text.includes('aze.1') || text.includes('qarabag')) return 'aze.1';
     if (country.includes('armenia') || text.includes('arm.1')) return 'arm.1';
-    if (country.includes('bosnia') || text.includes('bih.1')) return 'bih.1';
+    if (country.includes('kosov') || text.includes('kvx.1') || text.includes('superliga e kosov') || text.includes('ballkani') || text.includes('drita') || text.includes('prishtina') || text.includes('llapi') || text.includes('gjilani') || text.includes('ferizaj') || text.includes('dukagjini') || text.includes('malisheva') || text.includes('suhareka') || text.includes('trepca')) {
+        if (text.includes('kupa') || text.includes('cup')) return 'kvx.cup';
+        return 'kvx.1';
+    }
+    if (country.includes('bosnia') || text.includes('bih.1') || text.includes('premijer liga bih')) {
+        if (text.includes('kup') || text.includes('cup')) return 'bih.cup';
+        if (text.includes('prva liga') || text.includes('1. liga') || text.includes('first league') || text.includes('rs') || text.includes('republika srpska') || text.includes('fbih') || text.includes('bih.2')) return 'bih.2';
+        return 'bih.1';
+    }
     if (country.includes('northern ireland') || text.includes('nir.1')) return 'nir.1';
     if (country.includes('wales') || text.includes('wal.1')) return 'wal.1';
     if (country.includes('ireland') || text.includes('irl.1')) return 'irl.1';
@@ -2808,17 +2849,18 @@ async function syncLiveScoreInPlay() {
 
             let displayName = leagueName;
             if (cLower !== 'international' && cLower !== 'world') {
-                if (!leagueName.toLowerCase().startsWith(cLower)) {
+                if (!leagueName.toLowerCase().startsWith(cLower) && !cLower.startsWith(leagueName.toLowerCase())) {
                     displayName = `${country} ${leagueName}`;
                 }
             } else {
                 displayName = leagueName.replace(/^international\s+/i, '');
             }
+            displayName = cleanCompetitionName(displayName);
 
             const leagueDef = TARGET_LEAGUES.find(l => l.slug === targetSlug) || {
                 slug: targetSlug,
                 name: displayName,
-                abbreviation: leagueName.slice(0, 16),
+                abbreviation: cleanCompetitionName(leagueName).slice(0, 16),
                 country: (cLower === 'international' || cLower === 'world') ? 'International' : country,
                 kind: 'club'
             };
@@ -2965,11 +3007,7 @@ async function syncLiveScoreInPlay() {
                             winner: isFinished && awayScore > homeScore,
                             form: ''
                         },
-                        venue: {
-                            name: 'Stadium',
-                            city: country,
-                            country
-                        },
+                        venue: stage.Vnm ? { name: stage.Vnm, city: country, country } : undefined,
                         attendance: 0,
                         note: leagueDef.name,
                         play_by_play_available: true,
@@ -3307,5 +3345,7 @@ module.exports = {
     resolveLeagueSlug,
     enforceCountryOnSlug,
     resolveMatchEspnId,
+    cleanCompetitionName,
+    TOP_FLIGHT_CLUBS,
     TARGET_LEAGUES
 };

@@ -507,7 +507,8 @@
             const proxied = `/cdn/crest?url=${encodeURIComponent(direct)}`;
             const safeDirect = escapeHtml(direct);
             // Proxy first (cacheable); fall back to direct CDN then SVG shield via clean event handler (no unescaped markup leak)
-            return `<span class="${className}"><img src="${proxied}" alt="" aria-hidden="true" loading="lazy" decoding="async" referrerpolicy="no-referrer" data-direct="${safeDirect}" onerror="window.handleLogoError(this)"></span>`;
+            const crestAlt = escapeHtml(display ? `${display} crest` : 'Team crest');
+            return `<span class="${className}"><img src="${proxied}" alt="${crestAlt}" loading="lazy" decoding="async" referrerpolicy="no-referrer" data-direct="${safeDirect}" onerror="window.handleLogoError(this)"></span>`;
         }
         return `<span class="${className}">${svgFallback}</span>`;
     }
@@ -657,6 +658,14 @@
         if (loading && elements[`${kind}-empty`]) elements[`${kind}-empty`].hidden = true;
     }
 
+    function cleanCompetitionName(name) {
+        if (!name) return '';
+        let cleaned = String(name).trim();
+        // Collapse duplicate adjacent words: e.g. "Friendlies Friendlies" -> "Friendlies"
+        cleaned = cleaned.replace(/\b([A-Za-z]+)(?:\s+\1\b)+/gi, '$1');
+        return cleaned;
+    }
+
     const CLIENT_TOP_FLIGHT = {
         'ita.1': ['inter','milan','juventus','napoli','roma','lazio','atalanta','fiorentina','bologna','torino','genoa','cagliari','udinese','verona','empoli','monza','lecce','frosinone','sassuolo','como','parma','venezia','cremonese','pisa','salernitana','spezia','sampdoria'],
         'esp.1': ['real madrid','barcelona','atletico madrid','sevilla','real sociedad','villarreal','athletic bilbao','betis','osasuna','getafe','celta','levante','mallorca','girona','rayo','valencia','espanyol','alaves','elche','cadiz','granada','valladolid','leganes','las palmas','almeria'],
@@ -664,7 +673,11 @@
         'ger.1': ['bayern','dortmund','leverkusen','leipzig','stuttgart','frankfurt','wolfsburg','freiburg','hoffenheim','gladbach','mainz','augsburg','bremen','union berlin','bochum','heidenheim','st pauli','koln','schalke','hamburg'],
         'fra.1': ['psg','marseille','monaco','lyon','lille','nice','rennes','lens','strasbourg','nantes','montpellier','reims','toulouse','brest','angers','auxerre','le havre','saint etienne','metz'],
         'por.1': ['benfica','porto','sporting','braga','guimaraes','boavista','famalicao','moreirense','casa pia','estoril','arouca','rio ave','gil vicente','santa clara'],
-        'ned.1': ['ajax','psv','feyenoord','az','twente','utrecht','heerenveen','groningen','sparta','willem ii','nec','go ahead eagles','fortuna sittard','heracles','zwolle']
+        'ned.1': ['ajax','psv','feyenoord','az','twente','utrecht','heerenveen','groningen','sparta','willem ii','nec','go ahead eagles','fortuna sittard','heracles','zwolle'],
+        'tur.1': ['galatasaray','fenerbahce','besiktas','trabzonspor','istanbul basaksehir','basaksehir','kasimpasa','sivasspor','alanyaspor','rizespor','caykur rizespor','antalyaspor','gaziantep','gaziantep fk','konyaspor','samsunspor','kayserispor','hatayspor','adana demirspor','goztepe','bodrum','eyupspor','pendikspor','karagumruk','istanbulspor','ankaragucu'],
+        'bih.1': ['zrinjski','borac','sarajevo','velez','zeljeznicar','siroki brijeg','posusje','sloga doboj','igman konjic','radnik bijeljina','gosk gabela','sloboda tuzla'],
+        'aut.1': ['salzburg','red bull salzburg','sturm graz','lask','rapid wien','austria wien','wolfsberger ac','wac','tsv hartberg','austria klagenfurt','blau-weiss linz','altach','wsg tirol','grazer ak','gak','austria lustenau','sv ried'],
+        'kvx.1': ['ballkani','drita','prishtina','llapi','gjilani','ferizaj','dukagjini','malisheva','suhareka','fushe kosova','trepca 89']
     };
 
     const CLIENT_TEAM_COUNTRY_HINTS = [
@@ -674,6 +687,9 @@
         [/persija|persib|persebaya|arema|bali united|psm makassar|borneo/i, 'idn'],
         [/hvidovre|aarhus|brondby|midtjylland|nordsjaelland|randers|viborg|agf/i, 'den'],
         [/enugu rangers|rivers united|eyiimba|shooting stars|plateau united|remo stars/i, 'nga'],
+        [/ballkani|drita|prishtina|llapi|gjilani|ferizaj|dukagjini|malisheva|suhareka|trep[cç]a/i, 'kvx'],
+        [/liefering|stripfing|first vienna|fac wien|floridsdorfer|lafnitz|sv horn|amstetten|bregenz|voitsberg|kapfenberg/i, 'aut.2'],
+        [/zvijezda 09|potkozarje|slavija sarajevo|drina zvornik|stupcanica|celik zenica|jedinstvo bihac|buducnost banovici/i, 'bih.2'],
     ];
 
     function clientTeamCountryConflict(slug, homeName, awayName) {
@@ -687,12 +703,16 @@
     }
 
     function clientHasTopFlightClub(slug, homeName, awayName) {
-        const list = CLIENT_TOP_FLIGHT[String(slug || '').toLowerCase()];
+        const sLower = String(slug || '').toLowerCase();
+        const list = CLIENT_TOP_FLIGHT[sLower];
         if (!list) return true;
         const norm = (n) => cleanTeamNameForDedup(n || '');
         const hit = (n) => {
             const x = norm(n);
             if (!x) return false;
+            if (sLower === 'bih.1' && (x.includes('slavija') || x.includes('zvijezda09') || x.includes('potkozarje'))) return false;
+            if (sLower === 'tur.1' && (x.includes('iskenderun') || x.includes('erbaaspor') || x.includes('musspor') || x.includes('fethiye'))) return false;
+            if (sLower === 'aut.1' && (x.includes('liefering') || x.includes('stripfing') || x.includes('firstvienna') || x.includes('facwien'))) return false;
             return list.some(c => {
                 const cn = c.replace(/\s+/g, '');
                 return x === cn || x.includes(cn) || cn.includes(x);
@@ -1078,7 +1098,7 @@
 
     function enrichLeagueMeta(league, ev = null) {
         let slug = league?.slug || ev?.league_slug || 'other';
-        let name = league?.name || ev?.note || 'Competition';
+        let name = cleanCompetitionName(league?.name || ev?.note || 'Competition');
         let country = league?.country || '';
 
         const lowerName = name.toLowerCase();
@@ -2781,19 +2801,23 @@
             document.body.classList.add('dialog-open');
         }
 
-        // Instant render from client cache if available
-        const cached = matchDetailsClientCache.get(String(eventId));
-        if (cached && (Date.now() - cached.ts < 60000)) {
-            renderMatchDetails(cached.summary, cached.plays, cached.predictions, false);
-            // Re-fetch in background silently to ensure fresh clock/incidents
-            loadMatchDetails(eventId, true, leagueSlug);
-            return;
-        }
-
         // Instant optimistic render from in-memory fixture / live match list (<50ms)
         const liveMatch = (state.liveMatches || []).find(m => String(m.id || m.source?.event_id) === String(eventId));
         const fixtureMatch = (state.fixtures || []).find(m => String(m.id || m.source?.event_id) === String(eventId));
         const matchObj = liveMatch || fixtureMatch;
+
+        // Instant render from client cache if available (only if fresh and not stale pre-match masking an in-play game)
+        const cached = matchDetailsClientCache.get(String(eventId));
+        const cachedCompStatus = cached?.summary?.header?.competitions?.[0]?.status || {};
+        const cachedIsPrematch = cachedCompStatus?.type?.state === 'pre' || cachedCompStatus?.state === 'pre' || cachedCompStatus?.state === 'scheduled';
+        const isCurrentlyLive = Boolean(liveMatch || (matchObj?.status?.state === 'in') || (matchObj?.status?.isLive));
+
+        if (cached && (Date.now() - cached.ts < 60000) && (!isCurrentlyLive || !cachedIsPrematch)) {
+            renderMatchDetails(cached.summary, cached.plays, cached.predictions, false);
+            // Re-fetch in background silently to ensure fresh clock/incidents
+            loadMatchDetails(eventId, true, leagueSlug, matchObj);
+            return;
+        }
 
         if (matchObj) {
             const compStatus = matchObj.status || {};
@@ -2809,11 +2833,11 @@
                             { homeAway: 'home', team: matchObj.home, score: matchObj.home?.score },
                             { homeAway: 'away', team: matchObj.away, score: matchObj.away?.score }
                         ],
-                        league: { name: matchObj.note || state.league?.name || '' }
+                        league: { name: cleanCompetitionName(matchObj.note || state.league?.name || '') }
                     }]
                 },
                 gameInfo: {
-                    venue: matchObj.venue || { fullName: 'Stadium Venue' }
+                    venue: (matchObj.venue && matchObj.venue.name && !/stadium\s*venue|unknown/i.test(matchObj.venue.name)) ? matchObj.venue : null
                 },
                 boxscore: matchObj.boxscore || {
                     teams: [
@@ -2826,14 +2850,14 @@
                 rosters: matchObj.lineups || []
             };
             renderMatchDetails(initialSummary, initialSummary.timeline, null, false);
-            loadMatchDetails(eventId, true, leagueSlug);
+            loadMatchDetails(eventId, true, leagueSlug, matchObj);
             return;
         }
 
-        await loadMatchDetails(eventId, false, leagueSlug);
+        await loadMatchDetails(eventId, false, leagueSlug, matchObj);
     }
 
-    async function loadMatchDetails(eventId, silent, leagueSlug = '') {
+    async function loadMatchDetails(eventId, silent, leagueSlug = '', matchContext = null) {
         const slug = leagueSlug || state.league?.slug || 'all';
         if (!state.league && state.leagues.length) {
             const found = state.leagues.find(item => item.slug === slug);
@@ -2849,11 +2873,14 @@
             elements['dialog-content'].innerHTML = '<div class="content-state"><span class="loader"></span><p>Loading match telemetry…</p></div>';
         }
 
+        const hName = matchContext?.home?.displayName || matchContext?.home?.name || '';
+        const aName = matchContext?.away?.displayName || matchContext?.away?.name || '';
+        const predQuery = (hName && aName) ? `?home=${encodeURIComponent(hName)}&away=${encodeURIComponent(aName)}&league=${encodeURIComponent(slug)}` : '';
         const base = `/get/soccer/${encodeURIComponent(slug)}/events/${encodeURIComponent(eventId)}`;
         const [summaryResult, playsResult, predResult] = await Promise.allSettled([
             fetchJson(base),
             fetchJson(`${base}/plays?important=true&limit=300`),
-            fetchJson(`/api/v1/football/predictions-context/${encodeURIComponent(eventId)}`)
+            fetchJson(`/api/v1/football/predictions-context/${encodeURIComponent(eventId)}${predQuery}`)
         ]);
 
         let summary = summaryResult.status === 'fulfilled' ? summaryResult.value : null;
@@ -3064,7 +3091,11 @@
         const events = matchTimeline(summary, plays, home, away);
 
         // Do NOT synthesize fake figures! Keep stats empty if not yet recorded by the provider.
-        const isPreMatch = status.state === 'scheduled' || (!status.isLive && status.state !== 'live' && status.state !== 'finished');
+        const compStatusObj = competition.status || {};
+        const isLiveGame = status.state === 'live' || status.state === 'in' || compStatusObj.state === 'in' || status.isLive || Boolean(compStatusObj.isLive);
+        const hasScoreOrClock = (home.score != null && home.score !== '' && home.score !== '—') || (status.label && !/upcoming|sched/i.test(status.label));
+        const isFinishedGame = status.state === 'finished' || compStatusObj.completed || compStatusObj.state === 'post';
+        const isPreMatch = (status.state === 'scheduled' || (!isLiveGame && !isFinishedGame)) && !hasScoreOrClock;
         if (summary.boxscore) {
             summary.boxscore.isDerivedTelemetry = false;
         }
@@ -3083,26 +3114,28 @@
             elements['dialog-date'].textContent = `${formatDate(competition.date, { year: true })} · ${formatTime(competition.date)}`;
         }
 
-        const statNames = [...new Set([...homeStats, ...awayStats].map(item => item.name))].slice(0, 12);
+        const statNames = [...new Set([...homeStats, ...awayStats].map(item => item.name))].slice(0, 14);
         const statRows = statNames.map(name => {
             const homeItem = homeStats.find(item => item.name === name);
             const awayItem = awayStats.find(item => item.name === name);
-            const homeVal = Number(homeItem?.displayValue?.replace('%', '') || 0);
-            const awayVal = Number(awayItem?.displayValue?.replace('%', '') || 0);
+            const homeVal = Number(String(homeItem?.displayValue || homeItem?.value || 0).replace('%', ''));
+            const awayVal = Number(String(awayItem?.displayValue || awayItem?.value || 0).replace('%', ''));
             const total = (homeVal + awayVal) || 1;
-            const homePct = Math.round((homeVal / total) * 100);
+            const homePct = Math.min(95, Math.max(5, Math.round((homeVal / total) * 100)));
             const awayPct = 100 - homePct;
+            const isHomeLeading = homeVal > awayVal;
+            const isAwayLeading = awayVal > homeVal;
 
             return `
-                <div class="stat-row">
-                    <div class="stat-title-row">
-                        <span><strong>${escapeHtml(homeItem?.displayValue ?? '—')}</strong></span>
-                        <span style="text-transform:uppercase; font-size:11px; letter-spacing:0.5px;">${escapeHtml(statLabels[name] || name)}</span>
-                        <span><strong>${escapeHtml(awayItem?.displayValue ?? '—')}</strong></span>
+                <div class="stat-row" style="margin-bottom:12px; background:var(--bg-canvas); border:1px solid var(--border-subtle); border-radius:8px; padding:10px 14px;">
+                    <div class="stat-title-row" style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px; font-size:13px;">
+                        <span style="font-weight:700; ${isHomeLeading ? 'color:#10b981; font-size:14px;' : 'color:var(--text-muted);'}">${escapeHtml(homeItem?.displayValue ?? '—')}</span>
+                        <span style="text-transform:uppercase; font-size:11px; letter-spacing:0.6px; font-weight:600; color:var(--text-muted); text-align:center;">${escapeHtml(statLabels[name] || name)}</span>
+                        <span style="font-weight:700; ${isAwayLeading ? 'color:#3b82f6; font-size:14px;' : 'color:var(--text-muted);'}">${escapeHtml(awayItem?.displayValue ?? '—')}</span>
                     </div>
-                    <div class="stat-bar-track">
-                        <div class="stat-bar-home" style="width:${homePct}%;"></div>
-                        <div class="stat-bar-away" style="width:${awayPct}%;"></div>
+                    <div class="stat-bar-track" style="height:8px; background:var(--bg-surface-elevated); border-radius:4px; overflow:hidden; display:flex;">
+                        <div class="stat-bar-home" style="width:${homePct}%; background:${isHomeLeading ? 'linear-gradient(90deg, #10b981, #059669)' : 'rgba(16, 185, 129, 0.45)'}; transition:width 0.4s ease;"></div>
+                        <div class="stat-bar-away" style="width:${awayPct}%; background:${isAwayLeading ? 'linear-gradient(90deg, #2563eb, #3b82f6)' : 'rgba(59, 130, 246, 0.45)'}; transition:width 0.4s ease;"></div>
                     </div>
                 </div>
             `;
@@ -3391,18 +3424,40 @@
         const h2hMeetingsRows = (() => {
             const seenH2hRow = new Set();
             if (!recentH2h.length) return '';
-            return recentH2h.map(m => {
+            const uniqueMeetings = [];
+            for (const m of recentH2h) {
                 const rowKey = [m.date, m.homeTeam, m.awayTeam, m.score].join('|');
-                if (seenH2hRow.has(rowKey)) return '';
-                seenH2hRow.add(rowKey);
+                if (!seenH2hRow.has(rowKey)) {
+                    seenH2hRow.add(rowKey);
+                    uniqueMeetings.push(m);
+                }
+            }
+            if (!uniqueMeetings.length) return '';
+            const displayed = uniqueMeetings.slice(0, 5);
+            const remaining = uniqueMeetings.slice(5);
+
+            const renderH2hItem = (m) => {
                 const dateLabel = formatDate(m.date, { year: true, weekday: false });
                 return `<div style="display:flex; justify-content:space-between; align-items:center; gap:8px; padding:10px 12px; background:var(--bg-canvas); border:1px solid var(--border-subtle); border-radius:8px; margin-bottom:8px; font-size:12.5px;">
-                <span style="color:var(--text-muted); font-size:11px; min-width:72px; flex-shrink:0;">${dateLabel}</span>
-                <span style="flex:1; text-align:right; font-weight:600; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${escapeHtml(m.homeTeam || '')}</span>
-                <span style="background:var(--bg-surface-elevated); border:1px solid var(--border-subtle); padding:3px 10px; border-radius:6px; font-weight:700; font-size:12px; flex-shrink:0;">${escapeHtml(m.score || '—')}</span>
-                <span style="flex:1; text-align:left; font-weight:600; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${escapeHtml(m.awayTeam || '')}</span>
-            </div>`;
-            }).filter(Boolean).join('');
+                    <span style="color:var(--text-muted); font-size:11px; min-width:72px; flex-shrink:0;">${dateLabel}</span>
+                    <span style="flex:1; text-align:right; font-weight:600; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${escapeHtml(m.homeTeam || '')}</span>
+                    <span style="background:var(--bg-surface-elevated); border:1px solid var(--border-subtle); padding:3px 10px; border-radius:6px; font-weight:700; font-size:12px; flex-shrink:0;">${escapeHtml(m.score || '—')}</span>
+                    <span style="flex:1; text-align:left; font-weight:600; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${escapeHtml(m.awayTeam || '')}</span>
+                </div>`;
+            };
+
+            let out = displayed.map(renderH2hItem).join('');
+            if (remaining.length > 0) {
+                out += `
+                    <div id="h2h-extra-meetings" style="display:none;">
+                        ${remaining.map(renderH2hItem).join('')}
+                    </div>
+                    <button type="button" id="btn-toggle-h2h-all" onclick="(function(btn){var x=document.getElementById('h2h-extra-meetings');if(!x)return;var open=x.style.display!=='none';x.style.display=open?'none':'block';btn.textContent=open?'Show all ${uniqueMeetings.length} lifetime encounters (${remaining.length} more) ↓':'Show recent 5 only ↑';})(this)" style="display:block; width:100%; text-align:center; padding:9px 14px; background:var(--bg-surface-elevated); border:1px solid var(--border-subtle); border-radius:8px; font-size:12px; font-weight:600; color:var(--color-primary); cursor:pointer; margin-top:6px; transition:all 0.2s ease;">
+                        Show all ${uniqueMeetings.length} lifetime encounters (${remaining.length} more) ↓
+                    </button>
+                `;
+            }
+            return out;
         })();
 
         const rosters = summary.rosters || [];
@@ -3510,8 +3565,11 @@
             if (!teamRoster?.roster?.length) return `<p style="color:var(--text-muted); font-size:13px;">No official lineup announced yet for ${escapeHtml(teamName)}.</p>`;
             let starters = teamRoster.roster.filter(p => p.starter === true || p.starter === 'true' || p.starter === 1);
             let bench = teamRoster.roster.filter(p => !(p.starter === true || p.starter === 'true' || p.starter === 1));
-            // Provider often omits starter flags — split XI vs bench by order (first 11 + extra GKs to bench)
-            if (starters.length < 11 && teamRoster.roster.length > 11) {
+            // Cap starters to maximum 11; if provider marked more than 11 players as starters, push excess to bench
+            if (starters.length > 11) {
+                bench = [...starters.slice(11), ...bench];
+                starters = starters.slice(0, 11);
+            } else if (starters.length < 11 && teamRoster.roster.length > 11) {
                 const ordered = [...teamRoster.roster];
                 starters = ordered.slice(0, 11);
                 bench = ordered.slice(11);
@@ -3598,16 +3656,18 @@
             const cityIsComp = /league|cup|friendl|championship|tournament|afcon|nations/i.test(rawVenueCity);
             const compCity = cityIsComp ? rawVenueCity : '';
             const cleanVenueCity = !cityIsComp ? rawVenueCity : '';
-            const rawVenueName = venue?.fullName || '';
-            const cleanVenueName = (!rawVenueName || rawVenueName.toLowerCase() === 'stadium') ? (cleanVenueCity ? `Stadium (${cleanVenueCity})` : 'Stadium Venue') : rawVenueName;
+            const rawVenueName = venue?.fullName || venue?.name || '';
+            const isFakeStadium = !rawVenueName || /^(stadium(\s+venue)?|unknown|tbd|tba|null|undefined)$/i.test(rawVenueName.trim());
+            const cleanVenueName = !isFakeStadium ? (cleanVenueCity ? `${rawVenueName}, ${cleanVenueCity}` : rawVenueName) : (cleanVenueCity ? `Stadium (${cleanVenueCity})` : '');
 
-            const competitionName = competition.league?.name ||
+            let competitionName = competition.league?.name ||
                 summary.header?.league?.name ||
                 summary.league?.name ||
                 summary.league_name ||
                 compCity ||
                 (state.league?.slug && (state.league.slug === competition.league?.slug) ? state.league.name : '') ||
                 (summary.note || summary.header?.season?.displayName || 'Football Competition');
+            competitionName = cleanCompetitionName(competitionName);
 
             elements['dialog-content'].innerHTML = `
                 <section class="drawer-header-card">
@@ -3762,8 +3822,8 @@
 
                         <!-- Recent Encounters (Head-to-Head) -->
                         <h5 style="margin:20px 0 10px; font-size:13px; color:var(--text-main); display:flex; justify-content:space-between; align-items:center;">
-                            <span>Recent Encounters (Last ${recentH2h.length} Head-to-Head)</span>
-                            <span style="font-size:11.5px; color:var(--text-muted); font-weight:normal;">Showing ${recentH2h.length} of ${totalLifetimeMeetings} recorded encounters</span>
+                            <span>Recent Encounters (Last ${Math.min(5, recentH2h.length)} Head-to-Head)</span>
+                            <span style="font-size:11.5px; color:var(--text-muted); font-weight:normal;">Showing ${Math.min(5, recentH2h.length)} of ${totalLifetimeMeetings} recorded encounters</span>
                         </h5>
                         <div style="margin-bottom:24px;">${h2hMeetingsRows}</div>
 

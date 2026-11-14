@@ -63,13 +63,22 @@ const COUNTRY_OVERRIDE_BY_LEAGUE = {
     'uefa.champions': 'Other'
 };
 
+function cleanCompetitionName(name) {
+    if (!name) return '';
+    let cleaned = String(name).trim();
+    // Collapse duplicate adjacent words: e.g. "Friendlies Friendlies" -> "Friendlies"
+    cleaned = cleaned.replace(/\b([A-Za-z]+)(?:\s+\1\b)+/gi, '$1');
+    return cleaned;
+}
+
 function cleanLeagueName(name) {
     if (!name) return '';
-    return String(name)
+    let cleaned = String(name)
         .replace(/^international\s*[-–:/]\s*/i, '')
         .replace(/^international\s+clubs\s*[-–:/]\s*/i, '')
         .replace(/^international\s+/i, '')
         .trim();
+    return cleanCompetitionName(cleaned);
 }
 
 function inferLeagueCountry(league) {
@@ -543,5 +552,6 @@ module.exports = {
     statsToArray,
     sanitizeLogoUrl,
     isConcreteClock,
-    formatMatchClock
+    formatMatchClock,
+    cleanCompetitionName
 };

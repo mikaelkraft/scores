@@ -1153,7 +1153,7 @@ function renderSeoPage(template, context) {
         '{{SEO_IMAGE_ALT}}': escapeHtml(metadata.imageAlt || `${SITE_NAME} — live scores, fixtures and results`),
         '{{SEO_TITLE}}': escapeHtml(metadata.title),
         '{{SEO_DESCRIPTION}}': escapeHtml(metadata.description),
-        '{{SEO_ROBOTS}}': escapeHtml(metadata.robots || 'index, follow, max-image-preview:large'),
+        '{{SEO_ROBOTS}}': escapeHtml(metadata.robots || 'index, follow, max-image-preview:large, max-snippet:-1, max-video-preview:-1'),
         '{{SEO_CANONICAL}}': escapeHtml(metadata.canonical),
         '{{SEO_JSON_LD}}': safeJson(schema),
         '{{SEO_OVERLINE}}': escapeHtml(metadata.overline),

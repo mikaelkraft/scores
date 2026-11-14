@@ -1,0 +1,27 @@
+User-agent: *
+Allow: /
+Allow: /get/soccer/meta
+Allow: /openapi.json
+Allow: /service-info.json
+Allow: /ai-data-guide.md
+Disallow: /get/
+Disallow: /health
+Disallow: /api/health
+Disallow: /admin/
+
+User-agent: GPTBot
+Allow: /
+
+User-agent: ClaudeBot
+Allow: /
+
+User-agent: PerplexityBot
+Allow: /
+
+User-agent: Google-Extended
+Allow: /
+
+User-agent: Bingbot
+Allow: /
+
+Sitemap: https://scores.mynorra.xyz/sitemap.xml
