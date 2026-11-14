@@ -1,0 +1,43 @@
+{
+  "name": "NorraScore - Live Football Scores & Telemetry",
+  "short_name": "NorraScore",
+  "description": "Real-time football scores, telemetry, live match events, standings, lineups, and head-to-head records across 140+ global competitions.",
+  "start_url": "/",
+  "id": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "any",
+  "theme_color": "#0b0f19",
+  "background_color": "#0b0f19",
+  "categories": ["sports", "news"],
+  "icons": [
+    {
+      "src": "/favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    },
+    {
+      "src": "/apple-touch-icon.png",
+      "sizes": "180x180",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Live Matches",
+      "short_name": "Live",
+      "description": "View matches in play now",
+      "url": "/?status=live",
+      "icons": [{ "src": "/favicon.svg", "sizes": "any" }]
+    },
+    {
+      "name": "Standings",
+      "short_name": "Tables",
+      "description": "View league standings and tables",
+      "url": "/tables",
+      "icons": [{ "src": "/favicon.svg", "sizes": "any" }]
+    }
+  ]
+}

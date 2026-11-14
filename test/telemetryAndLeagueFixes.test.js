@@ -254,3 +254,55 @@ test('LIVESCORE_STAGE_TABLE_MAP contains verified live stage URLs for African le
     assert.ok(slugs.includes('ger.3'), 'Must include German 3. Liga');
     assert.ok(slugs.includes('intl.u21'), 'Must include International U21');
 });
+
+test('normalizeTeamName harmonizes French and Spanish club abbreviations to resolve cross-provider duplicates', () => {
+    // French clubs
+    assert.equal(normalizeTeamName('Dijon FCO'), normalizeTeamName('Dijon'));
+    assert.equal(normalizeTeamName('Orléans'), normalizeTeamName('Orleans'));
+    assert.equal(normalizeTeamName('Philbert De Grandlieu'), normalizeTeamName('US Saint-Philbert-de-Grand-Lieu'));
+    assert.equal(normalizeTeamName('La Roche VF'), normalizeTeamName('La Roche-sur-Yon'));
+    assert.equal(normalizeTeamName('Is-Selongey Football'), normalizeTeamName('Selongey'));
+    assert.equal(normalizeTeamName('Dijon ASPTT'), normalizeTeamName('Asptt Dijon'));
+
+    // Latin American / Spanish clubs
+    assert.equal(normalizeTeamName('Atlético Morelia'), normalizeTeamName('Atltico Morelia'));
+    assert.equal(normalizeTeamName('Club Atlético Morelia'), normalizeTeamName('Atlético Morelia'));
+    assert.equal(normalizeTeamName('C.D. Platense'), normalizeTeamName('Platense'));
+    assert.equal(normalizeTeamName('SD Eibar'), normalizeTeamName('Eibar'));
+    assert.equal(normalizeTeamName('AD Alcorcón'), normalizeTeamName('Alcorcon'));
+
+    // Verify /fixtures filter does not pull stale unstarted games from yesterday
+    const apiControllerSrc = fs.readFileSync(path.join(__dirname, '..', 'controllers', 'footballApiController.js'), 'utf8');
+    assert.ok(apiControllerSrc.includes("scoreboard_date: yesterdayKey, 'status.state': 'post'"), 'Fixtures query for yesterday must only fetch completed post matches');
+});
+
+test('PWA manifest and service worker provide offline shell and fast caching while protecting live telemetry', () => {
+    // 1. Manifest
+    const manifestPath = path.join(__dirname, '..', 'public', 'manifest.webmanifest');
+    assert.ok(fs.existsSync(manifestPath), 'manifest.webmanifest must exist');
+    const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
+    assert.equal(manifest.name, 'NorraScore - Live Football Scores & Telemetry');
+    assert.equal(manifest.short_name, 'NorraScore');
+    assert.equal(manifest.display, 'standalone');
+    assert.ok(Array.isArray(manifest.icons) && manifest.icons.length > 0, 'manifest must specify icons');
+
+    // 2. Service Worker
+    const swPath = path.join(__dirname, '..', 'public', 'sw.js');
+    assert.ok(fs.existsSync(swPath), 'sw.js must exist');
+    const swContent = fs.readFileSync(swPath, 'utf8');
+    assert.ok(swContent.includes('caches.open'), 'sw.js must open cache');
+    assert.ok(swContent.includes("url.pathname.startsWith('/api/')"), 'sw.js must exempt /api/ from stale caching');
+    assert.ok(swContent.includes('request.mode === \'navigate\''), 'sw.js must handle offline navigation fallback');
+
+    // 3. Service Worker registration & Sound Toggle in index.html
+    const indexHtml = fs.readFileSync(path.join(__dirname, '..', 'public', 'index.html'), 'utf8');
+    assert.ok(indexHtml.includes("navigator.serviceWorker.register('/sw.js')"), 'index.html must register sw.js');
+    assert.ok(indexHtml.includes('id="sound-toggle"'), 'index.html must include sound toggle in header');
+    assert.ok(indexHtml.includes('id="sticky-sound-toggle"'), 'index.html must include sticky sound toggle');
+
+    // 4. Goal Alert sound synthesizer in app-v9.js
+    const appV9 = fs.readFileSync(path.join(__dirname, '..', 'public', 'app-v9.js'), 'utf8');
+    assert.ok(appV9.includes('function playGoalSound()'), 'app-v9 must have playGoalSound');
+    assert.ok(appV9.includes('initGoalAlertToggle()'), 'app-v9 must have initGoalAlertToggle');
+    assert.ok(appV9.includes('curH > prev.h || curA > prev.a'), 'app-v9 must detect live goal score increments');
+});

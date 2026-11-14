@@ -15,8 +15,8 @@ const MONGODB_CONFIG = isProd ? {
         useUnifiedTopology: true,
         maxPoolSize: 20,
         minPoolSize: 2,
-        serverSelectionTimeoutMS: 5000,
-        socketTimeoutMS: 30000,
+        serverSelectionTimeoutMS: 15000,
+        socketTimeoutMS: 45000,
     }
 } : {
     url: process.env.MONGODB_URL || 'mongodb://localhost:27017/soccer',
@@ -25,8 +25,8 @@ const MONGODB_CONFIG = isProd ? {
         useUnifiedTopology: true,
         maxPoolSize: 20,
         minPoolSize: 2,
-        serverSelectionTimeoutMS: 5000,
-        socketTimeoutMS: 30000,
+        serverSelectionTimeoutMS: 15000,
+        socketTimeoutMS: 45000,
     }
 };
 

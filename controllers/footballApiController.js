@@ -1156,7 +1156,7 @@ router.get('/fixtures', optionalApiKeyAuth, async (req, res) => {
             ];
             if (status === 'finished' || status === 'all') {
                 filter.$or.push(
-                    { scoreboard_date: yesterdayKey },
+                    { scoreboard_date: yesterdayKey, 'status.state': 'post' },
                     { 'status.state': 'post', date: { $gte: new Date(Date.now() - 30 * 3600 * 1000) } }
                 );
             }
@@ -1393,7 +1393,11 @@ router.get('/fixtures', optionalApiKeyAuth, async (req, res) => {
             const dKey = String(rawD).replace(/[^0-9]/g, '').slice(0, 8);
             const baseSig = [hNorm, aNorm].sort().join('_vs_') + '_' + dKey + (isWomen ? '_w' : '') + (isYouth ? '_youth' : '');
 
-            const mScore = (m.home?.logo?.includes('espncdn') ? 4 : 0) +
+            const isCompleted = m.status?.completed || m.status?.state === 'post' || /FT|Final|AET|AP/i.test(String(m.status?.detail || m.status?.clock || ''));
+            const isLive = m.status?.isLive || m.status?.state === 'in';
+            const mScore = (isCompleted ? 25 : 0) +
+                           (isLive ? 20 : 0) +
+                           (m.home?.logo?.includes('espncdn') ? 4 : 0) +
                            (m.source?.provider === 'espn' || (m.id && /^\d{6,}$/.test(m.id)) ? 3 : 0) +
                            (isWomen ? 2 : 0) +
                            (m.league?.slug && m.league.slug !== 'other' && m.league.slug !== 'w.other' ? 2 : 0) +
@@ -1407,7 +1411,12 @@ router.get('/fixtures', optionalApiKeyAuth, async (req, res) => {
                 const winner = mScore > existing.score ? m : existing.match;
                 const secondary = mScore > existing.score ? existing.match : m;
 
-                if (secondary.status?.isLive || secondary.status?.state === 'in') {
+                const secIsCompleted = secondary.status?.completed || secondary.status?.state === 'post' || /FT|Final|AET|AP/i.test(String(secondary.status?.detail || secondary.status?.clock || ''));
+                const winIsCompleted = winner.status?.completed || winner.status?.state === 'post' || /FT|Final|AET|AP/i.test(String(winner.status?.detail || winner.status?.clock || ''));
+                const secIsLive = secondary.status?.isLive || secondary.status?.state === 'in';
+                const winIsLive = winner.status?.isLive || winner.status?.state === 'in';
+
+                if (secIsLive && !winIsCompleted) {
                     const secClock = secondary.status?.clock;
                     const secDetail = secondary.status?.detail;
                     if (secClock && isConcreteClock(secClock) && secClock !== "45'") {
@@ -1422,6 +1431,19 @@ router.get('/fixtures', optionalApiKeyAuth, async (req, res) => {
                     if (secondary.status?.period) winner.status.period = secondary.status.period;
                     if (secondary.home?.score !== undefined) winner.home.score = secondary.home.score;
                     if (secondary.away?.score !== undefined) winner.away.score = secondary.away.score;
+                    winner.status.state = 'in';
+                    winner.status.isLive = true;
+                } else if (secIsCompleted && !winIsCompleted) {
+                    if (!winner.status) winner.status = {};
+                    winner.status.state = 'post';
+                    winner.status.completed = true;
+                    winner.status.isLive = false;
+                    winner.status.detail = secondary.status?.detail || 'FT';
+                    winner.status.clock = secondary.status?.clock || 'FT';
+                    if (secondary.home?.score !== undefined) winner.home.score = secondary.home.score;
+                    if (secondary.away?.score !== undefined) winner.away.score = secondary.away.score;
+                    if (winner.home && secondary.home?.winner !== undefined) winner.home.winner = secondary.home.winner;
+                    if (winner.away && secondary.away?.winner !== undefined) winner.away.winner = secondary.away.winner;
                 }
                 if (secondary.source?.livescore_id && !winner.source?.livescore_id) {
                     if (!winner.source) winner.source = {};
@@ -1526,7 +1548,9 @@ router.get('/fixtures', optionalApiKeyAuth, async (req, res) => {
             const aLogo = m.away?.logo || '';
             const clock = parseInt(String(m.status?.clock || m.status?.detail || '').replace(/\D/g, ''), 10) || 0;
             const hasScore = m.home?.score != null || m.away?.score != null;
-            return (hLogo ? 3 : 0) + (aLogo ? 3 : 0) + (hasScore ? 4 : 0) + Math.min(clock, 120) + (m.status?.isLive || m.status?.state === 'in' ? 5 : 0);
+            const isCompleted = m.status?.completed || m.status?.state === 'post' || /FT|Final|AET|AP/i.test(String(m.status?.detail || m.status?.clock || ''));
+            const isLive = m.status?.isLive || m.status?.state === 'in';
+            return (isCompleted ? 25 : 0) + (isLive ? 20 : 0) + (hLogo ? 3 : 0) + (aLogo ? 3 : 0) + (hasScore ? 4 : 0) + Math.min(clock, 120);
         };
         const softMap = new Map();
         for (const entry of seenFixturesMap.values()) {
@@ -1572,6 +1596,9 @@ router.get('/fixtures', optionalApiKeyAuth, async (req, res) => {
             return m;
         });
         dedupedMatches.sort((a, b) => {
+            const stateRank = (m) => (m.status?.isLive || m.status?.state === 'in') ? 3 : (m.status?.completed || m.status?.state === 'post') ? 2 : 1;
+            const rDiff = stateRank(b) - stateRank(a);
+            if (rDiff !== 0) return rDiff;
             const pA = getLeaguePriority(a.league?.slug);
             const pB = getLeaguePriority(b.league?.slug);
             if (pB !== pA) return pB - pA;
@@ -1594,7 +1621,18 @@ router.get('/fixtures', optionalApiKeyAuth, async (req, res) => {
                 const a = normalizeTeamName(m.away?.name || m.away?.displayName || '');
                 const pair = [h, a].filter(Boolean).sort().join('_vs_');
                 if (id && seenId.has(id)) continue;
-                if (pair && seenPair.has(pair)) continue;
+                if (pair && seenPair.has(pair)) {
+                    const existing = out.find(x => {
+                        const xh = normalizeTeamName(x.home?.name || x.home?.displayName || '');
+                        const xa = normalizeTeamName(x.away?.name || x.away?.displayName || '');
+                        return [xh, xa].filter(Boolean).sort().join('_vs_') === pair;
+                    });
+                    if (existing) {
+                        if ((!existing.home?.logo || /placeholder/i.test(existing.home.logo)) && m.home?.logo) existing.home.logo = m.home.logo;
+                        if ((!existing.away?.logo || /placeholder/i.test(existing.away.logo)) && m.away?.logo) existing.away.logo = m.away.logo;
+                    }
+                    continue;
+                }
                 if (id) seenId.add(id);
                 if (pair) seenPair.add(pair);
                 out.push(m);

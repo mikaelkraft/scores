@@ -737,6 +737,8 @@
             .normalize('NFD')
             .replace(/[\u0300-\u036f]/g, '')
             .toLowerCase()
+            .replace(/\b([a-z])\.([a-z])\.([a-z])\.?/gi, '$1$2$3 ')
+            .replace(/\b([a-z])\.([a-z])\.?/gi, '$1$2 ')
             .replace(/\bst[.]?\s+/gi, 'saint ')
             .replace(/\bst[-]/gi, 'saint-')
             .replace(/aa/g, 'a')
@@ -752,6 +754,7 @@
             .replace(/\b(ii|iii|iv)\b/gi, ' ')
             .replace(/\s+[bB]$/g, ' ')
             .replace(/\bsantos\s+laguna\b/g, 'santos')
+            .replace(/\batl[^\s]*tico\b/gi, 'atletico')
             .replace(/\binternazionale\b|\binter\s+milan\b|\binter\b/g, 'inter')
             .replace(/\bcomo\s+1907\b|\bcalcio\s+como\b/g, 'como')
             .replace(/\bfeyenoord\s+rotterdam\b/g, 'feyenoord')
@@ -786,8 +789,13 @@
             .replace(/\bparis\s+(saint[- ]?germain|sg)\b/g, 'psg')
             .replace(/\bmanchester\s+city\b/g, 'mancity')
             .replace(/\bbayern(\s+munich|\s+munchen)?\b/g, 'bayern')
-            .replace(/\b(club|clube|csd|deportivo|fc|cf|sc|ac|cd|sd|ceif|afc|fk|sk|sv|ssc|as|rc|ud|rb|calcio|sad|sa|sport|gfc|bk|cf)\b/gi, ' ')
-            .replace(/\b(de\s+)?(junin|resistencia|cordoba|la\s+plata|valledupar|guatemala)\b/gi, '')
+            .replace(/\bdijon\s+(fco|football\s+cote-d.or)\b/g, 'dijon')
+            .replace(/\borleans\s+(us|loiret)?\b/g, 'orleans')
+            .replace(/\bla\s+roche(-sur-yon)?(\s+vf)?\b/g, 'laroche')
+            .replace(/\b(us\s+)?(saint[- ]?)?philbert(-de-grand-lieu|\s+de\s+grandlieu|\s+de\s+grand-lieu)?\b/g, 'philbert')
+            .replace(/\bis[- ]selongey(\s+football)?\b/g, 'selongey')
+            .replace(/\b(club|clube|csd|deportivo|fc|cf|sc|ac|cd|sd|ceif|afc|fk|sk|sv|ssc|as|rc|ud|rb|calcio|sad|sa|sport|gfc|bk|cf|fco|vf|us|cs|ca|ogc|sco|sm|tfc|hac|so|es|sd|ad|ce|asptt|uc)\b/gi, ' ')
+            .replace(/\b(de\s+)?(junin|resistencia|cordoba|la\s+plata|valledupar|guatemala|sur-yon|de-grand-lieu|grandlieu)\b/gi, '')
             .replace(/[^a-z0-9]/g, '');
     }
 
@@ -895,8 +903,8 @@
         const tier = getEventMatchTierClient(ev);
         const isWomen = tier.startsWith('w_') ? 2 : 0;
         const hasClock = isConcreteClock(ev.status?.clock || ev.status?.detail) ? 2 : (ev.status?.clock || ev.status?.detail ? 1 : 0);
-        const isLiveBonus = (ev.status?.state === 'in' || ev.status?.isLive) && !/FT|Final|Postp|Canc/i.test(String(ev.status?.clock || '')) ? 6 : 0;
-        const isCompletedBonus = (ev.status?.completed || ev.status?.state === 'post' || /FT|Final|AET|AP/i.test(String(ev.status?.clock || ev.status?.detail || ''))) ? 5 : 0;
+        const isLiveBonus = (ev.status?.state === 'in' || ev.status?.isLive) && !/FT|Final|Postp|Canc/i.test(String(ev.status?.clock || '')) ? 15 : 0;
+        const isCompletedBonus = (ev.status?.completed || ev.status?.state === 'post' || /FT|Final|AET|AP/i.test(String(ev.status?.clock || ev.status?.detail || ''))) ? 12 : 0;
         return hasEspnLogo + hasCanonicalId + hasSpecificSlug + isWomen + hasClock + isLiveBonus + isCompletedBonus;
     }
 
@@ -4883,7 +4891,29 @@ function renderAdSlot(elementId, slotData) {
 
                 if (isInitialBoot) {
                     state.lastFullFixturesSync = now;
+                    state.lastScoreMap = new Map();
+                    for (const m of liveMatches) {
+                        const mid = String(m.id || m.uid || '');
+                        if (mid) state.lastScoreMap.set(mid, { h: m.home?.score ?? 0, a: m.away?.score ?? 0 });
+                    }
                     return; // Prevent duplicate initial fetch since selectAllLeagues/init runs on boot
+                }
+
+                // Check for live goal score changes and trigger goal celebration sound & haptics
+                state.lastScoreMap = state.lastScoreMap || new Map();
+                for (const m of liveMatches) {
+                    const mid = String(m.id || m.uid || '');
+                    const curH = m.home?.score ?? 0;
+                    const curA = m.away?.score ?? 0;
+                    if (mid && state.lastScoreMap.has(mid)) {
+                        const prev = state.lastScoreMap.get(mid);
+                        if (curH > prev.h || curA > prev.a) {
+                            playGoalSound();
+                            const scoringTeam = (curH > prev.h) ? (m.home?.displayName || m.home?.name || 'Home') : (m.away?.displayName || m.away?.name || 'Away');
+                            showToast(`⚽ GOAL! ${scoringTeam} (${curH} - ${curA})`);
+                        }
+                    }
+                    if (mid) state.lastScoreMap.set(mid, { h: curH, a: curA });
                 }
 
                 // Only patch DOM in-place if live matches set has not changed (no matches started or ended)
@@ -4987,21 +5017,35 @@ function renderAdSlot(elementId, slotData) {
 
     function initGoalAlertToggle() {
         const toggleBtn = document.getElementById('goal-alert-toggle');
-        if (!toggleBtn) return;
+        const headerSoundBtn = document.getElementById('sound-toggle');
+        const stickySoundBtn = document.getElementById('sticky-sound-toggle');
+        if (!toggleBtn && !headerSoundBtn && !stickySoundBtn) return;
 
         const updateBtnUi = () => {
             const on = Boolean(state.goalAlertsEnabled);
-            toggleBtn.classList.toggle('active', on);
-            toggleBtn.setAttribute('aria-pressed', String(on));
+            if (toggleBtn) {
+                toggleBtn.classList.toggle('active', on);
+                toggleBtn.setAttribute('aria-pressed', String(on));
+            }
             const icon = document.getElementById('goal-alert-icon');
             const label = document.getElementById('goal-alert-label');
             if (icon) icon.textContent = on ? '🔊' : '🔔';
             if (label) label.textContent = on ? 'Sound: ON' : 'Sound: OFF';
+            if (headerSoundBtn) {
+                headerSoundBtn.textContent = on ? '🔊' : '🔔';
+                headerSoundBtn.title = on ? 'Goal Alert Sound: ON (Click to mute)' : 'Goal Alert Sound: MUTED (Click to enable)';
+                headerSoundBtn.setAttribute('aria-pressed', String(on));
+            }
+            if (stickySoundBtn) {
+                stickySoundBtn.textContent = on ? '🔊' : '🔔';
+                stickySoundBtn.title = on ? 'Goal Alert Sound: ON (Click to mute)' : 'Goal Alert Sound: MUTED (Click to enable)';
+                stickySoundBtn.setAttribute('aria-pressed', String(on));
+            }
         };
 
         updateBtnUi();
 
-        toggleBtn.addEventListener('click', () => {
+        const handleSoundToggle = () => {
             state.goalAlertsEnabled = !state.goalAlertsEnabled;
             try {
                 localStorage.setItem('norra_goal_alerts', String(state.goalAlertsEnabled));
@@ -5013,7 +5057,11 @@ function renderAdSlot(elementId, slotData) {
             } else {
                 showToast('🔔 Goal alerts muted');
             }
-        });
+        };
+
+        if (toggleBtn) toggleBtn.addEventListener('click', handleSoundToggle);
+        if (headerSoundBtn) headerSoundBtn.addEventListener('click', handleSoundToggle);
+        if (stickySoundBtn) stickySoundBtn.addEventListener('click', handleSoundToggle);
     }
 
     function initLiveEventStream() {

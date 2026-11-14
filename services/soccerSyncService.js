@@ -2340,6 +2340,9 @@ function normalizeTeamName(name = '') {
     let s = String(name).toLowerCase()
         .normalize('NFD')
         .replace(/[\u0300-\u036f]/g, '')
+        // Collapse dotted abbreviations like C.D., F.C., S.D., U.S.
+        .replace(/\b([a-z])\.([a-z])\.([a-z])\.?/gi, '$1$2$3 ')
+        .replace(/\b([a-z])\.([a-z])\.?/gi, '$1$2 ')
         // Normalize St. / Saint
         .replace(/\bst[.]?\s+/gi, 'saint ')
         .replace(/\bst[-]/gi, 'saint-')
@@ -2362,6 +2365,7 @@ function normalizeTeamName(name = '') {
         .replace(/\bspurs\b|\btottenham\s+hotspur\b/g, 'tottenham')
         .replace(/\bwolves\b|\bwolverhampton\s+wanderers\b/g, 'wolverhampton')
         .replace(/\bpsg\b|\bparis\s+sg\b|\bparis\s+saint-germain\b/g, 'parissaintgermain')
+        .replace(/\batl[^\s]*tico\b/gi, 'atletico')
         .replace(/\batletico\s+madrid\b|\batl\.\s*madrid\b/g, 'atleticomadrid')
         .replace(/\breal\s+madrid\b/g, 'realmadrid')
         .replace(/\bbayern\s+munich\b|\bbayern\s+munchen\b/g, 'bayernmunich')
@@ -2402,9 +2406,15 @@ function normalizeTeamName(name = '') {
         .replace(/\bmanta\s+f\.?c\.?\b/g, 'manta')
         .replace(/\bcd\s+sabadell\b|\bsabadell\b/g, 'sabadell')
         .replace(/\breal\s+sociedad\s+(b|ii)\b/g, 'realsociedadb')
-        // Strip generic club tokens INCLUDING "sport" / "gfc" / "bk"
-        .replace(/\b(club|clube|csd|deportivo|fc|cf|sc|ac|cd|ceif|afc|fk|sk|sv|ssc|as|rc|ud|rb|calcio|sad|sa|sport|gfc|bk|cf)\b/gi, '')
-        .replace(/\b(de\s+)?(junin|resistencia|cordoba|la\s+plata|valledupar|guatemala)\b/gi, '')
+        // Specific French & Spanish club aliases for cross-provider dedup
+        .replace(/\bdijon\s+(fco|football\s+cote-d.or)\b/g, 'dijon')
+        .replace(/\borleans\s+(us|loiret)?\b/g, 'orleans')
+        .replace(/\bla\s+roche(-sur-yon)?(\s+vf)?\b/g, 'laroche')
+        .replace(/\b(us\s+)?(saint[- ]?)?philbert(-de-grand-lieu|\s+de\s+grandlieu|\s+de\s+grand-lieu)?\b/g, 'philbert')
+        .replace(/\bis[- ]selongey(\s+football)?\b/g, 'selongey')
+        // Strip generic club tokens INCLUDING French/Spanish acronyms and prefixes
+        .replace(/\b(club|clube|csd|deportivo|fc|cf|sc|ac|cd|ceif|afc|fk|sk|sv|ssc|as|rc|ud|rb|calcio|sad|sa|sport|gfc|bk|cf|fco|vf|us|cs|ca|ogc|sco|sm|tfc|hac|so|es|sd|ad|ce|asptt|uc)\b/gi, '')
+        .replace(/\b(de\s+)?(junin|resistencia|cordoba|la\s+plata|valledupar|guatemala|sur-yon|de-grand-lieu|grandlieu)\b/gi, '')
         .replace(/\b(18\d{2}|19\d{2}|20\d{2})\b/g, '')
         .replace(/\b(04|05|96|98)\b/g, '')
         .replace(/[^a-z0-9]/g, '')
@@ -2568,7 +2578,7 @@ async function cleanupStuckMatchesAndPurgeNcaa() {
             ]
         });
 
-        // 2. Auto-finalize ALL stuck in-play matches that started more than 180 minutes (3 hours) ago
+        // 2a. Auto-finalize ALL stuck in-play matches that started more than 180 minutes (3 hours) ago
         const threeHoursAgo = new Date(Date.now() - 180 * 60 * 1000);
         const finalRes = await SoccerMatch.updateMany(
             {
@@ -2589,6 +2599,51 @@ async function cleanupStuckMatchesAndPurgeNcaa() {
         );
         if (finalRes.modifiedCount > 0) {
             console.log(`🧹 [AutoFinalize] Finalized ${finalRes.modifiedCount} stale in-progress matches older than 3 hours.`);
+        }
+
+        // 2b. Purge ancient orphaned 'pre' placeholder matches older than 48 hours with 0-0 score and no events
+        const fortyEightHoursAgo = new Date(Date.now() - 48 * 3600 * 1000);
+        const deadPreRes = await SoccerMatch.deleteMany({
+            'status.state': 'pre',
+            date: { $lt: fortyEightHoursAgo },
+            'home.score': 0,
+            'away.score': 0,
+            $or: [
+                { key_events: { $exists: false } },
+                { key_events: { $size: 0 } }
+            ]
+        });
+        if (deadPreRes.deletedCount > 0) {
+            console.log(`🧹 [DeadPrePurge] Purged ${deadPreRes.deletedCount} ancient orphaned pre placeholder matches older than 48 hours.`);
+        }
+
+        // 2c. Auto-mark unstarted past matches between 4h and 48h ago that never started and have 0-0 as Postponed
+        const fourHoursAgo = new Date(Date.now() - 4 * 3600 * 1000);
+        const postpRes = await SoccerMatch.updateMany(
+            {
+                'status.state': 'pre',
+                date: { $lt: fourHoursAgo, $gte: fortyEightHoursAgo },
+                'home.score': 0,
+                'away.score': 0,
+                $or: [
+                    { key_events: { $exists: false } },
+                    { key_events: { $size: 0 } }
+                ]
+            },
+            {
+                $set: {
+                    'status.state': 'post',
+                    'status.name': 'STATUS_POSTPONED',
+                    'status.description': 'Postponed',
+                    'status.detail': 'Postp.',
+                    'status.short_detail': 'Postp.',
+                    'status.clock': 'Postp.',
+                    'status.completed': true
+                }
+            }
+        );
+        if (postpRes.modifiedCount > 0) {
+            console.log(`🧹 [AutoFinalize] Marked ${postpRes.modifiedCount} unplayed past matches (4h-48h old) as Postponed.`);
         }
 
         // 3. Clean any corrupted league names starting with "International "
@@ -2769,11 +2824,36 @@ async function cleanupStuckMatchesAndPurgeNcaa() {
             }
         ).catch(() => {});
 
-        // 5. Purge duplicate match documents across the past 7 days
-        const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 3600 * 1000);
-        const recentMatches = await SoccerMatch.find({ date: { $gte: sevenDaysAgo } }).sort({ date: 1, _id: 1 }).lean();
+        // 5. Purge duplicate match documents across the past 5 days and upcoming 2 days
+        const targetDates = [];
+        const nowMs = Date.now();
+        for (let i = -5; i <= 2; i++) {
+            targetDates.push(formatDateToScoreboard(new Date(nowMs + i * 86400000)));
+        }
+        const recentMatches = await SoccerMatch.find({
+            $or: [
+                { scoreboard_date: { $in: targetDates } },
+                { date: { $gte: new Date(nowMs - 5 * 24 * 3600 * 1000), $lte: new Date(nowMs + 2 * 24 * 3600 * 1000) } }
+            ]
+        })
+            .select('_id source league_slug name short_name scoreboard_date date status home.name home.score home.logo away.name away.score away.logo')
+            .lean()
+            .catch(() => []);
+        recentMatches.sort((a, b) => new Date(a.date) - new Date(b.date));
         const signatureMap = new Map();
         const idsToDelete = [];
+        const bulkMergeOps = [];
+
+        const calcMatchQuality = (x) => {
+            const isCompleted = x.status?.completed || x.status?.state === 'post' || /FT|Final|AET|AP/i.test(String(x.status?.detail || x.status?.clock || ''));
+            const isLive = x.status?.isLive || x.status?.state === 'in';
+            return (isCompleted ? 30 : 0) +
+                   (isLive ? 25 : 0) +
+                   (x.home?.logo?.includes('espncdn') ? 4 : 0) +
+                   (x.away?.logo?.includes('espncdn') ? 4 : 0) +
+                   (x.source?.livescore_id ? 3 : 0) +
+                   (x.source?.espn_id ? 3 : 0);
+        };
 
         for (const m of recentMatches) {
             const homeNorm = normalizeTeamName(m.home?.name || m.home?.display_name || '');
@@ -2781,13 +2861,14 @@ async function cleanupStuckMatchesAndPurgeNcaa() {
             if (!homeNorm || !awayNorm) continue;
             const categoryKey = getMatchTier(m.home?.name || m.home?.display_name || '', m.away?.name || m.away?.display_name || '', m.league_slug || '');
             const teamsKey = [homeNorm, awayNorm].sort().join('_vs_');
-            const dateKey = m.scoreboard_date || (m.date ? m.date.toISOString().slice(0, 10) : '');
+            const rawD = m.scoreboard_date || (m.date ? m.date.toISOString().slice(0, 10) : '');
+            const dateKey = String(rawD).replace(/[^0-9]/g, '').slice(0, 8);
             const sig = `${teamsKey}_${dateKey}_${categoryKey}`;
 
             if (signatureMap.has(sig)) {
                 const primary = signatureMap.get(sig);
-                const currentScore = (m.home?.logo?.includes('espncdn') ? 3 : 0) + (m.source?.livescore_id ? 2 : 0) + (m.boxscore ? 2 : 0) + (m.key_events?.length ? 1 : 0);
-                const primaryScore = (primary.home?.logo?.includes('espncdn') ? 3 : 0) + (primary.source?.livescore_id ? 2 : 0) + (primary.boxscore ? 2 : 0) + (primary.key_events?.length ? 1 : 0);
+                const currentScore = calcMatchQuality(m);
+                const primaryScore = calcMatchQuality(primary);
 
                 const toDelete = (currentScore > primaryScore) ? primary : m;
                 const winnerDoc = (currentScore > primaryScore) ? m : primary;
@@ -2796,16 +2877,38 @@ async function cleanupStuckMatchesAndPurgeNcaa() {
                 if (toDelete.source?.livescore_id && !winnerDoc.source?.livescore_id) {
                     mergeUpdates['source.livescore_id'] = toDelete.source.livescore_id;
                 }
-                if (toDelete.status?.state === 'in') {
+                if (toDelete.source?.espn_id && !winnerDoc.source?.espn_id) {
+                    mergeUpdates['source.espn_id'] = toDelete.source.espn_id;
+                }
+                if (toDelete.home?.logo?.includes('espncdn') && !winnerDoc.home?.logo?.includes('espncdn')) {
+                    mergeUpdates['home.logo'] = toDelete.home.logo;
+                }
+                if (toDelete.away?.logo?.includes('espncdn') && !winnerDoc.away?.logo?.includes('espncdn')) {
+                    mergeUpdates['away.logo'] = toDelete.away.logo;
+                }
+                if (toDelete.status?.state === 'in' && winnerDoc.status?.state !== 'post') {
                     mergeUpdates['status.state'] = toDelete.status.state;
                     mergeUpdates['status.clock'] = toDelete.status.clock;
                     mergeUpdates['status.detail'] = toDelete.status.detail;
                     mergeUpdates['status.period'] = toDelete.status.period;
                     mergeUpdates['home.score'] = toDelete.home?.score ?? winnerDoc.home?.score;
                     mergeUpdates['away.score'] = toDelete.away?.score ?? winnerDoc.away?.score;
+                } else if (toDelete.status?.state === 'post' && winnerDoc.status?.state === 'pre') {
+                    mergeUpdates['status.state'] = 'post';
+                    mergeUpdates['status.completed'] = true;
+                    mergeUpdates['status.clock'] = 'FT';
+                    mergeUpdates['status.detail'] = toDelete.status.detail || 'FT';
+                    mergeUpdates['status.period'] = 2;
+                    mergeUpdates['home.score'] = toDelete.home?.score ?? winnerDoc.home?.score;
+                    mergeUpdates['away.score'] = toDelete.away?.score ?? winnerDoc.away?.score;
                 }
                 if (Object.keys(mergeUpdates).length > 0) {
-                    await SoccerMatch.updateOne({ _id: winnerDoc._id }, { $set: mergeUpdates });
+                    bulkMergeOps.push({
+                        updateOne: {
+                            filter: { _id: winnerDoc._id },
+                            update: { $set: mergeUpdates }
+                        }
+                    });
                 }
 
                 if (currentScore > primaryScore) {
@@ -2817,6 +2920,10 @@ async function cleanupStuckMatchesAndPurgeNcaa() {
             } else {
                 signatureMap.set(sig, m);
             }
+        }
+
+        if (bulkMergeOps.length > 0) {
+            await SoccerMatch.bulkWrite(bulkMergeOps, { ordered: false });
         }
 
         if (idsToDelete.length > 0) {

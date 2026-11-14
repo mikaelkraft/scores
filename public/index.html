@@ -78,6 +78,7 @@
                 <a class="nav-link" href="/pricing">Pricing</a>
                 <a class="nav-link docs-link" href="/docs">Docs</a>
                 <a class="nav-link" href="/account" id="nav-account-link">Account</a>
+                <button class="btn-icon-toggle" id="sound-toggle" type="button" aria-label="Toggle goal sound alert" title="Goal Alert Sound (On/Off)">🔔</button>
                 <button class="btn-icon-toggle" id="theme-toggle" type="button" aria-label="Toggle light/dark theme" title="Toggle theme">🌓</button>
             </div>
         </nav>
@@ -580,9 +581,10 @@
         </div>
     </footer>
 
-    <!-- Floating Sticky Action Dock (Back to Top + Theme Switcher) -->
+    <!-- Floating Sticky Action Dock (Back to Top + Theme Switcher + Goal Sound) -->
     <aside class="sticky-action-dock" id="sticky-action-dock" aria-label="Quick page actions">
         <button id="sticky-back-to-top" class="sticky-action-btn sticky-back-to-top" type="button" aria-label="Back to top" title="Scroll to top of page">↑</button>
+        <button id="sticky-sound-toggle" class="sticky-action-btn" type="button" aria-label="Toggle goal sound alert" title="Goal Alert Sound (On/Off)">🔔</button>
         <button id="sticky-theme-toggle" class="sticky-action-btn" type="button" aria-label="Toggle dark/light theme" title="Toggle theme">🌓</button>
     </aside>
 
@@ -643,6 +645,11 @@
                 topBtn.onclick = function() {
                     window.scrollTo({ top: 0, behavior: 'smooth' });
                 };
+            }
+            if ('serviceWorker' in navigator && (window.location.protocol === 'https:' || window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')) {
+                window.addEventListener('load', function() {
+                    navigator.serviceWorker.register('/sw.js').catch(function() {});
+                });
             }
         })();
     </script>
