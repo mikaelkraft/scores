@@ -436,6 +436,34 @@ async function fetchFreshWorldwideLiveMatches() {
             const comp = ev.competitions?.[0];
             if (!comp) continue;
             const state = ev.status?.type?.state;
+            if (state === 'post') {
+                const competitors = comp.competitors || [];
+                const homeComp = competitors.find(c => c.homeAway === 'home') || competitors[0] || {};
+                const awayComp = competitors.find(c => c.homeAway === 'away') || competitors[1] || {};
+                const hScore = parseInt(homeComp.score || 0, 10);
+                const aScore = parseInt(awayComp.score || 0, 10);
+                SoccerMatch.updateOne(
+                    {
+                        'source.event_id': String(ev.id),
+                        'status.completed': { $ne: true }
+                    },
+                    {
+                        $set: {
+                            'status.state': 'post',
+                            'status.completed': true,
+                            'status.clock': 'FT',
+                            'status.detail': 'FT',
+                            'status.short_detail': 'FT',
+                            'status.description': 'Full Time',
+                            'home.score': isNaN(hScore) ? 0 : hScore,
+                            'away.score': isNaN(aScore) ? 0 : aScore,
+                            'home.winner': hScore > aScore,
+                            'away.winner': aScore > hScore
+                        }
+                    }
+                ).catch(() => {});
+                continue;
+            }
             if (state !== 'in') continue; // only in-play
 
             const competitors = comp.competitors || [];
@@ -1117,7 +1145,8 @@ router.get('/fixtures', optionalApiKeyAuth, async (req, res) => {
         localDayStart.setHours(0, 0, 0, 0);
         const localDayEnd = new Date();
         localDayEnd.setHours(23, 59, 59, 999);
-        if (isQueryingToday && status === 'all') {
+        if (isQueryingToday) {
+            const yesterdayKey = parseDateParam('yesterday');
             filter.$or = [
                 { scoreboard_date: todayKey },
                 { scoreboard_date: `${todayKey.slice(0,4)}-${todayKey.slice(4,6)}-${todayKey.slice(6,8)}` },
@@ -1125,17 +1154,17 @@ router.get('/fixtures', optionalApiKeyAuth, async (req, res) => {
                 { date: { $gte: localDayStart, $lte: localDayEnd } },
                 { 'status.state': 'in', date: { $gte: sixHoursAgo } }
             ];
+            if (status === 'finished' || status === 'all') {
+                filter.$or.push(
+                    { scoreboard_date: yesterdayKey },
+                    { 'status.state': 'post', date: { $gte: new Date(Date.now() - 30 * 3600 * 1000) } }
+                );
+            }
         } else if (date) {
             const key = parseDateParam(date);
             filter.$or = [
                 { scoreboard_date: key },
                 { scoreboard_date: /^\d{8}$/.test(key) ? `${key.slice(0,4)}-${key.slice(4,6)}-${key.slice(6,8)}` : key }
-            ];
-        } else if (isQueryingToday) {
-            filter.$or = [
-                { scoreboard_date: todayKey },
-                { date: { $gte: dayStart, $lte: dayEnd } },
-                { 'status.state': 'in', date: { $gte: sixHoursAgo } }
             ];
         } else if (from || to) {
             filter.scoreboard_date = {};
@@ -1168,6 +1197,7 @@ router.get('/fixtures', optionalApiKeyAuth, async (req, res) => {
             filter['status.state'] = 'in';
             filter.date = { $gte: sixHoursAgo };
             delete filter.scoreboard_date;
+            delete filter.$or;
         } else if (status === 'scheduled') {
             filter['status.state'] = { $in: ['pre', 'scheduled'] };
         } else if (status === 'finished') {

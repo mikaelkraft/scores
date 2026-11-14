@@ -201,3 +201,18 @@ test('robots.txt exists on disk with proper crawlers and sitemap directive', () 
     assert.ok(robotsContent.includes('Sitemap: https://scores.mynorra.xyz/sitemap.xml'), 'Must link to sitemap.xml');
     assert.ok(robotsContent.includes('Disallow: /admin/'), 'Must disallow admin');
 });
+
+test('frontend deduplication and live sync properly retain finished scores and transition live matches', () => {
+    const appV9 = fs.readFileSync(path.join(__dirname, '..', 'public', 'app-v9.js'), 'utf8');
+
+    // mergeMatches handles completed secondary matches so final scores are never dropped
+    assert.ok(appV9.includes('else if (secIsCompleted && !winIsCompleted)'), 'mergeMatches must adopt completed secondary status');
+    assert.ok(appV9.includes('winner.status.state = \'post\''), 'mergeMatches must mark winner as post when secondary is completed');
+
+    // Quality score awards bonus for completed games so stale pre-match records never beat finished scores
+    assert.ok(appV9.includes('isCompletedBonus ='), 'getEventQualityScore must grant completed bonus');
+
+    // initLiveSync tracks live IDs so matches ending or starting trigger clean fixture reload
+    assert.ok(appV9.includes('liveIdsChanged ='), 'initLiveSync must track live match id set changes');
+    assert.ok(appV9.includes('!liveIdsChanged && digestChanged && patchLiveMatchRowsInDom'), 'patchLiveMatchRowsInDom must only short-circuit when live ID set is stable');
+});

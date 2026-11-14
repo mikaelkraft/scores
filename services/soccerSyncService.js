@@ -3084,9 +3084,22 @@ async function syncLiveScoreboards() {
     let updatedCount = 0;
     try {
         const todayStr = formatDateToScoreboard(now);
-        const allUrl = `https://site.api.espn.com/apis/site/v2/sports/soccer/all/scoreboard?dates=${todayStr}&limit=300`;
+        const tomorrow = new Date(now.getTime() + 86400000);
+        const tomorrowStr = formatDateToScoreboard(tomorrow);
+        const yesterday = new Date(now.getTime() - 86400000);
+        const yesterdayStr = formatDateToScoreboard(yesterday);
 
-        const feedResults = [await fetchJson(allUrl).catch(() => ({ events: [] }))];
+        // Fetch in parallel:
+        // 1. Default rolling active scoreboard (no dates filter = active rolling 24-48h window including live & recently completed games)
+        // 2. Today's date feed
+        // 3. Yesterday's date feed (captures evening games from other time zones that just concluded)
+        const [defaultScoreboard, todayScoreboard, yestScoreboard] = await Promise.all([
+            fetchJson('https://site.api.espn.com/apis/site/v2/sports/soccer/all/scoreboard?limit=300').catch(() => ({ events: [] })),
+            fetchJson(`https://site.api.espn.com/apis/site/v2/sports/soccer/all/scoreboard?dates=${todayStr}&limit=300`).catch(() => ({ events: [] })),
+            fetchJson(`https://site.api.espn.com/apis/site/v2/sports/soccer/all/scoreboard?dates=${yesterdayStr}&limit=300`).catch(() => ({ events: [] }))
+        ]);
+
+        const feedResults = [defaultScoreboard, todayScoreboard, yestScoreboard];
         const batchSize = 5;
         for (let i = 0; i < CORE_AND_REGIONAL_SCOREBOARD_FEEDS.length; i += batchSize) {
             const batch = CORE_AND_REGIONAL_SCOREBOARD_FEEDS.slice(i, i + batchSize);
@@ -3104,7 +3117,7 @@ async function syncLiveScoreboards() {
         const events = [];
         const seenEvIds = new Set();
         for (const res of feedResults) {
-            for (const ev of (res.events || [])) {
+            for (const ev of (res?.events || [])) {
                 if (!seenEvIds.has(String(ev.id))) {
                     seenEvIds.add(String(ev.id));
                     events.push(ev);
@@ -3112,8 +3125,13 @@ async function syncLiveScoreboards() {
             }
         }
 
-        // Preload all today's existing matches from database once to eliminate N+1 DB lookups
-        const existingScoreboardMatches = await SoccerMatch.find({ scoreboard_date: todayStr })
+        // Preload matches across today, yesterday, and tomorrow from database once to eliminate N+1 DB lookups
+        const existingScoreboardMatches = await SoccerMatch.find({
+            $or: [
+                { scoreboard_date: { $in: [todayStr, yesterdayStr, tomorrowStr] } },
+                { date: { $gte: new Date(now.getTime() - 48 * 3600 * 1000), $lte: new Date(now.getTime() + 48 * 3600 * 1000) } }
+            ]
+        })
             .select('_id source league_slug name short_name date status home away venue')
             .lean()
             .catch(() => []);
@@ -3129,6 +3147,8 @@ async function syncLiveScoreboards() {
                 const tier = getMatchTier(m.home?.name || m.home?.display_name, m.away?.name || m.away?.display_name, m.league_slug);
                 byNormSig.set(`${h}_vs_${a}_${tier}`, m);
                 byNormSig.set(`${a}_vs_${h}_${tier}`, m);
+                byNormSig.set(`${h}_vs_${a}`, m);
+                byNormSig.set(`${a}_vs_${h}`, m);
             }
         }
 
@@ -3163,7 +3183,12 @@ async function syncLiveScoreboards() {
             const aNorm = normalizeTeamName(awayCompName);
             const tier = getMatchTier(homeCompName, awayCompName, targetSlug);
             const sig = `${hNorm}_vs_${aNorm}_${tier}`;
-            const existingMatch = byEvId.get(String(ev.id)) || byNormSig.get(sig);
+            const existingMatch = byEvId.get(String(ev.id)) || byNormSig.get(sig) || byNormSig.get(`${hNorm}_vs_${aNorm}`);
+
+            // Never overwrite a completed match with a scheduled state
+            if (existingMatch?.status?.completed && state === 'pre') {
+                continue;
+            }
 
             if (!targetSlug && existingMatch?.league_slug) {
                 targetSlug = existingMatch.league_slug;
@@ -3177,21 +3202,23 @@ async function syncLiveScoreboards() {
                 kind: 'club'
             };
 
+            const isCompletedMatch = state === 'post' || statusType.completed === true;
+            const finalDetail = statusType.detail || ev.status?.displayClock || statusType.shortDetail || (state === 'in' ? "45'" : isCompletedMatch ? 'FT' : 'Scheduled');
             const updateFields = {
                 league_slug: targetSlug,
                 'status.state': state,
-                'status.name': statusType.name || (state === 'in' ? 'STATUS_IN_PROGRESS' : state === 'post' ? 'STATUS_FINAL' : 'STATUS_SCHEDULED'),
-                'status.description': statusType.description || (state === 'in' ? 'In Progress' : state === 'post' ? 'Full Time' : 'Scheduled'),
-                'status.detail': statusType.detail || ev.status?.displayClock || statusType.shortDetail || (state === 'in' ? "45'" : state === 'post' ? 'FT' : 'Scheduled'),
-                'status.short_detail': statusType.shortDetail || ev.status?.displayClock || statusType.detail || (state === 'in' ? "45'" : state === 'post' ? 'FT' : 'Scheduled'),
-                'status.clock': ev.status?.displayClock || statusType.shortDetail || statusType.detail || '',
-                'status.clock_seconds': ev.status?.clock || 0,
-                'status.period': ev.status?.period || 1,
-                'status.completed': statusType.completed || state === 'post',
-                'home.score': isNaN(homeScore) ? 0 : homeScore,
-                'away.score': isNaN(awayScore) ? 0 : awayScore,
-                'home.winner': homeComp.winner === true,
-                'away.winner': awayComp.winner === true,
+                'status.name': statusType.name || (state === 'in' ? 'STATUS_IN_PROGRESS' : isCompletedMatch ? 'STATUS_FINAL' : 'STATUS_SCHEDULED'),
+                'status.description': statusType.description || (state === 'in' ? 'In Progress' : isCompletedMatch ? 'Full Time' : 'Scheduled'),
+                'status.detail': finalDetail,
+                'status.short_detail': statusType.shortDetail || finalDetail,
+                'status.clock': isCompletedMatch ? 'FT' : (ev.status?.displayClock || statusType.shortDetail || statusType.detail || ''),
+                'status.clock_seconds': ev.status?.clock || (isCompletedMatch ? 5400 : 0),
+                'status.period': ev.status?.period || (isCompletedMatch ? 2 : 1),
+                'status.completed': isCompletedMatch,
+                'home.score': isNaN(homeScore) ? (existingMatch?.home?.score ?? 0) : homeScore,
+                'away.score': isNaN(awayScore) ? (existingMatch?.away?.score ?? 0) : awayScore,
+                'home.winner': isCompletedMatch ? (homeScore > awayScore) : (homeComp.winner === true),
+                'away.winner': isCompletedMatch ? (awayScore > homeScore) : (awayComp.winner === true),
                 'last_synced_at': now
             };
 
@@ -3282,11 +3309,14 @@ async function syncLiveScoreboards() {
 
                 sbMatchOps.push({
                     updateOne: {
-                        filter: { 'source.provider': 'upstream', 'source.event_id': String(ev.id) },
+                        filter: { 'source.provider': 'upstream', league_slug: targetSlug, 'source.event_id': String(ev.id) },
                         update: { $set: matchDoc, $setOnInsert: { created_at: now } },
                         upsert: true
                     }
                 });
+                byEvId.set(String(ev.id), matchDoc);
+                byNormSig.set(sig, matchDoc);
+                byNormSig.set(`${hNorm}_vs_${aNorm}`, matchDoc);
             }
             updatedCount++;
         }

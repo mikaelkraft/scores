@@ -896,7 +896,8 @@
         const isWomen = tier.startsWith('w_') ? 2 : 0;
         const hasClock = isConcreteClock(ev.status?.clock || ev.status?.detail) ? 2 : (ev.status?.clock || ev.status?.detail ? 1 : 0);
         const isLiveBonus = (ev.status?.state === 'in' || ev.status?.isLive) && !/FT|Final|Postp|Canc/i.test(String(ev.status?.clock || '')) ? 6 : 0;
-        return hasEspnLogo + hasCanonicalId + hasSpecificSlug + isWomen + hasClock + isLiveBonus;
+        const isCompletedBonus = (ev.status?.completed || ev.status?.state === 'post' || /FT|Final|AET|AP/i.test(String(ev.status?.clock || ev.status?.detail || ''))) ? 5 : 0;
+        return hasEspnLogo + hasCanonicalId + hasSpecificSlug + isWomen + hasClock + isLiveBonus + isCompletedBonus;
     }
 
     function deduplicateMatchesList(matchList) {
@@ -930,7 +931,12 @@
         });
 
         const mergeMatches = (winner, secondary) => {
-            if (secondary.status?.isLive || secondary.status?.state === 'in') {
+            const secIsLive = secondary.status?.isLive || secondary.status?.state === 'in';
+            const winIsLive = winner.status?.isLive || winner.status?.state === 'in';
+            const secIsCompleted = secondary.status?.completed || secondary.status?.state === 'post' || /FT|Final|AET|AP/i.test(String(secondary.status?.detail || secondary.status?.clock || ''));
+            const winIsCompleted = winner.status?.completed || winner.status?.state === 'post' || /FT|Final|AET|AP/i.test(String(winner.status?.detail || winner.status?.clock || ''));
+
+            if (secIsLive && !winIsLive && !winIsCompleted) {
                 if (!winner.status) winner.status = {};
                 const secClock = secondary.status?.clock || secondary.status?.detail;
                 if (isConcreteClock(secClock) && (!isConcreteClock(winner.status.clock) || winner.status.clock === "45'")) {
@@ -943,6 +949,19 @@
                 if (secAwayScore !== undefined && winner.away) winner.away.score = secAwayScore;
                 winner.status.state = 'in';
                 winner.status.isLive = true;
+            } else if (secIsCompleted && !winIsCompleted) {
+                if (!winner.status) winner.status = {};
+                winner.status.state = 'post';
+                winner.status.completed = true;
+                winner.status.isLive = false;
+                winner.status.detail = secondary.status?.detail || 'FT';
+                winner.status.clock = secondary.status?.clock || 'FT';
+                const secHomeScore = secondary.home?.score ?? secondary.competitions?.[0]?.competitors?.[0]?.score;
+                const secAwayScore = secondary.away?.score ?? secondary.competitions?.[0]?.competitors?.[1]?.score;
+                if (secHomeScore !== undefined && winner.home) winner.home.score = secHomeScore;
+                if (secAwayScore !== undefined && winner.away) winner.away.score = secAwayScore;
+                if (winner.home && secondary.home?.winner !== undefined) winner.home.winner = secondary.home.winner;
+                if (winner.away && secondary.away?.winner !== undefined) winner.away.winner = secondary.away.winner;
             }
             if (secondary.source?.livescore_id && !winner.source?.livescore_id) {
                 if (!winner.source) winner.source = {};
@@ -4820,8 +4839,14 @@ function renderAdSlot(elementId, slotData) {
                     return; // Prevent duplicate initial fetch since selectAllLeagues/init runs on boot
                 }
 
-                // If only existing live scores changed in-place, patch DOM without re-rendering container
-                if (digestChanged && patchLiveMatchRowsInDom(liveMatches)) {
+                // Only patch DOM in-place if live matches set has not changed (no matches started or ended)
+                const prevLiveIds = (state.lastLiveIds || []).sort().join(',');
+                const currLiveIds = liveMatches.map(m => String(m.id)).sort().join(',');
+                const liveIdsChanged = prevLiveIds !== currLiveIds;
+                state.lastLiveIds = liveMatches.map(m => String(m.id));
+
+                // If only existing live scores changed in-place without match count/id set change, patch DOM
+                if (!liveIdsChanged && digestChanged && patchLiveMatchRowsInDom(liveMatches)) {
                     return;
                 }
 
