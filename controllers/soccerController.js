@@ -108,7 +108,23 @@ function validateEvent(req, res, next) {
 }
 
 async function getLeague(slug) {
-    return SoccerLeague.findOne({ slug, active: true }).lean();
+    let doc = await SoccerLeague.findOne({ slug, active: true }).lean();
+    if (!doc) {
+        const { TARGET_LEAGUES } = require('../services/soccerSyncService');
+        const def = (TARGET_LEAGUES || []).find(l => l.slug === slug);
+        if (def) {
+            doc = {
+                slug: def.slug,
+                name: def.name,
+                abbreviation: def.abbreviation,
+                country: def.country,
+                kind: def.kind || 'club',
+                active: true,
+                logo: def.logo || ''
+            };
+        }
+    }
+    return doc;
 }
 
 function countsToMap(rows) {
@@ -1021,6 +1037,23 @@ router.get('/:league/standings', validateLeague, async(req, res) => {
             return res.status(400).json({ error: 'season must be a four-digit year' });
         }
 
+        const currentYear = new Date().getUTCFullYear();
+        const { LIVESCORE_STAGE_TABLE_MAP, syncLiveScoreStandingsForLeague } = require('../services/soccerSyncService');
+        const isLiveScoreStage = LIVESCORE_STAGE_TABLE_MAP && Boolean(LIVESCORE_STAGE_TABLE_MAP[req.params.league]);
+
+        // If this league is backed by LiveScore stage table, ensure active current table is in MongoDB
+        if (isLiveScoreStage) {
+            const hasCurrentLiveTable = await SoccerStanding.findOne({
+                league_slug: req.params.league,
+                season_year: currentYear,
+                group_id: 'overall',
+                'entries.0': { $exists: true }
+            }).lean();
+            if (!hasCurrentLiveTable) {
+                await syncLiveScoreStandingsForLeague(req.params.league);
+            }
+        }
+
         let seasonYear = Number.parseInt(req.query.season, 10);
         let groups = [];
 
@@ -1039,6 +1072,22 @@ router.get('/:league/standings', validateLeague, async(req, res) => {
                 const latestYear = allGroups[0].season_year;
                 seasonYear = latestYear;
                 groups = allGroups.filter(g => g.season_year === latestYear);
+            }
+        }
+
+        // Clean deduplication: if overall group exists, prioritize it and discard duplicate/stale tables
+        if (groups.length > 1) {
+            const overallGroup = groups.find(g => g.group_id === 'overall');
+            if (overallGroup) {
+                groups = [overallGroup];
+            } else {
+                const seen = new Set();
+                groups = groups.filter(g => {
+                    const k = `${g.league_slug}_${g.group_id || g.group_name || 'default'}`;
+                    if (seen.has(k)) return false;
+                    seen.add(k);
+                    return true;
+                });
             }
         }
 

@@ -120,7 +120,7 @@ const {
     isConcreteClock,
     formatMatchClock
 } = require('../services/soccerSerializer');
-const { normalizeTeamName, getTeamCategory, getMatchTier, resolveMatchEspnId, resolveLeagueSlug, enforceCountryOnSlug, isReserveOrBTeamName, formatLiveScoreLogo, TARGET_LEAGUES, inferCountryFromTeamNames } = require('../services/soccerSyncService');
+const { normalizeTeamName, getTeamCategory, getMatchTier, resolveMatchEspnId, resolveLeagueSlug, enforceCountryOnSlug, isReserveOrBTeamName, formatLiveScoreLogo, TARGET_LEAGUES, inferCountryFromTeamNames, demoteToJuniorOrLowerTier, syncLiveScoreStandingsForLeague, LIVESCORE_STAGE_TABLE_MAP } = require('../services/soccerSyncService');
 
 function formatDateKey(d = new Date()) {
     const y = d.getUTCFullYear();
@@ -356,11 +356,11 @@ async function fetchFreshWorldwideLiveMatches() {
                 const h = ev.T1?.[0] || {};
                 const a = ev.T2?.[0] || {};
 
-                // Strict filter: Never allow B/reserve sides on senior top-flight boards (.1)
+                // Demote B/reserve/youth sides off senior top-flight boards (.1) to dedicated junior or lower tier
                 const seniorSlug = String(slug || '').toLowerCase();
-                const isSeniorTop = /\.[1]$/.test(seniorSlug) && !seniorSlug.includes('.w.') && !seniorSlug.includes('youth');
+                const isSeniorTop = /\.[1]$/.test(seniorSlug) && !seniorSlug.includes('.w.') && !seniorSlug.includes('youth') && !seniorSlug.includes('u19') && !seniorSlug.includes('u21');
                 if (isSeniorTop && (isReserveOrBTeamName(h.Nm) || isReserveOrBTeamName(a.Nm))) {
-                    continue;
+                    slug = demoteToJuniorOrLowerTier(slug, h.Nm, a.Nm);
                 }
                 const hScore = parseInt(ev.Tr1 || 0, 10);
                 const aScore = parseInt(ev.Tr2 || 0, 10);
@@ -2872,15 +2872,36 @@ router.get(['/standings', '/standings/:league'], async (req, res) => {
             filter.league_slug = requestedSlug;
         }
 
+        const currentYear = new Date().getUTCFullYear();
+        if (requestedSlug && requestedSlug !== 'all' && LIVESCORE_STAGE_TABLE_MAP && LIVESCORE_STAGE_TABLE_MAP[requestedSlug]) {
+            const hasCurrentLiveTable = await SoccerStanding.findOne({
+                league_slug: requestedSlug,
+                season_year: currentYear,
+                group_id: 'overall',
+                'entries.0': { $exists: true }
+            }).lean();
+            if (!hasCurrentLiveTable) {
+                await syncLiveScoreStandingsForLeague(requestedSlug);
+            }
+        }
+
         const groups = await SoccerStanding.find(filter).sort({ season_year: -1, group_name: 1 }).lean();
-        // Deduplicate groups keeping ONLY the latest season_year per league and group
+        // Deduplicate groups keeping ONLY the latest season_year per league and group, prioritizing overall
         const seenGroups = new Set();
-        const dedupedGroups = [];
+        let dedupedGroups = [];
         for (const g of groups) {
             const key = `${g.league_slug}_${g.group_id || g.group_name || 'default'}`;
             if (!seenGroups.has(key)) {
                 seenGroups.add(key);
                 dedupedGroups.push(g);
+            }
+        }
+
+        // If specific league requested and overall group exists, keep only overall to eliminate duplicate ESPN tables
+        if (requestedSlug && requestedSlug !== 'all' && dedupedGroups.length > 1) {
+            const overallGroup = dedupedGroups.find(g => g.group_id === 'overall');
+            if (overallGroup) {
+                dedupedGroups = [overallGroup];
             }
         }
 

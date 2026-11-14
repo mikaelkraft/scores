@@ -1336,6 +1336,53 @@
             }
         }
 
+        // 1i. Separate junior / reserve / youth tiers from senior top flights (.1)
+        const isSeniorTop = /\.[1]$/.test(slug) && !slug.includes('.w.') && !slug.includes('youth') && !slug.includes('u19') && !slug.includes('u21');
+        const teamReserveCheck = /\b(u-?2[0-3]|u-?1[5-9]|youth|primavera|reserves?|development|academy|castilla|atl[eè]tic|promesas|fabril|vetusta|filial)\b|\s+[bB]$|\s+II$/i;
+        if (isSeniorTop && (teamReserveCheck.test(ev?.home?.name || '') || teamReserveCheck.test(ev?.away?.name || '') || teamReserveCheck.test(name))) {
+            const hN = ev?.home?.name || '';
+            const aN = ev?.away?.name || '';
+            const tText = `${hN} ${aN} ${name}`.toLowerCase();
+            const isYouth = /\b(u-?2[0-3]|u-?1[5-9]|youth|primavera|reserves?|development|academy|juvenil|nachwuchs|junioren)\b/i.test(tText);
+            if (slug.startsWith('eng.')) {
+                slug = isYouth ? 'eng.u21' : 'eng.5';
+                name = isYouth ? 'Premier League 2' : 'National League';
+                country = 'England';
+            } else if (slug.startsWith('ita.')) {
+                slug = (isYouth || tText.includes('primavera')) ? 'ita.u19' : 'ita.2';
+                name = (isYouth || tText.includes('primavera')) ? 'Campionato Primavera 1' : 'Italian Serie B';
+                country = 'Italy';
+            } else if (slug.startsWith('esp.')) {
+                slug = (isYouth || tText.includes('juvenil')) ? 'esp.u19' : 'esp.3';
+                name = (isYouth || tText.includes('juvenil')) ? 'División de Honor Juvenil' : 'Spanish Primera Federación';
+                country = 'Spain';
+            } else if (slug.startsWith('ger.')) {
+                slug = isYouth ? 'ger.u19' : 'ger.3';
+                name = isYouth ? 'U19 DFB-Nachwuchsliga' : 'German 3. Liga';
+                country = 'Germany';
+            } else if (slug.startsWith('fra.')) {
+                slug = isYouth ? 'fra.u19' : 'fra.2';
+                name = isYouth ? 'Championnat National U19' : 'French Ligue 2';
+                country = 'France';
+            } else if (slug.startsWith('tur.')) {
+                slug = 'tur.2';
+                name = 'Turkish 1. Lig';
+                country = 'Turkey';
+            } else if (slug.startsWith('aut.')) {
+                slug = 'aut.2';
+                name = 'Austrian 2. Liga';
+                country = 'Austria';
+            } else if (slug.startsWith('bih.')) {
+                slug = 'bih.2';
+                name = 'Bosnian Prva Liga';
+                country = 'Bosnia and Herzegovina';
+            } else if (slug === 'intl.friendly' && isYouth) {
+                slug = 'intl.u21';
+                name = 'Under-21 International Friendlies';
+                country = 'International';
+            }
+        }
+
         // 2. Infer country from slug prefix if country is missing or generic 'International'
         if (!country || country.toLowerCase() === 'international') {
             const prefix = slug.split('.')[0];

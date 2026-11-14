@@ -187,8 +187,30 @@ const TARGET_LEAGUES = [
     { slug: 'gin.1', name: 'Guinea Ligue 1', abbreviation: 'Guinea L1', country: 'Guinea', kind: 'club', sort_order: 147 },
     { slug: 'twn.1', name: 'Taiwan Football Premier League', abbreviation: 'Taiwan PL', country: 'Taiwan', kind: 'club', sort_order: 148 },
     { slug: 'mda.1', name: 'Moldovan Super Liga', abbreviation: 'Super Liga', country: 'Moldova', kind: 'club', sort_order: 149 },
-    { slug: 'kvx.1', name: 'Kosovar Superliga', abbreviation: 'Superliga Kosovo', country: 'Kosovo', kind: 'club', sort_order: 150, logo: 'https://flagcdn.com/w80/xk.png' }
+    { slug: 'kvx.1', name: 'Kosovar Superliga', abbreviation: 'Superliga Kosovo', country: 'Kosovo', kind: 'club', sort_order: 150, logo: 'https://flagcdn.com/w80/xk.png' },
+    { slug: 'tur.2', name: 'Turkish 1. Lig', abbreviation: '1. Lig', country: 'Turkey', kind: 'club', sort_order: 151, logo: 'https://flagcdn.com/w80/tr.png' },
+    { slug: 'tur.3', name: 'Turkish 2. Lig', abbreviation: '2. Lig', country: 'Turkey', kind: 'club', sort_order: 152, logo: 'https://flagcdn.com/w80/tr.png' },
+    { slug: 'aut.2', name: 'Austrian 2. Liga', abbreviation: '2. Liga', country: 'Austria', kind: 'club', sort_order: 153, logo: 'https://flagcdn.com/w80/at.png' },
+    { slug: 'bih.2', name: 'Bosnian Prva Liga', abbreviation: 'Prva Liga', country: 'Bosnia and Herzegovina', kind: 'club', sort_order: 154, logo: 'https://flagcdn.com/w80/ba.png' },
+    { slug: 'intl.u21', name: 'Under-21 International Friendlies', abbreviation: 'U21 Friendlies', country: 'International', kind: 'international', sort_order: 155, logo: 'https://a.espncdn.com/i/leaguelogos/soccer/500/friendly.png' },
+    { slug: 'esp.3', name: 'Spanish Primera Federación', abbreviation: 'Primera RFEF', country: 'Spain', kind: 'club', sort_order: 156, logo: 'https://flagcdn.com/w80/es.png' },
+    { slug: 'ger.3', name: 'German 3. Liga', abbreviation: '3. Liga', country: 'Germany', kind: 'club', sort_order: 157, logo: 'https://flagcdn.com/w80/de.png' },
+    { slug: 'ita.u19', name: 'Campionato Primavera 1', abbreviation: 'Primavera 1', country: 'Italy', kind: 'club', sort_order: 158, logo: 'https://flagcdn.com/w80/it.png' },
+    { slug: 'esp.u19', name: 'División de Honor Juvenil', abbreviation: 'División Honor', country: 'Spain', kind: 'club', sort_order: 159, logo: 'https://flagcdn.com/w80/es.png' },
+    { slug: 'ger.u19', name: 'U19 DFB-Nachwuchsliga', abbreviation: 'U19 Bundesliga', country: 'Germany', kind: 'club', sort_order: 160, logo: 'https://flagcdn.com/w80/de.png' },
+    { slug: 'fra.u19', name: 'Championnat National U19', abbreviation: 'National U19', country: 'France', kind: 'club', sort_order: 161, logo: 'https://flagcdn.com/w80/fr.png' }
 ];
+
+const LIVESCORE_STAGE_TABLE_MAP = {
+    'nga.1': 'https://prod-public-api.livescore.com/v1/api/app/stage/soccer/nigeria/npfl/1',
+    'gha.1': 'https://prod-public-api.livescore.com/v1/api/app/stage/soccer/ghana/premier-league/1',
+    'ken.1': 'https://prod-public-api.livescore.com/v1/api/app/stage/soccer/kenya/premier-league/1',
+    'tza.1': 'https://prod-public-api.livescore.com/v1/api/app/stage/soccer/tanzania/premier-league/1',
+    'egy.1': 'https://prod-public-api.livescore.com/v1/api/app/stage/soccer/egypt/premier-league/1',
+    'rsa.1': 'https://prod-public-api.livescore.com/v1/api/app/stage/soccer/south-africa/premier-league/1',
+    'mar.1': 'https://prod-public-api.livescore.com/v1/api/app/stage/soccer/morocco/botola-pro/1',
+    'kvx.1': 'https://prod-public-api.livescore.com/v1/api/app/stage/soccer/kosovo/superliga/1'
+};
 
 function fetchJson(url) {
     return new Promise((resolve, reject) => {
@@ -515,13 +537,15 @@ async function syncLeagueFromLiveScoreStages(leagueDef, stages, now = new Date()
             targetSlug = inferCountryFromTeamNames(homeName, awayName, targetSlug);
             // Keep senior top-flight boards clean — no B/II/U21 sides mixed in
             const seniorSlug = String(targetSlug || '').toLowerCase();
-            const isSeniorTop = /\.[1]$/.test(seniorSlug) && !seniorSlug.includes('.w.') && !seniorSlug.includes('youth');
+            const isSeniorTop = /\.[1]$/.test(seniorSlug) && !seniorSlug.includes('.w.') && !seniorSlug.includes('youth') && !seniorSlug.includes('u19') && !seniorSlug.includes('u21');
             if (isSeniorTop && (isReserveOrBTeamName(homeName) || isReserveOrBTeamName(awayName))) {
-                continue;
+                targetSlug = demoteToJuniorOrLowerTier(targetSlug, homeName, awayName, leagueName);
             }
-            // Final gate: still on .1 with no known club → skip inserting into top board
-            if (isSeniorTop && TOP_FLIGHT_CLUBS[seniorSlug] && !hasTopFlightClub(seniorSlug, homeName, awayName)) {
-                continue;
+            // Final gate: still on .1 with no known club → demote rather than drop
+            const updatedSeniorSlug = String(targetSlug || '').toLowerCase();
+            const stillSeniorTop = /\.[1]$/.test(updatedSeniorSlug) && !updatedSeniorSlug.includes('.w.') && !updatedSeniorSlug.includes('youth') && !updatedSeniorSlug.includes('u19') && !updatedSeniorSlug.includes('u21');
+            if (stillSeniorTop && TOP_FLIGHT_CLUBS[updatedSeniorSlug] && !hasTopFlightClub(updatedSeniorSlug, homeName, awayName)) {
+                targetSlug = demoteToJuniorOrLowerTier(targetSlug, homeName, awayName, leagueName);
             }
             const homeScore = parseInt(ev.Tr1 || 0, 10);
             const awayScore = parseInt(ev.Tr2 || 0, 10);
@@ -671,6 +695,79 @@ async function syncLeagueFromLiveScoreStages(leagueDef, stages, now = new Date()
     return syncedCount;
 }
 
+async function syncLiveScoreStandingsForLeague(slug, now = new Date()) {
+    const stageUrl = LIVESCORE_STAGE_TABLE_MAP[slug];
+    if (!stageUrl) return 0;
+    try {
+        const data = await fetchJson(stageUrl);
+        const teams = data?.Stages?.[0]?.LeagueTable?.L?.[0]?.Tables?.[0]?.team || [];
+        if (!Array.isArray(teams) || teams.length === 0) return 0;
+
+        const currentYear = new Date().getUTCFullYear();
+        const normalizedEntries = teams.map((t, idx) => {
+            const statsMap = new Map();
+            const rank = Number(t.rnk ?? (idx + 1));
+            const pld = Number(t.pld ?? 0);
+            const win = Number(t.win ?? 0);
+            const drw = Number(t.drw ?? 0);
+            const lst = Number(t.lst ?? 0);
+            const gf = Number(t.gf ?? 0);
+            const ga = Number(t.ga ?? 0);
+            const gd = Number(t.gd ?? (gf - ga));
+            const pts = Number(t.pts ?? 0);
+
+            statsMap.set('rank', rank);
+            statsMap.set('gamesPlayed', pld);
+            statsMap.set('wins', win);
+            statsMap.set('ties', drw);
+            statsMap.set('losses', lst);
+            statsMap.set('pointsFor', gf);
+            statsMap.set('pointsAgainst', ga);
+            statsMap.set('pointDifferential', gd);
+            statsMap.set('points', pts);
+
+            const crest = formatLiveScoreLogo(t.Img || '');
+            return {
+                rank,
+                club: {
+                    source_id: String(t.Tid || `club-${idx}`),
+                    display_name: t.Tnm || 'Club',
+                    abbreviation: (t.Tnm || '').slice(0, 3).toUpperCase(),
+                    logo: crest
+                },
+                stats: statsMap
+            };
+        });
+
+        // Purge any stale or duplicate ESPN standings for this league
+        await SoccerStanding.deleteMany({
+            league_slug: slug,
+            $or: [
+                { group_id: { $ne: 'overall' } },
+                { season_year: { $lt: currentYear } }
+            ]
+        });
+
+        await SoccerStanding.updateOne(
+            { league_slug: slug, season_year: currentYear, group_id: 'overall' },
+            {
+                $set: {
+                    group_name: 'Standings',
+                    entries: normalizedEntries,
+                    last_synced_at: now
+                },
+                $setOnInsert: { created_at: now }
+            },
+            { upsert: true }
+        );
+
+        return normalizedEntries.length;
+    } catch (err) {
+        console.warn(`[LiveSync] Failed LiveScore standings sync for ${slug}:`, err.message);
+        return 0;
+    }
+}
+
 async function syncLeague(leagueDef) {
     const slug = leagueDef.slug;
     const now = new Date();
@@ -806,64 +903,73 @@ async function syncLeague(leagueDef) {
         }
 
         // 3. Sync Standings
-        try {
-            const standingsUrl = `https://site.api.espn.com/apis/v2/sports/soccer/${slug}/standings`;
-            const standData = await fetchJson(standingsUrl);
-            const children = standData.children || [];
-            const seasonYear = Number(season.year) || 2026;
-
-            for (let idx = 0; idx < children.length; idx++) {
-                const grp = children[idx];
-                const standingsObj = grp.standings || {};
-                const entries = standingsObj.entries || [];
-
-                // Sort entries by real rank ascending (or points descending)
-                const sortedEntries = entries.slice().sort((a, b) => {
-                    const rankA = Number((a.stats || []).find(s => s.name === 'rank')?.value ?? 999);
-                    const rankB = Number((b.stats || []).find(s => s.name === 'rank')?.value ?? 999);
-                    if (rankA !== rankB) return rankA - rankB;
-                    const ptsA = Number((a.stats || []).find(s => s.name === 'points')?.value ?? 0);
-                    const ptsB = Number((b.stats || []).find(s => s.name === 'points')?.value ?? 0);
-                    return ptsB - ptsA;
-                });
-
-                const normalizedEntries = sortedEntries.map((entry, eIdx) => {
-                    const statsMap = new Map();
-                    for (const st of (entry.stats || [])) {
-                        if (st.name && typeof st.value === 'number') {
-                            statsMap.set(st.name, st.value);
-                        }
-                    }
-                    const realRank = Number((entry.stats || []).find(s => s.name === 'rank')?.value ?? (eIdx + 1));
-
-                    return {
-                        rank: realRank,
-                        club: {
-                            source_id: String(entry.team?.id || `club-${eIdx}`),
-                            display_name: entry.team?.displayName || entry.team?.name || 'Club',
-                            abbreviation: entry.team?.abbreviation || '',
-                            logo: entry.team?.logos?.[0]?.href || entry.team?.logo || ''
-                        },
-                        stats: statsMap
-                    };
-                });
-
-                await SoccerStanding.updateOne(
-                    { league_slug: slug, season_year: seasonYear, group_id: grp.id || 'overall' },
-                    {
-                        $set: {
-                            group_name: grp.name || 'League Table',
-                            entries: normalizedEntries,
-                            last_synced_at: now
-                        },
-                        $setOnInsert: { created_at: now }
-                    },
-                    { upsert: true }
-                );
-                standingCount++;
+        if (LIVESCORE_STAGE_TABLE_MAP[slug]) {
+            try {
+                const count = await syncLiveScoreStandingsForLeague(slug, now);
+                if (count > 0) standingCount++;
+            } catch (stErr) {
+                console.warn(`[LiveSync] LiveScore standings notice for ${slug}:`, stErr.message);
             }
-        } catch (stErr) {
-            console.warn(`[LiveSync] Standings notice for ${slug}:`, stErr.message);
+        } else {
+            try {
+                const standingsUrl = `https://site.api.espn.com/apis/v2/sports/soccer/${slug}/standings`;
+                const standData = await fetchJson(standingsUrl);
+                const children = standData.children || [];
+                const seasonYear = Number(season.year) || 2026;
+
+                for (let idx = 0; idx < children.length; idx++) {
+                    const grp = children[idx];
+                    const standingsObj = grp.standings || {};
+                    const entries = standingsObj.entries || [];
+
+                    // Sort entries by real rank ascending (or points descending)
+                    const sortedEntries = entries.slice().sort((a, b) => {
+                        const rankA = Number((a.stats || []).find(s => s.name === 'rank')?.value ?? 999);
+                        const rankB = Number((b.stats || []).find(s => s.name === 'rank')?.value ?? 999);
+                        if (rankA !== rankB) return rankA - rankB;
+                        const ptsA = Number((a.stats || []).find(s => s.name === 'points')?.value ?? 0);
+                        const ptsB = Number((b.stats || []).find(s => s.name === 'points')?.value ?? 0);
+                        return ptsB - ptsA;
+                    });
+
+                    const normalizedEntries = sortedEntries.map((entry, eIdx) => {
+                        const statsMap = new Map();
+                        for (const st of (entry.stats || [])) {
+                            if (st.name && typeof st.value === 'number') {
+                                statsMap.set(st.name, st.value);
+                            }
+                        }
+                        const realRank = Number((entry.stats || []).find(s => s.name === 'rank')?.value ?? (eIdx + 1));
+
+                        return {
+                            rank: realRank,
+                            club: {
+                                source_id: String(entry.team?.id || `club-${eIdx}`),
+                                display_name: entry.team?.displayName || entry.team?.name || 'Club',
+                                abbreviation: entry.team?.abbreviation || '',
+                                logo: entry.team?.logos?.[0]?.href || entry.team?.logo || ''
+                            },
+                            stats: statsMap
+                        };
+                    });
+
+                    await SoccerStanding.updateOne(
+                        { league_slug: slug, season_year: seasonYear, group_id: grp.id || 'overall' },
+                        {
+                            $set: {
+                                group_name: grp.name || 'League Table',
+                                entries: normalizedEntries,
+                                last_synced_at: now
+                            },
+                            $setOnInsert: { created_at: now }
+                        },
+                        { upsert: true }
+                    );
+                    standingCount++;
+                }
+            } catch (stErr) {
+                console.warn(`[LiveSync] Standings notice for ${slug}:`, stErr.message);
+            }
         }
 
         // 4. Update Sync State
@@ -1172,6 +1278,71 @@ function demoteIfNotTopFlight(slug, homeName, awayName, leagueName = '') {
     }
     if (hasTopFlightClub(slug, homeName, awayName)) return slug;
     return slug.replace(/\.1$/, '.lower');
+}
+
+function demoteToJuniorOrLowerTier(slug, homeName = '', awayName = '', compName = '') {
+    const text = `${homeName} ${awayName} ${compName} ${slug}`.toLowerCase();
+    const isYouth = /\b(u-?2[0-3]|u-?1[5-9]|youth|primavera|reserves?|development|academy|juvenil|nachwuchs|junioren)\b/i.test(text);
+    const isBTeam = isReserveOrBTeamName(homeName) || isReserveOrBTeamName(awayName);
+
+    if (!isYouth && !isBTeam) return slug;
+
+    // International youth match
+    if (slug === 'intl.friendly' || slug === 'intl.u21' || text.includes('international') || text.includes('friendlies')) {
+        return 'intl.u21';
+    }
+
+    // England
+    if (slug.startsWith('eng.') || text.includes('england') || text.includes('premier league 2') || text.includes('pl2')) {
+        if (isYouth) return 'eng.u21';
+        return 'eng.5';
+    }
+
+    // Italy
+    if (slug.startsWith('ita.') || text.includes('italy') || text.includes('primavera')) {
+        if (isYouth || text.includes('primavera')) return 'ita.u19';
+        return 'ita.2';
+    }
+
+    // Spain
+    if (slug.startsWith('esp.') || text.includes('spain') || text.includes('juvenil') || text.includes('castilla') || text.includes('atletic') || text.includes('barcelona b')) {
+        if (isYouth || text.includes('juvenil')) return 'esp.u19';
+        return 'esp.3';
+    }
+
+    // Germany
+    if (slug.startsWith('ger.') || text.includes('germany') || text.includes('nachwuchs') || text.includes('junioren')) {
+        if (isYouth) return 'ger.u19';
+        return 'ger.3';
+    }
+
+    // France
+    if (slug.startsWith('fra.') || text.includes('france')) {
+        if (isYouth) return 'fra.u19';
+        return 'fra.2';
+    }
+
+    // Turkey
+    if (slug.startsWith('tur.')) {
+        return 'tur.2';
+    }
+
+    // Austria
+    if (slug.startsWith('aut.')) {
+        return 'aut.2';
+    }
+
+    // Bosnia
+    if (slug.startsWith('bih.')) {
+        return 'bih.2';
+    }
+
+    // Generic country slug: e.g. xxx.1 -> xxx.2 or xxx.youth
+    const countryPrefix = slug.split('.')[0];
+    if (isYouth) {
+        return `${countryPrefix}.youth`;
+    }
+    return `${countryPrefix}.2`;
 }
 
 function resolveLeagueSlug(altGameNote = '', compDesc = '', uid = '') {
@@ -2890,9 +3061,9 @@ async function syncLiveScoreInPlay() {
 
                 // Keep senior top-flight boards clean — no B/II/U21 sides mixed in
                 const seniorSlug = String(targetSlug || '').toLowerCase();
-                const isSeniorTop = /\.[1]$/.test(seniorSlug) && !seniorSlug.includes('.w.') && !seniorSlug.includes('youth');
+                const isSeniorTop = /\.[1]$/.test(seniorSlug) && !seniorSlug.includes('.w.') && !seniorSlug.includes('youth') && !seniorSlug.includes('u19') && !seniorSlug.includes('u21');
                 if (isSeniorTop && (isReserveOrBTeamName(homeName) || isReserveOrBTeamName(awayName))) {
-                    continue;
+                    targetSlug = demoteToJuniorOrLowerTier(targetSlug, homeName, awayName);
                 }
                 const homeScore = parseInt(ev.Tr1 || 0, 10);
                 const awayScore = parseInt(ev.Tr2 || 0, 10);
@@ -3364,6 +3535,9 @@ module.exports = {
     isReserveOrBTeamName,
     hasTopFlightClub,
     demoteIfNotTopFlight,
+    demoteToJuniorOrLowerTier,
+    syncLiveScoreStandingsForLeague,
+    LIVESCORE_STAGE_TABLE_MAP,
     inferCountryFromTeamNames,
     applyTeamAlias,
     getMatchTier,

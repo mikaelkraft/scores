@@ -3,7 +3,7 @@ const assert = require('node:assert/strict');
 const fs = require('fs');
 const path = require('path');
 const mongoose = require('mongoose');
-const { resolveLeagueSlug, inferCountryFromTeamNames, normalizeTeamName, cleanCompetitionName, hasTopFlightClub, demoteIfNotTopFlight, TARGET_LEAGUES } = require('../services/soccerSyncService');
+const { resolveLeagueSlug, inferCountryFromTeamNames, normalizeTeamName, cleanCompetitionName, hasTopFlightClub, demoteIfNotTopFlight, demoteToJuniorOrLowerTier, LIVESCORE_STAGE_TABLE_MAP, TARGET_LEAGUES } = require('../services/soccerSyncService');
 const { serializeLeague, serializeStandingGroup } = require('../services/soccerSerializer');
 
 test.after(async () => {
@@ -215,4 +215,42 @@ test('frontend deduplication and live sync properly retain finished scores and t
     // initLiveSync tracks live IDs so matches ending or starting trigger clean fixture reload
     assert.ok(appV9.includes('liveIdsChanged ='), 'initLiveSync must track live match id set changes');
     assert.ok(appV9.includes('!liveIdsChanged && digestChanged && patchLiveMatchRowsInDom'), 'patchLiveMatchRowsInDom must only short-circuit when live ID set is stable');
+});
+
+test('demoteToJuniorOrLowerTier accurately separates junior/reserve leagues from senior .1 flights', () => {
+    assert.equal(demoteToJuniorOrLowerTier('intl.friendly', 'England U21', 'Spain U21'), 'intl.u21');
+    assert.equal(demoteToJuniorOrLowerTier('eng.1', 'Arsenal U21', 'Chelsea U21'), 'eng.u21');
+    assert.equal(demoteToJuniorOrLowerTier('eng.1', 'Manchester United Reserves', 'Liverpool Reserves'), 'eng.u21');
+    assert.equal(demoteToJuniorOrLowerTier('ita.1', 'Juventus Primavera', 'Milan Primavera'), 'ita.u19');
+    assert.equal(demoteToJuniorOrLowerTier('esp.1', 'Real Madrid Castilla', 'Barcelona Atlètic'), 'esp.3');
+    assert.equal(demoteToJuniorOrLowerTier('esp.1', 'Atletico Madrid Juvenil', 'Real Betis Juvenil'), 'esp.u19');
+    assert.equal(demoteToJuniorOrLowerTier('ger.1', 'Bayern Munich II', 'Borussia Dortmund II'), 'ger.3');
+    assert.equal(demoteToJuniorOrLowerTier('ger.1', 'Schalke 04 U19', 'Leverkusen U19'), 'ger.u19');
+    assert.equal(demoteToJuniorOrLowerTier('fra.1', 'PSG U19', 'Lyon U19'), 'fra.u19');
+    assert.equal(demoteToJuniorOrLowerTier('tur.1', 'Galatasaray B', 'Fenerbahce B'), 'tur.2');
+
+    // Senior fixtures remain strictly on senior top flight
+    assert.equal(demoteToJuniorOrLowerTier('eng.1', 'Arsenal', 'Chelsea'), 'eng.1');
+    assert.equal(demoteToJuniorOrLowerTier('esp.1', 'Real Madrid', 'Barcelona'), 'esp.1');
+    assert.equal(demoteToJuniorOrLowerTier('ita.1', 'Inter Milan', 'Juventus'), 'ita.1');
+});
+
+test('LIVESCORE_STAGE_TABLE_MAP contains verified live stage URLs for African leagues and Kosovo', () => {
+    assert.ok(LIVESCORE_STAGE_TABLE_MAP['nga.1'].includes('/nigeria/npfl/1'));
+    assert.ok(LIVESCORE_STAGE_TABLE_MAP['gha.1'].includes('/ghana/premier-league/1'));
+    assert.ok(LIVESCORE_STAGE_TABLE_MAP['ken.1'].includes('/kenya/premier-league/1'));
+    assert.ok(LIVESCORE_STAGE_TABLE_MAP['tza.1'].includes('/tanzania/premier-league/1'));
+    assert.ok(LIVESCORE_STAGE_TABLE_MAP['egy.1'].includes('/egypt/premier-league/1'));
+    assert.ok(LIVESCORE_STAGE_TABLE_MAP['rsa.1'].includes('/south-africa/premier-league/1'));
+    assert.ok(LIVESCORE_STAGE_TABLE_MAP['mar.1'].includes('/morocco/botola-pro/1'));
+    assert.ok(LIVESCORE_STAGE_TABLE_MAP['kvx.1'].includes('/kosovo/superliga/1'));
+
+    const slugs = TARGET_LEAGUES.map(l => l.slug);
+    assert.ok(slugs.includes('ita.u19'), 'Must include Campionato Primavera 1');
+    assert.ok(slugs.includes('esp.u19'), 'Must include Spanish División de Honor Juvenil');
+    assert.ok(slugs.includes('ger.u19'), 'Must include German U19 Bundesliga');
+    assert.ok(slugs.includes('fra.u19'), 'Must include French Championnat National U19');
+    assert.ok(slugs.includes('esp.3'), 'Must include Spanish Primera Federación');
+    assert.ok(slugs.includes('ger.3'), 'Must include German 3. Liga');
+    assert.ok(slugs.includes('intl.u21'), 'Must include International U21');
 });
