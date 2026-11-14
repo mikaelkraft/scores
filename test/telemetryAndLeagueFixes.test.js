@@ -306,3 +306,35 @@ test('PWA manifest and service worker provide offline shell and fast caching whi
     assert.ok(appV9.includes('initGoalAlertToggle()'), 'app-v9 must have initGoalAlertToggle');
     assert.ok(appV9.includes('curH > prev.h || curA > prev.a'), 'app-v9 must detect live goal score increments');
 });
+
+test('Past unstarted matches older than 3 hours are accurately transitioned to Postponed and never overwrite completed matches', () => {
+    const syncServiceSrc = fs.readFileSync(path.join(__dirname, '..', 'services', 'soccerSyncService.js'), 'utf8');
+    const apiControllerSrc = fs.readFileSync(path.join(__dirname, '..', 'controllers', 'footballApiController.js'), 'utf8');
+    const appV9Src = fs.readFileSync(path.join(__dirname, '..', 'public', 'app-v9.js'), 'utf8');
+
+    // 1. In syncLiveScoreInPlay, completed matches are never overwritten by pre or in
+    assert.ok(syncServiceSrc.includes("existingMatch?.status?.completed && (state === 'in' || state === 'pre')"),
+        'syncLiveScoreInPlay must guard completed matches from being overwritten by pre or in');
+
+    // 2. In syncLiveScoreInPlay, past unstarted matches are treated as postponed
+    assert.ok(syncServiceSrc.includes('isPastUnstarted = matchDate && (now.getTime() - matchDate.getTime() > 3 * 3600 * 1000)'),
+        'syncLiveScoreInPlay must detect past unstarted matches');
+    assert.ok(syncServiceSrc.includes("rawClock.includes('Postp') || rawClock.includes('Canc') || rawClock.includes('Aband') || (isNotStarted && isPastUnstarted)"),
+        'syncLiveScoreInPlay must mark past unstarted matches as postponed');
+
+    // 3. In syncLiveScoreboards, completed matches are protected
+    assert.ok(syncServiceSrc.includes("existingMatch?.status?.completed && (state === 'pre' || state === 'in')"),
+        'syncLiveScoreboards must guard completed matches from being overwritten by pre or in');
+
+    // 4. In footballApiController, fixtures serializer handles stale unstarted matches
+    assert.ok(apiControllerSrc.includes("isStaleUnstarted = isPastMatch && (m.status?.state === 'pre' || !m.status?.state) && !m.status?.completed && !isLive"),
+        'footballApiController must detect stale unstarted matches');
+    assert.ok(apiControllerSrc.includes("isStaleUnstarted ? 'Postp.'"),
+        'footballApiController must label stale unstarted matches as Postp.');
+
+    // 5. In app-v9.js, statusInfo handles past unstarted matches
+    assert.ok(appV9Src.includes("const isKickoffPast = kickoffMs && (Date.now() - kickoffMs > 3 * 60 * 60 * 1000);"),
+        'app-v9 statusInfo must detect past kickoff times older than 3 hours');
+    assert.ok(appV9Src.includes("return { state: 'finished', label: 'Postp.', pillClass: 'post' };"),
+        'app-v9 statusInfo must render Postp. badge for past unstarted matches');
+});

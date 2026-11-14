@@ -834,14 +834,15 @@ async function fetchLiveScoreDayMatches(dateKey) {
             const rawClock = String(ev.Eps || '').trim() || (ev.Epr === 0 ? 'NS' : String(ev.Epr || 'NS')).trim();
             const isZeroOrSched = rawClock === '0' || rawClock === "0'" || rawClock === '00' || rawClock === '00:00';
             const isFutureMatch = matchDate && (matchDate.getTime() - Date.now() > 2 * 60 * 1000);
+            const isPastUnstarted = matchDate && (Date.now() - matchDate.getTime() > 3 * 3600 * 1000);
             const isNotStarted = rawClock === 'NS' || rawClock === 'Upcoming' || rawClock === '' || rawClock === 'Sched' || /^\d{1,2}:\d{2}/.test(rawClock) || isZeroOrSched || isFutureMatch;
             const isFinished = rawClock === 'FT' || rawClock === 'AET' || rawClock === 'AP' || rawClock === 'Final';
-            const isPostponed = /postp|canc|aban/i.test(rawClock);
+            const isPostponed = /postp|canc|aban/i.test(rawClock) || (isNotStarted && isPastUnstarted);
             const isInPlay = !isNotStarted && !isFinished && !isPostponed;
             const state = isInPlay ? 'in' : (isFinished ? 'post' : (isPostponed ? 'post' : 'pre'));
             const clock = isInPlay
                 ? (rawClock === 'HT' ? 'HT' : (rawClock.includes("'") ? rawClock : `${rawClock}'`))
-                : (isFinished ? 'FT' : (isZeroOrSched ? 'NS' : rawClock));
+                : (isFinished ? 'FT' : (isPostponed ? 'Postp.' : (isZeroOrSched ? 'NS' : rawClock)));
 
             const formatLsImg = (img) => {
                 if (!img) return '';
@@ -870,12 +871,13 @@ async function fetchLiveScoreDayMatches(dateKey) {
                 date: matchDate,
                 status: {
                     state,
-                    name: isInPlay ? 'STATUS_IN_PROGRESS' : (isFinished ? 'STATUS_FINAL' : 'STATUS_SCHEDULED'),
-                    description: isInPlay ? 'In Progress' : (isFinished ? 'Full Time' : 'Scheduled'),
+                    name: isInPlay ? 'STATUS_IN_PROGRESS' : (isPostponed ? 'STATUS_POSTPONED' : (isFinished ? 'STATUS_FINAL' : 'STATUS_SCHEDULED')),
+                    description: isInPlay ? 'In Progress' : (isPostponed ? 'Postponed' : (isFinished ? 'Full Time' : 'Scheduled')),
                     clock,
                     detail: clock,
                     isLive: isInPlay,
-                    completed: isFinished
+                    completed: isFinished || isPostponed,
+                    suspended: isPostponed
                 },
                 home: {
                     source_id: String(h.ID || h.Id || ''),
@@ -1323,8 +1325,13 @@ router.get('/fixtures', optionalApiKeyAuth, async (req, res) => {
             const lg = leagueMap.get(leagueSlug) || targetLg || m.league || {};
             const isLive = m.status?.state === 'in' || Boolean(m.status?.isLive);
             const concreteClock = formatMatchClock(m.status);
-            const displayClock = isConcreteClock(concreteClock) ? concreteClock : (isLive ? 'Live' : '');
-            const detail = isConcreteClock(m.status?.detail) ? m.status.detail : (displayClock || (isLive ? 'Live' : (m.status?.completed ? 'FT' : 'Scheduled')));
+            const isPastMatch = m.date && (new Date(m.date).getTime() < Date.now() - 3 * 3600 * 1000);
+            const isStaleUnstarted = isPastMatch && (m.status?.state === 'pre' || !m.status?.state) && !m.status?.completed && !isLive;
+
+            const state = isStaleUnstarted ? 'post' : (m.status?.state || (isLive ? 'in' : 'pre'));
+            const isCompleted = isStaleUnstarted || Boolean(m.status?.completed) || state === 'post';
+            const displayClock = isStaleUnstarted ? 'Postp.' : (isConcreteClock(concreteClock) ? concreteClock : (isLive ? 'Live' : ''));
+            const detail = isStaleUnstarted ? 'Postp.' : (isConcreteClock(m.status?.detail) ? m.status.detail : (displayClock || (isLive ? 'Live' : (isCompleted ? 'FT' : 'Scheduled'))));
 
             return {
                 id: m.source?.event_id || m.id || String(m._id),
@@ -1341,16 +1348,17 @@ router.get('/fixtures', optionalApiKeyAuth, async (req, res) => {
                 name: m.name || `${m.home?.name || m.home?.displayName || 'Home'} vs ${m.away?.name || m.away?.displayName || 'Away'}`,
                 shortName: m.short_name || m.shortName,
                 status: {
-                    state: m.status?.state || (isLive ? 'in' : 'pre'),
-                    name: m.status?.name || (isLive ? 'STATUS_IN_PROGRESS' : 'STATUS_SCHEDULED'),
-                    description: m.status?.description || (isLive ? 'In Progress' : 'Scheduled'),
+                    state,
+                    name: isStaleUnstarted ? 'STATUS_POSTPONED' : (m.status?.name || (isLive ? 'STATUS_IN_PROGRESS' : isCompleted ? 'STATUS_FINAL' : 'STATUS_SCHEDULED')),
+                    description: isStaleUnstarted ? 'Postponed' : (m.status?.description || (isLive ? 'In Progress' : isCompleted ? 'Full Time' : 'Scheduled')),
                     detail,
                     shortDetail: displayClock || detail,
                     clock: displayClock,
                     displayClock: displayClock,
                     period: m.status?.period || 0,
-                    completed: Boolean(m.status?.completed),
-                    isLive: isLive
+                    completed: isCompleted,
+                    suspended: isStaleUnstarted || Boolean(m.status?.suspended),
+                    isLive: isLive && !isStaleUnstarted
                 },
                 home: {
                     id: m.home?.source_id || m.home?.id,

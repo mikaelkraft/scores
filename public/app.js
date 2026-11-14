@@ -649,6 +649,10 @@
             const label = type.shortDetail || status.detail || 'FT';
             return { state: 'finished', label: /^\d{3,}$/.test(label) ? 'FT' : label, pillClass: 'post' };
         }
+        const isKickoffPast = kickoffMs && (Date.now() - kickoffMs > 3 * 60 * 60 * 1000);
+        if (isKickoffPast && !looksLive) {
+            return { state: 'finished', label: 'Postp.', pillClass: 'post' };
+        }
         const kickoffTime = formatTime(event?.date);
         return { state: 'scheduled', label: kickoffTime || status.detail || type.shortDetail || 'Upcoming', pillClass: 'pre' };
     }

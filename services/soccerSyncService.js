@@ -3178,9 +3178,10 @@ async function syncLiveScoreInPlay() {
 
                 const isZeroOrSched = rawClock === '0' || rawClock === "0'" || rawClock === '00' || rawClock === '00:00';
                 const isFutureMatch = matchDate && (matchDate.getTime() - now.getTime() > 5 * 60 * 1000);
+                const isPastUnstarted = matchDate && (now.getTime() - matchDate.getTime() > 3 * 3600 * 1000);
                 const isNotStarted = rawClock === 'NS' || rawClock === 'Upcoming' || rawClock === '' || rawClock === 'Sched' || rawClock.includes(':') || isZeroOrSched || isFutureMatch;
                 const isFinished = rawClock === 'FT' || rawClock === 'AET' || rawClock === 'AP';
-                const isPostponed = rawClock.includes('Postp') || rawClock.includes('Canc');
+                let isPostponed = rawClock.includes('Postp') || rawClock.includes('Canc') || rawClock.includes('Aband') || (isNotStarted && isPastUnstarted);
                 const isInPlay = !isNotStarted && !isFinished && !isPostponed;
                 const state = isInPlay ? 'in' : (isFinished || isPostponed) ? 'post' : 'pre';
                 const displayClock = isFinished ? 'FT' : isPostponed ? 'Postp.' : (isInPlay ? (rawClock === 'HT' ? 'HT' : (rawClock.includes("'") ? rawClock : `${rawClock}'`)) : 'NS');
@@ -3196,8 +3197,8 @@ async function syncLiveScoreInPlay() {
                 const sig = `${hNorm}_vs_${aNorm}_${tier}`;
                 const existingMatch = byEventId.get(eid) || bySig.get(`${hNorm}_vs_${aNorm}_${targetSlug}_${tier}`) || bySig.get(sig);
 
-                // Never overwrite a completed senior match with an in-play match
-                if (existingMatch?.status?.completed && state === 'in') {
+                // Never overwrite a completed match with an in-play or scheduled match
+                if (existingMatch?.status?.completed && (state === 'in' || state === 'pre')) {
                     continue;
                 }
 
@@ -3212,14 +3213,14 @@ async function syncLiveScoreInPlay() {
                                 $set: {
                                     'source.livescore_id': eid,
                                     'status.state': state,
-                                    'status.name': state === 'in' ? 'STATUS_IN_PROGRESS' : state === 'post' ? 'STATUS_FINAL' : 'STATUS_SCHEDULED',
+                                    'status.name': state === 'in' ? 'STATUS_IN_PROGRESS' : state === 'post' ? (isPostponed ? 'STATUS_POSTPONED' : 'STATUS_FINAL') : 'STATUS_SCHEDULED',
                                     'status.description': state === 'in' ? 'In Progress' : state === 'post' ? (isPostponed ? 'Postponed' : 'Full Time') : 'Scheduled',
                                     'status.detail': displayClock,
                                     'status.short_detail': displayClock,
                                     'status.clock': displayClock,
                                     'status.clock_seconds': parseInt(displayClock, 10) ? parseInt(displayClock, 10) * 60 : (displayClock === 'HT' ? 2700 : 0),
                                     'status.period': ev.Epr || (displayClock === 'HT' ? 1 : 2),
-                                    'status.completed': isFinished,
+                                    'status.completed': isFinished || isPostponed,
                                     'status.suspended': isPostponed,
                                     'home.score': isNaN(homeScore) ? (existingMatch.home?.score ?? 0) : homeScore,
                                     'away.score': isNaN(awayScore) ? (existingMatch.away?.score ?? 0) : awayScore,
@@ -3255,14 +3256,14 @@ async function syncLiveScoreInPlay() {
                         },
                         status: {
                             state,
-                            name: state === 'in' ? 'STATUS_IN_PROGRESS' : state === 'post' ? 'STATUS_FINAL' : 'STATUS_SCHEDULED',
+                            name: state === 'in' ? 'STATUS_IN_PROGRESS' : state === 'post' ? (isPostponed ? 'STATUS_POSTPONED' : 'STATUS_FINAL') : 'STATUS_SCHEDULED',
                             description: state === 'in' ? 'In Progress' : state === 'post' ? (isPostponed ? 'Postponed' : 'Full Time') : 'Scheduled',
                             detail: displayClock,
                             short_detail: displayClock,
                             clock: displayClock,
                             clock_seconds: parseInt(displayClock, 10) ? parseInt(displayClock, 10) * 60 : (displayClock === 'HT' ? 2700 : 0),
                             period: ev.Epr || (displayClock === 'HT' ? 1 : 2),
-                            completed: isFinished,
+                            completed: isFinished || isPostponed,
                             suspended: isPostponed
                         },
                         home: {
@@ -3327,6 +3328,33 @@ async function syncLiveScoreInPlay() {
                     'status.short_detail': 'FT',
                     'status.clock': 'FT',
                     'status.completed': true
+                }
+            }
+        ).catch(() => {});
+
+        // Auto-mark ANY unstarted past matches older than 180 minutes as Postponed
+        const unstartedCutoff = new Date(Date.now() - 180 * 60 * 1000);
+        await SoccerMatch.updateMany(
+            {
+                'status.state': 'pre',
+                date: { $lt: unstartedCutoff },
+                'home.score': 0,
+                'away.score': 0,
+                $or: [
+                    { key_events: { $exists: false } },
+                    { key_events: { $size: 0 } }
+                ]
+            },
+            {
+                $set: {
+                    'status.state': 'post',
+                    'status.name': 'STATUS_POSTPONED',
+                    'status.description': 'Postponed',
+                    'status.detail': 'Postp.',
+                    'status.short_detail': 'Postp.',
+                    'status.clock': 'Postp.',
+                    'status.completed': true,
+                    'status.suspended': true
                 }
             }
         ).catch(() => {});
@@ -3463,8 +3491,8 @@ async function syncLiveScoreboards() {
             const sig = `${hNorm}_vs_${aNorm}_${tier}`;
             const existingMatch = byEvId.get(String(ev.id)) || byNormSig.get(sig) || byNormSig.get(`${hNorm}_vs_${aNorm}`);
 
-            // Never overwrite a completed match with a scheduled state
-            if (existingMatch?.status?.completed && state === 'pre') {
+            // Never overwrite a completed match with an in-play or scheduled state
+            if (existingMatch?.status?.completed && (state === 'pre' || state === 'in')) {
                 continue;
             }
 
@@ -3480,19 +3508,23 @@ async function syncLiveScoreboards() {
                 kind: 'club'
             };
 
-            const isCompletedMatch = state === 'post' || statusType.completed === true;
-            const finalDetail = statusType.detail || ev.status?.displayClock || statusType.shortDetail || (state === 'in' ? "45'" : isCompletedMatch ? 'FT' : 'Scheduled');
+            const isEventPast = eventDate && (now.getTime() - eventDate.getTime() > 3 * 3600 * 1000);
+            const isUnstartedPast = state === 'pre' && isEventPast && (isNaN(homeScore) || homeScore === 0) && (isNaN(awayScore) || awayScore === 0);
+            const finalState = isUnstartedPast ? 'post' : state;
+            const isCompletedMatch = finalState === 'post' || statusType.completed === true;
+            const finalDetail = isUnstartedPast ? 'Postp.' : (statusType.detail || ev.status?.displayClock || statusType.shortDetail || (state === 'in' ? "45'" : isCompletedMatch ? 'FT' : 'Scheduled'));
             const updateFields = {
                 league_slug: targetSlug,
-                'status.state': state,
-                'status.name': statusType.name || (state === 'in' ? 'STATUS_IN_PROGRESS' : isCompletedMatch ? 'STATUS_FINAL' : 'STATUS_SCHEDULED'),
-                'status.description': statusType.description || (state === 'in' ? 'In Progress' : isCompletedMatch ? 'Full Time' : 'Scheduled'),
+                'status.state': finalState,
+                'status.name': isUnstartedPast ? 'STATUS_POSTPONED' : (statusType.name || (state === 'in' ? 'STATUS_IN_PROGRESS' : isCompletedMatch ? 'STATUS_FINAL' : 'STATUS_SCHEDULED')),
+                'status.description': isUnstartedPast ? 'Postponed' : (statusType.description || (state === 'in' ? 'In Progress' : isCompletedMatch ? 'Full Time' : 'Scheduled')),
                 'status.detail': finalDetail,
-                'status.short_detail': statusType.shortDetail || finalDetail,
-                'status.clock': isCompletedMatch ? 'FT' : (ev.status?.displayClock || statusType.shortDetail || statusType.detail || ''),
+                'status.short_detail': isUnstartedPast ? 'Postp.' : (statusType.shortDetail || finalDetail),
+                'status.clock': isUnstartedPast ? 'Postp.' : (isCompletedMatch ? 'FT' : (ev.status?.displayClock || statusType.shortDetail || statusType.detail || '')),
                 'status.clock_seconds': ev.status?.clock || (isCompletedMatch ? 5400 : 0),
                 'status.period': ev.status?.period || (isCompletedMatch ? 2 : 1),
                 'status.completed': isCompletedMatch,
+                'status.suspended': isUnstartedPast || (statusType.state === 'post' && /postp|canc/i.test(finalDetail)),
                 'home.score': isNaN(homeScore) ? (existingMatch?.home?.score ?? 0) : homeScore,
                 'away.score': isNaN(awayScore) ? (existingMatch?.away?.score ?? 0) : awayScore,
                 'home.winner': isCompletedMatch ? (homeScore > awayScore) : (homeComp.winner === true),
@@ -3604,10 +3636,11 @@ async function syncLiveScoreboards() {
         }
 
         // Auto-finalize any in-play matches that have concluded (started > 180 minutes ago)
+        const conclusionCutoffSb = new Date(Date.now() - 180 * 60 * 1000);
         await SoccerMatch.updateMany(
             {
                 'status.state': 'in',
-                date: { $lt: new Date(Date.now() - 180 * 60 * 1000) }
+                date: { $lt: conclusionCutoffSb }
             },
             {
                 $set: {
@@ -3618,6 +3651,32 @@ async function syncLiveScoreboards() {
                     'status.short_detail': 'FT',
                     'status.clock': 'FT',
                     'status.completed': true
+                }
+            }
+        ).catch(() => {});
+
+        // Auto-mark ANY unstarted past matches older than 180 minutes as Postponed
+        await SoccerMatch.updateMany(
+            {
+                'status.state': 'pre',
+                date: { $lt: conclusionCutoffSb },
+                'home.score': 0,
+                'away.score': 0,
+                $or: [
+                    { key_events: { $exists: false } },
+                    { key_events: { $size: 0 } }
+                ]
+            },
+            {
+                $set: {
+                    'status.state': 'post',
+                    'status.name': 'STATUS_POSTPONED',
+                    'status.description': 'Postponed',
+                    'status.detail': 'Postp.',
+                    'status.short_detail': 'Postp.',
+                    'status.clock': 'Postp.',
+                    'status.completed': true,
+                    'status.suspended': true
                 }
             }
         ).catch(() => {});
