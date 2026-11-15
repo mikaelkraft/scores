@@ -198,7 +198,11 @@ const TARGET_LEAGUES = [
     { slug: 'ita.u19', name: 'Campionato Primavera 1', abbreviation: 'Primavera 1', country: 'Italy', kind: 'club', sort_order: 158, logo: 'https://flagcdn.com/w80/it.png' },
     { slug: 'esp.u19', name: 'División de Honor Juvenil', abbreviation: 'División Honor', country: 'Spain', kind: 'club', sort_order: 159, logo: 'https://flagcdn.com/w80/es.png' },
     { slug: 'ger.u19', name: 'U19 DFB-Nachwuchsliga', abbreviation: 'U19 Bundesliga', country: 'Germany', kind: 'club', sort_order: 160, logo: 'https://flagcdn.com/w80/de.png' },
-    { slug: 'fra.u19', name: 'Championnat National U19', abbreviation: 'National U19', country: 'France', kind: 'club', sort_order: 161, logo: 'https://flagcdn.com/w80/fr.png' }
+    { slug: 'fra.u19', name: 'Championnat National U19', abbreviation: 'National U19', country: 'France', kind: 'club', sort_order: 161, logo: 'https://flagcdn.com/w80/fr.png' },
+    { slug: 'afc.saff', name: 'SAFF Championship', abbreviation: 'SAFF', country: 'Asia', kind: 'international', sort_order: 162, logo: 'https://flagcdn.com/w80/un.png' },
+    { slug: 'srb.1', name: 'Serbian SuperLiga', abbreviation: 'SuperLiga', country: 'Serbia', kind: 'club', sort_order: 163, logo: 'https://flagcdn.com/w80/rs.png' },
+    { slug: 'srb.lower', name: 'Serbian Prva Liga', abbreviation: 'Prva Liga', country: 'Serbia', kind: 'club', sort_order: 164, logo: 'https://flagcdn.com/w80/rs.png' },
+    { slug: 'mex.lower', name: 'Liga Premier de México', abbreviation: 'Liga Premier', country: 'Mexico', kind: 'club', sort_order: 165, logo: 'https://flagcdn.com/w80/mx.png' }
 ];
 
 const LIVESCORE_STAGE_TABLE_MAP = {
@@ -1151,7 +1155,8 @@ const TOP_FLIGHT_CLUBS = {
     'tur.1': new Set(['galatasaray','fenerbahce','besiktas','trabzonspor','istanbul basaksehir','basaksehir','kasimpasa','sivasspor','alanyaspor','rizespor','caykur rizespor','antalyaspor','gaziantep','gaziantep fk','konyaspor','samsunspor','kayserispor','hatayspor','adana demirspor','goztepe','göztepe','bodrum fk','bodrum','eyupspor','eyüpspor','pendikspor','karagumruk','fatih karagumruk','istanbulspor','ankaragucu','ümraniyespor','umraniyespor','giresunspor']),
     'bih.1': new Set(['zrinjski','zrinjski mostar','borac','borac banja luka','sarajevo','fk sarajevo','velez','velez mostar','zeljeznicar','siroki brijeg','posusje','sloga doboj','sloga','igman konjic','igman','radnik bijeljina','radnik','gosk gabela','gosk','sloboda tuzla','sloboda','tuzla city']),
     'aut.1': new Set(['salzburg','red bull salzburg','sturm graz','lask','lask linz','rapid wien','rapid vienna','austria wien','austria vienna','wolfsberger ac','wac','tsv hartberg','hartberg','austria klagenfurt','blau-weiss linz','blau weiss linz','bw linz','altach','scr altach','rheindorf altach','wsg tirol','tirol','grazer ak','gak','austria lustenau','sv ried','ried','admira wacker']),
-    'kvx.1': new Set(['ballkani','fc ballkani','drita','fc drita','prishtina','fc prishtina','llapi','kf llapi','gjilani','sc gjilani','ferizaj','dukagjini','malisheva','suhareka','fushe kosova','fushë kosova','trepca 89','trepça 89'])
+    'kvx.1': new Set(['ballkani','fc ballkani','drita','fc drita','prishtina','fc prishtina','llapi','kf llapi','gjilani','sc gjilani','ferizaj','dukagjini','malisheva','suhareka','fushe kosova','fushë kosova','trepca 89','trepça 89']),
+    'mex.1': new Set(['america','club america','chivas','guadalajara','cruz azul','pumas','pumas unam','unam','tigres','tigres uanl','monterrey','rayados','toluca','pachuca','santos laguna','santos','leon','club leon','atlas','necaxa','queretaro','tijuana','xolos','juarez','fc juarez','mazatlan','puebla','atletico san luis','san luis'])
 };
 
 function cleanCompetitionName(name) {
@@ -1202,9 +1207,9 @@ const TEAM_COUNTRY_HINTS = [
     // Brazil
     [/londrina|n[aá]utico|chapecoense|criciuma|guarani|operario|sport recife|vila nova|ponte preta|crb|csa|remov|sampaio corr[eê]a|botafogo.?sp|ituano|novorizontino/i, 'bra'],
     // Mexico senior (avoid mis-slotting into women or foreign leagues)
-    [/pumas unam|tigres uanl|\bamerica\b|chivas|guadalajara|monterrey|cruz azul|santos laguna|toluca|leon|pachuca|necaxa|atlas|mazatlan|queretaro|tijuana|juarez/i, 'mex'],
+    [/\bpumas\s*unam|\btigres\s*uanl|\bclub\s*america\b|\bchivas\b|\bguadalajara\b|\bmonterrey\b|\bcruz\s*azul\b|\bsantos\s*laguna\b|\btoluca\b|\bleon\b(?!esa)|\bpachuca\b|\bnecaxa\b|\batlas\b|\bmazatlan\b|\bqueretaro\b|\btijuana\b|\bjuarez\b/i, 'mex'],
     // El Salvador
-    [/isidro metap[aá]n|platense municipal|alianza fc|fas\b|aguila|municipal limeno|firpo|once deportivo/i, 'slv'],
+    [/isidro metap[aá]n|platense municipal|alianza fc|fas\b|\b(?:cd\s+)?aguila\b(?!s)|municipal limeno|firpo|once deportivo/i, 'slv'],
     // Romania
     [/botosani|otelul|galati|cfr cluj|fcsb|rapid bucuresti|universitatea craiova|sepsi|farul/i, 'rou'],
     // Egypt
@@ -1252,8 +1257,10 @@ function inferCountryFromTeamNames(homeName = '', awayName = '', currentSlug = '
     if (!best) return currentSlug;
     const current = String(currentSlug || '').split('.')[0];
     if (current === best) return currentSlug;
-    // Don't override UEFA/FIFA continental
+    // Don't override UEFA/FIFA continental or established European leagues with foreign club hints
     if (/^(uefa|fifa|caf|afc|conmebol|concacaf)/i.test(String(currentSlug || ''))) return currentSlug;
+    if (TOP_FLIGHT_CLUBS[currentSlug] && hasTopFlightClub(currentSlug, homeName, awayName)) return currentSlug;
+    if ((best === 'mex' || best === 'slv') && /^(esp|eng|ita|ger|fra|por|ned|sco|bel|tur|aut|den|swe|nor|srb|bih|cro|gre|rus|ukr|pol|cui|sui)\.(?:2|3|4|lower)/i.test(String(currentSlug || ''))) return currentSlug;
     // Preserve tier if present
     const tier = (String(currentSlug || '').match(/\.(\w+)$/) || [])[1] || '1';
     const isWomen = /\.w\.|women/i.test(String(currentSlug || '') + blob);
@@ -1469,6 +1476,9 @@ function resolveLeagueSlug(altGameNote = '', compDesc = '', uid = '') {
     if (text.includes('chan') || text.includes('african nations championship') || text.includes('caf.championship')) return 'caf.championship';
     if (text.includes('cosafa') || text.includes('caf.cosafa')) return 'caf.cosafa';
 
+    if (text.includes('saff championship') || text.includes('saff') || scd.includes('saff')) return 'afc.saff';
+    if (text.includes('aff championship') || text.includes('asean championship') || text.includes('aff cup') || text.includes('mitsubishi electric')) return 'afc.aff';
+    if (text.includes('asian cup') || text.includes('afc asian') || scd.includes('afc.asian')) return 'afc.asian.cup';
     if (text.includes('afc champions league two') || text.includes('acl two') || text.includes('afc.cup')) return 'afc.cup';
     if (text.includes('afc champions') || text.includes('afc.champions') || (text.includes('afc') && text.includes('champions'))) return 'afc.champions';
 
@@ -1505,11 +1515,13 @@ function resolveLeagueSlug(altGameNote = '', compDesc = '', uid = '') {
         return 'bra.1';
     }
 
-    // --- MEXICO (Liga MX / Liga de Expansión / Copa MX) ---
+    // --- MEXICO (Liga MX / Liga de Expansión / Copa MX / Liga MX Femenil / Lower Tiers) ---
     const isMexico = country.includes('mexic') || text.includes('liga mx') || scd.includes('mex.') || scd.includes('liga-mx');
     if (isMexico) {
+        if (text.includes('femenil') || text.includes('women') || scd.includes('femenil') || scd.includes('mex.w')) return 'mex.w.1';
         if (text.includes('expansi') || text.includes('expansion') || scd.includes('mex.2') || scd.includes('expansion')) return 'mex.2';
         if (text.includes('copa')) return 'mex.copa';
+        if (text.includes('premier') || text.includes('serie a') || text.includes('serie b') || text.includes('tdp') || text.includes('tercera') || text.includes('segunda') || text.includes('u23') || text.includes('u20') || text.includes('sub-') || text.includes('sub 23')) return 'mex.lower';
         return 'mex.1';
     }
 
@@ -1635,9 +1647,9 @@ function resolveLeagueSlug(altGameNote = '', compDesc = '', uid = '') {
     const isTurkey = country.includes('turkey') || country.includes('turkish') || country.includes('türkiye') || scd.includes('tur.');
     if (isTurkey || (isNeutralCountry && (/\b(?:s[uü]per\s+lig|t[uü]rkiye\s+kupas[iı])\b/i.test(text) || text.includes('galatasaray') || text.includes('fenerbahce') || text.includes('besiktas')))) {
         if (text.includes('turkiye kupasi') || text.includes('türkiye kupası') || text.includes('tur.cup') || text.includes('ziraat')) return 'tur.cup';
-        if (text.includes('3. lig') || text.includes('3.lig') || text.includes('tff 3') || text.includes('tur.4') || /\bgrup\s*[1-4]\b/i.test(text)) return 'tur.4';
-        if (text.includes('2. lig') || text.includes('2.lig') || text.includes('tff 2') || text.includes('tur.3') || text.includes('beyaz') || text.includes('kirmizi') || text.includes('kırmızı')) return 'tur.3';
-        if (text.includes('1. lig') || text.includes('1.lig') || text.includes('tff 1') || text.includes('tur.2')) return 'tur.2';
+        if (/(?:3rd|3\.)\s*lig/i.test(text) || text.includes('3.lig') || text.includes('tff 3') || text.includes('tur.4') || /\bgrup\s*[1-4]\b/i.test(text)) return 'tur.4';
+        if (/(?:2nd|2\.)\s*lig/i.test(text) || text.includes('2.lig') || text.includes('tff 2') || text.includes('tur.3') || text.includes('beyaz') || text.includes('kirmizi') || text.includes('kırmızı') || text.includes('white group') || text.includes('red group')) return 'tur.3';
+        if (/(?:1st|1\.)\s*lig/i.test(text) || text.includes('1.lig') || text.includes('tff 1') || text.includes('tur.2')) return 'tur.2';
         if (text.includes('amateur') || text.includes('amator') || text.includes('amatör') || text.includes('bal\b') || text.includes('u19') || text.includes('u21')) return 'tur.lower';
         return 'tur.1';
     }
@@ -1739,7 +1751,11 @@ function resolveLeagueSlug(altGameNote = '', compDesc = '', uid = '') {
     if (country.includes('russia') || text.includes('rus.1') || text.includes('zenit') || text.includes('spartak')) return 'rus.1';
     if (country.includes('ukrain') || text.includes('ukr.1') || text.includes('shakhtar') || text.includes('dynamo kyiv')) return 'ukr.1';
     if (country.includes('czech') || text.includes('cze.1') || text.includes('slavia prague') || text.includes('sparta prague')) return 'cze.1';
-    if (country.includes('serbia') || text.includes('srb.1') || text.includes('red star') || text.includes('partizan')) return 'srb.1';
+    if (country.includes('serbia') || text.includes('srb.') || text.includes('red star') || text.includes('partizan') || text.includes('prva liga srb')) {
+        if (text.includes('prva liga') || text.includes('srb.2') || text.includes('srb.lower')) return 'srb.lower';
+        if (text.includes('kup') || text.includes('cup')) return 'srb.cup';
+        return 'srb.1';
+    }
     if (country.includes('bulgaria') || text.includes('bgr.1') || text.includes('ludogorets')) return 'bgr.1';
     if (country.includes('hungary') || text.includes('hun.1') || text.includes('ferencvaros')) return 'hun.1';
     if (country.includes('slovakia') || text.includes('svk.1') || text.includes('slovan bratislava')) return 'svk.1';
@@ -1771,9 +1787,9 @@ function resolveLeagueSlug(altGameNote = '', compDesc = '', uid = '') {
         if (text.includes('copa del rey') || scd.includes('copa-del-rey') || scd.includes('esp.copa_del_rey')) return 'esp.copa_del_rey';
         if (text.includes('supercopa') || scd.includes('esp.supercopa')) return 'esp.supercopa';
         if (text.includes('copa federacion') || text.includes('copa federación') || text.includes('copa rfef')) return 'esp.rfef_copa';
-        if (/(?:tercera|3[ªa.]?\s*(?:federaci|rfef))/i.test(text) || scd.includes('esp.5')) return 'esp.5';
-        if (/(?:segunda\s*federaci|2[ªa.]?\s*(?:federaci|rfef)|segunda\s*rfef|segunda\s*b)/i.test(text) || scd.includes('esp.4')) return 'esp.4';
-        if (/(?:primera\s*federaci|1[ªa.]?\s*(?:federaci|rfef)|primera\s*rfef)/i.test(text) || scd.includes('esp.3')) return 'esp.3';
+        if (/(?:tercera|3[ªa.]?\s*(?:federaci|rfef)|tercera\s*division\s*rfef)/i.test(text) || scd.includes('esp.5')) return 'esp.5';
+        if (/(?:segunda\s*federaci|2[ªa.]?\s*(?:federaci|rfef)|segunda\s*rfef|segunda\s*b|segunda\s*division\s*rfef)/i.test(text) || scd.includes('esp.4')) return 'esp.4';
+        if (/(?:primera\s*federaci|1[ªa.]?\s*(?:federaci|rfef)|primera\s*rfef|primera\s*division\s*rfef)/i.test(text) || scd.includes('esp.3')) return 'esp.3';
         if (text.includes('laliga 2') || text.includes('laliga2') || text.includes('hypermotion') || /segunda\s*divisi/i.test(text) || scd.includes('esp.2')) return 'esp.2';
         if ((/\b(?:laliga|la\s+liga)\b/i.test(text) && !text.includes('2') && !text.includes('hypermotion')) || scd === 'esp.1' || (/primera\s*divisi/i.test(text) && !text.includes('rfef') && !text.includes('femenin'))) return 'esp.1';
         return 'esp.lower';
@@ -1823,8 +1839,8 @@ function resolveLeagueSlug(altGameNote = '', compDesc = '', uid = '') {
 
     // ENGLAND (EPL / Championship / League One / League Two / FA Cup / Carabao Cup / National Leagues)
     const isEngland = country.includes('england') || country.includes('english') || scd.includes('eng.');
-    if (isEngland || (isNeutralCountry && (text.includes('premier league') || text.includes('championship') || text.includes('league 1') || text.includes('league 2') || text.includes('fa cup') || text.includes('efl')))) {
-        const foreignIndicators = ['egypt', 'ghana', 'kenya', 'uganda', 'singapore', 'bahrain', 'canada', 'scotland', 'russia', 'ukraine', 'kuwait', 'new zealand', 'ireland', 'wales', 'jamaica', 'india', 'nigeria', 'south africa', 'tanzania', 'zambia', 'zimbabwe', 'ethiopia', 'rwanda', 'congo', 'cameroon', 'ivory', 'algeria', 'tunisia', 'sudan', 'angola', 'botswana', 'malawi', 'bangladesh', 'hong kong', 'malta', 'israel', 'kazakhstan', 'northern ireland', 'armenia', 'azerbaijan', 'georgia', 'belarus', 'libya', 'nbc', 'ligi kuu', 'psl', 'npfl', 'korea', 'south korea', 'k-league', 'kleague', 'china', 'chinese', 'csl', 'japan', 'j-league'];
+    if (isEngland || (isNeutralCountry && (text.includes('premier league') || text.includes('efl championship') || text.includes('sky bet championship') || (isEngland && text.includes('championship')) || text.includes('league 1') || text.includes('league 2') || text.includes('fa cup') || text.includes('efl')))) {
+        const foreignIndicators = ['egypt', 'ghana', 'kenya', 'uganda', 'singapore', 'bahrain', 'canada', 'scotland', 'russia', 'ukraine', 'kuwait', 'new zealand', 'ireland', 'wales', 'jamaica', 'india', 'nigeria', 'south africa', 'tanzania', 'zambia', 'zimbabwe', 'ethiopia', 'rwanda', 'congo', 'cameroon', 'ivory', 'algeria', 'tunisia', 'sudan', 'angola', 'botswana', 'malawi', 'bangladesh', 'hong kong', 'malta', 'israel', 'kazakhstan', 'northern ireland', 'armenia', 'azerbaijan', 'georgia', 'belarus', 'libya', 'nbc', 'ligi kuu', 'psl', 'npfl', 'korea', 'south korea', 'k-league', 'kleague', 'china', 'chinese', 'csl', 'japan', 'j-league', 'asia', 'saff', 'aff', 'bhutan', 'nepal', 'maldives', 'sri lanka', 'pakistan'];
         const hasForeign = foreignIndicators.some(f => text.includes(f) || country.includes(f));
         if (!hasForeign && !isKorea && !isChina && !isJapan) {
             if (text.includes('northern premier') || text.includes('eng.northern')) return 'eng.northern';
@@ -3164,13 +3180,14 @@ async function syncLiveScoreInPlay() {
                     matchDate = new Date(Date.UTC(yr, mo, da, hr, mi));
                 }
 
-                targetSlug = inferCountryFromTeamNames(homeName, awayName, targetSlug) || targetSlug;
+                let matchSlug = targetSlug;
+                matchSlug = inferCountryFromTeamNames(homeName, awayName, matchSlug) || matchSlug;
 
                 // Keep senior top-flight boards clean — no B/II/U21 sides mixed in
-                const seniorSlug = String(targetSlug || '').toLowerCase();
+                const seniorSlug = String(matchSlug || '').toLowerCase();
                 const isSeniorTop = /\.[1]$/.test(seniorSlug) && !seniorSlug.includes('.w.') && !seniorSlug.includes('youth') && !seniorSlug.includes('u19') && !seniorSlug.includes('u21');
                 if (isSeniorTop && (isReserveOrBTeamName(homeName) || isReserveOrBTeamName(awayName))) {
-                    targetSlug = demoteToJuniorOrLowerTier(targetSlug, homeName, awayName);
+                    matchSlug = demoteToJuniorOrLowerTier(matchSlug, homeName, awayName);
                 }
                 const homeScore = parseInt(ev.Tr1 || 0, 10);
                 const awayScore = parseInt(ev.Tr2 || 0, 10);
@@ -3193,9 +3210,9 @@ async function syncLiveScoreInPlay() {
                 // Zero-latency in-memory lookup
                 const hNorm = normalizeTeamName(homeName);
                 const aNorm = normalizeTeamName(awayName);
-                const tier = getMatchTier(homeName, awayName, targetSlug);
+                const tier = getMatchTier(homeName, awayName, matchSlug);
                 const sig = `${hNorm}_vs_${aNorm}_${tier}`;
-                const existingMatch = byEventId.get(eid) || bySig.get(`${hNorm}_vs_${aNorm}_${targetSlug}_${tier}`) || bySig.get(sig);
+                const existingMatch = byEventId.get(eid) || bySig.get(`${hNorm}_vs_${aNorm}_${matchSlug}_${tier}`) || bySig.get(sig);
 
                 // Never overwrite a completed match with an in-play or scheduled match
                 if (existingMatch?.status?.completed && (state === 'in' || state === 'pre')) {
@@ -3239,11 +3256,11 @@ async function syncLiveScoreInPlay() {
                             provider: 'livescore',
                             event_id: eid,
                             livescore_id: eid,
-                            competition_id: String(stage.CompId || stage.Sid || targetSlug),
+                            competition_id: String(stage.CompId || stage.Sid || matchSlug),
                             uid: `ls:${eid}`,
                             modified_at: now
                         },
-                        league_slug: targetSlug,
+                        league_slug: matchSlug,
                         scoreboard_date: scoreboardDate,
                         date: matchDate,
                         name: `${homeName} vs ${awayName}`,

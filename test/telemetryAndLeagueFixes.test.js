@@ -338,3 +338,61 @@ test('Past unstarted matches older than 3 hours are accurately transitioned to P
     assert.ok(appV9Src.includes("return { state: 'finished', label: 'Postp.', pillClass: 'post' };"),
         'app-v9 statusInfo must render Postp. badge for past unstarted matches');
 });
+
+test('Comprehensive real-world bug fixes: SAFF Championship, RFEF Spanish tiers, Turkish 2nd Lig, Liga MX Femenil, Serbian Prva Liga, and Form guide', () => {
+    // 1. Asia SAFF Championship must map to afc.saff, never eng.lower
+    const saffSlug = resolveLeagueSlug('Asia SAFF Championship: Play off', 'Asia', 'saff-championship');
+    assert.equal(saffSlug, 'afc.saff', 'SAFF Championship must map to afc.saff');
+
+    const saffSlug2 = resolveLeagueSlug('SAFF Championship', 'International', '');
+    assert.equal(saffSlug2, 'afc.saff', 'SAFF Championship with international country must map to afc.saff');
+
+    // 2. Spain Primera Division RFEF must map to esp.3, never esp.lower or mex.lower
+    const rfefGroup1 = resolveLeagueSlug('Spain Primera Division RFEF: Group 1', 'Spain', 'primera-division-rfef-group-1');
+    assert.equal(rfefGroup1, 'esp.3', 'Spain Primera Division RFEF must map to esp.3');
+
+    const rfefGroup2 = resolveLeagueSlug('Spain Primera Division RFEF: Group 2', 'Spain', '');
+    assert.equal(rfefGroup2, 'esp.3', 'Spain Primera Division RFEF Group 2 must map to esp.3');
+
+    // 3. Cultural Leonesa must never trick inferCountryFromTeamNames into assigning mex.lower to a Spanish match
+    const leonesaInferred = inferCountryFromTeamNames('Real Union', 'Leonesa', 'esp.3');
+    assert.equal(leonesaInferred, 'esp.3', 'Real Union vs Leonesa in esp.3 must remain esp.3');
+
+    const coriaInferred = inferCountryFromTeamNames('CD Coria', 'Unionistas de Salamanca', 'esp.3');
+    assert.equal(coriaInferred, 'esp.3', 'CD Coria vs Unionistas in esp.3 must remain esp.3');
+
+    // 4. Turkish 2nd Lig must map to tur.3, not tur.1
+    const turk2ndLig = resolveLeagueSlug('Turkiye 2nd Lig: White Group', 'Turkey', 'turkiye-2nd-lig-white-group');
+    assert.equal(turk2ndLig, 'tur.3', 'Turkiye 2nd Lig must map to tur.3');
+
+    const turk1stLig = resolveLeagueSlug('Turkiye 1st Lig', 'Turkey', '');
+    assert.equal(turk1stLig, 'tur.2', 'Turkiye 1st Lig must map to tur.2');
+
+    // 5. Liga MX vs Liga MX Femenil vs Mexican Lower Tiers
+    const ligaMxFemenil = resolveLeagueSlug('Liga MX Femenil: Apertura', 'Mexico', 'mex.w.1');
+    assert.equal(ligaMxFemenil, 'mex.w.1', 'Liga MX Femenil must map to mex.w.1');
+
+    const ligaPremier = resolveLeagueSlug('Liga Premier Serie A', 'Mexico', '');
+    assert.equal(ligaPremier, 'mex.lower', 'Liga Premier Serie A must map to mex.lower');
+
+    // Avispones vs Santiago FC demoted from mex.1 if ever misattributed
+    const demotedAvispones = demoteIfNotTopFlight('mex.1', 'CD Avispones de Chilpancingo', 'Santiago FC', 'Liga Premier');
+    assert.equal(demotedAvispones, 'mex.lower', 'CD Avispones vs Santiago FC must be demoted out of mex.1');
+
+    // 6. Serbian Prva Liga must map to srb.lower
+    const serbiaPrva = resolveLeagueSlug('Serbia Prva Liga', 'Serbia', 'prva-liga');
+    assert.equal(serbiaPrva, 'srb.lower', 'Serbia Prva Liga must map to srb.lower');
+
+    // 7. Verify footballApiController source code protects inferMatchCountry, makeFlexibleTeamRegex, and form guide
+    const apiSrc = fs.readFileSync(path.join(__dirname, '..', 'controllers', 'footballApiController.js'), 'utf8');
+    assert.ok(apiSrc.includes("if (slug.startsWith('srb.')) return 'Serbia'"), 'inferMatchCountry must recognize srb. prefix');
+    assert.ok(apiSrc.includes("if (/\\b(?:liga\\s*f|copa de la reina)\\b/i.test(txt)) return 'Spain'"), 'inferMatchCountry must use word boundaries for Liga F');
+    assert.ok(apiSrc.includes("function makeFlexibleTeamRegex(rawName, isWomen = false)"), 'makeFlexibleTeamRegex must support isWomen flag');
+    assert.ok(apiSrc.includes("seenDays.has(day)"), 'deduplicateRecentMatches must enforce 1 match per team per calendar day');
+
+    // 8. Verify app-v9.js handles tactical pitch distribution and H2H full dates
+    const appV9Src = fs.readFileSync(path.join(__dirname, '..', 'public', 'app-v9.js'), 'utf8');
+    assert.ok(appV9Src.includes("while (def.length > 5)"), 'app-v9.js must balance tactical pitch defense line');
+    assert.ok(appV9Src.includes("formatDate(m.date, { year: true, weekday: false })"), 'app-v9.js recentMatches must render full date with year');
+    assert.ok(appV9Src.includes("!league.slug.endsWith('.lower')"), 'app-v9.js must isolate distinct lower-tier competitions');
+});

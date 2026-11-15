@@ -528,8 +528,11 @@ async function sendSummary(req, res) {
             }).lean()
         ]);
 
-        if (match && !league) {
-            league = await getLeague(match.league_slug);
+        if (match) {
+            if (!league || (match.league_slug && match.league_slug !== req.params.league)) {
+                const specificLeague = await getLeague(match.league_slug);
+                if (specificLeague) league = specificLeague;
+            }
         }
 
         if (!match) {

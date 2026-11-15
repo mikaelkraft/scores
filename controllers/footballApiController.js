@@ -198,6 +198,23 @@ function inferMatchCountry(m) {
     if (slug.startsWith('tur.')) return 'Turkey';
     if (slug.startsWith('bra.')) return 'Brazil';
     if (slug.startsWith('arg.')) return 'Argentina';
+    if (slug.startsWith('col.')) return 'Colombia';
+    if (slug.startsWith('chi.')) return 'Chile';
+    if (slug.startsWith('aut.')) return 'Austria';
+    if (slug.startsWith('srb.')) return 'Serbia';
+    if (slug.startsWith('cro.')) return 'Croatia';
+    if (slug.startsWith('bih.')) return 'Bosnia and Herzegovina';
+    if (slug.startsWith('rou.')) return 'Romania';
+    if (slug.startsWith('bgr.')) return 'Bulgaria';
+    if (slug.startsWith('hun.')) return 'Hungary';
+    if (slug.startsWith('svk.')) return 'Slovakia';
+    if (slug.startsWith('svn.')) return 'Slovenia';
+    if (slug.startsWith('alb.')) return 'Albania';
+    if (slug.startsWith('cyp.')) return 'Cyprus';
+    if (slug.startsWith('geo.')) return 'Georgia';
+    if (slug.startsWith('mne.')) return 'Montenegro';
+    if (slug.startsWith('mkd.')) return 'North Macedonia';
+    if (slug.startsWith('kvx.')) return 'Kosovo';
     if (slug.startsWith('usa.')) return 'United States';
     if (slug.startsWith('mex.')) return 'Mexico';
     if (slug.startsWith('aus.')) return 'Australia';
@@ -240,12 +257,14 @@ function inferMatchCountry(m) {
     if (txt.includes('norway') || txt.includes('norwegian') || txt.includes('toppserien')) return 'Norway';
     if (txt.includes('denmark') || txt.includes('danish')) return 'Denmark';
     if (txt.includes('poland') || txt.includes('polish')) return 'Poland';
+    if (txt.includes('serbia') || txt.includes('prva liga srb') || txt.includes('superliga srb')) return 'Serbia';
+    if (txt.includes('croatia') || txt.includes('hnl')) return 'Croatia';
     if (txt.includes('wsl') || txt.includes("women's super league") || txt.includes('womens super league') || txt.includes('players cup') || txt.includes('fa cup')) return 'England';
     if (txt.includes('nwsl') || txt.includes('usl')) return 'United States';
     if (txt.includes('femenil')) return 'Mexico';
     if (txt.includes('a-league')) return 'Australia';
     if (txt.includes('femminile')) return 'Italy';
-    if (txt.includes('liga f')) return 'Spain';
+    if (/\b(?:liga\s*f|copa de la reina)\b/i.test(txt)) return 'Spain';
     if (txt.includes('frauen')) return 'Germany';
     if (txt.includes('arkema')) return 'France';
     if (txt.includes('eredivisie')) return 'Netherlands';
@@ -260,17 +279,22 @@ function inferMatchCountry(m) {
     return 'International';
 }
 
-function makeFlexibleTeamRegex(rawName) {
+function makeFlexibleTeamRegex(rawName, isWomen = false) {
     if (!rawName) return null;
-    const cleaned = String(rawName)
+    const isFemale = Boolean(isWomen) || /\b(women|woman|ladies|femenil|frauen|\(w\))\b|\s+w$/i.test(String(rawName));
+    let cleaned = String(rawName)
         .normalize('NFD')
         .replace(/[\u0300-\u036f]/g, '')
         .replace(/\b(18\d{2}|19\d{2}|20\d{2})\b/g, '')
-        .replace(/\b(04|05|96|98)\b/g, '')
-        .replace(/\b(fc|cf|sc|ac|cd|afc|fk|sk|sv|ssc|as|rc|ud|rb|calcio|club|women|woman|w)\b/gi, ' ')
-        .replace(/\s+/g, ' ')
-        .trim();
-    const tokens = cleaned.split(' ').filter(t => t.length >= 4);
+        .replace(/\b(04|05|96|98)\b/g, '');
+
+    if (isFemale) {
+        cleaned = cleaned.replace(/\b(fc|cf|sc|ac|cd|afc|fk|sk|sv|ssc|as|rc|ud|rb|calcio|club)\b/gi, ' ');
+    } else {
+        cleaned = cleaned.replace(/\b(fc|cf|sc|ac|cd|afc|fk|sk|sv|ssc|as|rc|ud|rb|calcio|club|women|woman|w)\b/gi, ' ');
+    }
+    cleaned = cleaned.replace(/\s+/g, ' ').trim();
+    const tokens = cleaned.split(' ').filter(t => t.length >= 3);
     if (tokens.length >= 1) {
         const parts = tokens.slice(0, 3).map(t => t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
         return new RegExp(parts.join('.*'), 'i');
@@ -355,12 +379,13 @@ async function fetchFreshWorldwideLiveMatches() {
                 const eid = String(ev.Eid);
                 const h = ev.T1?.[0] || {};
                 const a = ev.T2?.[0] || {};
+                let matchSlug = slug;
 
                 // Demote B/reserve/youth sides off senior top-flight boards (.1) to dedicated junior or lower tier
-                const seniorSlug = String(slug || '').toLowerCase();
+                const seniorSlug = String(matchSlug || '').toLowerCase();
                 const isSeniorTop = /\.[1]$/.test(seniorSlug) && !seniorSlug.includes('.w.') && !seniorSlug.includes('youth') && !seniorSlug.includes('u19') && !seniorSlug.includes('u21');
                 if (isSeniorTop && (isReserveOrBTeamName(h.Nm) || isReserveOrBTeamName(a.Nm))) {
-                    slug = demoteToJuniorOrLowerTier(slug, h.Nm, a.Nm);
+                    matchSlug = demoteToJuniorOrLowerTier(matchSlug, h.Nm, a.Nm);
                 }
                 const hScore = parseInt(ev.Tr1 || 0, 10);
                 const aScore = parseInt(ev.Tr2 || 0, 10);
@@ -378,20 +403,21 @@ async function fetchFreshWorldwideLiveMatches() {
                 if (!isInPlay) continue;
 
                 if (typeof inferCountryFromTeamNames === 'function') {
-                    slug = inferCountryFromTeamNames(h.Nm, a.Nm, slug) || slug;
+                    matchSlug = inferCountryFromTeamNames(h.Nm, a.Nm, matchSlug) || matchSlug;
                 }
 
                 const clock = rawClock === 'HT' ? 'HT' : (rawClock.includes("'") ? rawClock : `${rawClock}'`);
+                const matchLg = TARGET_LEAGUES.find(l => l.slug === matchSlug) || leagueMap.get(matchSlug) || lg || {};
 
                 candidateMatches.push({
                     id: eid,
                     uid: `ls:${eid}`,
                     league: {
-                        slug,
-                        name: lg.name || leagueName,
-                        abbreviation: lg.abbreviation || leagueName.slice(0, 16),
-                        country: lg.country || country,
-                        logo: lg.logo || ''
+                        slug: matchSlug,
+                        name: matchLg.name || leagueName,
+                        abbreviation: matchLg.abbreviation || leagueName.slice(0, 16),
+                        country: matchLg.country || country,
+                        logo: matchLg.logo || ''
                     },
                     date: ev.Esd ? new Date(ev.Esd) : new Date(),
                     status: {
@@ -1778,8 +1804,9 @@ router.get('/predictions-context/:eventId', optionalApiKeyAuth, async (req, res)
 
         const hName = (match.home?.name || match.home?.display_name || '').trim();
         const aName = (match.away?.name || match.away?.display_name || '').trim();
-        const hRegex = makeFlexibleTeamRegex(hName);
-        const aRegex = makeFlexibleTeamRegex(aName);
+        const isWomenMatch = String(leagueSlug || '').includes('.w.') || /\b(w|women|woman|ladies|femenil|frauen|\(w\))\b/i.test(`${hName} ${aName} ${match.note || ''}`);
+        const hRegex = makeFlexibleTeamRegex(hName, isWomenMatch);
+        const aRegex = makeFlexibleTeamRegex(aName, isWomenMatch);
 
         const homeNameOrId = [];
         if (homeId) homeNameOrId.push({ 'home.source_id': homeId }, { 'away.source_id': homeId });
@@ -1824,6 +1851,18 @@ router.get('/predictions-context/:eventId', optionalApiKeyAuth, async (req, res)
             });
         }
 
+        const genderFilter = isWomenMatch
+            ? {
+                $or: [
+                    { league_slug: { $regex: /\.w\./i } },
+                    { note: { $regex: /women|femenil|frauen|arkema|liga f|wsl|nwsl/i } },
+                    { name: { $regex: /\b(w|women|woman|ladies|femenil|frauen|\(w\))\b/i } }
+                ]
+            }
+            : {
+                league_slug: { $not: { $regex: /\.w\./i } }
+            };
+
         const finishedFilter = {
             $or: [
                 { 'status.state': { $in: ['post', 'final', 'completed'] } },
@@ -1846,7 +1885,8 @@ router.get('/predictions-context/:eventId', optionalApiKeyAuth, async (req, res)
                 $and: [
                     { $or: h2hOrClauses },
                     finishedFilter,
-                    excludeCurrentMatch
+                    excludeCurrentMatch,
+                    genderFilter
                 ]
             }).sort({ date: -1 }).limit(500).lean() : Promise.resolve([]),
 
@@ -1855,7 +1895,8 @@ router.get('/predictions-context/:eventId', optionalApiKeyAuth, async (req, res)
                 $and: [
                     { $or: homeNameOrId },
                     finishedFilter,
-                    excludeCurrentMatch
+                    excludeCurrentMatch,
+                    genderFilter
                 ]
             }).sort({ date: -1 }).limit(16).lean() : Promise.resolve([]),
 
@@ -1864,7 +1905,8 @@ router.get('/predictions-context/:eventId', optionalApiKeyAuth, async (req, res)
                 $and: [
                     { $or: awayNameOrId },
                     finishedFilter,
-                    excludeCurrentMatch
+                    excludeCurrentMatch,
+                    genderFilter
                 ]
             }).sort({ date: -1 }).limit(16).lean() : Promise.resolve([]),
 
@@ -1905,6 +1947,7 @@ router.get('/predictions-context/:eventId', optionalApiKeyAuth, async (req, res)
                     $and: [
                         finishedFilter,
                         excludeCurrentMatch,
+                        genderFilter,
                         {
                             $or: [
                                 {
@@ -2151,6 +2194,7 @@ router.get('/predictions-context/:eventId', optionalApiKeyAuth, async (req, res)
 
         function deduplicateRecentMatches(matchesList, teamId) {
             const seen = new Set();
+            const seenDays = new Set();
             const result = [];
             for (const m of (matchesList || [])) {
                 const isHome = String(m.home?.source_id) === teamId;
@@ -2159,7 +2203,9 @@ router.get('/predictions-context/:eventId', optionalApiKeyAuth, async (req, res)
                 const day = m.date ? new Date(m.date).toISOString().slice(0, 10) : '';
                 const key = `${day}_${oppNorm}`;
                 if (key && seen.has(key)) continue;
+                if (day && seenDays.has(day)) continue; // A team never plays two competitive fixtures on the same date
                 if (key) seen.add(key);
+                if (day) seenDays.add(day);
                 result.push(m);
             }
             return result;

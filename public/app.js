@@ -1137,8 +1137,12 @@
         const allEvText = `${ev?.name || ''} ${ev?.home?.name || ''} ${ev?.away?.name || ''} ${name || ''} ${country || ''}`.toLowerCase();
         const CONCACAF_NATIONS_RE = /\b(curacao|curaçao|panama|bermuda|saint\s*lucia|st\.?\s*lucia|puerto\s*rico|dominica|dominican\s*republic|grenada|saint\s*kitts|st\.?\s*kitts|saint\s*martin|st\.?\s*martin|sint\s*maarten|el\s*salvador|jamaica|haiti|trinidad|costa\s*rica|honduras|guatemala|suriname|guyana|barbados|aruba|antigua|belize|bahamas|cayman|anguilla|turks|bonaire|nicaragua|cuba|martinique|guadeloupe)\b/i;
 
-        // 0. Continental and international Nations League mapping (CONCACAF vs AFCON vs UEFA)
-        if (lowerName.includes('concacaf nations') || (lowerName.includes('concacaf') && lowerName.includes('nations')) || ((lowerName.includes('nations league') || lowerSlug.includes('nations')) && CONCACAF_NATIONS_RE.test(allEvText))) {
+        // 0. Continental and international Nations League mapping (CONCACAF vs AFCON vs UEFA vs Asian SAFF)
+        if (lowerName.includes('saff championship') || (lowerName.includes('saff') && !lowerName.includes('staff')) || allEvText.includes('saff') || ((lowerSlug.startsWith('eng.') || lowerSlug === 'other') && (allEvText.includes('india vs bhutan') || allEvText.includes('bhutan vs india')))) {
+            slug = 'afc.saff';
+            name = 'SAFF Championship';
+            country = 'Asia';
+        } else if (lowerName.includes('concacaf nations') || (lowerName.includes('concacaf') && lowerName.includes('nations')) || ((lowerName.includes('nations league') || lowerSlug.includes('nations')) && CONCACAF_NATIONS_RE.test(allEvText))) {
             slug = 'concacaf.nations';
             name = 'CONCACAF Nations League';
             country = 'International';
@@ -1146,6 +1150,17 @@
             slug = 'concacaf.nations';
             name = 'CONCACAF Nations League';
             country = 'International';
+        }
+
+        // 0b. Spanish RFEF tiers and Serbian Prva Liga corrections
+        if (lowerName.includes('primera division rfef') || lowerName.includes('primera federacion') || lowerName.includes('1ª rfef') || lowerName.includes('1. federacion') || ((lowerSlug === 'mex.lower' || lowerSlug === 'esp.lower') && (allEvText.includes('coria') || allEvText.includes('unionistas') || allEvText.includes('deportivo fabril') || allEvText.includes('ourense') || allEvText.includes('barakaldo')))) {
+            slug = 'esp.3';
+            name = 'Spanish Primera Federación';
+            country = 'Spain';
+        } else if ((lowerName.includes('prva liga') || lowerSlug === 'srb.lower') && (lowerName.includes('serbia') || lowerSlug.startsWith('srb') || allEvText.includes('serbia') || allEvText.includes('dubocica') || allEvText.includes('proleter'))) {
+            slug = 'srb.lower';
+            name = 'Serbian Prva Liga';
+            country = 'Serbia';
         }
 
         // 1. Identify domestic women's leagues and map them to their correct country and slug
@@ -1157,9 +1172,10 @@
         } else if (lowerName.includes("nwsl") || lowerName.includes("national women's soccer league")) {
             country = 'USA';
             if (!slug || slug === 'w.other' || slug === 'other') slug = 'usa.w.1';
-        } else if (lowerName.includes("liga mx femenil") || (lowerName.includes("femenil") && !lowerName.includes("esp"))) {
+        } else if (lowerName.includes("liga mx femenil") || (lowerName.includes("femenil") && !lowerName.includes("esp")) || ((lowerSlug === 'mex.1' || lowerSlug === 'mex.w.1') && (allEvText.includes('femenil') || allEvText.includes('(w)') || allEvText.includes('alicia cervantes') || allEvText.includes('quiñónez') || allEvText.includes('ferral')))) {
             country = 'Mexico';
-            if (!slug || slug === 'w.other' || slug === 'other') slug = 'mex.w.1';
+            slug = 'mex.w.1';
+            name = 'Liga MX Femenil';
         } else if (lowerName.includes("a-league women") || lowerName.includes("w-league")) {
             country = 'Australia';
             if (!slug || slug === 'w.other' || slug === 'other') slug = 'aus.w.1';
@@ -1290,6 +1306,18 @@
                 slug = 'mda.1';
                 name = 'Moldovan Super Liga';
                 country = 'Moldova';
+            } else if (evText.includes('2nd lig') || evText.includes('2. lig') || evText.includes('white group') || evText.includes('red group') || evText.includes('aksaray')) {
+                slug = 'tur.3';
+                name = 'Turkish 2. Lig';
+                country = 'Turkey';
+            } else if (evText.includes('1st lig') || evText.includes('1. lig')) {
+                slug = 'tur.2';
+                name = 'Turkish 1. Lig';
+                country = 'Turkey';
+            } else if (evText.includes('3rd lig') || evText.includes('3. lig')) {
+                slug = 'tur.4';
+                name = 'Turkish 3. Lig';
+                country = 'Turkey';
             }
         }
 
@@ -1415,7 +1443,11 @@
                 isr: 'Israel', aze: 'Azerbaijan', blr: 'Belarus', arm: 'Armenia',
                 bih: 'Bosnia and Herzegovina', nir: 'Northern Ireland', wal: 'Wales',
                 irl: 'Ireland', hkg: 'Hong Kong', bgd: 'Bangladesh', mlt: 'Malta',
-                kaz: 'Kazakhstan', mda: 'Moldova', mol: 'Moldova', slv: 'El Salvador'
+                kaz: 'Kazakhstan', mda: 'Moldova', mol: 'Moldova', slv: 'El Salvador',
+                srb: 'Serbia', cro: 'Croatia', svk: 'Slovakia', svn: 'Slovenia',
+                hun: 'Hungary', bgr: 'Bulgaria', rou: 'Romania', geo: 'Georgia',
+                alb: 'Albania', cyp: 'Cyprus', kvx: 'Kosovo', mkd: 'North Macedonia',
+                mne: 'Montenegro', afc: 'Asia'
             };
             if (countryMap[prefix]) {
                 country = countryMap[prefix];
@@ -1918,9 +1950,9 @@
             const groupsMap = new Map();
             for (const m of dedupedLive) {
                 const league = enrichLeagueMeta(m.league, m);
-                const groupKey = (league.slug && league.slug !== 'w.other' && league.slug !== 'other')
+                const groupKey = (league.slug && league.slug !== 'w.other' && league.slug !== 'other' && !league.slug.endsWith('.lower'))
                     ? league.slug
-                    : `league_${(league.name || 'other').toLowerCase().replace(/[^a-z0-9]/g, '_')}`;
+                    : `league_${league.slug || 'other'}_${(league.name || 'other').toLowerCase().replace(/[^a-z0-9]/g, '_')}`;
 
                 if (!groupsMap.has(groupKey)) {
                     groupsMap.set(groupKey, {
@@ -2178,9 +2210,9 @@
                 const groupsMap = new Map();
                 for (const m of dedupedMatches) {
                     const league = enrichLeagueMeta(m.league, m);
-                    const groupKey = (league.slug && league.slug !== 'w.other' && league.slug !== 'other')
+                    const groupKey = (league.slug && league.slug !== 'w.other' && league.slug !== 'other' && !league.slug.endsWith('.lower'))
                         ? league.slug
-                        : `league_${(league.name || 'other').toLowerCase().replace(/[^a-z0-9]/g, '_')}`;
+                        : `league_${league.slug || 'other'}_${(league.name || 'other').toLowerCase().replace(/[^a-z0-9]/g, '_')}`;
 
                     if (!groupsMap.has(groupKey)) {
                         groupsMap.set(groupKey, {
@@ -2313,14 +2345,17 @@
                     if (isReserveOrBTeam(hn) || isReserveOrBTeam(an)) continue;
                     if (CLIENT_TOP_FLIGHT[slug] && !clientHasTopFlightClub(slug, hn, an)) continue;
                 }
-                // Women's competitions: drop men's sides (Liga F showing Atlético Madrid without W)
+                // Women's competitions: drop misattributed men's sides unless verified women's league fixture
                 const isWomenLeague = slug.includes('.w.') || /liga f|wsl|nwsl|femenin|frauen|arkema/i.test(league?.name || '');
                 if (isWomenLeague) {
-                    const { home: hT, away: aT } = competitorsFromEvent(ev);
-                    const hn = hT.team?.displayName || hT.team?.name || '';
-                    const an = aT.team?.displayName || aT.team?.name || '';
-                    const looksWomen = (n) => /\b(w|women|woman|ladies|femen|frau)\b|\(w\)/i.test(n);
-                    if (!looksWomen(hn) && !looksWomen(an)) continue;
+                    const isVerifiedWomenLeague = slug.includes('.w.') || String(ev.league_slug || '').includes('.w.') || /femenil|frauen|arkema|wsl|nwsl/i.test(league?.name || ev.note || '');
+                    if (!isVerifiedWomenLeague) {
+                        const { home: hT, away: aT } = competitorsFromEvent(ev);
+                        const hn = hT.team?.displayName || hT.team?.name || '';
+                        const an = aT.team?.displayName || aT.team?.name || '';
+                        const looksWomen = (n) => /\b(w|women|woman|ladies|femen|frau)\b|\(w\)/i.test(n);
+                        if (!looksWomen(hn) && !looksWomen(an)) continue;
+                    }
                 }
                 // Hide cross-country pollution (e.g. Romanian clubs under Indonesian header)
                 {
@@ -3411,13 +3446,16 @@
         function renderRecentMatchesList(recentMatches) {
             if (!recentMatches || !recentMatches.length) return '<div style="color:var(--text-muted); font-size:12px; font-style:italic; padding:6px 0;">No recorded recent matches</div>';
             const seen = new Set();
+            const seenDays = new Set();
             const deduped = [];
             for (const m of recentMatches) {
                 const day = m.date ? String(m.date).slice(0, 10) : '';
                 const opp = cleanTeamNameForDedup(m.opponent || '');
                 const key = `${day}_${opp}`;
                 if (key && seen.has(key)) continue;
+                if (day && seenDays.has(day)) continue;
                 if (key) seen.add(key);
+                if (day) seenDays.add(day);
                 deduped.push(m);
             }
             return `<div style="display:flex; flex-direction:column; gap:6px;">` +
@@ -3425,7 +3463,7 @@
                     const resColor = m.result === 'W' ? '#10b981' : m.result === 'D' ? '#9ca3af' : '#ef4444';
                     const resBg = m.result === 'W' ? 'rgba(16,185,129,0.12)' : m.result === 'D' ? 'rgba(156,163,175,0.12)' : 'rgba(239,68,68,0.12)';
                     const venueLabel = m.venue === 'Away' || m.atVs === '@' ? '@' : 'vs';
-                    const dateFormatted = m.date ? formatDate(m.date, { year: false, weekday: false }) : '';
+                    const dateFormatted = m.date ? formatDate(m.date, { year: true, weekday: false }) : '';
                     return `<div style="display:flex; justify-content:space-between; align-items:center; padding:6px 10px; background:var(--bg-surface-elevated); border:1px solid var(--border-subtle); border-radius:6px; font-size:12px;">
                         <div style="display:flex; align-items:center; gap:6px; overflow:hidden;">
                             ${dateFormatted ? `<span style="font-size:10.5px; color:var(--text-muted); min-width:44px;">${dateFormatted}</span>` : ''}
@@ -3570,6 +3608,22 @@
             });
 
             if (gk.length === 0 && squad.length) gk.push(squad[0]);
+            if (gk.length > 1) {
+                def.push(...gk.slice(1));
+                gk.splice(1);
+            }
+            // Balance lines so no single line exceeds 5 players (prevents pitch player node squeezing)
+            while (def.length > 5) {
+                mid.unshift(def.pop());
+            }
+            while (fwd.length > 4) {
+                mid.push(fwd.pop());
+            }
+            while (mid.length > 5) {
+                if (def.length < 4) def.push(mid.shift());
+                else if (fwd.length < 3) fwd.unshift(mid.pop());
+                else break;
+            }
 
             const formationStr = `${def.length}-${mid.length}-${fwd.length}`;
             const themeColor = isHome ? '#10b981' : '#3b82f6';

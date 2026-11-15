@@ -280,6 +280,34 @@ function generateTeamSlugVariants(name = '') {
         variants.add(`fc-${clean.replace('munich', 'munchen')}`);
     }
 
+    // Women's club variants (e.g. Wolfsburg W -> vfl-wolfsburg-women, Bayern Munich W -> fc-bayern-munchen-women)
+    if (clean.endsWith('-w')) {
+        const baseNoW = clean.replace(/-w$/, '');
+        variants.add(baseNoW);
+        variants.add(`${baseNoW}-women`);
+    } else if (clean.endsWith('-women')) {
+        const baseNoWomen = clean.replace(/-women$/, '');
+        variants.add(baseNoWomen);
+        variants.add(`${baseNoWomen}-w`);
+    }
+
+    if (clean.includes('wolfsburg')) {
+        variants.add('vfl-wolfsburg');
+        variants.add('vfl-wolfsburg-women');
+        variants.add('wolfsburg-women');
+    }
+    if (clean.includes('bayern')) {
+        variants.add('fc-bayern-munchen');
+        variants.add('fc-bayern-munchen-women');
+        variants.add('bayern-munchen-women');
+        variants.add('fc-bayern-munich-women');
+    }
+    if (clean.includes('lyon')) {
+        variants.add('olympique-lyonnais');
+        variants.add('olympique-lyonnais-women');
+        variants.add('lyon-women');
+    }
+
     return Array.from(variants);
 }
 
