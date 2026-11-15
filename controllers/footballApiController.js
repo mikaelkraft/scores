@@ -162,17 +162,9 @@ function parseNumber(val, fallback, max = 200) {
 }
 
 const FREE_TIER_ALLOWED_LEAGUES = [
-    'eng.1',            // English Premier League
-    'esp.1',            // Spanish La Liga
-    'uefa.champions',   // UEFA Champions League
-    'ita.1',            // Italian Serie A
-    'ger.1',            // German Bundesliga
-    'fra.1',            // French Ligue 1
-    'usa.1',            // Major League Soccer
-    'ned.1',            // Dutch Eredivisie
-    'por.1',            // Portuguese Primeira Liga
-    'tur.1',            // Turkish Süper Lig
-    'nga.1'             // Nigerian Premier Football League
+    'eng.1', // English Premier League
+    'esp.1', // Spanish La Liga
+    'nga.1'  // Nigerian Premier Football League
 ];
 
 function isFreePlanRestricted(apiKey) {
@@ -1026,7 +1018,7 @@ router.get(['/live', '/livescores'], async (req, res) => {
 
         if (result.restricted) {
             return res.status(403).json({
-                error: `Access to competition '${result.requestedSlug}' is restricted on the Free Developer tier. Upgrade to Starter ($10/mo) or Pro ($29/mo) to access all 100+ world leagues.`,
+                error: `Access to competition '${result.requestedSlug}' is restricted on the Free Developer tier (limited to 3 free leagues: eng.1, esp.1, nga.1). Upgrade to Starter ($10/mo) or Pro ($29/mo) to access all 100+ world leagues.`,
                 upgradeUrl: '/pricing',
                 tier: 'free',
                 allowedLeagues: FREE_TIER_ALLOWED_LEAGUES
@@ -1268,7 +1260,7 @@ router.get('/fixtures', optionalApiKeyAuth, async (req, res) => {
                 const requestedSlug = String(league).toLowerCase();
                 if (!FREE_TIER_ALLOWED_LEAGUES.includes(requestedSlug)) {
                     return res.status(403).json({
-                        error: `Access to competition '${league}' is restricted on the Free Developer tier. Upgrade to Starter ($10/mo) or Pro ($29/mo) to access all 100+ world leagues.`,
+                        error: `Access to competition '${league}' is restricted on the Free Developer tier (limited to 3 free leagues: eng.1, esp.1, nga.1). Upgrade to Starter ($10/mo) or Pro ($29/mo) to access all 100+ world leagues.`,
                         upgradeUrl: '/pricing',
                         tier: 'free',
                         allowedLeagues: FREE_TIER_ALLOWED_LEAGUES
@@ -3063,7 +3055,7 @@ router.get(['/standings', '/standings/:league'], async (req, res) => {
             if (requestedSlug && requestedSlug !== 'all') {
                 if (!FREE_TIER_ALLOWED_LEAGUES.includes(requestedSlug)) {
                     return res.status(403).json({
-                        error: `Access to standings for '${requestedSlug}' is restricted on the Free Developer tier. Upgrade to Starter ($10/mo) or Pro ($29/mo) to access all 100+ world leagues.`,
+                        error: `Access to standings for '${requestedSlug}' is restricted on the Free Developer tier (limited to 3 free leagues: eng.1, esp.1, nga.1). Upgrade to Starter ($10/mo) or Pro ($29/mo) to access all 100+ world leagues.`,
                         upgradeUrl: '/pricing',
                         tier: 'free',
                         allowedLeagues: FREE_TIER_ALLOWED_LEAGUES

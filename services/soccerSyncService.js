@@ -136,6 +136,7 @@ const TARGET_LEAGUES = [
     { slug: 'eng.w.fa', name: 'Women\'s FA Cup', abbreviation: 'Women\'s FA Cup', country: 'England', kind: 'cup', sort_order: 104 },
     { slug: 'aus.w.1', name: 'A-League Women', abbreviation: 'A-League W', country: 'Australia', kind: 'club', sort_order: 105 },
     { slug: 'mex.w.1', name: 'Liga MX Femenil', abbreviation: 'Liga MX Fem', country: 'Mexico', kind: 'club', sort_order: 106 },
+    { slug: 'jpn.w.1', name: "Japan Women's WE League", abbreviation: 'WE League', country: 'Japan', kind: 'club', sort_order: 107 },
     { slug: 'sui.w.1', name: 'Swiss Women\'s Super League', abbreviation: 'Swiss WSL', country: 'Switzerland', kind: 'club', sort_order: 107 },
     { slug: 'bel.w.1', name: 'Belgian Super League Women', abbreviation: 'Super League W', country: 'Belgium', kind: 'club', sort_order: 108 },
     { slug: 'sco.w.1', name: 'Scottish Women\'s Premier League', abbreviation: 'SWPL', country: 'Scotland', kind: 'club', sort_order: 109 },
@@ -1256,8 +1257,14 @@ function hasTopFlightClub(slug, homeName, awayName) {
 const TEAM_COUNTRY_HINTS = [
     // Brazil
     [/londrina|n[aá]utico|chapecoense|criciuma|guarani|operario|sport recife|vila nova|ponte preta|crb|csa|remov|sampaio corr[eê]a|botafogo.?sp|ituano|novorizontino/i, 'bra'],
+    // Bolivia
+    [/always ready|independiente petrolero|the strongest|bolivar|blooming|oriente petrolero|guabira|jorge wilstermann|nacional potosi|real tomayapo|real santa cruz|universitario de vinto|san antonio bulo bulo|royal pari|real oruro/i, 'bol'],
+    // Mexico expansion
+    [/leones negros|atletico morelia|atletico la paz|dorados de sinaloa|mineros de zacatecas|alebrijes|correcaminos|cancun fc|tapatio|venados|celaya|tepatitlan|cimarrones|tlaxcala/i, 'mex.2'],
     // Mexico senior (avoid mis-slotting into women or foreign leagues)
     [/\bpumas\s*unam|\btigres\s*uanl|\bclub\s*america\b|\bchivas\b|\bguadalajara\b|\bmonterrey\b|\bcruz\s*azul\b|\bsantos\s*laguna\b|\btoluca\b|\bleon\b(?!esa)|\bpachuca\b|\bnecaxa\b|\batlas\b|\bmazatlan\b|\bqueretaro\b|\btijuana\b|\bjuarez\b/i, 'mex'],
+    // Japan
+    [/vissel kobe|cerezo osaka|gamba osaka|kawasaki frontale|yokohama f.?marinos|urawa red|sanfrecce hiroshima|kashima antlers|nagoya grampus|fc tokyo|machida zelvia|albirex niigata|avispa fukuoka|kyoto sanga|shonan bellmare|consadole sapporo|kashiwa reysol|tokyo verdy|jubilo iwata|sagan tosu/i, 'jpn'],
     // El Salvador
     [/isidro metap[aá]n|platense municipal|alianza fc|fas\b|\b(?:cd\s+)?aguila\b(?!s)|municipal limeno|firpo|once deportivo/i, 'slv'],
     // Romania
@@ -1291,6 +1298,21 @@ const TEAM_COUNTRY_HINTS = [
  */
 function inferCountryFromTeamNames(homeName = '', awayName = '', currentSlug = '') {
     const blob = `${homeName} ${awayName}`;
+
+    // Japan Women's WE League clubs
+    if (/inac kobe|cerezo osaka sakai|urawa reds ladies|tokyo verdy beleza|omiya ardija ventus|albirex niigata ladies|nagano parceiro w|elfen saitama|nojima stella|mynavi sendai|nadeshiko/i.test(blob)) {
+        return 'jpn.w.1';
+    }
+
+    // Bolivia clubs
+    if (/always ready|independiente petrolero|the strongest|bolivar|blooming|oriente petrolero|guabira|jorge wilstermann|nacional potosi|real tomayapo|real santa cruz|universitario de vinto|san antonio bulo bulo|royal pari|real oruro/i.test(blob)) {
+        return (String(currentSlug || '').includes('copa') || /copa/i.test(blob)) ? 'bol.copa' : 'bol.1';
+    }
+
+    // Mexican second-tier expansion clubs
+    if (/leones negros|atletico morelia|atletico la paz|dorados de sinaloa|mineros de zacatecas|alebrijes|correcaminos|cancun fc|tapatio|venados|celaya|tepatitlan|cimarrones|tlaxcala/i.test(blob)) {
+        return 'mex.2';
+    }
 
     // American Concacaf teams mistakenly placed in AFCON (caf.nations) or UEFA Nations League (uefa.nations)
     if (String(currentSlug || '') === 'caf.nations' || String(currentSlug || '') === 'uefa.nations' || String(currentSlug || '').includes('nations')) {
@@ -1400,6 +1422,9 @@ function demoteToJuniorOrLowerTier(slug, homeName = '', awayName = '', compName 
 
     // Generic country slug: e.g. xxx.1 -> xxx.2 or xxx.youth
     const countryPrefix = slug.split('.')[0];
+    if (countryPrefix.length < 3 || /^\d/.test(countryPrefix)) {
+        return slug;
+    }
     if (isYouth) {
         return `${countryPrefix}.youth`;
     }
@@ -1457,6 +1482,7 @@ function resolveLeagueSlug(altGameNote = '', compDesc = '', uid = '') {
         }
 
         // Domestic European & World Women's Leagues
+        if (text.includes('we league') || text.includes('we-league') || text.includes('we.league') || (text.includes('japan') && (text.includes('women') || text.includes('ladies') || text.includes('nadeshiko'))) || text.includes('jpn.w') || text.includes('inac kobe') || text.includes('cerezo osaka sakai')) return 'jpn.w.1';
         if (text.includes('a-league') || text.includes('australia') || text.includes('aus.w')) return 'aus.w.1';
         if (text.includes('mex') || text.includes('mexico') || text.includes('femenil')) return 'mex.w.1';
         if (text.includes('liga f') || text.includes('esp.w.1') || text.includes('copa de la reina') || text.includes('spain') || text.includes('spanish')) return 'esp.w.1';
@@ -1571,7 +1597,7 @@ function resolveLeagueSlug(altGameNote = '', compDesc = '', uid = '') {
     }
 
     // --- MEXICO (Liga MX / Liga de Expansión / Copa MX / Liga MX Femenil / Lower Tiers) ---
-    const isMexico = country.includes('mexic') || text.includes('liga mx') || scd.includes('mex.') || scd.includes('liga-mx');
+    const isMexico = country.includes('mexic') || text.includes('liga mx') || text.includes('expansion') || text.includes('expansi') || scd.includes('mex.') || scd.includes('liga-mx');
     if (isMexico) {
         if (text.includes('femenil') || text.includes('women') || scd.includes('femenil') || scd.includes('mex.w')) return 'mex.w.1';
         if (text.includes('expansi') || text.includes('expansion') || scd.includes('mex.2') || scd.includes('expansion')) return 'mex.2';
@@ -1621,8 +1647,8 @@ function resolveLeagueSlug(altGameNote = '', compDesc = '', uid = '') {
         return 'par.1';
     }
 
-    // --- BOLIVIA (Bolivian Liga Profesional) ---
-    const isBolivia = country.includes('bolivia') || scd.includes('bol.');
+    // --- BOLIVIA (Bolivian Liga Profesional / Copa Bolivia) ---
+    const isBolivia = country.includes('bolivia') || text.includes('bolivia') || scd.includes('bol.') || /\b(always ready|independiente petrolero|the strongest|bolivar|blooming|oriente petrolero|guabira|jorge wilstermann|nacional potosi|real tomayapo|real santa cruz|universitario de vinto|san antonio bulo bulo|royal pari|real oruro)\b/i.test(text);
     if (isBolivia) {
         if (text.includes('copa') || scd.includes('bol.copa')) return 'bol.copa';
         return 'bol.1';
@@ -1730,9 +1756,10 @@ function resolveLeagueSlug(altGameNote = '', compDesc = '', uid = '') {
         return 'chn.1';
     }
 
-    // JAPAN (J1 League / J2 League / Emperor's Cup)
-    const isJapan = country.includes('japan') || country.includes('japanese') || scd.includes('jpn.') || text.includes('j-league') || text.includes('j.league') || text.includes('j1');
+    // JAPAN (J1 League / J2 League / Emperor's Cup / WE League)
+    const isJapan = country.includes('japan') || country.includes('japanese') || scd.includes('jpn.') || text.includes('j-league') || text.includes('j.league') || text.includes('j1') || text.includes('we league') || text.includes('we-league');
     if (isJapan) {
+        if (text.includes('we league') || text.includes('we-league') || text.includes('women') || text.includes('ladies') || scd.includes('jpn.w')) return 'jpn.w.1';
         if (text.includes('j2') || text.includes('j-league 2') || text.includes('j.league 2') || scd.includes('jpn.2')) return 'jpn.2';
         if (text.includes('cup') || text.includes('emperor') || scd.includes('jpn.cup')) return 'jpn.cup';
         return 'jpn.1';
@@ -1930,9 +1957,12 @@ function resolveLeagueSlug(altGameNote = '', compDesc = '', uid = '') {
 
     // 11. Foreign Country Fallback: if a specific foreign country was provided, map to that country's tier 1
     if (country && !isNeutralCountry) {
-        const cSlug = country.toLowerCase().replace(/[^a-z0-9]+/g, '').slice(0, 3);
-        if (cSlug && cSlug.length >= 2) {
-            return `${cSlug}.1`;
+        const isLegOrStage = /^(?:\d+(?:st|nd|rd|th)?\s*(?:leg|round|half|phase|stage)?|semifinal|quarterfinal|final|group|round\s*\d+|aggregate|penalt)/i.test(country);
+        if (!isLegOrStage) {
+            const cSlug = country.toLowerCase().replace(/[^a-z0-9]+/g, '').slice(0, 3);
+            if (cSlug && cSlug.length === 3 && /^[a-z]{3}$/.test(cSlug)) {
+                return `${cSlug}.1`;
+            }
         }
     }
 
@@ -2902,6 +2932,93 @@ async function cleanupStuckMatchesAndPurgeNcaa() {
                 }
             }
         ).catch(() => {});
+
+        // 4g. Upsert Japan Women's WE League ('jpn.w.1') and re-classify Japanese women's matches
+        await SoccerLeague.updateOne(
+            { slug: 'jpn.w.1' },
+            {
+                $set: {
+                    name: "Japan Women's WE League",
+                    abbreviation: 'WE League',
+                    country: 'Japan',
+                    kind: 'club',
+                    active: true,
+                    sort_order: 107
+                }
+            },
+            { upsert: true }
+        ).catch(() => {});
+
+        await SoccerMatch.updateMany(
+            {
+                $or: [
+                    {
+                        league_slug: { $in: ['mex.w.1', 'w.other', 'w.international', 'jpn.1', 'jpn.cup', 'jap.we.league', 'women.s.we.league'] },
+                        $or: [
+                            { note: /we league|we-league|inac kobe|cerezo osaka sakai|elfen saitama/i },
+                            { name: /inac kobe|cerezo osaka sakai|elfen saitama|urawa reds ladies|tokyo verdy beleza/i },
+                            { 'home.name': /inac kobe|cerezo osaka sakai|elfen saitama|urawa reds ladies|tokyo verdy beleza|nagano parceiro w|nojima stella/i },
+                            { 'away.name': /inac kobe|cerezo osaka sakai|elfen saitama|urawa reds ladies|tokyo verdy beleza|nagano parceiro w|nojima stella/i }
+                        ]
+                    }
+                ]
+            },
+            {
+                $set: {
+                    league_slug: 'jpn.w.1',
+                    note: "Japan Women's WE League",
+                    'venue.country': 'Japan'
+                }
+            }
+        ).catch(() => {});
+
+        // 4h. Re-classify Bolivian matches mistakenly categorized under '2nd.1' or others
+        await SoccerMatch.updateMany(
+            {
+                $or: [
+                    { league_slug: { $in: ['2nd.1', '1st.1', 'bol.1', 'bolivian.liga.profesional'] }, note: /copa bolivia/i },
+                    {
+                        league_slug: { $in: ['2nd.1', '1st.1'] },
+                        $or: [
+                            { note: /bolivia|always ready|independiente petrolero/i },
+                            { 'home.name': /always ready|independiente petrolero|the strongest|bolivar|blooming|oriente petrolero/i },
+                            { 'away.name': /always ready|independiente petrolero|the strongest|bolivar|blooming|oriente petrolero/i },
+                            { 'venue.country': 'Bolivia' }
+                        ]
+                    }
+                ]
+            },
+            {
+                $set: {
+                    league_slug: 'bol.copa',
+                    note: 'Copa Bolivia',
+                    'venue.country': 'Bolivia'
+                }
+            }
+        ).catch(() => {});
+
+        // 4i. Re-classify Mexican Liga de Expansión matches mistakenly categorized under '2nd.1' or '1st.1'
+        await SoccerMatch.updateMany(
+            {
+                league_slug: { $in: ['2nd.1', '1st.1'] },
+                $or: [
+                    { note: /expansi[oó]n|mexic/i },
+                    { 'home.name': /leones negros|atletico morelia|morelia|atletico la paz|dorados|mineros de zacatecas|alebrijes|piratas/i },
+                    { 'away.name': /leones negros|atletico morelia|morelia|atletico la paz|dorados|mineros de zacatecas|alebrijes|piratas/i },
+                    { 'venue.country': 'Mexico' }
+                ]
+            },
+            {
+                $set: {
+                    league_slug: 'mex.2',
+                    note: 'Liga de Expansión MX',
+                    'venue.country': 'Mexico'
+                }
+            }
+        ).catch(() => {});
+
+        // Purge dummy leagues '2nd.1' and '1st.1'
+        await SoccerLeague.deleteMany({ slug: { $in: ['2nd.1', '1st.1', 'jap.we.league', 'women.s.we.league'] } }).catch(() => {});
 
         // 5. Purge duplicate match documents across the past 5 days and upcoming 2 days
         const targetDates = [];

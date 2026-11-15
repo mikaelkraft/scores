@@ -111,6 +111,10 @@
         'ita.w.1': '🇮🇹',
         'aus.w.1': '🇦🇺',
         'mex.w.1': '🇲🇽',
+        'jpn.w.1': '🇯🇵',
+        'bol.1': '🇧🇴',
+        'bol.copa': '🇧🇴',
+        'mex.2': '🇲🇽',
         'swe.w.1': '🇸🇪',
         'nor.w.1': '🇳🇴',
         'den.w.1': '🇩🇰',
@@ -1189,7 +1193,10 @@
         'ita.2': 49,
         'fra.2': 48,
         'por.2': 47,
-        'mex.2': 46
+        'mex.2': 46,
+        'jpn.w.1': 52,
+        'bol.1': 52,
+        'bol.copa': 50
     };
 
     function getLeaguePriorityClient(slug = '') {
@@ -1309,7 +1316,11 @@
         } else if (lowerName.includes("nwsl") || lowerName.includes("national women's soccer league")) {
             country = 'USA';
             if (!slug || slug === 'w.other' || slug === 'other') slug = 'usa.w.1';
-        } else if (lowerName.includes("liga mx femenil") || (lowerName.includes("femenil") && !lowerName.includes("esp")) || ((lowerSlug === 'mex.1' || lowerSlug === 'mex.w.1') && (allEvText.includes('femenil') || allEvText.includes('(w)') || allEvText.includes('alicia cervantes') || allEvText.includes('quiñónez') || allEvText.includes('ferral')))) {
+        } else if (lowerName.includes("we league") || lowerName.includes("we-league") || lowerSlug === 'jpn.w.1' || ((lowerSlug.startsWith('jpn') || lowerSlug === 'w.international' || lowerSlug === 'mex.w.1') && (allEvText.includes('inac kobe') || allEvText.includes('cerezo osaka sakai') || allEvText.includes('urawa reds ladies') || allEvText.includes('tokyo verdy beleza') || allEvText.includes('elfen saitama') || allEvText.includes('we league') || allEvText.includes('we-league')))) {
+            country = 'Japan';
+            slug = 'jpn.w.1';
+            name = "Japan Women's WE League";
+        } else if (lowerName.includes("liga mx femenil") || (lowerName.includes("femenil") && !lowerName.includes("esp")) || ((lowerSlug === 'mex.1' || lowerSlug === 'mex.w.1') && (allEvText.includes('femenil') || allEvText.includes('(w)') || allEvText.includes('alicia cervantes') || allEvText.includes('quiñónez') || allEvText.includes('ferral')) && !allEvText.includes('kobe') && !allEvText.includes('cerezo') && !allEvText.includes('japan'))) {
             country = 'Mexico';
             slug = 'mex.w.1';
             name = 'Liga MX Femenil';
@@ -1560,6 +1571,25 @@
             }
         }
 
+        // 1j. Bolivian Liga Profesional & Copa Bolivia
+        if (lowerSlug === 'bol.copa' || lowerSlug === 'bol.1' || (lowerSlug === '2nd.1' && (allEvText.includes('always ready') || allEvText.includes('independiente petrolero') || allEvText.includes('bolivia'))) || lowerName.includes('copa bolivia') || (lowerName.includes('bolivian') && !allEvText.includes('mexic')) || allEvText.includes('always ready') || allEvText.includes('independiente petrolero') || allEvText.includes('the strongest') || allEvText.includes('oriente petrolero') || allEvText.includes('blooming') || allEvText.includes('bolivar')) {
+            country = 'Bolivia';
+            if (lowerName.includes('copa') || lowerSlug === 'bol.copa' || allEvText.includes('copa bolivia') || allEvText.includes('copa')) {
+                slug = 'bol.copa';
+                name = 'Copa Bolivia';
+            } else {
+                slug = 'bol.1';
+                name = 'Bolivian Liga Profesional';
+            }
+        }
+
+        // 1k. Mexican Liga de Expansión MX
+        if (lowerSlug === 'mex.2' || lowerName.includes('expansion') || lowerName.includes('expansión') || ((lowerSlug === '2nd.1' || lowerSlug === '1st.1' || lowerSlug === 'mex.lower') && (allEvText.includes('leones negros') || allEvText.includes('morelia') || allEvText.includes('la paz') || allEvText.includes('dorados') || allEvText.includes('mineros de zacatecas') || allEvText.includes('alebrijes')))) {
+            country = 'Mexico';
+            slug = 'mex.2';
+            name = 'Liga de Expansión MX';
+        }
+
         // 2. Infer country from slug prefix if country is missing or generic 'International'
         if (!country || country.toLowerCase() === 'international') {
             const prefix = slug.split('.')[0];
@@ -1570,6 +1600,7 @@
                 den: 'Denmark', swe: 'Sweden', nor: 'Norway', fin: 'Finland',
                 pol: 'Poland', rus: 'Russia', ukr: 'Ukraine', cze: 'Czech Republic',
                 bra: 'Brazil', arg: 'Argentina', col: 'Colombia', chi: 'Chile',
+                bol: 'Bolivia',
                 mex: 'Mexico', usa: 'USA', aus: 'Australia', jpn: 'Japan',
                 chn: 'China', kor: 'South Korea', ksa: 'Saudi Arabia',
                 egy: 'Egypt', rsa: 'South Africa', nga: 'Nigeria', mar: 'Morocco',
