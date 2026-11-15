@@ -53,6 +53,24 @@ router.get('/api/v1/booking/providers', (req, res) => {
 });
 
 /**
+ * GET /api/v1/booking/predictions-redirect
+ * Redirects or returns configuration for Norra AI Prediction Bot & engine
+ */
+router.get('/api/v1/booking/predictions-redirect', (req, res) => {
+    const targetUrl = process.env.NORRA_PREDICTION_BOT_URL || 'https://t.me/NorraPredictionBot';
+    if (req.query.format === 'json') {
+        return res.json({
+            status: 'success',
+            botName: 'Norra AI Prediction Bot',
+            redirectUrl: targetUrl,
+            aiPlatformUrl: 'https://mynorra.xyz',
+            description: 'Algorithmic betting tips, banker accumulators, and expected goals predictions powered by Norra AI.'
+        });
+    }
+    return res.redirect(302, targetUrl);
+});
+
+/**
  * POST /api/v1/booking/generate
  * Hook to book selections and return booking slip
  */

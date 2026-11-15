@@ -87,6 +87,96 @@ const SUPPORTED_BOOKMAKERS = [
         baseUrl: 'https://paripesa.com/en/line/?coupon=',
         status: 'ready',
         converterSupported: true
+    },
+    {
+        id: 'bet365',
+        name: 'Bet365 (Global/UK)',
+        badge: '🟢',
+        badgeColor: '#007b55',
+        baseUrl: 'https://www.bet365.com/#/AC/B1/C1/D13/E40/F2/?share=',
+        status: 'ready',
+        converterSupported: true
+    },
+    {
+        id: 'stake',
+        name: 'Stake.com (Global Crypto)',
+        badge: '🎲',
+        badgeColor: '#1475e1',
+        baseUrl: 'https://stake.com/sports?coupon=',
+        status: 'ready',
+        converterSupported: true
+    },
+    {
+        id: 'betfair',
+        name: 'Betfair (UK/Global)',
+        badge: '🟡',
+        badgeColor: '#ffb80c',
+        baseUrl: 'https://www.betfair.com/sport/betslip?code=',
+        status: 'ready',
+        converterSupported: true
+    },
+    {
+        id: 'draftkings',
+        name: 'DraftKings (US)',
+        badge: '👑',
+        badgeColor: '#53d337',
+        baseUrl: 'https://sportsbook.draftkings.com/betslip?share=',
+        status: 'ready',
+        converterSupported: true
+    },
+    {
+        id: 'fanduel',
+        name: 'FanDuel (US)',
+        badge: '🛡️',
+        badgeColor: '#1493ff',
+        baseUrl: 'https://sportsbook.fanduel.com/betslip?code=',
+        status: 'ready',
+        converterSupported: true
+    },
+    {
+        id: 'bwin',
+        name: 'Bwin (Europe)',
+        badge: '🟡',
+        badgeColor: '#ffc800',
+        baseUrl: 'https://sports.bwin.com/en/sports?coupon=',
+        status: 'ready',
+        converterSupported: true
+    },
+    {
+        id: 'unibet',
+        name: 'Unibet (Europe/UK)',
+        badge: '🟢',
+        badgeColor: '#107c41',
+        baseUrl: 'https://www.unibet.com/betting/sports/coupon?code=',
+        status: 'ready',
+        converterSupported: true
+    },
+    {
+        id: '888sport',
+        name: '888sport (Europe/UK)',
+        badge: '🟠',
+        badgeColor: '#ff5c00',
+        baseUrl: 'https://www.888sport.com/betslip?shareCode=',
+        status: 'ready',
+        converterSupported: true
+    },
+    {
+        id: 'williamhill',
+        name: 'William Hill (UK/Europe)',
+        badge: '🔵',
+        badgeColor: '#00143d',
+        baseUrl: 'https://sports.williamhill.com/betting/en-gb?coupon=',
+        status: 'ready',
+        converterSupported: true
+    },
+    {
+        id: 'melbet',
+        name: 'Melbet (Global)',
+        badge: '🔶',
+        badgeColor: '#f39c12',
+        baseUrl: 'https://melbet.com/en/line/?coupon=',
+        status: 'ready',
+        converterSupported: true
     }
 ];
 
@@ -165,6 +255,26 @@ class BookingHookService {
             targetCode = `22-${num}`;
         } else if (dest.id === 'paripesa') {
             targetCode = `PP-${seed.slice(0, 6).toUpperCase()}`;
+        } else if (dest.id === 'bet365') {
+            targetCode = `B365-${seed.slice(0, 6).toUpperCase()}`;
+        } else if (dest.id === 'stake') {
+            targetCode = `STK-${seed.slice(0, 6).toUpperCase()}`;
+        } else if (dest.id === 'betfair') {
+            targetCode = `BF-${seed.slice(0, 6).toUpperCase()}`;
+        } else if (dest.id === 'draftkings') {
+            targetCode = `DK-${seed.slice(0, 6).toUpperCase()}`;
+        } else if (dest.id === 'fanduel') {
+            targetCode = `FD-${seed.slice(0, 6).toUpperCase()}`;
+        } else if (dest.id === 'bwin') {
+            targetCode = `BWN-${seed.slice(0, 6).toUpperCase()}`;
+        } else if (dest.id === 'unibet') {
+            targetCode = `UNI-${seed.slice(0, 6).toUpperCase()}`;
+        } else if (dest.id === '888sport') {
+            targetCode = `888-${seed.slice(0, 6).toUpperCase()}`;
+        } else if (dest.id === 'williamhill') {
+            targetCode = `WH-${seed.slice(0, 6).toUpperCase()}`;
+        } else if (dest.id === 'melbet') {
+            targetCode = `MB-${seed.slice(0, 6).toUpperCase()}`;
         } else {
             targetCode = `BW-${seed.slice(0, 6).toUpperCase()}`;
         }
@@ -210,6 +320,13 @@ class BookingHookService {
             totalSelections: sampleSelections.length,
             combinedOdds: Number(totalOdds),
             message: `Cross-bookmaker conversion hook from ${source.name} to ${dest.name} is active and ready for engine integration.`,
+            norraAiPrediction: {
+                status: 'ready',
+                botName: 'Norra AI Prediction Bot',
+                redirectUrl: 'https://t.me/NorraPredictionBot',
+                aiUrl: 'https://mynorra.xyz',
+                message: 'Ask Norra AI for algorithmic betting predictions, banker accumulators, and expected goals analysis.'
+            },
             timestamp: new Date().toISOString()
         };
     }

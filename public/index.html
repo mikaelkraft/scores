@@ -78,6 +78,7 @@
                 <a class="nav-link" href="/pricing">Pricing</a>
                 <a class="nav-link docs-link" href="/docs">Docs</a>
                 <a class="nav-link" href="/account" id="nav-account-link">Account</a>
+                <button class="nav-link nav-btn-download" type="button" id="header-download-btn" title="Download &amp; Install Mobile / Desktop App" style="display:inline-flex; align-items:center; gap:4px; font-weight:600; cursor:pointer;">📲 App</button>
                 <button class="btn-icon-toggle" id="sound-toggle" type="button" aria-label="Toggle goal sound alert" title="Goal Alert Sound (On/Off)">🔔</button>
                 <button class="btn-icon-toggle" id="theme-toggle" type="button" aria-label="Toggle light/dark theme" title="Toggle theme">🌓</button>
             </div>
@@ -296,29 +297,57 @@
                     <div class="booking-field-group">
                         <label for="convert-from-select">2. From Bookmaker</label>
                         <select id="convert-from-select">
-                            <option value="sportybet">🔴 SportyBet</option>
-                            <option value="bet9ja" selected>🟢 Bet9ja</option>
-                            <option value="msport">🟡 MSport</option>
-                            <option value="1xbet">🔵 1xBet</option>
-                            <option value="betway">⚫ Betway</option>
-                            <option value="betking">👑 BetKing</option>
-                            <option value="bangbet">⚡ Bangbet</option>
-                            <option value="22bet">⚪ 22Bet</option>
-                            <option value="paripesa">🟣 PariPesa</option>
+                            <optgroup label="Domestic (Africa)">
+                                <option value="sportybet">🔴 SportyBet</option>
+                                <option value="bet9ja" selected>🟢 Bet9ja</option>
+                                <option value="msport">🟡 MSport</option>
+                                <option value="1xbet">🔵 1xBet</option>
+                                <option value="betway">⚫ Betway</option>
+                                <option value="betking">👑 BetKing</option>
+                                <option value="bangbet">⚡ Bangbet</option>
+                                <option value="22bet">⚪ 22Bet</option>
+                                <option value="paripesa">🟣 PariPesa</option>
+                            </optgroup>
+                            <optgroup label="Foreign &amp; Global">
+                                <option value="bet365">🟢 Bet365 (Global/UK)</option>
+                                <option value="stake">🎲 Stake.com (Crypto)</option>
+                                <option value="betfair">🟡 Betfair (UK)</option>
+                                <option value="draftkings">👑 DraftKings (US)</option>
+                                <option value="fanduel">🛡️ FanDuel (US)</option>
+                                <option value="bwin">🟡 Bwin (Europe)</option>
+                                <option value="unibet">🟢 Unibet (Europe)</option>
+                                <option value="888sport">🟠 888sport (Europe)</option>
+                                <option value="williamhill">🔵 William Hill (UK)</option>
+                                <option value="melbet">🔶 Melbet (Global)</option>
+                            </optgroup>
                         </select>
                     </div>
                     <div class="booking-field-group">
                         <label for="convert-to-select">3. Convert To</label>
                         <select id="convert-to-select">
-                            <option value="sportybet" selected>🔴 SportyBet</option>
-                            <option value="bet9ja">🟢 Bet9ja</option>
-                            <option value="msport">🟡 MSport</option>
-                            <option value="1xbet">🔵 1xBet</option>
-                            <option value="betway">⚫ Betway</option>
-                            <option value="betking">👑 BetKing</option>
-                            <option value="bangbet">⚡ Bangbet</option>
-                            <option value="22bet">⚪ 22Bet</option>
-                            <option value="paripesa">🟣 PariPesa</option>
+                            <optgroup label="Domestic (Africa)">
+                                <option value="sportybet" selected>🔴 SportyBet</option>
+                                <option value="bet9ja">🟢 Bet9ja</option>
+                                <option value="msport">🟡 MSport</option>
+                                <option value="1xbet">🔵 1xBet</option>
+                                <option value="betway">⚫ Betway</option>
+                                <option value="betking">👑 BetKing</option>
+                                <option value="bangbet">⚡ Bangbet</option>
+                                <option value="22bet">⚪ 22Bet</option>
+                                <option value="paripesa">🟣 PariPesa</option>
+                            </optgroup>
+                            <optgroup label="Foreign &amp; Global">
+                                <option value="bet365">🟢 Bet365 (Global/UK)</option>
+                                <option value="stake">🎲 Stake.com (Crypto)</option>
+                                <option value="betfair">🟡 Betfair (UK)</option>
+                                <option value="draftkings">👑 DraftKings (US)</option>
+                                <option value="fanduel">🛡️ FanDuel (US)</option>
+                                <option value="bwin">🟡 Bwin (Europe)</option>
+                                <option value="unibet">🟢 Unibet (Europe)</option>
+                                <option value="888sport">🟠 888sport (Europe)</option>
+                                <option value="williamhill">🔵 William Hill (UK)</option>
+                                <option value="melbet">🔶 Melbet (Global)</option>
+                            </optgroup>
                         </select>
                     </div>
                     <div class="booking-submit-group">
@@ -330,6 +359,20 @@
 
                 <!-- Result Container -->
                 <div id="converter-result-box" class="converter-result-box" style="display: none;"></div>
+
+                <!-- Norra AI Prediction Bot Integration -->
+                <div class="norra-prediction-promo" style="margin-top: 18px; padding: 14px 18px; background: linear-gradient(135deg, rgba(16, 185, 129, 0.08), rgba(59, 130, 246, 0.08)); border: 1px solid var(--border-subtle); border-radius: 10px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px;">
+                    <div style="display: flex; align-items: center; gap: 10px;">
+                        <span style="font-size: 24px;">🤖</span>
+                        <div>
+                            <strong style="color: var(--text-main); font-size: 13.5px; display: block;">Norra AI Prediction Bot &amp; Slip Generator</strong>
+                            <span style="font-size: 12px; color: var(--text-muted);">Get algorithmic banker accumulators, value picks, and in-depth expected goals (xG) analysis.</span>
+                        </div>
+                    </div>
+                    <a href="/api/v1/booking/predictions-redirect" target="_blank" rel="noopener" class="btn-primary" style="padding: 8px 16px; font-size: 12.5px; text-decoration: none; display: inline-flex; align-items: center; gap: 6px;">
+                        <span>Open Norra AI Bot</span> <span>↗</span>
+                    </a>
+                </div>
             </div>
         </section>
         </div><!-- /.main-content-column -->
@@ -474,6 +517,82 @@
             <aside id="ad-slot-drawer" class="ad-slot-container" hidden></aside>
             <div class="dialog-content" id="dialog-content">
                 <div class="content-state"><span class="loader"></span><p>Loading match details…</p></div>
+            </div>
+        </div>
+    </dialog>
+
+    <!-- Dedicated Club Hub Dialog -->
+    <dialog class="match-dialog club-hub-dialog" id="club-hub-dialog" aria-labelledby="club-hub-title" style="max-width: 620px;">
+        <div class="dialog-shell">
+            <header class="dialog-header">
+                <div>
+                    <span class="match-state" id="club-hub-league-name">CLUB PROFILE</span>
+                    <h3 id="club-hub-title" style="margin: 4px 0 0; font-size: 18px; color: var(--text-main);">Club Hub</h3>
+                </div>
+                <button class="close-button" id="close-club-hub" type="button" aria-label="Close club details">✕</button>
+            </header>
+            <div class="dialog-content" id="club-hub-content" style="padding: 16px;">
+                <div class="content-state"><span class="loader"></span><p>Loading club hub…</p></div>
+            </div>
+        </div>
+    </dialog>
+
+    <!-- Download & Install App Modal -->
+    <dialog class="match-dialog download-app-dialog" id="download-app-dialog" aria-labelledby="download-dialog-title" style="max-width: 540px;">
+        <div class="dialog-shell">
+            <header class="dialog-header">
+                <div>
+                    <span class="match-state">OFFICIAL APPLICATION</span>
+                    <h3 id="download-dialog-title" style="margin: 4px 0 0; font-size: 18px; color: var(--text-main);">Download &amp; Install App</h3>
+                </div>
+                <button class="close-button" id="close-download-dialog" type="button" aria-label="Close download dialog">✕</button>
+            </header>
+            <div class="dialog-content" style="padding: 20px;">
+                <div style="display: flex; align-items: center; gap: 16px; margin-bottom: 20px; padding-bottom: 16px; border-bottom: 1px solid var(--border-subtle);">
+                    <img id="download-dialog-app-logo" src="/assets/icons/icon-192.png" alt="App Logo" style="width: 64px; height: 64px; border-radius: 14px; object-fit: contain; box-shadow: 0 4px 12px rgba(0,0,0,0.15);">
+                    <div>
+                        <h4 id="download-dialog-app-name" style="margin: 0 0 4px; font-size: 17px; color: var(--text-main);">NorraScore</h4>
+                        <p style="margin: 0; font-size: 12.5px; color: var(--text-muted);">Real-Time Football Telemetry &bull; Version 9.28</p>
+                        <span style="display: inline-block; margin-top: 4px; padding: 2px 8px; border-radius: 6px; font-size: 11px; font-weight: 700; background: rgba(16,185,129,0.15); color: #10b981;">Fast &bull; Offline Ready &bull; Zero Ads</span>
+                    </div>
+                </div>
+
+                <div style="display: flex; flex-direction: column; gap: 12px;">
+                    <!-- Native PWA Install Option -->
+                    <div style="background: var(--bg-canvas); border: 1px solid var(--border-subtle); border-radius: 10px; padding: 14px;">
+                        <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;">
+                            <div>
+                                <strong style="display: block; font-size: 14px; color: var(--text-main);">⚡ Instant Web App (PWA)</strong>
+                                <span style="font-size: 12px; color: var(--text-muted);">Works on Android, iOS &amp; Desktop. Instant updates without Google Play.</span>
+                            </div>
+                            <button id="pwa-install-trigger-btn" class="btn-primary" type="button" style="padding: 8px 16px; font-size: 13px;">
+                                <span>Install Now</span>
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Direct Android APK Package -->
+                    <div style="background: var(--bg-canvas); border: 1px solid var(--border-subtle); border-radius: 10px; padding: 14px;">
+                        <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;">
+                            <div>
+                                <strong style="display: block; font-size: 14px; color: var(--text-main);">🤖 Android APK Package (TWA)</strong>
+                                <span style="font-size: 12px; color: var(--text-muted);">Standalone Android application package for sideloading &amp; Play Store.</span>
+                            </div>
+                            <a id="apk-download-link" href="/download/norrascore.apk" class="btn-primary" style="padding: 8px 16px; font-size: 13px; text-decoration: none; display: inline-flex; align-items: center; gap: 6px;" download>
+                                <span>Download APK</span> <span>&darr;</span>
+                            </a>
+                        </div>
+                    </div>
+
+                    <!-- Installation Guide -->
+                    <div style="margin-top: 10px; padding: 12px 14px; background: rgba(59,130,246,0.08); border-radius: 8px; font-size: 12px; color: var(--text-main); line-height: 1.5;">
+                        <strong>📱 Manual Home Screen Setup:</strong>
+                        <ul style="margin: 6px 0 0 16px; padding: 0;">
+                            <li><strong>iPhone / iPad (Safari):</strong> Tap the <em>Share</em> button (box with arrow) &rarr; scroll down &rarr; tap <em>"Add to Home Screen"</em>.</li>
+                            <li><strong>Android (Chrome):</strong> Tap the three-dot menu icon &rarr; tap <em>"Install app"</em> or <em>"Add to Home screen"</em>.</li>
+                        </ul>
+                    </div>
+                </div>
             </div>
         </div>
     </dialog>
@@ -653,6 +772,6 @@
             }
         })();
     </script>
-    <script src="/assets/app-v9.js?v=9.28" defer></script>
+    <script src="/assets/app-v9.js?v=9.29" defer></script>
 </body>
 </html>

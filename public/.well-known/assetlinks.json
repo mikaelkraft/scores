@@ -1,0 +1,12 @@
+[
+  {
+    "relation": ["delegate_permission/common.handle_all_urls"],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "com.norrascore.app",
+      "sha256_cert_fingerprints": [
+        "14:6D:E9:7C:15:37:A8:12:F6:A3:86:14:42:38:F1:C9:F9:6F:E1:92:B2:76:88:51:B2:B9:FD:9D:E4:79:61:94"
+      ]
+    }
+  }
+]

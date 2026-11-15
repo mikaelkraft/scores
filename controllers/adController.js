@@ -14,6 +14,32 @@ router.get(['/api/v1/ads', '/api/ads/active', '/api/v1/settings/public'], option
         const settings = await SiteSetting.getGlobalSettings();
         const activePromos = (settings.bookiePromos || []).filter(p => p.active !== false);
 
+        const buildPartnerAttributions = () => {
+            let list = (settings.partnerAttributions || []).filter(p => p && p.active !== false);
+            const hasSportScore = list.some(p => String(p.label || p.linkTitle || p.linkUrl).toLowerCase().includes('sportscore'));
+            if (!hasSportScore) {
+                list = [
+                    ...list,
+                    {
+                        active: true,
+                        category: 'Attribution',
+                        label: 'SportScore',
+                        html: '<a href="https://sportscore.com/" rel="dofollow" title="Powered by SportScore" aria-label="Powered by SportScore" style="display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;background:#0a1e3d;color:#fff;border-radius:50%;text-decoration:none;font:700 .78rem system-ui,sans-serif;">SS</a>',
+                        linkUrl: 'https://sportscore.com/',
+                        linkTitle: 'Powered by SportScore',
+                        width: 28,
+                        height: 28,
+                        rel: 'dofollow',
+                        openInNewTab: true
+                    }
+                ];
+            }
+            return list;
+        };
+
+        const resolvedPartnerAttributions = buildPartnerAttributions();
+        const resolvedPartnerSectionTitle = settings.partnerSectionTitle || 'Supported & Sponsored';
+
         if (req.isAdFree) {
             return res.json({
                 isAdFree: true,
@@ -26,11 +52,11 @@ router.get(['/api/v1/ads', '/api/ads/active', '/api/v1/settings/public'], option
                     faviconUrl: settings.faviconUrl || ''
                 },
                 ads: {
-                    header: { enabled: false },
-                    infeed: { enabled: false },
-                    inFeed: { enabled: false },
-                    drawer: { enabled: false },
-                    footer: { enabled: false }
+                    header: { enabled: false, isEnabled: false },
+                    infeed: { enabled: false, isEnabled: false },
+                    inFeed: { enabled: false, isEnabled: false },
+                    drawer: { enabled: false, isEnabled: false },
+                    footer: { enabled: false, isEnabled: false }
                 },
                 infeedSettings: settings.infeedSettings || {},
                 bookingSettings: settings.bookingSettings || { hookEnabled: true },
@@ -38,30 +64,20 @@ router.get(['/api/v1/ads', '/api/ads/active', '/api/v1/settings/public'], option
                 bookiePromos: [],
                 bookmakerPromos: [],
                 socialLinks: settings.socialLinks || {},
-                partnerSectionTitle: settings.partnerSectionTitle || 'Supported & Sponsored',
-                partnerAttributions: (() => {
-                    let list = (settings.partnerAttributions || []).filter(p => p && p.active !== false);
-                    const hasSportScore = list.some(p => String(p.label || p.linkTitle || p.linkUrl).toLowerCase().includes('sportscore'));
-                    if (!hasSportScore) {
-                        list = [
-                            ...list,
-                            {
-                                active: true,
-                                label: 'SportScore',
-                                html: '<a href="https://sportscore.com/" rel="dofollow" title="Powered by SportScore" aria-label="Powered by SportScore" style="display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;background:#0a1e3d;color:#fff;border-radius:50%;text-decoration:none;font:700 .78rem system-ui,sans-serif;">SS</a>',
-                                linkUrl: 'https://sportscore.com/',
-                                linkTitle: 'Powered by SportScore',
-                                width: 28,
-                                height: 28,
-                                rel: 'dofollow',
-                                openInNewTab: true
-                            }
-                        ];
-                    }
-                    return list;
-                })()
+                partnerSectionTitle: resolvedPartnerSectionTitle,
+                partnerAttributions: resolvedPartnerAttributions
             });
         }
+
+        const formatSlot = (slot) => {
+            const raw = slot || {};
+            const isEnabled = Boolean(raw.enabled || raw.isEnabled);
+            return {
+                ...raw,
+                enabled: isEnabled,
+                isEnabled
+            };
+        };
 
         return res.json({
             isAdFree: false,
@@ -74,11 +90,11 @@ router.get(['/api/v1/ads', '/api/ads/active', '/api/v1/settings/public'], option
                 faviconUrl: settings.faviconUrl || ''
             },
             ads: {
-                header: settings.ads?.header || { enabled: false },
-                infeed: settings.ads?.infeed || { enabled: false },
-                inFeed: settings.ads?.infeed || { enabled: false },
-                drawer: settings.ads?.drawer || { enabled: false },
-                footer: settings.ads?.footer || { enabled: false }
+                header: formatSlot(settings.ads?.header),
+                infeed: formatSlot(settings.ads?.infeed),
+                inFeed: formatSlot(settings.ads?.infeed),
+                drawer: formatSlot(settings.ads?.drawer),
+                footer: formatSlot(settings.ads?.footer)
             },
             infeedSettings: settings.infeedSettings || {},
             bookingSettings: settings.bookingSettings || { hookEnabled: true },
@@ -93,7 +109,9 @@ router.get(['/api/v1/ads', '/api/ads/active', '/api/v1/settings/public'], option
                 ctaUrl: p.linkUrl,
                 isActive: p.active !== false
             })),
-            socialLinks: settings.socialLinks || {}
+            socialLinks: settings.socialLinks || {},
+            partnerSectionTitle: resolvedPartnerSectionTitle,
+            partnerAttributions: resolvedPartnerAttributions
         });
     } catch (err) {
         console.error('Failed to load active settings/ads:', err.message);

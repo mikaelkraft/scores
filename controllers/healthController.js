@@ -55,6 +55,12 @@ module.exports = (app) => {
 
             const isHealthy = dbStatus === 1;
 
+            let syncHealth = null;
+            try {
+                const { getSyncHealthStatus } = require('../services/soccerSyncService');
+                syncHealth = getSyncHealthStatus();
+            } catch (_) {}
+
             const healthData = {
                 status: isHealthy ? 'healthy' : 'degraded',
                 timestamp: new Date().toISOString(),
@@ -65,6 +71,7 @@ module.exports = (app) => {
                     status: dbStatusText,
                     name: mongoose.connection.name || 'N/A'
                 },
+                sync: syncHealth,
                 memory: {
                     used: Math.round(process.memoryUsage().heapUsed / 1024 / 1024) + ' MB',
                     total: Math.round(process.memoryUsage().heapTotal / 1024 / 1024) + ' MB'

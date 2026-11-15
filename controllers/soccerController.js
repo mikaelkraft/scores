@@ -1176,4 +1176,34 @@ router.get('/:league/standings', validateLeague, async(req, res) => {
     }
 });
 
+router.get('/:league/leaders', validateLeague, async (req, res) => {
+    try {
+        const { getLeagueLeaders } = require('./footballApiController');
+        if (typeof getLeagueLeaders === 'function') {
+            const data = await getLeagueLeaders(req.params.league);
+            res.set('Cache-Control', 'public, max-age=180');
+            return res.json(data);
+        }
+        res.set('Cache-Control', 'public, max-age=180');
+        return res.json({ status: 'success', league: req.params.league, topScorers: [], topAssists: [] });
+    } catch (err) {
+        return sendError(res, err);
+    }
+});
+
+router.get('/:league/bracket', validateLeague, async (req, res) => {
+    try {
+        const { getLeagueBracket } = require('./footballApiController');
+        if (typeof getLeagueBracket === 'function') {
+            const data = await getLeagueBracket(req.params.league);
+            res.set('Cache-Control', 'public, max-age=180');
+            return res.json(data);
+        }
+        res.set('Cache-Control', 'public, max-age=180');
+        return res.json({ status: 'success', league: req.params.league, hasBracket: false, rounds: [] });
+    } catch (err) {
+        return sendError(res, err);
+    }
+});
+
 module.exports = app => app.use('/get/soccer', router);

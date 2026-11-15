@@ -73,7 +73,8 @@ const TARGET_LEAGUES = [
     { slug: 'uefa.super_cup', name: 'UEFA Super Cup', abbreviation: 'Super Cup', country: 'International', kind: 'club', sort_order: 47 },
     { slug: 'conmebol.recopa', name: 'CONMEBOL Recopa', abbreviation: 'Recopa', country: 'International', kind: 'club', sort_order: 48 },
     { slug: 'eng.w.1', name: 'Women\'s Super League', abbreviation: 'WSL', country: 'England', kind: 'club', sort_order: 49 },
-    { slug: 'usa.w.1', name: 'National Women\'s Soccer League', abbreviation: 'NWSL', country: 'United States', kind: 'club', sort_order: 50 },
+    { slug: 'eng.w.2', name: 'Women\'s Championship', abbreviation: 'Championship W', country: 'England', kind: 'club', sort_order: 50 },
+    { slug: 'usa.w.1', name: 'National Women\'s Soccer League', abbreviation: 'NWSL', country: 'United States', kind: 'club', sort_order: 51 },
     { slug: 'usa.usl.1', name: 'USL Championship', abbreviation: 'USL Championship', country: 'United States', kind: 'club', sort_order: 51 },
     { slug: 'usa.open', name: 'U.S. Open Cup', abbreviation: 'US Open Cup', country: 'United States', kind: 'cup', sort_order: 52 },
     { slug: 'caf.confed', name: 'CAF Confederation Cup', abbreviation: 'CAF Confed Cup', country: 'International', kind: 'club', sort_order: 53 },
@@ -464,6 +465,34 @@ async function processEvents(events, slug, leagueDef, season, now) {
 
 let cachedLiveScoreStages = [];
 let lastLiveScoreStagesFetchTs = 0;
+
+const syncWatchdog = {
+    startedAt: new Date().toISOString(),
+    lastSyncAt: new Date().toISOString(),
+    lastSuccessfulProvider: 'livescore+espn',
+    consecutiveErrors: 0,
+    totalSyncRuns: 0,
+    totalIngestedEvents: 0,
+    status: 'healthy'
+};
+
+function recordSyncRun(provider, count = 0, error = null) {
+    syncWatchdog.totalSyncRuns++;
+    syncWatchdog.lastSyncAt = new Date().toISOString();
+    if (error) {
+        syncWatchdog.consecutiveErrors++;
+        if (syncWatchdog.consecutiveErrors >= 3) syncWatchdog.status = 'degraded';
+    } else {
+        syncWatchdog.consecutiveErrors = 0;
+        syncWatchdog.status = 'healthy';
+        syncWatchdog.lastSuccessfulProvider = provider;
+        syncWatchdog.totalIngestedEvents += (count || 0);
+    }
+}
+
+function getSyncHealthStatus() {
+    return { ...syncWatchdog };
+}
 
 /**
  * Fetches and caches multi-day LiveScore stages across live, today, tomorrow, and yesterday.
@@ -1073,7 +1102,12 @@ function enforceCountryOnSlug(slug, countryName = '', leagueName = '') {
 
     const blob = `${slug || ''} ${leagueName || ''} ${countryName || ''}`.toLowerCase();
     const isWomen = /\.w\.|women|woman|ladies|femen|frau|damen|vrouwen|wsl|fem\./i.test(blob);
-    if (isWomen) return `${expected}.w.1`;
+    if (isWomen) {
+        if (slug && slug.startsWith(`${expected}.w.`)) return slug;
+        if (/championship|wsl\s*2|division 2|league 2/i.test(leagueName)) return `${expected}.w.2`;
+        if (/players cup|wsl cup|continental|league cup|fa cup|cup/i.test(leagueName)) return `${expected}.w.cup`;
+        return `${expected}.w.1`;
+    }
 
     const isFifth = /tercera|5th|tier 5|oberliga|national 3/i.test(blob);
     const isFourth = /segunda federaci|2ª federaci|2ª rfef|segunda rfef|segunda b|regionalliga|serie d|national 2|league two|eng\.4/i.test(blob);
@@ -1394,10 +1428,11 @@ function resolveLeagueSlug(altGameNote = '', compDesc = '', uid = '') {
         if (text.includes('greece') || text.includes('greek') || text.includes('gre.w')) return 'gre.w.1';
 
         // England Women
-        if (text.includes('players cup') || text.includes('wsl cup') || (text.includes('league cup') && (text.includes('women') || text.includes('wsl')))) return 'eng.w.cup';
+        if (text.includes('players cup') || text.includes('wsl cup') || text.includes('continental cup') || text.includes('continental tyres') || (text.includes('league cup') && (text.includes('women') || text.includes('wsl')))) return 'eng.w.cup';
         if (text.includes('fa cup') && (text.includes('women') || text.includes('wsl') || text.includes('eng'))) return 'eng.w.fa';
-        if (text.includes('women\'s championship') || text.includes('eng.w.2')) return 'eng.w.2';
-        if (/\bwsl\b/.test(text) || text.includes("women's super league") || text.includes("womens super league") || (text.includes('super league') && (text.includes('england') || text.includes('english') || !text.includes(' '))) || text.includes('eng.w.1') || text.includes('barclays')) {
+        if (text.includes('wsl 2') || text.includes('wsl-2') || text.includes("women's championship") || text.includes("womens championship") || text.includes('eng.w.2')) return 'eng.w.2';
+        if (text.includes("women's national league") || text.includes("womens national league") || text.includes('fa wnl') || text.includes('eng.w.lower')) return 'eng.w.lower';
+        if (/\bwsl\b(?![\s_-]*2)/i.test(text) || text.includes("women's super league") || text.includes("womens super league") || (text.includes('super league') && (text.includes('england') || text.includes('english') || !text.includes(' '))) || text.includes('eng.w.1') || text.includes('barclays')) {
             return 'eng.w.1';
         }
 
@@ -3733,6 +3768,8 @@ module.exports = {
     enforceCountryOnSlug,
     resolveMatchEspnId,
     cleanCompetitionName,
+    getSyncHealthStatus,
+    recordSyncRun,
     TOP_FLIGHT_CLUBS,
     TARGET_LEAGUES
 };

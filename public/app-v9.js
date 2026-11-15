@@ -1164,10 +1164,35 @@
         }
 
         // 1. Identify domestic women's leagues and map them to their correct country and slug
-        if (lowerName.includes("women's super league") || lowerName.includes("wsl players cup") || lowerName.includes("wsl cup") || lowerName.includes("women's fa cup")) {
+        if (lowerName.includes("women's super league") || lowerName.includes("wsl players cup") || lowerName.includes("wsl cup") || lowerName.includes("women's fa cup") || lowerName.includes("women's championship") || lowerName.includes("wsl 2") || lowerSlug.startsWith('eng.w.')) {
             country = 'England';
-            if (!slug || slug === 'w.other' || slug === 'other') {
-                slug = (lowerName.includes('players cup') || lowerName.includes('wsl cup')) ? 'eng.w.cup' : (lowerName.includes('fa cup') ? 'eng.w.fa' : 'eng.w.1');
+            if (lowerName.includes('players cup') || lowerName.includes('wsl cup') || lowerName.includes('continental cup') || lowerName.includes('continental tyres') || (lowerName.includes('league cup') && (lowerName.includes('women') || lowerName.includes('wsl'))) || lowerSlug === 'eng.w.cup') {
+                slug = 'eng.w.cup';
+                name = "FA Women's League Cup";
+            } else if (lowerName.includes('fa cup') || lowerSlug === 'eng.w.fa') {
+                slug = 'eng.w.fa';
+                name = "Women's FA Cup";
+            } else if (lowerName.includes("women's championship") || lowerName.includes("wsl 2") || lowerName.includes("wsl-2") || lowerSlug === 'eng.w.2') {
+                slug = 'eng.w.2';
+                name = "Women's Championship";
+            } else if (lowerName.includes("national league") || lowerName.includes("wnl") || lowerSlug === 'eng.w.lower') {
+                slug = 'eng.w.lower';
+                name = "FA Women's National League";
+            } else {
+                // If it was tagged eng.w.1 but contains Championship/WNL clubs playing each other
+                const isWsl2Club = /\b(burnley w|southampton w|nottingham forest w|wolves w|durham w|watford w|ipswich town w|sunderland w|newcastle united w|portsmouth w|sheffield united w|blackburn rovers w|london city lionesses w)\b/i;
+                if (isWsl2Club.test(allEvText)) {
+                    if (allEvText.includes('cup') || allEvText.includes('group')) {
+                        slug = 'eng.w.cup';
+                        name = "FA Women's League Cup";
+                    } else {
+                        slug = 'eng.w.2';
+                        name = "Women's Championship";
+                    }
+                } else {
+                    slug = 'eng.w.1';
+                    name = "Women's Super League";
+                }
             }
         } else if (lowerName.includes("nwsl") || lowerName.includes("national women's soccer league")) {
             country = 'USA';
@@ -2830,7 +2855,9 @@
         elements['standings-empty'].hidden = groups.length > 0;
         if (!groups.length) return;
 
-        elements['standings-content'].innerHTML = groups.map(group => {
+        const subTabsHtml = renderLeagueSubnavTabs('table');
+
+        elements['standings-content'].innerHTML = subTabsHtml + groups.map(group => {
             const rawEntries = group.standings?.entries || [];
             const entries = rawEntries.slice().sort((a, b) => {
                 const rA = Number(a.rank ?? statValue(a, 'rank')) || 999;
@@ -2862,7 +2889,7 @@
                                     <tr>
                                         <td style="font-weight:700; color:var(--text-muted);">${escapeHtml(entry.rank ?? statValue(entry, 'rank'))}</td>
                                         <td>
-                                            <div class="club-cell">
+                                            <div class="club-cell" style="cursor:pointer;" onclick="openClubHub('${escapeHtml(entry.team?.displayName || entry.team?.name || '')}', '${escapeHtml(entry.team?.logo || '')}', '${escapeHtml(state.league?.slug || '')}')">
                                                 ${teamLogo(entry.team, 'club-crest-small')}
                                                 <strong>${escapeHtml(entry.team?.displayName || entry.team?.name || '—')}</strong>
                                             </div>
@@ -2882,6 +2909,172 @@
             `;
         }).join('');
     }
+
+    function renderLeagueSubnavTabs(activeTab = 'table') {
+        return `
+            <div class="league-subnav-tabs" style="display:flex; gap:8px; margin-bottom:18px; border-bottom:1px solid var(--border-subtle); padding-bottom:8px; overflow-x:auto;">
+                <button type="button" class="btn-subnav-tab ${activeTab === 'table' ? 'active' : ''}" style="background:${activeTab === 'table' ? 'var(--color-primary)' : 'var(--bg-surface-elevated)'}; color:${activeTab === 'table' ? '#fff' : 'var(--text-main)'}; border:1px solid var(--border-subtle); border-radius:6px; padding:6px 14px; font-size:12.5px; font-weight:700; cursor:pointer;" onclick="window.switchLeagueTab('table')">📋 Standings Table</button>
+                <button type="button" class="btn-subnav-tab ${activeTab === 'leaders' ? 'active' : ''}" style="background:${activeTab === 'leaders' ? 'var(--color-primary)' : 'var(--bg-surface-elevated)'}; color:${activeTab === 'leaders' ? '#fff' : 'var(--text-main)'}; border:1px solid var(--border-subtle); border-radius:6px; padding:6px 14px; font-size:12.5px; font-weight:700; cursor:pointer;" onclick="window.switchLeagueTab('leaders')">👟 Top Scorers</button>
+                <button type="button" class="btn-subnav-tab ${activeTab === 'bracket' ? 'active' : ''}" style="background:${activeTab === 'bracket' ? 'var(--color-primary)' : 'var(--bg-surface-elevated)'}; color:${activeTab === 'bracket' ? '#fff' : 'var(--text-main)'}; border:1px solid var(--border-subtle); border-radius:6px; padding:6px 14px; font-size:12.5px; font-weight:700; cursor:pointer;" onclick="window.switchLeagueTab('bracket')">🏆 Bracket</button>
+            </div>
+        `;
+    }
+
+    window.switchLeagueTab = async function(tab) {
+        state.activeLeagueSubTab = tab;
+        const container = elements['standings-content'];
+        if (!container) return;
+
+        if (tab === 'table') {
+            renderStandings(state.standings || []);
+            return;
+        }
+
+        if (tab === 'leaders') {
+            container.innerHTML = `
+                ${renderLeagueSubnavTabs('leaders')}
+                <div class="content-state"><span class="loader"></span><p>Loading top scorers &amp; assists...</p></div>
+            `;
+            try {
+                const leagueSlug = state.league?.slug || 'eng.1';
+                const data = await fetchJson(`/api/v1/football/leagues/${encodeURIComponent(leagueSlug)}/leaders`);
+                const scorers = data.topScorers || [];
+                const assists = data.topAssists || [];
+
+                container.innerHTML = `
+                    ${renderLeagueSubnavTabs('leaders')}
+                    <div style="display:flex; flex-direction:column; gap:24px;">
+                        <section class="standing-group">
+                            <h3 style="margin-bottom:12px; font-size:16px; font-weight:700;">👟 Golden Boot &bull; Top Goalscorers</h3>
+                            <div class="standings-table-container">
+                                <table class="standings-table">
+                                    <thead>
+                                        <tr>
+                                            <th style="width:40px;">#</th>
+                                            <th>Player</th>
+                                            <th>Club</th>
+                                            <th>Goals</th>
+                                            <th>Pens</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        ${scorers.length > 0 ? scorers.map(p => `
+                                            <tr>
+                                                <td style="font-weight:700; color:var(--text-muted);">${escapeHtml(p.rank)}</td>
+                                                <td style="font-weight:700; color:var(--text-main);">${escapeHtml(p.name)}</td>
+                                                <td>
+                                                    <div class="club-cell" style="cursor:pointer;" onclick="openClubHub('${escapeHtml(p.team)}', '${escapeHtml(p.teamLogo || '')}', '${escapeHtml(leagueSlug)}')">
+                                                        ${p.teamLogo ? `<img src="${escapeHtml(p.teamLogo)}" class="club-crest-small" alt="${escapeHtml(p.team)}" onerror="this.src='/crests/fallback-shield.svg'">` : ''}
+                                                        <span>${escapeHtml(p.team)}</span>
+                                                    </div>
+                                                </td>
+                                                <td style="font-weight:800; color:var(--color-primary); font-size:14px;">${escapeHtml(p.goals)}</td>
+                                                <td style="color:var(--text-muted);">${escapeHtml(p.penalties || 0)}</td>
+                                            </tr>
+                                        `).join('') : '<tr><td colspan="5" style="text-align:center; padding:16px; color:var(--text-muted);">No goalscorers recorded yet.</td></tr>'}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </section>
+
+                        ${assists.length > 0 ? `
+                            <section class="standing-group">
+                                <h3 style="margin-bottom:12px; font-size:16px; font-weight:700;">🎯 Top Playmakers &bull; Assists</h3>
+                                <div class="standings-table-container">
+                                    <table class="standings-table">
+                                        <thead>
+                                            <tr>
+                                                <th style="width:40px;">#</th>
+                                                <th>Player</th>
+                                                <th>Club</th>
+                                                <th>Assists</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            ${assists.map(p => `
+                                                <tr>
+                                                    <td style="font-weight:700; color:var(--text-muted);">${escapeHtml(p.rank)}</td>
+                                                    <td style="font-weight:700; color:var(--text-main);">${escapeHtml(p.name)}</td>
+                                                    <td>
+                                                        <div class="club-cell" style="cursor:pointer;" onclick="openClubHub('${escapeHtml(p.team)}', '${escapeHtml(p.teamLogo || '')}', '${escapeHtml(leagueSlug)}')">
+                                                            ${p.teamLogo ? `<img src="${escapeHtml(p.teamLogo)}" class="club-crest-small" alt="${escapeHtml(p.team)}" onerror="this.src='/crests/fallback-shield.svg'">` : ''}
+                                                            <span>${escapeHtml(p.team)}</span>
+                                                        </div>
+                                                    </td>
+                                                    <td style="font-weight:800; color:#3b82f6; font-size:14px;">${escapeHtml(p.assists)}</td>
+                                                </tr>
+                                            `).join('')}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </section>
+                        ` : ''}
+                    </div>
+                `;
+            } catch (err) {
+                container.innerHTML = `
+                    ${renderLeagueSubnavTabs('leaders')}
+                    <p style="color:var(--text-muted); padding:16px;">Unable to load leaders: ${escapeHtml(err.message)}</p>
+                `;
+            }
+            return;
+        }
+
+        if (tab === 'bracket') {
+            container.innerHTML = `
+                ${renderLeagueSubnavTabs('bracket')}
+                <div class="content-state"><span class="loader"></span><p>Loading tournament bracket...</p></div>
+            `;
+            try {
+                const leagueSlug = state.league?.slug || '';
+                const data = await fetchJson(`/api/v1/football/leagues/${encodeURIComponent(leagueSlug)}/bracket`);
+                const rounds = data.rounds || [];
+
+                container.innerHTML = `
+                    ${renderLeagueSubnavTabs('bracket')}
+                    ${rounds.length > 0 ? `
+                        <div class="tournament-bracket-tree" style="display:flex; gap:16px; overflow-x:auto; padding-bottom:16px;">
+                            ${rounds.map(round => `
+                                <div class="bracket-column" style="min-width:240px; flex:1 0 240px; display:flex; flex-direction:column; gap:12px;">
+                                    <div style="text-align:center; padding:8px; background:var(--bg-canvas); border:1px solid var(--border-subtle); border-radius:8px; font-weight:700; font-size:13px; color:var(--text-main);">
+                                        ${escapeHtml(round.name)}
+                                    </div>
+                                    <div style="display:flex; flex-direction:column; gap:10px; justify-content:space-around; flex:1;">
+                                        ${round.matches.map(m => `
+                                            <div class="bracket-match-card" style="background:var(--bg-canvas); border:1px solid var(--border-subtle); border-radius:8px; padding:10px; cursor:pointer;" onclick="openMatch('${escapeHtml(m.id)}', '${escapeHtml(leagueSlug)}')">
+                                                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px; font-size:12px;">
+                                                    <span style="font-weight:${(m.home?.score ?? 0) > (m.away?.score ?? 0) ? '700' : '500'}; color:var(--text-main);">${escapeHtml(m.home?.displayName || m.home?.name || 'Home')}</span>
+                                                    <strong style="color:var(--color-primary);">${m.status?.completed ? (m.home?.score ?? 0) : '—'}</strong>
+                                                </div>
+                                                <div style="display:flex; justify-content:space-between; align-items:center; font-size:12px;">
+                                                    <span style="font-weight:${(m.away?.score ?? 0) > (m.home?.score ?? 0) ? '700' : '500'}; color:var(--text-main);">${escapeHtml(m.away?.displayName || m.away?.name || 'Away')}</span>
+                                                    <strong style="color:var(--color-primary);">${m.status?.completed ? (m.away?.score ?? 0) : '—'}</strong>
+                                                </div>
+                                                <div style="font-size:10.5px; color:var(--text-muted); margin-top:4px; text-align:right;">
+                                                    ${escapeHtml(m.status?.displayClock || m.status?.detail || (m.status?.completed ? 'FT' : 'Scheduled'))}
+                                                </div>
+                                            </div>
+                                        `).join('')}
+                                    </div>
+                                </div>
+                            `).join('')}
+                        </div>
+                    ` : `
+                        <div style="text-align:center; padding:32px 16px; background:var(--bg-canvas); border:1px solid var(--border-subtle); border-radius:10px;">
+                            <span style="font-size:32px;">🏆</span>
+                            <h4 style="margin:8px 0 4px; color:var(--text-main);">Tournament Knockout Bracket</h4>
+                            <p style="font-size:13px; color:var(--text-muted); margin:0;">Tournament tree brackets are available for cup &amp; knockout competitions (e.g. Champions League, AFCON, FA Cup). This competition is a round-robin league.</p>
+                        </div>
+                    `}
+                `;
+            } catch (err) {
+                container.innerHTML = `
+                    ${renderLeagueSubnavTabs('bracket')}
+                    <p style="color:var(--text-muted); padding:16px;">Unable to load tournament bracket: ${escapeHtml(err.message)}</p>
+                `;
+            }
+        }
+    };
 
     function switchView(view) {
         const fixtures = view === 'fixtures';
@@ -3041,6 +3234,8 @@
 
     function matchEventKind(event) {
         const type = `${event.type?.type || ''} ${event.type?.text || ''} ${event.text || ''}`.toLowerCase();
+        if (type.includes('var') || type.includes('video assistant')) return 'var';
+        if (event.penaltyKick || type.includes('penalty')) return 'penalty';
         if (event.scoringPlay || type.includes('goal')) return 'goal';
         if (event.redCard || type.includes('red card')) return 'red-card';
         if (event.yellowCard || type.includes('yellow card')) return 'yellow-card';
@@ -3188,6 +3383,8 @@
             'red-card': '<span class="event-badge red-card" style="background:#dc2626; color:#ffffff; font-weight:700; padding:2px 6px; border-radius:4px; font-size:11px;">🟥 RED</span>',
             'yellow-card': '<span class="event-badge yellow-card" style="background:#eab308; color:#000000; font-weight:700; padding:2px 6px; border-radius:4px; font-size:11px;">🟨 YELLOW</span>',
             substitution: '<span class="event-badge substitution" style="background:var(--border-strong); color:var(--text-main); font-weight:700; padding:2px 6px; border-radius:4px; font-size:11px;">⇄ SUB</span>',
+            var: '<span class="event-badge var" style="background:#7c3aed; color:#ffffff; font-weight:700; padding:2px 6px; border-radius:4px; font-size:11px;">📺 VAR</span>',
+            penalty: '<span class="event-badge penalty" style="background:#0284c7; color:#ffffff; font-weight:700; padding:2px 6px; border-radius:4px; font-size:11px;">🎯 PENALTY</span>',
             event: '<span class="event-badge" style="background:var(--border-subtle); color:var(--text-muted); font-size:11px; padding:2px 6px; border-radius:4px;">EVENT</span>'
         };
         return badges[kind] || badges.event;
@@ -4461,16 +4658,27 @@
             const rel = escapeHtml(p.rel || 'dofollow');
             const title = escapeHtml(p.linkTitle || p.label || 'Partner');
             const target = p.openInNewTab === false ? '' : ' target="_blank"';
-            // Prefer custom HTML (allows full SportScore badge markup)
+
+            // Prefer custom HTML (allows full SportScore badge markup or admin pills)
             if (p.html && String(p.html).trim()) {
-                return `<span class="footer-partner-item">${p.html}</span>`;
+                let htmlContent = p.html;
+                if (!p.imageUrl && !/<img\b/i.test(htmlContent)) {
+                    // Prevent circular 28px overflow when label is longer than 3 characters (e.g. Norra AI)
+                    htmlContent = htmlContent.replace(/width:\s*28px;\s*height:\s*28px;\s*border-radius:\s*50%/g, 'min-width:28px;height:28px;padding:0 10px;border-radius:14px;white-space:nowrap');
+                }
+                return `<span class="footer-partner-item">${htmlContent}</span>`;
             }
             const href = p.linkUrl || '#';
             if (p.imageUrl) {
                 return `<span class="footer-partner-item"><a href="${escapeHtml(href)}" rel="${rel}" title="${title}" aria-label="${title}"${target}><img src="${escapeHtml(p.imageUrl)}" alt="${title}" width="${w}" height="${h}" style="width:${w}px;height:${h}px;object-fit:contain;" loading="lazy" decoding="async"></a></span>`;
             }
             if (href && href !== '#') {
-                return `<span class="footer-partner-item"><a href="${escapeHtml(href)}" rel="${rel}" title="${title}" aria-label="${title}"${target} style="display:inline-flex;align-items:center;justify-content:center;width:${w}px;height:${h}px;background:#0a1e3d;color:#fff;border-radius:50%;text-decoration:none;font:700 .78rem system-ui,sans-serif;">${escapeHtml((p.label || 'P').slice(0, 3))}</a></span>`;
+                const labelText = String(p.label || 'Partner').trim();
+                const isShort = labelText.length <= 3;
+                const pillStyle = isShort
+                    ? `display:inline-flex;align-items:center;justify-content:center;width:${w}px;height:${h}px;background:#0a1e3d;color:#fff;border-radius:50%;text-decoration:none;font:700 .78rem system-ui,sans-serif;`
+                    : `display:inline-flex;align-items:center;justify-content:center;min-width:${w}px;height:${h}px;padding:0 10px;background:#1e40af;color:#fff;border-radius:14px;text-decoration:none;font:600 .78rem system-ui,sans-serif;white-space:nowrap;`;
+                return `<span class="footer-partner-item"><a href="${escapeHtml(href)}" rel="${rel}" title="${title}" aria-label="${title}"${target} style="${pillStyle}">${escapeHtml(labelText)}</a></span>`;
             }
             return '';
         }).filter(Boolean).join('');
@@ -4489,10 +4697,11 @@
         host.hidden = false;
     }
 
-function renderAdSlot(elementId, slotData) {
+    function renderAdSlot(elementId, slotData) {
         const el = document.getElementById(elementId);
         if (!el) return;
-        if (!slotData || !slotData.isEnabled) {
+        const isEnabled = Boolean(slotData && (slotData.isEnabled || slotData.enabled));
+        if (!isEnabled) {
             el.hidden = true;
             el.innerHTML = '';
             return;
@@ -4968,7 +5177,9 @@ function renderAdSlot(elementId, slotData) {
                         if (curH > prev.h || curA > prev.a) {
                             playGoalSound();
                             const scoringTeam = (curH > prev.h) ? (m.home?.displayName || m.home?.name || 'Home') : (m.away?.displayName || m.away?.name || 'Away');
-                            showToast(`⚽ GOAL! ${scoringTeam} (${curH} - ${curA})`);
+                            const toastText = `⚽ GOAL! ${scoringTeam} (${curH} - ${curA})`;
+                            showToast(toastText);
+                            sendBrowserNotification(toastText, `${m.name || 'Live match'} on NorraScore`, m.home?.logo || '/assets/icons/icon-192.png');
                         }
                     }
                     if (mid) state.lastScoreMap.set(mid, { h: curH, a: curA });
@@ -5073,6 +5284,35 @@ function renderAdSlot(elementId, slotData) {
         } catch (e) {}
     }
 
+    function playRedCardSound() {
+        if (!state.goalAlertsEnabled) return;
+        try {
+            if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+            if (audioCtx.state === 'suspended') audioCtx.resume();
+            const now = audioCtx.currentTime;
+            const osc = audioCtx.createOscillator();
+            const gain = audioCtx.createGain();
+            osc.type = 'sawtooth';
+            osc.frequency.setValueAtTime(440, now);
+            osc.frequency.exponentialRampToValueAtTime(220, now + 0.35);
+            gain.gain.setValueAtTime(0.25, now);
+            gain.gain.exponentialRampToValueAtTime(0.01, now + 0.35);
+            osc.connect(gain);
+            gain.connect(audioCtx.destination);
+            osc.start(now);
+            osc.stop(now + 0.35);
+            if (navigator.vibrate) navigator.vibrate([250, 100, 250]);
+        } catch (_) {}
+    }
+
+    function sendBrowserNotification(title, body, icon = '/assets/icons/icon-192.png') {
+        if ('Notification' in window && Notification.permission === 'granted') {
+            try {
+                new Notification(title, { body, icon });
+            } catch (_) {}
+        }
+    }
+
     function initGoalAlertToggle() {
         const toggleBtn = document.getElementById('goal-alert-toggle');
         const headerSoundBtn = document.getElementById('sound-toggle');
@@ -5112,6 +5352,9 @@ function renderAdSlot(elementId, slotData) {
             if (state.goalAlertsEnabled) {
                 playGoalSound();
                 showToast('🔊 Goal Celebration Sound & Haptics ENABLED');
+                if ('Notification' in window && Notification.permission === 'default') {
+                    Notification.requestPermission().catch(() => {});
+                }
             } else {
                 showToast('🔔 Goal alerts muted');
             }
@@ -5191,7 +5434,9 @@ function renderAdSlot(elementId, slotData) {
                 playGoalSound();
                 matchRow.classList.add('goal-scored-highlight');
                 setTimeout(() => matchRow.classList.remove('goal-scored-highlight'), 4000);
-                showToast(`⚽ GOAL! ${update.home?.displayName || 'Home'} ${newHomeScore} - ${newAwayScore} ${update.away?.displayName || 'Away'}`);
+                const toastText = `⚽ GOAL! ${update.home?.displayName || 'Home'} ${newHomeScore} - ${newAwayScore} ${update.away?.displayName || 'Away'}`;
+                showToast(toastText);
+                sendBrowserNotification(toastText, `${update.status?.displayClock || 'Live'} on NorraScore`, update.home?.logo || '/assets/icons/icon-192.png');
             }
         }
 
@@ -5336,6 +5581,160 @@ function renderAdSlot(elementId, slotData) {
         });
     }
 
+    function initDownloadAppModal() {
+        const downloadBtn = document.getElementById('header-download-btn');
+        const dialog = document.getElementById('download-app-dialog');
+        const closeBtn = document.getElementById('close-download-dialog');
+        const pwaBtn = document.getElementById('pwa-install-trigger-btn');
+        const appLogo = document.getElementById('download-dialog-app-logo');
+        const appName = document.getElementById('download-dialog-app-name');
+
+        if (!dialog) return;
+
+        if (downloadBtn) {
+            downloadBtn.addEventListener('click', () => {
+                if (state.siteSettings?.siteName && appName) {
+                    appName.textContent = state.siteSettings.siteName;
+                }
+                if (state.siteSettings?.logoUrl && appLogo) {
+                    appLogo.src = state.siteSettings.logoUrl;
+                }
+                if (typeof dialog.showModal === 'function') {
+                    dialog.showModal();
+                } else {
+                    dialog.setAttribute('open', '');
+                }
+            });
+        }
+
+        if (closeBtn) {
+            closeBtn.addEventListener('click', () => {
+                if (typeof dialog.close === 'function') dialog.close();
+                else dialog.removeAttribute('open');
+            });
+        }
+
+        if (pwaBtn) {
+            pwaBtn.addEventListener('click', async () => {
+                if (state.deferredPrompt) {
+                    state.deferredPrompt.prompt();
+                    const { outcome } = await state.deferredPrompt.userChoice;
+                    if (outcome === 'accepted') {
+                        showToast('🎉 Thank you for installing the NorraScore app!');
+                        state.deferredPrompt = null;
+                    }
+                } else {
+                    showToast('📱 To install: Tap browser menu (⋮ or Share) ➔ Add to Home Screen');
+                }
+            });
+        }
+
+        window.addEventListener('beforeinstallprompt', (e) => {
+            e.preventDefault();
+            state.deferredPrompt = e;
+            if (pwaBtn) {
+                pwaBtn.innerHTML = '<span>⚡ Tap to Install Now</span>';
+            }
+        });
+    }
+
+    window.openClubHub = async function(teamIdOrName, teamLogo = '', leagueSlug = '') {
+        if (!teamIdOrName) return;
+        const dialog = document.getElementById('club-hub-dialog');
+        const titleEl = document.getElementById('club-hub-title');
+        const leagueEl = document.getElementById('club-hub-league-name');
+        const contentEl = document.getElementById('club-hub-content');
+
+        if (!dialog || !contentEl) return;
+
+        if (titleEl) titleEl.textContent = teamIdOrName;
+        if (leagueEl) leagueEl.textContent = leagueSlug ? leagueSlug.toUpperCase() : 'CLUB PROFILE';
+        contentEl.innerHTML = '<div class="content-state"><span class="loader"></span><p>Loading club hub…</p></div>';
+
+        if (typeof dialog.showModal === 'function') {
+            dialog.showModal();
+        } else {
+            dialog.setAttribute('open', '');
+        }
+
+        try {
+            const res = await fetchJson(`/api/v1/football/teams/${encodeURIComponent(teamIdOrName)}`);
+            const club = res.team || {};
+            const recent = res.recentMatches || [];
+            const upcoming = res.upcomingMatches || [];
+
+            contentEl.innerHTML = `
+                <div style="display:flex; align-items:center; gap:16px; margin-bottom:18px; padding-bottom:14px; border-bottom:1px solid var(--border-subtle);">
+                    <img src="${escapeHtml(club.logo || teamLogo || '/cdn/crest?url=' + encodeURIComponent(teamLogo))}" alt="${escapeHtml(club.name || teamIdOrName)}" style="width:56px; height:56px; object-fit:contain;" onerror="this.src='/crests/fallback-shield.svg'">
+                    <div>
+                        <h3 style="margin:0 0 4px; font-size:18px; color:var(--text-main);">${escapeHtml(club.displayName || club.name || teamIdOrName)}</h3>
+                        <span style="font-size:12px; color:var(--text-muted);">${escapeHtml(club.country || '')} &bull; ${escapeHtml(club.abbreviation || '')}</span>
+                    </div>
+                </div>
+
+                <!-- Recent Form (Last 10 matches) -->
+                <div style="margin-bottom:20px;">
+                    <h4 style="margin:0 0 10px; font-size:13px; text-transform:uppercase; color:var(--text-muted); letter-spacing:0.5px;">Recent Match Form</h4>
+                    ${recent.length > 0 ? `
+                        <div style="display:flex; flex-direction:column; gap:6px;">
+                            ${recent.slice(0, 6).map(m => {
+                                const isHome = (m.home?.name || '').toLowerCase().includes(teamIdOrName.toLowerCase());
+                                const teamScore = isHome ? (m.home?.score ?? 0) : (m.away?.score ?? 0);
+                                const oppScore = isHome ? (m.away?.score ?? 0) : (m.home?.score ?? 0);
+                                const oppName = isHome ? (m.away?.displayName || m.away?.name || 'Away') : (m.home?.displayName || m.home?.name || 'Home');
+                                const result = teamScore > oppScore ? 'W' : teamScore < oppScore ? 'L' : 'D';
+                                const badgeColor = result === 'W' ? '#10b981' : result === 'L' ? '#ef4444' : '#f59e0b';
+                                return `
+                                    <div style="display:flex; justify-content:space-between; align-items:center; background:var(--bg-canvas); border:1px solid var(--border-subtle); padding:8px 12px; border-radius:8px; font-size:12.5px;">
+                                        <div style="display:flex; align-items:center; gap:8px;">
+                                            <span style="background:${badgeColor}; color:#fff; font-weight:700; width:22px; height:22px; border-radius:4px; display:inline-flex; align-items:center; justify-content:center; font-size:11px;">${result}</span>
+                                            <span style="color:var(--text-main); font-weight:600;">vs ${escapeHtml(oppName)}</span>
+                                        </div>
+                                        <div style="font-weight:700; color:var(--text-main); font-variant-numeric:tabular-nums;">
+                                            ${m.home?.score ?? 0} - ${m.away?.score ?? 0}
+                                            <span style="font-size:11px; color:var(--text-muted); margin-left:6px; font-weight:normal;">FT</span>
+                                        </div>
+                                    </div>
+                                `;
+                            }).join('')}
+                        </div>
+                    ` : '<p style="color:var(--text-muted); font-size:12px;">No recorded recent matches.</p>'}
+                </div>
+
+                <!-- Upcoming Fixtures -->
+                <div>
+                    <h4 style="margin:0 0 10px; font-size:13px; text-transform:uppercase; color:var(--text-muted); letter-spacing:0.5px;">Upcoming Fixtures</h4>
+                    ${upcoming.length > 0 ? `
+                        <div style="display:flex; flex-direction:column; gap:6px;">
+                            ${upcoming.slice(0, 3).map(m => {
+                                const dateStr = m.date ? new Date(m.date).toLocaleDateString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : 'Scheduled';
+                                return `
+                                    <div style="display:flex; justify-content:space-between; align-items:center; background:var(--bg-canvas); border:1px solid var(--border-subtle); padding:8px 12px; border-radius:8px; font-size:12.5px;">
+                                        <span style="color:var(--text-main); font-weight:600;">${escapeHtml(m.home?.displayName || m.home?.name || 'Home')} vs ${escapeHtml(m.away?.displayName || m.away?.name || 'Away')}</span>
+                                        <span style="font-size:11.5px; color:var(--color-primary); font-weight:600;">${escapeHtml(dateStr)}</span>
+                                    </div>
+                                `;
+                            }).join('')}
+                        </div>
+                    ` : '<p style="color:var(--text-muted); font-size:12px;">No scheduled fixtures in the next 7 days.</p>'}
+                </div>
+            `;
+        } catch (err) {
+            contentEl.innerHTML = `<p style="color:var(--text-muted); padding:16px;">Failed to load club information: ${escapeHtml(err.message)}</p>`;
+        }
+    };
+
+    function initClubHubDialog() {
+        const dialog = document.getElementById('club-hub-dialog');
+        const closeBtn = document.getElementById('close-club-hub');
+        if (closeBtn && dialog) {
+            closeBtn.addEventListener('click', () => {
+                if (typeof dialog.close === 'function') dialog.close();
+                else dialog.removeAttribute('open');
+            });
+        }
+    }
+
     async function initialize() {
         setupThemeToggle();
         setupBackToTop();
@@ -5344,6 +5743,8 @@ function renderAdSlot(elementId, slotData) {
         initGoalAlertToggle();
         initLiveEventStream();
         initBookingConverter();
+        initDownloadAppModal();
+        initClubHubDialog();
         updateFavoritesBadge();
         setInitialFixtureWindow();
         const currentYearEl = document.getElementById('current-year');

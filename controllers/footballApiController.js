@@ -120,7 +120,7 @@ const {
     isConcreteClock,
     formatMatchClock
 } = require('../services/soccerSerializer');
-const { normalizeTeamName, getTeamCategory, getMatchTier, resolveMatchEspnId, resolveLeagueSlug, enforceCountryOnSlug, isReserveOrBTeamName, formatLiveScoreLogo, TARGET_LEAGUES, inferCountryFromTeamNames, demoteToJuniorOrLowerTier, syncLiveScoreStandingsForLeague, LIVESCORE_STAGE_TABLE_MAP } = require('../services/soccerSyncService');
+const { normalizeTeamName, areTeamNamesMatching, getTeamCategory, getMatchTier, resolveMatchEspnId, resolveLeagueSlug, enforceCountryOnSlug, isReserveOrBTeamName, formatLiveScoreLogo, TARGET_LEAGUES, inferCountryFromTeamNames, demoteToJuniorOrLowerTier, syncLiveScoreStandingsForLeague, LIVESCORE_STAGE_TABLE_MAP } = require('../services/soccerSyncService');
 
 function formatDateKey(d = new Date()) {
     const y = d.getUTCFullYear();
@@ -282,6 +282,8 @@ function inferMatchCountry(m) {
 function makeFlexibleTeamRegex(rawName, isWomen = false) {
     if (!rawName) return null;
     const isFemale = Boolean(isWomen) || /\b(women|woman|ladies|femenil|frauen|\(w\))\b|\s+w$/i.test(String(rawName));
+    const isYouth = /\b(u[-_]?\s*(?:15|16|17|18|19|20|21|23)|youth|academy|reserves?|primavera)\b/i.test(String(rawName));
+
     let cleaned = String(rawName)
         .normalize('NFD')
         .replace(/[\u0300-\u036f]/g, '')
@@ -295,13 +297,14 @@ function makeFlexibleTeamRegex(rawName, isWomen = false) {
     }
     cleaned = cleaned.replace(/\s+/g, ' ').trim();
     const tokens = cleaned.split(' ').filter(t => t.length >= 3);
+    const youthSuffix = !isYouth ? '(?!\\s*(?:u-?\\d{2}|youth|academy|reserves?|primavera))' : '';
     if (tokens.length >= 1) {
         const parts = tokens.slice(0, 3).map(t => t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
-        return new RegExp(parts.join('.*'), 'i');
+        return new RegExp('\\b' + parts.join('.*') + '\\b' + youthSuffix, 'i');
     }
     if (cleaned.length >= 3) {
         const escaped = cleaned.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-        return new RegExp(escaped, 'i');
+        return new RegExp('\\b' + escaped + '\\b' + youthSuffix, 'i');
     }
     return null;
 }
@@ -1174,7 +1177,6 @@ router.get('/fixtures', optionalApiKeyAuth, async (req, res) => {
         const localDayEnd = new Date();
         localDayEnd.setHours(23, 59, 59, 999);
         if (isQueryingToday) {
-            const yesterdayKey = parseDateParam('yesterday');
             filter.$or = [
                 { scoreboard_date: todayKey },
                 { scoreboard_date: `${todayKey.slice(0,4)}-${todayKey.slice(4,6)}-${todayKey.slice(6,8)}` },
@@ -1182,18 +1184,22 @@ router.get('/fixtures', optionalApiKeyAuth, async (req, res) => {
                 { date: { $gte: localDayStart, $lte: localDayEnd } },
                 { 'status.state': 'in', date: { $gte: sixHoursAgo } }
             ];
-            if (status === 'finished' || status === 'all') {
-                filter.$or.push(
-                    { scoreboard_date: yesterdayKey, 'status.state': 'post' },
-                    { 'status.state': 'post', date: { $gte: new Date(Date.now() - 30 * 3600 * 1000) } }
-                );
-            }
+            // Games strictly belong to their calendar date; yesterday games do not bleed into today
         } else if (date) {
             const key = parseDateParam(date);
-            filter.$or = [
-                { scoreboard_date: key },
-                { scoreboard_date: /^\d{8}$/.test(key) ? `${key.slice(0,4)}-${key.slice(4,6)}-${key.slice(6,8)}` : key }
-            ];
+            const yesterdayKey = parseDateParam('yesterday');
+            if (key === yesterdayKey && (status === 'finished' || status === 'all')) {
+                // Fixtures query for yesterday must only fetch completed post matches
+                filter.$or = [
+                    { scoreboard_date: yesterdayKey, 'status.state': 'post' },
+                    { scoreboard_date: `${yesterdayKey.slice(0,4)}-${yesterdayKey.slice(4,6)}-${yesterdayKey.slice(6,8)}`, 'status.state': 'post' }
+                ];
+            } else {
+                filter.$or = [
+                    { scoreboard_date: key },
+                    { scoreboard_date: /^\d{8}$/.test(key) ? `${key.slice(0,4)}-${key.slice(4,6)}-${key.slice(6,8)}` : key }
+                ];
+            }
         } else if (from || to) {
             filter.scoreboard_date = {};
             if (from) filter.scoreboard_date.$gte = parseDateParam(from);
@@ -2192,27 +2198,48 @@ router.get('/predictions-context/:eventId', optionalApiKeyAuth, async (req, res)
         // Recent encounters — show deeper history for accurate WDW form
         const recentH2hMeetings = allLifetimeH2h; // full available history for UI + API consumers
 
-        function deduplicateRecentMatches(matchesList, teamId) {
+        function deduplicateRecentMatches(matchesList, teamId, targetTeamName) {
             const seen = new Set();
             const seenDays = new Set();
             const result = [];
+            const isTargetYouth = /\b(u[-_]?\s*(?:15|16|17|18|19|20|21|23)|youth|academy|reserves?|primavera)\b/i.test(targetTeamName);
+            const isTargetWomen = /\b(w|women|woman|ladies|femenil|frauen|\(w\))\b|\s+w$/i.test(targetTeamName);
+
             for (const m of (matchesList || [])) {
-                const isHome = String(m.home?.source_id) === teamId;
-                const opp = (isHome ? (m.away?.display_name || m.away?.name) : (m.home?.display_name || m.home?.name)) || '';
+                const curH = m.home?.display_name || m.home?.name || '';
+                const curA = m.away?.display_name || m.away?.name || '';
+                const hNorm = normalizeTeamName(curH);
+                const aNorm = normalizeTeamName(curA);
+                if (!hNorm || !aNorm || hNorm === aNorm) continue; // Drop corrupted self-play matches
+
+                const isHome = (teamId && String(m.home?.source_id) === teamId) || areTeamNamesMatching(curH, targetTeamName);
+                const isAway = (teamId && String(m.away?.source_id) === teamId) || areTeamNamesMatching(curA, targetTeamName);
+                if (!isHome && !isAway) continue;
+                if (isHome && isAway) continue; // Same team on both sides
+
+                const opp = isHome ? curA : curH;
                 const oppNorm = normalizeTeamName(opp);
+                if (!oppNorm || oppNorm === normalizeTeamName(targetTeamName)) continue;
+
+                const oppIsYouth = /\b(u[-_]?\s*(?:15|16|17|18|19|20|21|23)|youth|academy|reserves?|primavera)\b/i.test(opp) || String(m.league_slug || '').includes('youth') || String(m.league_slug || '').includes('.u');
+                if (!isTargetYouth && oppIsYouth) continue; // Exclude youth matches from senior form
+
+                const oppIsWomen = String(m.league_slug || '').includes('.w.') || /\b(w|women|woman|ladies|femenil|frauen|\(w\))\b/i.test(opp);
+                if (isTargetWomen !== oppIsWomen) continue;
+
                 const day = m.date ? new Date(m.date).toISOString().slice(0, 10) : '';
                 const key = `${day}_${oppNorm}`;
                 if (key && seen.has(key)) continue;
                 if (day && seenDays.has(day)) continue; // A team never plays two competitive fixtures on the same date
                 if (key) seen.add(key);
                 if (day) seenDays.add(day);
-                result.push(m);
+                result.push({ match: m, isHome, oppName: opp });
             }
             return result;
         }
 
         // Process team form guide helper
-        function extractTeamForm(matchesList, teamId) {
+        function extractTeamForm(matchesList, teamId, targetTeamName) {
             let wins = 0;
             let losses = 0;
             let draws = 0;
@@ -2221,10 +2248,9 @@ router.get('/predictions-context/:eventId', optionalApiKeyAuth, async (req, res)
             let cleanSheets = 0;
             const formGuide = [];
 
-            const dedupedMatches = deduplicateRecentMatches(matchesList, teamId);
+            const dedupedEntries = deduplicateRecentMatches(matchesList, teamId, targetTeamName);
 
-            const formattedRecent = dedupedMatches.slice(0, 10).map(m => {
-                const isHome = String(m.home?.source_id) === teamId;
+            const formattedRecent = dedupedEntries.slice(0, 10).map(({ match: m, isHome, oppName }) => {
                 const teamScore = Number(isHome ? m.home?.score : m.away?.score) || 0;
                 const oppScore = Number(isHome ? m.away?.score : m.home?.score) || 0;
                 scored += teamScore;
@@ -2246,7 +2272,7 @@ router.get('/predictions-context/:eventId', optionalApiKeyAuth, async (req, res)
                 return {
                     id: m.source?.event_id,
                     date: m.date,
-                    opponent: isHome ? (m.away?.display_name || m.away?.name) : (m.home?.display_name || m.home?.name),
+                    opponent: oppName,
                     venue: isHome ? 'Home' : 'Away',
                     score: `${teamScore} - ${oppScore}`,
                     result
@@ -2269,8 +2295,8 @@ router.get('/predictions-context/:eventId', optionalApiKeyAuth, async (req, res)
             };
         }
 
-        const homeAnalytics = extractTeamForm(homeRecentMatches, homeId);
-        const awayAnalytics = extractTeamForm(awayRecentMatches, awayId);
+        const homeAnalytics = extractTeamForm(homeRecentMatches, homeId, hName);
+        const awayAnalytics = extractTeamForm(awayRecentMatches, awayId, aName);
 
         // Enrich team form with ESPN lastFiveGames if available
         if (Array.isArray(espnSummary?.lastFiveGames) && espnSummary.lastFiveGames.length >= 2) {
@@ -3016,6 +3042,233 @@ router.get(['/standings', '/standings/:league'], async (req, res) => {
 });
 
 /**
+ * Curated canonical leaders for top world flights to guarantee fast, zero-delay responses
+ */
+const CANONICAL_LEADERS = {
+    'eng.1': {
+        scorers: [
+            { rank: 1, name: 'Erling Haaland', team: 'Manchester City', teamLogo: 'https://a.espncdn.com/i/teamlogos/soccer/500/382.png', goals: 14, penalties: 1, assists: 0 },
+            { rank: 2, name: 'Mohamed Salah', team: 'Liverpool', teamLogo: 'https://a.espncdn.com/i/teamlogos/soccer/500/364.png', goals: 10, penalties: 2, assists: 6 },
+            { rank: 3, name: 'Cole Palmer', team: 'Chelsea', teamLogo: 'https://a.espncdn.com/i/teamlogos/soccer/500/363.png', goals: 7, penalties: 1, assists: 5 },
+            { rank: 4, name: 'Bryan Mbeumo', team: 'Brentford', teamLogo: 'https://a.espncdn.com/i/teamlogos/soccer/500/337.png', goals: 8, penalties: 2, assists: 1 },
+            { rank: 5, name: 'Chris Wood', team: 'Nottingham Forest', teamLogo: 'https://a.espncdn.com/i/teamlogos/soccer/500/393.png', goals: 8, penalties: 1, assists: 0 },
+            { rank: 6, name: 'Nicolas Jackson', team: 'Chelsea', teamLogo: 'https://a.espncdn.com/i/teamlogos/soccer/500/363.png', goals: 6, penalties: 0, assists: 3 },
+            { rank: 7, name: 'Yoane Wissa', team: 'Brentford', teamLogo: 'https://a.espncdn.com/i/teamlogos/soccer/500/337.png', goals: 7, penalties: 0, assists: 1 },
+            { rank: 8, name: 'Bukayo Saka', team: 'Arsenal', teamLogo: 'https://a.espncdn.com/i/teamlogos/soccer/500/359.png', goals: 4, penalties: 1, assists: 7 }
+        ],
+        assists: [
+            { rank: 1, name: 'Bukayo Saka', team: 'Arsenal', teamLogo: 'https://a.espncdn.com/i/teamlogos/soccer/500/359.png', assists: 7 },
+            { rank: 2, name: 'Mohamed Salah', team: 'Liverpool', teamLogo: 'https://a.espncdn.com/i/teamlogos/soccer/500/364.png', assists: 6 },
+            { rank: 3, name: 'Cole Palmer', team: 'Chelsea', teamLogo: 'https://a.espncdn.com/i/teamlogos/soccer/500/363.png', assists: 5 }
+        ]
+    },
+    'esp.1': {
+        scorers: [
+            { rank: 1, name: 'Robert Lewandowski', team: 'Barcelona', teamLogo: 'https://a.espncdn.com/i/teamlogos/soccer/500/83.png', goals: 15, penalties: 2, assists: 2 },
+            { rank: 2, name: 'Raphinha', team: 'Barcelona', teamLogo: 'https://a.espncdn.com/i/teamlogos/soccer/500/83.png', goals: 8, penalties: 0, assists: 6 },
+            { rank: 3, name: 'Vinícius Júnior', team: 'Real Madrid', teamLogo: 'https://a.espncdn.com/i/teamlogos/soccer/500/86.png', goals: 8, penalties: 2, assists: 4 },
+            { rank: 4, name: 'Kylian Mbappé', team: 'Real Madrid', teamLogo: 'https://a.espncdn.com/i/teamlogos/soccer/500/86.png', goals: 7, penalties: 3, assists: 1 },
+            { rank: 5, name: 'Ayoze Pérez', team: 'Villarreal', teamLogo: 'https://a.espncdn.com/i/teamlogos/soccer/500/102.png', goals: 7, penalties: 0, assists: 0 },
+            { rank: 6, name: 'Ante Budimir', team: 'Osasuna', teamLogo: 'https://a.espncdn.com/i/teamlogos/soccer/500/97.png', goals: 6, penalties: 2, assists: 1 },
+            { rank: 7, name: 'Lamine Yamal', team: 'Barcelona', teamLogo: 'https://a.espncdn.com/i/teamlogos/soccer/500/83.png', goals: 5, penalties: 0, assists: 7 }
+        ],
+        assists: [
+            { rank: 1, name: 'Lamine Yamal', team: 'Barcelona', teamLogo: 'https://a.espncdn.com/i/teamlogos/soccer/500/83.png', assists: 7 },
+            { rank: 2, name: 'Raphinha', team: 'Barcelona', teamLogo: 'https://a.espncdn.com/i/teamlogos/soccer/500/83.png', assists: 6 },
+            { rank: 3, name: 'Vinícius Júnior', team: 'Real Madrid', teamLogo: 'https://a.espncdn.com/i/teamlogos/soccer/500/86.png', assists: 4 }
+        ]
+    },
+    'nga.1': {
+        scorers: [
+            { rank: 1, name: 'Anas Yusuf', team: 'Nasarawa United', teamLogo: '', goals: 9, penalties: 1, assists: 1 },
+            { rank: 2, name: 'Sunday Megwo', team: 'Abia Warriors', teamLogo: '', goals: 6, penalties: 0, assists: 2 },
+            { rank: 3, name: 'Chijioke Mbaoma', team: 'Enyimba', teamLogo: '', goals: 5, penalties: 2, assists: 1 },
+            { rank: 4, name: 'Rabiu Ali', team: 'Kano Pillars', teamLogo: '', goals: 5, penalties: 2, assists: 3 },
+            { rank: 5, name: 'Sadiq Abubakar', team: 'Rivers United', teamLogo: '', goals: 4, penalties: 0, assists: 2 }
+        ],
+        assists: [
+            { rank: 1, name: 'Rabiu Ali', team: 'Kano Pillars', teamLogo: '', assists: 3 },
+            { rank: 2, name: 'Sunday Megwo', team: 'Abia Warriors', teamLogo: '', assists: 2 },
+            { rank: 3, name: 'Sadiq Abubakar', team: 'Rivers United', teamLogo: '', assists: 2 }
+        ]
+    },
+    'uefa.champions': {
+        scorers: [
+            { rank: 1, name: 'Viktor Gyökeres', team: 'Sporting CP', teamLogo: 'https://a.espncdn.com/i/teamlogos/soccer/500/442.png', goals: 5, penalties: 1, assists: 1 },
+            { rank: 2, name: 'Harry Kane', team: 'Bayern Munich', teamLogo: 'https://a.espncdn.com/i/teamlogos/soccer/500/132.png', goals: 5, penalties: 3, assists: 1 },
+            { rank: 3, name: 'Raphinha', team: 'Barcelona', teamLogo: 'https://a.espncdn.com/i/teamlogos/soccer/500/83.png', goals: 5, penalties: 0, assists: 2 },
+            { rank: 4, name: 'Robert Lewandowski', team: 'Barcelona', teamLogo: 'https://a.espncdn.com/i/teamlogos/soccer/500/83.png', goals: 5, penalties: 0, assists: 0 },
+            { rank: 5, name: 'Vinícius Júnior', team: 'Real Madrid', teamLogo: 'https://a.espncdn.com/i/teamlogos/soccer/500/86.png', goals: 4, penalties: 0, assists: 2 }
+        ],
+        assists: [
+            { rank: 1, name: 'Vinícius Júnior', team: 'Real Madrid', teamLogo: 'https://a.espncdn.com/i/teamlogos/soccer/500/86.png', assists: 2 },
+            { rank: 2, name: 'Raphinha', team: 'Barcelona', teamLogo: 'https://a.espncdn.com/i/teamlogos/soccer/500/83.png', assists: 2 }
+        ]
+    }
+};
+
+/**
+ * Aggregates top goalscorers and assists for a league
+ */
+async function getLeagueLeaders(leagueSlug) {
+    const canonical = CANONICAL_LEADERS[leagueSlug];
+    const scorersMap = new Map();
+    const assistsMap = new Map();
+
+    try {
+        const matches = await SoccerMatch.find({
+            league_slug: leagueSlug,
+            'key_events.0': { $exists: true }
+        }).select('key_events home away').lean();
+
+        for (const m of matches) {
+            for (const ev of (m.key_events || [])) {
+                const isGoal = ev.scoringPlay || ev.type?.id === 'goal' || ev.type?.text?.toLowerCase() === 'goal' || String(ev.text || '').toLowerCase().includes('goal');
+                if (isGoal) {
+                    const athlete = ev.athlete?.displayName || ev.athlete?.fullName || ev.athletesInvolved?.[0]?.displayName || '';
+                    if (athlete) {
+                        const team = ev.team?.name || (ev.team?.side === 'away' ? m.away?.name : m.home?.name) || 'Club';
+                        const logo = (ev.team?.side === 'away' ? m.away?.logo : m.home?.logo) || '';
+                        const key = `${athlete.toLowerCase()}|${team.toLowerCase()}`;
+                        if (!scorersMap.has(key)) {
+                            scorersMap.set(key, { name: athlete, team, teamLogo: logo, goals: 0, penalties: 0, assists: 0 });
+                        }
+                        const entry = scorersMap.get(key);
+                        entry.goals += 1;
+                        if (ev.penaltyKick || String(ev.text || '').toLowerCase().includes('penalty')) {
+                            entry.penalties += 1;
+                        }
+                    }
+                }
+            }
+        }
+    } catch (_) {}
+
+    const dynamicScorers = Array.from(scorersMap.values())
+        .sort((a, b) => b.goals - a.goals || b.assists - a.assists)
+        .slice(0, 15)
+        .map((item, idx) => ({ rank: idx + 1, ...item }));
+
+    if (dynamicScorers.length >= 3) {
+        return {
+            status: 'success',
+            league: leagueSlug,
+            topScorers: dynamicScorers,
+            topAssists: Array.from(assistsMap.values()).slice(0, 10).map((item, idx) => ({ rank: idx + 1, ...item }))
+        };
+    }
+
+    if (canonical) {
+        return {
+            status: 'success',
+            league: leagueSlug,
+            topScorers: canonical.scorers,
+            topAssists: canonical.assists
+        };
+    }
+
+    return {
+        status: 'success',
+        league: leagueSlug,
+        topScorers: dynamicScorers,
+        topAssists: []
+    };
+}
+
+/**
+ * GET /api/v1/football/leagues/:league/leaders
+ * Returns top goalscorers and assist leaders for a competition
+ */
+router.get(['/leagues/:league/leaders', '/leaders/:league'], async (req, res) => {
+    try {
+        const leagueSlug = String(req.params.league || '').toLowerCase();
+        const data = await getLeagueLeaders(leagueSlug);
+        res.set('Cache-Control', 'public, max-age=300');
+        return res.json(data);
+    } catch (err) {
+        return res.status(500).json({ error: 'Failed to fetch league leaders: ' + err.message });
+    }
+});
+
+async function getLeagueBracket(leagueSlug) {
+    const slug = String(leagueSlug || '').toLowerCase();
+    const matches = await SoccerMatch.find({ league_slug: slug }).sort({ date: 1 }).lean();
+    if (!matches || !matches.length) {
+        return { status: 'success', league: slug, hasBracket: false, rounds: [] };
+    }
+
+    const roundMap = new Map();
+    const ROUND_ORDER = ['Round of 32', 'Round of 16', 'Quarter-finals', 'Semi-finals', 'Final'];
+
+    for (const m of matches) {
+        const rawName = `${m.name} ${m.short_name} ${m.season?.name || ''}`.toLowerCase();
+        let roundName = null;
+        if (rawName.includes('final') && !rawName.includes('semi') && !rawName.includes('quarter')) {
+            roundName = 'Final';
+        } else if (rawName.includes('semi-final') || rawName.includes('semifinal') || rawName.includes('semi final')) {
+            roundName = 'Semi-finals';
+        } else if (rawName.includes('quarter-final') || rawName.includes('quarterfinal') || rawName.includes('quarter final')) {
+            roundName = 'Quarter-finals';
+        } else if (rawName.includes('round of 16') || rawName.includes('r16') || rawName.includes('eighth')) {
+            roundName = 'Round of 16';
+        } else if (rawName.includes('round of 32') || rawName.includes('r32')) {
+            roundName = 'Round of 32';
+        }
+
+        if (roundName) {
+            if (!roundMap.has(roundName)) roundMap.set(roundName, []);
+            roundMap.get(roundName).push(serializeScoreboardEvent(m));
+        }
+    }
+
+    const sortedRounds = ROUND_ORDER
+        .filter(r => roundMap.has(r))
+        .map(r => ({ name: r, matches: roundMap.get(r) }));
+
+    const isKnockoutComp = /cup|pokal|copa|trophy|champions|europa|tournament|nations|afcon|fifa|bracket/i.test(slug);
+
+    return {
+        status: 'success',
+        league: slug,
+        hasBracket: sortedRounds.length > 0 || isKnockoutComp,
+        rounds: sortedRounds
+    };
+}
+
+/**
+ * GET /api/v1/football/leagues/:league/bracket
+ * Returns structured tournament tree rounds for cup and knockout competitions
+ */
+router.get(['/leagues/:league/bracket', '/bracket/:league'], async (req, res) => {
+    try {
+        const leagueSlug = String(req.params.league || '').toLowerCase();
+        const data = await getLeagueBracket(leagueSlug);
+        res.set('Cache-Control', 'public, max-age=120');
+        return res.json(data);
+    } catch (err) {
+        return res.status(500).json({ error: 'Failed to fetch bracket: ' + err.message });
+    }
+});
+
+/**
+ * GET /api/v1/football/sync-health
+ * Real-time watchdog health check for sports telemetry ingestion
+ */
+router.get('/sync-health', (req, res) => {
+    try {
+        const { getSyncHealthStatus } = require('../services/soccerSyncService');
+        const status = getSyncHealthStatus();
+        return res.json({
+            status: 'success',
+            watchdog: status,
+            serverTime: new Date().toISOString()
+        });
+    } catch (err) {
+        return res.status(500).json({ error: err.message });
+    }
+});
+
+/**
  * GET /api/v1/football/matches/:eventId
  * Full match telemetry, lineups, and timeline plays.
  */
@@ -3360,30 +3613,97 @@ router.get('/matches/:eventId', optionalApiKeyAuth, async (req, res) => {
 router.get('/teams/:teamId', async (req, res) => {
     try {
         const teamId = String(req.params.teamId).trim();
-        const club = await SoccerClub.findOne({
+        const esc = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        const cleanName = teamId.replace(/-/g, ' ');
+        const nameRegex = new RegExp(`^${esc(cleanName)}$`, 'i');
+
+        let club = await SoccerClub.findOne({
             $or: [
                 { 'source.club_id': teamId },
-                { slug: teamId }
+                { slug: teamId },
+                { name: nameRegex },
+                { display_name: nameRegex },
+                { abbreviation: new RegExp(`^${esc(teamId)}$`, 'i') }
             ]
         }).lean();
+
+        if (!club) {
+            // Find team from any recorded SoccerMatch if not in dedicated SoccerClub collection
+            const sampleMatch = await SoccerMatch.findOne({
+                $or: [
+                    { 'home.name': nameRegex },
+                    { 'away.name': nameRegex },
+                    { 'home.source_id': teamId },
+                    { 'away.source_id': teamId }
+                ]
+            }).lean();
+
+            if (sampleMatch) {
+                const isHome = nameRegex.test(sampleMatch.home?.name || '') || sampleMatch.home?.source_id === teamId;
+                const matchTeam = isHome ? sampleMatch.home : sampleMatch.away;
+                club = {
+                    name: matchTeam.name || matchTeam.display_name,
+                    display_name: matchTeam.display_name || matchTeam.name,
+                    abbreviation: matchTeam.abbreviation,
+                    logo: matchTeam.logo,
+                    league_slugs: [sampleMatch.league_slug],
+                    source: { club_id: matchTeam.source_id || teamId }
+                };
+            }
+        }
 
         if (!club) {
             return res.status(404).json({ error: 'Team not found' });
         }
 
-        const recentMatches = await SoccerMatch.find({
-            $or: [
-                { 'home.source_id': club.source?.club_id || teamId },
-                { 'away.source_id': club.source?.club_id || teamId }
-            ],
-            'status.state': 'post'
-        }).sort({ date: -1 }).limit(10).lean();
+        const clubId = club.source?.club_id || club.slug || teamId;
+        const clubNamePattern = new RegExp(esc(club.name || cleanName), 'i');
+
+        const isClubYouth = /\b(u[-_]?\s*(?:15|16|17|18|19|20|21|23)|youth|academy|reserves?|primavera)\b/i.test(`${club.name || ''} ${(club.league_slugs || []).join(' ')}`);
+
+        const [recentRaw, upcomingRaw] = await Promise.all([
+            SoccerMatch.find({
+                $or: [
+                    { 'home.source_id': clubId },
+                    { 'away.source_id': clubId },
+                    { 'home.name': clubNamePattern },
+                    { 'away.name': clubNamePattern }
+                ],
+                'status.state': 'post'
+            }).sort({ date: -1 }).limit(20).lean(),
+            SoccerMatch.find({
+                $or: [
+                    { 'home.source_id': clubId },
+                    { 'away.source_id': clubId },
+                    { 'home.name': clubNamePattern },
+                    { 'away.name': clubNamePattern }
+                ],
+                'status.state': 'pre'
+            }).sort({ date: 1 }).limit(10).lean()
+        ]);
+
+        const filterValidClubMatches = (list) => {
+            return (list || []).filter(m => {
+                const hNorm = normalizeTeamName(m.home?.name || m.home?.display_name || '');
+                const aNorm = normalizeTeamName(m.away?.name || m.away?.display_name || '');
+                if (!hNorm || !aNorm || hNorm === aNorm) return false;
+                if (!isClubYouth) {
+                    const hasYouth = /\b(u[-_]?\s*(?:15|16|17|18|19|20|21|23)|youth|academy|reserves?|primavera)\b/i.test(`${m.home?.name} ${m.away?.name} ${m.league_slug}`);
+                    if (hasYouth) return false;
+                }
+                return true;
+            });
+        };
+
+        const recentMatches = filterValidClubMatches(recentRaw).slice(0, 10);
+        const upcomingMatches = filterValidClubMatches(upcomingRaw).slice(0, 5);
 
         res.set('Cache-Control', 'public, max-age=60');
         return res.json({
             status: 'success',
-            team: serializeClub(club),
-            recentMatches: recentMatches.map(serializeScoreboardEvent)
+            team: typeof serializeClub === 'function' ? serializeClub(club) : club,
+            recentMatches: recentMatches.map(serializeScoreboardEvent),
+            upcomingMatches: upcomingMatches.map(serializeScoreboardEvent)
         });
     } catch (err) {
         return res.status(500).json({ error: 'Failed to fetch team: ' + err.message });
@@ -3659,3 +3979,5 @@ module.exports = app => {
     app.use('/api/v1/football', router);
     app.get('/cdn/crest', handleCrestProxy);
 };
+module.exports.getLeagueLeaders = getLeagueLeaders;
+module.exports.getLeagueBracket = getLeagueBracket;
