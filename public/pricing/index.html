@@ -361,6 +361,14 @@
             <h2 class="faq-title">Frequently Asked Questions</h2>
             <div class="faq-grid">
                 <div class="faq-card">
+                    <h3 class="faq-question">What are the exact API rate limits and quotas?</h3>
+                    <p class="faq-answer"><strong>Free Developer:</strong> 120 req/min (100 req/hr sandbox) for development across free tier leagues.<br><strong>Starter ($10/mo):</strong> 500 req/min (1,000 req/hr) across all 100+ global leagues with booking conversions.<br><strong>Pro ($29/mo):</strong> 1,500 req/min (10,000 req/hr) with full H2H statistics, Norra AI prediction context, and live webhooks.<br><strong>Enterprise ($79-$99/mo):</strong> 5,000 req/min (high throughput) with ML streaming and whitelabeling.</p>
+                </div>
+                <div class="faq-card">
+                    <h3 class="faq-question">How does Norra AI ingest live football and prediction data?</h3>
+                    <p class="faq-answer">Norra AI syncs directly through our dedicated ML endpoints (<code>/api/v1/football/predictions-context/:eventId</code> and <code>/api/v1/football/training-data</code>) using the internal Master Admin key. Data ingested includes lifetime H2H records, 6-game team form guides, goal scoring averages, clean sheet rates, and in-play telemetry to generate deep-dive predictions.</p>
+                </div>
+                <div class="faq-card">
                     <h3 class="faq-question">How quickly do I get my API key?</h3>
                     <p class="faq-answer">Instantly. Register for free in the <a href="/account" style="color:var(--color-primary);">Developer Portal</a>, and your key is generated immediately without any waiting period.</p>
                 </div>
@@ -369,16 +377,20 @@
                     <p class="faq-answer">We accept credit and debit cards worldwide via PayPal and Flutterwave, as well as local bank transfers, mobile money, and USSD in supported regions.</p>
                 </div>
                 <div class="faq-card">
-                    <h3 class="faq-question">What is the Booking Code Converter?</h3>
-                    <p class="faq-answer">A universal API service that lets your users paste a bet code from one bookmaker (e.g., SportyBet) and instantly re-map it to another (Bet9ja, 1xBet, Betway, Mozzart) with matched event and market identifiers.</p>
+                    <h3 class="faq-question">What is the Universal Booking Code Converter?</h3>
+                    <p class="faq-answer">A universal API service that lets your users paste a bet code from one bookmaker (e.g., SportyBet) and instantly re-map it to another (Bet9ja, 1xBet, Bet365, Betway, Stake, Betfair, DraftKings, FanDuel) with matched event, market, and selection identifiers.</p>
                 </div>
                 <div class="faq-card">
                     <h3 class="faq-question">Which leagues are included in the Free tier?</h3>
-                    <p class="faq-answer">The Free Developer tier includes the top 10 world leagues (EPL, La Liga, UCL, Serie A, Bundesliga, Ligue 1, MLS, Eredivisie, Primeira Liga, Süper Lig). Paid tiers unlock all 100+ global competitions, including African leagues (CAF Champions League, AFCON, PSL, NPFL), South American leagues, and lower divisions.</p>
+                    <p class="faq-answer">The Free Developer tier includes top leagues for sandbox integration (Premier League, La Liga, NPFL). Paid tiers (Starter, Pro, Enterprise) unlock all 100+ global competitions, including African leagues (CAF Champions League, AFCON, PSL, Ghana Premier League, Kenya Premier League), South American leagues, and cup knockout brackets.</p>
                 </div>
                 <div class="faq-card">
                     <h3 class="faq-question">Can I cancel or upgrade my plan anytime?</h3>
                     <p class="faq-answer">Yes, there are no long-term contracts. You can upgrade, downgrade, or cancel your subscription at any time directly inside your account dashboard.</p>
+                </div>
+                <div class="faq-card">
+                    <h3 class="faq-question">How does the SSE Delta Stream save battery and data?</h3>
+                    <p class="faq-answer">Our real-time SSE stream transmits lightweight delta packets (~120 bytes per change) rather than full match objects. Mobile devices automatically back off or pause connections when the browser tab is backgrounded, reducing data consumption by up to 95%.</p>
                 </div>
             </div>
         </section>

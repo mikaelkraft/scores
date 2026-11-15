@@ -277,12 +277,15 @@
                 <div class="docs-nav-title">Football Endpoints</div>
                 <ul class="docs-nav-links">
                     <li><a href="#ep-live">Live In-Play Scores</a></li>
+                    <li><a href="#ep-stream">SSE Delta Stream (Live)</a></li>
                     <li><a href="#ep-fixtures">Fixtures &amp; Schedules</a></li>
                     <li><a href="#ep-leagues">League Catalog</a></li>
                     <li><a href="#ep-standings">Standings Tables</a></li>
+                    <li><a href="#ep-leaders">League Leaders (Goals/Assists)</a></li>
+                    <li><a href="#ep-bracket">Tournament Bracket Tree</a></li>
                     <li><a href="#ep-match">Match Summary &amp; Plays</a></li>
-                    <li><a href="#ep-h2h">Head-to-Head (H2H)</a></li>
-                    <li><a href="#ep-teams">Team Profiles</a></li>
+                    <li><a href="#ep-h2h">Head-to-Head &amp; Predictions</a></li>
+                    <li><a href="#ep-teams">Club Hub Profiles</a></li>
                     <li><a href="#ep-training">AI Training Dataset (xG &amp; Telemetry)</a></li>
                 </ul>
             </div>
@@ -349,6 +352,68 @@ https://scores.mynorra.xyz/api/v1/football/live?api_key=your_api_key_here</code>
                 </p>
             </section>
 
+            <!-- Rate Limits & Plan Matrix -->
+            <section class="endpoint-card" id="rate-limits">
+                <div class="endpoint-header">
+                    <h2 style="font-size:18px; margin:0; color:var(--text-main);">Rate Limits &amp; Plan Matrix</h2>
+                </div>
+                <p class="endpoint-desc">
+                    All API responses include rate limit headers so clients can programmatically monitor remaining capacity. Exceeding your plan limit returns an <code>HTTP 429 Too Many Requests</code> response with a <code>Retry-After</code> header.
+                </p>
+
+                <div class="code-snippet-box">
+                    <div class="code-snippet-header">
+                        <span>Standard Rate Limit Headers</span>
+                        <span>HTTP</span>
+                    </div>
+                    <pre><code>X-RateLimit-Limit: 1500
+X-RateLimit-Remaining: 1482
+X-RateLimit-Reset: 1731698400</code></pre>
+                </div>
+
+                <table class="params-table" style="margin-top:16px;">
+                    <thead>
+                        <tr>
+                            <th>Tier</th>
+                            <th>Pricing</th>
+                            <th>Rate Limit</th>
+                            <th>Competitions</th>
+                            <th>Key Capabilities</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td><code>Free Developer</code></td>
+                            <td>$0 / mo</td>
+                            <td>120 req / min<br><small style="color:var(--text-muted);">(100 req/hr sandbox)</small></td>
+                            <td>3 Free Leagues<br><small style="color:var(--text-muted);">(eng.1, esp.1, nga.1)</small></td>
+                            <td>Live scoreboard tickers, fixtures, tables, schema preview</td>
+                        </tr>
+                        <tr>
+                            <td><code>Starter</code></td>
+                            <td>$10 / mo</td>
+                            <td>500 req / min<br><small style="color:var(--text-muted);">(1,000 req/hr)</small></td>
+                            <td>All 100+ World Leagues</td>
+                            <td>Ad-free clean payloads, Universal Bet Booking Code Converter, 30-day history</td>
+                        </tr>
+                        <tr>
+                            <td><code>Pro Developer</code></td>
+                            <td>$29 / mo</td>
+                            <td>1,500 req / min<br><small style="color:var(--text-muted);">(10,000 req/hr)</small></td>
+                            <td>All 100+ World Leagues</td>
+                            <td>Full lifetime H2H statistics, Norra AI prediction context, lineups, live webhooks</td>
+                        </tr>
+                        <tr>
+                            <td><code>Enterprise Whitelabel</code></td>
+                            <td>$79 - $99 / mo</td>
+                            <td>5,000 req / min<br><small style="color:var(--text-muted);">(Custom Throughput)</small></td>
+                            <td>All 100+ World Leagues</td>
+                            <td>ML training dataset streaming (/training-data), whitelabel match centers, 99.9% uptime SLA</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </section>
+
             <!-- Live Matches -->
             <section class="endpoint-card" id="ep-live">
                 <div class="endpoint-header">
@@ -400,6 +465,32 @@ https://scores.mynorra.xyz/api/v1/football/live?api_key=your_api_key_here</code>
     }
   ]
 }</code></pre>
+                </div>
+            </section>
+
+            <!-- SSE Delta Stream (Real-Time) -->
+            <section class="endpoint-card" id="ep-stream">
+                <div class="endpoint-header">
+                    <span class="http-method get">GET</span>
+                    <span class="endpoint-path">/api/v1/football/live/stream</span>
+                </div>
+                <p class="endpoint-desc">
+                    Persistent Server-Sent Events (SSE) live score and clock ticks stream. Broadcasts low-bandwidth delta packets (~120 bytes per match) containing updated scores, minute clock, status, goal alerts, and red cards. Mobile-optimized with automatic battery and data conservation.
+                </p>
+                <div class="code-snippet-box">
+                    <div class="code-snippet-header">
+                        <span>Consume SSE Stream &bull; JavaScript</span>
+                        <span>Browser / Node</span>
+                    </div>
+                    <pre><code>const source = new EventSource('https://scores.mynorra.xyz/api/v1/football/live/stream');
+
+source.addEventListener('score_update', (e) => {
+    const data = JSON.parse(e.data);
+    data.deltas.forEach(delta => {
+        console.log(`[Score] ${delta.home.displayName} ${delta.homeScore} - ${delta.awayScore} ${delta.away.displayName} (${delta.clock})`);
+        if (delta.isGoal) console.log(`⚽ GOAL scored by ${delta.scoringTeam}!`);
+    });
+});</code></pre>
                 </div>
             </section>
 
@@ -487,6 +578,79 @@ for lg in leagues:
                         <span>cURL</span>
                     </div>
                     <pre><code>curl -s "https://scores.mynorra.xyz/api/v1/football/standings/eng.1"</code></pre>
+                </div>
+            </section>
+
+            <!-- League Leaders -->
+            <section class="endpoint-card" id="ep-leaders">
+                <div class="endpoint-header">
+                    <span class="http-method get">GET</span>
+                    <span class="endpoint-path">/api/v1/football/leagues/:league/leaders</span>
+                </div>
+                <p class="endpoint-desc">
+                    Returns top goalscorers, assists leaders, and key statistical leaders for a competition.
+                </p>
+                <div class="code-snippet-box">
+                    <div class="code-snippet-header">
+                        <span>Top Goalscorers &bull; cURL</span>
+                        <span>Terminal</span>
+                    </div>
+                    <pre><code>curl -s "https://scores.mynorra.xyz/api/v1/football/leagues/eng.1/leaders"</code></pre>
+                </div>
+            </section>
+
+            <!-- Tournament Bracket -->
+            <section class="endpoint-card" id="ep-bracket">
+                <div class="endpoint-header">
+                    <span class="http-method get">GET</span>
+                    <span class="endpoint-path">/api/v1/football/leagues/:league/bracket</span>
+                </div>
+                <p class="endpoint-desc">
+                    Returns structured knockout tournament tree rounds (Round of 32, Round of 16, Quarter-finals, Semi-finals, Final) for cup competitions and international tournaments.
+                </p>
+                <div class="code-snippet-box">
+                    <div class="code-snippet-header">
+                        <span>Cup Bracket Rounds &bull; cURL</span>
+                        <span>Terminal</span>
+                    </div>
+                    <pre><code>curl -s "https://scores.mynorra.xyz/api/v1/football/leagues/uefa.champions/bracket"</code></pre>
+                </div>
+            </section>
+
+            <!-- Head-to-Head & Predictions Context -->
+            <section class="endpoint-card" id="ep-h2h">
+                <div class="endpoint-header">
+                    <span class="http-method get">GET</span>
+                    <span class="endpoint-path">/api/v1/football/predictions-context/:eventId</span>
+                </div>
+                <p class="endpoint-desc">
+                    Specialized Norra AI Prediction Integration Endpoint. Supplies lifetime head-to-head records, 6-game form guides, average goals scored/conceded, clean sheet rates, standings differentials, and baseline market probabilities (1X2, Double Chance 1X/12/X2, Over/Under 2.5, BTTS Yes/No).
+                </p>
+                <div class="code-snippet-box">
+                    <div class="code-snippet-header">
+                        <span>Prediction Context &bull; cURL</span>
+                        <span>Terminal</span>
+                    </div>
+                    <pre><code>curl -s "https://scores.mynorra.xyz/api/v1/football/predictions-context/700123" \
+  -H "x-api-key: YOUR_PRO_OR_MASTER_KEY"</code></pre>
+                </div>
+            </section>
+
+            <!-- Dedicated Club Hub -->
+            <section class="endpoint-card" id="ep-teams">
+                <div class="endpoint-header">
+                    <span class="http-method get">GET</span>
+                    <span class="endpoint-path">/api/v1/football/teams/:teamId</span>
+                </div>
+                <p class="endpoint-desc">
+                    Dedicated club profile hub endpoint. Returns club metadata, current squad roster, recent match form, upcoming fixtures, and season statistics.
+                </p>
+                <div class="code-snippet-box">
+                    <div class="code-snippet-header">
+                        <span>Club Profile &bull; cURL</span>
+                        <span>Terminal</span>
+                    </div>
+                    <pre><code>curl -s "https://scores.mynorra.xyz/api/v1/football/teams/359"</code></pre>
                 </div>
             </section>
 

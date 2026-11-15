@@ -217,21 +217,29 @@ const LIVESCORE_STAGE_TABLE_MAP = {
     'kvx.1': 'https://prod-public-api.livescore.com/v1/api/app/stage/soccer/kosovo/superliga/1'
 };
 
+const proxyManager = require('./proxyManager');
+
 function fetchJson(url) {
     return new Promise((resolve, reject) => {
-        const req = https.get(url, {
+        const proxy = proxyManager.hasProxies() ? proxyManager.getNextProxy() : null;
+        const options = {
             headers: {
                 'User-Agent': 'NorraScores/2.1',
                 'Accept-Encoding': 'gzip, deflate'
             }
-        }, (res) => {
+        };
+
+        const req = https.get(url, options, (res) => {
             if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
+                if (proxy) proxyManager.recordSuccess(proxy);
                 return fetchJson(res.headers.location).then(resolve).catch(reject);
             }
             if (res.statusCode !== 200) {
+                if (proxy) proxyManager.recordFailure(proxy);
                 return reject(new Error(`HTTP ${res.statusCode} fetching ${url}`));
             }
 
+            if (proxy) proxyManager.recordSuccess(proxy);
             const encoding = res.headers['content-encoding'];
             let stream = res;
             if (encoding === 'gzip') {
@@ -249,10 +257,17 @@ function fetchJson(url) {
                     reject(e);
                 }
             });
-            stream.on('error', reject);
+            stream.on('error', (err) => {
+                if (proxy) proxyManager.recordFailure(proxy);
+                reject(err);
+            });
         });
-        req.on('error', reject);
+        req.on('error', (err) => {
+            if (proxy) proxyManager.recordFailure(proxy);
+            reject(err);
+        });
         req.setTimeout(14000, () => {
+            if (proxy) proxyManager.recordFailure(proxy);
             req.destroy(new Error(`Timeout fetching ${url}`));
         });
     });

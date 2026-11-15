@@ -1091,7 +1091,11 @@ router.get('/live/stream', optionalApiKeyAuth, async (req, res) => {
             matches: initial
         });
 
-        const previousStateMap = new Map(initial.map(m => [m.id, `${m.home?.score ?? 0}-${m.away?.score ?? 0}-${m.status?.clock}`]));
+        const previousStateMap = new Map(initial.map(m => [m.id, {
+            scoreSig: `${m.home?.score ?? 0}-${m.away?.score ?? 0}-${m.status?.clock}`,
+            homeScore: Number(m.home?.score ?? 0),
+            awayScore: Number(m.away?.score ?? 0)
+        }]));
 
         streamTimer = setInterval(async () => {
             if (!isAlive) {
@@ -1104,11 +1108,56 @@ router.get('/live/stream', optionalApiKeyAuth, async (req, res) => {
                 const updates = [];
 
                 for (const m of currentLive) {
-                    const sig = `${m.home?.score ?? 0}-${m.away?.score ?? 0}-${m.status?.clock}`;
+                    const curHomeScore = Number(m.home?.score ?? 0);
+                    const curAwayScore = Number(m.away?.score ?? 0);
+                    const curClock = m.status?.clock || m.status?.detail || (m.status?.type?.detail) || '';
+                    const curState = m.status?.state || (m.status?.type?.state) || 'in';
+                    const sig = `${curHomeScore}-${curAwayScore}-${curClock}`;
+
                     const prev = previousStateMap.get(m.id);
-                    if (prev !== sig) {
-                        updates.push(m);
-                        previousStateMap.set(m.id, sig);
+                    if (!prev || prev.scoreSig !== sig) {
+                        const prevH = prev ? prev.homeScore : curHomeScore;
+                        const prevA = prev ? prev.awayScore : curAwayScore;
+                        const isGoal = (curHomeScore > prevH) || (curAwayScore > prevA);
+                        const scoringTeam = (curHomeScore > prevH)
+                            ? (m.home?.displayName || m.home?.name || 'Home')
+                            : (curAwayScore > prevA ? (m.away?.displayName || m.away?.name || 'Away') : null);
+
+                        const delta = {
+                            id: m.id,
+                            eventId: m.id,
+                            homeScore: curHomeScore,
+                            awayScore: curAwayScore,
+                            clock: curClock,
+                            state: curState,
+                            status: {
+                                clock: curClock,
+                                detail: curClock,
+                                displayClock: curClock,
+                                state: curState,
+                                type: m.status?.type || { state: curState, detail: curClock }
+                            },
+                            home: {
+                                score: curHomeScore,
+                                displayName: m.home?.displayName || m.home?.name || 'Home',
+                                logo: m.home?.logo || ''
+                            },
+                            away: {
+                                score: curAwayScore,
+                                displayName: m.away?.displayName || m.away?.name || 'Away',
+                                logo: m.away?.logo || ''
+                            },
+                            isGoal,
+                            scoringTeam,
+                            timestamp: Date.now()
+                        };
+
+                        updates.push(delta);
+                        previousStateMap.set(m.id, {
+                            scoreSig: sig,
+                            homeScore: curHomeScore,
+                            awayScore: curAwayScore
+                        });
                     }
                 }
 
@@ -1116,6 +1165,7 @@ router.get('/live/stream', optionalApiKeyAuth, async (req, res) => {
                     sendEvent('score_update', {
                         timestamp: new Date().toISOString(),
                         updatesCount: updates.length,
+                        deltas: updates,
                         updates
                     });
                 } else {
@@ -2484,7 +2534,19 @@ router.get('/predictions-context/:eventId', optionalApiKeyAuth, async (req, res)
                 drawProb: drawPct,
                 awayWinProb: awayWinPct,
                 expectedGoals: avgGoalsCombined,
-                bttsRecommendation: (homeAnalytics.goalsScoredAvg > 1 && awayAnalytics.goalsScoredAvg > 0.9) ? 'Yes' : 'No'
+                bttsRecommendation: ((homeAnalytics.goalsScoredAvg > 0.95 && awayAnalytics.goalsScoredAvg > 0.85) || (totalLifetimeMeetings > 0 && (bttsCount / totalLifetimeMeetings) >= 0.5)) ? 'Yes' : 'No',
+                bttsProbability: Math.min(88, Math.max(22, Math.round(((homeAnalytics.goalsScoredAvg > 0.95 ? 30 : 15) + (awayAnalytics.goalsScoredAvg > 0.85 ? 30 : 15) + ((totalLifetimeMeetings > 0 ? (bttsCount / totalLifetimeMeetings) * 35 : 20)))))),
+                over25Probability: Math.min(85, Math.max(18, Math.round(avgGoalsCombined * 24))),
+                under25Probability: 100 - Math.min(85, Math.max(18, Math.round(avgGoalsCombined * 24))),
+                doubleChance: {
+                    '1X': Number((homeWinPct + drawPct).toFixed(1)),
+                    '12': Number((homeWinPct + awayWinPct).toFixed(1)),
+                    'X2': Number((drawPct + awayWinPct).toFixed(1))
+                },
+                firstTeamToScore: (homeWinPct >= awayWinPct + 12)
+                    ? (match.home?.display_name || match.home?.name || 'Home')
+                    : ((awayWinPct >= homeWinPct + 12) ? (match.away?.display_name || match.away?.name || 'Away') : 'Balanced'),
+                confidenceRating: Math.max(homeWinPct, awayWinPct) > 55 ? 'High' : (Math.max(homeWinPct, awayWinPct) > 42 ? 'Moderate' : 'Balanced')
             }
         });
     } catch (err) {

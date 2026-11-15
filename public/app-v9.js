@@ -1909,11 +1909,31 @@
             target.scrollIntoView({ behavior: 'smooth', block: 'start' });
         }
 
-        await loadLiveMatches();
+        // Instant Live Filter: sub-second instant render from memory cache or loaded fixtures
+        let instantLive = (state.liveMatchesCache && state.liveMatchesCache.length)
+            ? state.liveMatchesCache
+            : null;
+
+        if (!instantLive && Array.isArray(state.fixtures) && state.fixtures.length) {
+            const inPlay = state.fixtures.filter(m => {
+                const s = m.status?.state || m.status?.type?.state;
+                return s === 'in' || Boolean(m.status?.isLive);
+            });
+            if (inPlay.length > 0) instantLive = inPlay;
+        }
+
+        if (instantLive && instantLive.length > 0) {
+            // Instant 0ms render from memory cache without showing a blank loading spinner
+            loadLiveMatches({ background: true, initialLive: instantLive });
+            // Silently revalidate live scores in the background
+            loadLiveMatches({ background: true });
+        } else {
+            await loadLiveMatches({ background: false });
+        }
     }
 
     async function loadLiveMatches({ background = false, initialLive = null } = {}) {
-        if (!background) {
+        if (!background && !initialLive) {
             setLoading('fixtures', true);
             if (elements['fixtures-list']) elements['fixtures-list'].replaceChildren();
         }
@@ -1928,6 +1948,7 @@
             // Deduplicate live matches globally across all feeds / providers
             const dedupedLive = deduplicateMatchesList(liveMatches);
             state.liveMatchCount = dedupedLive.length;
+            state.liveMatchesCache = dedupedLive;
 
             const badge = document.getElementById('live-count-badge');
             if (badge) {
@@ -4142,10 +4163,10 @@
                                 <div style="width:${totalLifetimeMeetings > 0 ? ((calculatedDraws || 0) / totalLifetimeMeetings) * 100 : 0}%; background:#9ca3af;"></div>
                                 <div style="width:${totalLifetimeMeetings > 0 ? ((calculatedAwayWins || 0) / totalLifetimeMeetings) * 100 : 0}%; background:#3b82f6;"></div>
                             </div>
-                            <div style="display:flex; justify-content:space-around; margin-top:10px; padding-top:8px; border-top:1px dashed var(--border-subtle); font-size:11.5px; color:var(--text-muted);">
+                            <div style="display:flex; justify-content:space-around; margin-top:10px; padding-top:8px; border-top:1px dashed var(--border-subtle); font-size:11.5px; color:var(--text-muted); flex-wrap:wrap; gap:8px;">
                                 <span>Avg Goals: <strong style="color:var(--text-main);">${h2h.averageGoalsPerMatch || '—'}</strong></span>
-                                <span>BTTS: <strong style="color:var(--text-main);">${h2h.bttsPercentage || 0}%</strong></span>
-                                <span>Over 2.5: <strong style="color:var(--text-main);">${h2h.over25Percentage || 0}%</strong></span>
+                                <span>Both Teams Score (BTTS): <strong style="color:var(--text-main);">${h2h.bttsPercentage || 0}%</strong></span>
+                                <span>Over 2.5 Goals: <strong style="color:var(--text-main);">${h2h.over25Percentage || 0}%</strong></span>
                             </div>
                         </div>
 
@@ -4262,13 +4283,15 @@
 
                 <div id="drawer-tab-predictions" class="drawer-tab-content" ${activeTab === 'predictions' ? '' : 'hidden'}>
                     <div class="prediction-card">
-                        <div style="display:flex; justify-content:space-between; align-items:center;">
+                        <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">
                             <h4 style="margin:0; font-size:14px; color:var(--text-main);">🔮 Norra AI Outcome Probability</h4>
-                            <span style="font-size:11px; background:var(--color-primary-subtle); color:var(--color-primary); padding:3px 8px; border-radius:4px; font-weight:700;">LIVE MODEL</span>
+                            <span style="font-size:11px; background:var(--color-primary-subtle); color:var(--color-primary); padding:3px 8px; border-radius:4px; font-weight:700;">${escapeHtml(predHints.confidenceRating || 'LIVE MODEL')}</span>
                         </div>
-                        <p style="color:var(--text-muted); font-size:12px; margin:6px 0 16px;">Inferred from historical H2H meetings, recent 6-game form, and standings differential.</p>
+                        <p style="color:var(--text-muted); font-size:12px; margin:6px 0 16px;">Calculated from historical encounters, team form averages, goals differential, and standings context.</p>
 
-                        <div class="prediction-probs-grid">
+                        <!-- Market 1: Match Winner 1X2 Probabilities -->
+                        <div style="font-size:11.5px; font-weight:700; text-transform:uppercase; color:var(--text-muted); margin-bottom:8px; letter-spacing:0.5px;">Match Winner (1X2 Probabilities)</div>
+                        <div class="prediction-probs-grid" style="margin-bottom:14px;">
                             <div class="prob-box">
                                 <div class="prob-pct">${predHints.homeWinProb ?? 50}%</div>
                                 <div class="prob-label">${escapeHtml(home.team?.displayName || 'Home')} Win</div>
@@ -4283,20 +4306,46 @@
                             </div>
                         </div>
 
-                        <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-top:14px; font-size:12px;">
+                        <!-- Market 2: Double Chance (1X, 12, X2) -->
+                        <div style="font-size:11.5px; font-weight:700; text-transform:uppercase; color:var(--text-muted); margin-bottom:8px; letter-spacing:0.5px;">Double Chance Probabilities</div>
+                        <div style="display:grid; grid-template-columns:repeat(3, 1fr); gap:8px; margin-bottom:14px; font-size:12px;">
+                            <div style="background:var(--bg-canvas); border:1px solid var(--border-subtle); border-radius:6px; padding:8px 10px; text-align:center;">
+                                <div style="font-size:11px; color:var(--text-muted);">1X (Home / Draw)</div>
+                                <strong style="font-size:14.5px; color:var(--text-main);">${predHints.doubleChance?.['1X'] ?? (Number(predHints.homeWinProb || 50) + Number(predHints.drawProb || 26)).toFixed(1)}%</strong>
+                            </div>
+                            <div style="background:var(--bg-canvas); border:1px solid var(--border-subtle); border-radius:6px; padding:8px 10px; text-align:center;">
+                                <div style="font-size:11px; color:var(--text-muted);">12 (Any Team Win)</div>
+                                <strong style="font-size:14.5px; color:var(--text-main);">${predHints.doubleChance?.['12'] ?? (Number(predHints.homeWinProb || 50) + Number(predHints.awayWinProb || 24)).toFixed(1)}%</strong>
+                            </div>
+                            <div style="background:var(--bg-canvas); border:1px solid var(--border-subtle); border-radius:6px; padding:8px 10px; text-align:center;">
+                                <div style="font-size:11px; color:var(--text-muted);">X2 (Draw / Away)</div>
+                                <strong style="font-size:14.5px; color:var(--text-main);">${predHints.doubleChance?.['X2'] ?? (Number(predHints.drawProb || 26) + Number(predHints.awayWinProb || 24)).toFixed(1)}%</strong>
+                            </div>
+                        </div>
+
+                        <!-- Market 3: Goals & Both Teams To Score (BTTS) -->
+                        <div style="font-size:11.5px; font-weight:700; text-transform:uppercase; color:var(--text-muted); margin-bottom:8px; letter-spacing:0.5px;">Goals &amp; Scoring Markets</div>
+                        <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(180px, 1fr)); gap:10px; margin-bottom:14px; font-size:12px;">
                             <div style="background:var(--bg-canvas); padding:10px 14px; border-radius:6px; border:1px solid var(--border-subtle);">
-                                <span style="color:var(--text-muted); display:block;">Expected Total Goals</span>
-                                <strong style="font-size:16px; color:var(--text-main);">${predHints.expectedGoals ?? 2.5}</strong>
+                                <span style="color:var(--text-muted); display:block; font-size:11px; margin-bottom:2px;">Total Match Goals</span>
+                                <strong style="font-size:15px; color:var(--text-main);">${(predHints.over25Probability ?? 52) >= 50 ? 'Over 2.5 Goals' : 'Under 2.5 Goals'}</strong>
+                                <div style="font-size:11px; color:var(--text-muted); margin-top:2px;">Over: ${predHints.over25Probability ?? 52}% &bull; Exp: ${predHints.expectedGoals ?? 2.5}</div>
                             </div>
                             <div style="background:var(--bg-canvas); padding:10px 14px; border-radius:6px; border:1px solid var(--border-subtle);">
-                                <span style="color:var(--text-muted); display:block;">Both Teams To Score (BTTS)</span>
-                                <strong style="font-size:16px; color:${predHints.bttsRecommendation === 'Yes' ? '#10b981' : 'var(--text-main)'};">${predHints.bttsRecommendation ?? 'Likely'}</strong>
+                                <span style="color:var(--text-muted); display:block; font-size:11px; margin-bottom:2px;">Both Teams To Score (BTTS)</span>
+                                <strong style="font-size:15px; color:${predHints.bttsRecommendation === 'Yes' ? '#10b981' : '#f59e0b'};">${predHints.bttsRecommendation === 'Yes' ? 'Yes (Both Score)' : 'No (Clean Sheet Risk)'}</strong>
+                                <div style="font-size:11px; color:var(--text-muted); margin-top:2px;">Likelihood: ${predHints.bttsProbability ?? (predHints.bttsRecommendation === 'Yes' ? 64 : 38)}%</div>
+                            </div>
+                            <div style="background:var(--bg-canvas); padding:10px 14px; border-radius:6px; border:1px solid var(--border-subtle);">
+                                <span style="color:var(--text-muted); display:block; font-size:11px; margin-bottom:2px;">First Team to Score</span>
+                                <strong style="font-size:15px; color:var(--text-main);">${escapeHtml(predHints.firstTeamToScore || 'Balanced Odds')}</strong>
+                                <div style="font-size:11px; color:var(--text-muted); margin-top:2px;">Based on early opening tempo</div>
                             </div>
                         </div>
 
                         <div style="text-align:center; margin-top:20px;">
                             <a href="https://mynorra.xyz" target="_blank" rel="noopener" class="btn-primary" style="display:inline-block; padding:10px 20px; text-decoration:none; border-radius:8px; font-weight:700; font-size:13px;">
-                                🔮 Deep-Dive Predictions on Norra AI &rarr;
+                                🔮 Deep-Dive Predictions &amp; Bet Slips on Norra AI &rarr;
                             </a>
                             <p style="font-size:11px; color:var(--text-faint); margin:8px 0 0;">Decoupled sync powered by the Norra AI Master API key.</p>
                         </div>
@@ -5381,10 +5430,16 @@
                     const data = JSON.parse(e.data);
                     const matches = data.matches || [];
                     state.liveMatchCount = matches.length;
+                    state.liveMatchesCache = matches;
                     const fsBadge = document.getElementById('fs-status-live-badge');
                     if (fsBadge) {
                         fsBadge.textContent = matches.length;
                         fsBadge.style.display = matches.length > 0 ? 'inline-block' : 'none';
+                    }
+                    const headerLiveCount = document.getElementById('header-live-count');
+                    if (headerLiveCount) {
+                        headerLiveCount.textContent = matches.length;
+                        headerLiveCount.style.display = matches.length > 0 ? 'inline-block' : 'none';
                     }
                 } catch {}
             });
@@ -5392,8 +5447,9 @@
             source.addEventListener('score_update', (e) => {
                 try {
                     const data = JSON.parse(e.data);
-                    if (data.updates && data.updates.length) {
-                        for (const update of data.updates) {
+                    const updates = data.deltas || data.updates || [];
+                    if (updates && updates.length) {
+                        for (const update of updates) {
                             applyRealtimeMatchUpdate(update);
                         }
                     }
@@ -5403,51 +5459,95 @@
             source.onerror = () => {
                 // EventSource standard auto-reconnects
             };
+
+            // Mobile battery and data saver: pause stream when tab is backgrounded
+            if (!state.visibilityListenerAttached) {
+                state.visibilityListenerAttached = true;
+                document.addEventListener('visibilitychange', () => {
+                    if (document.hidden) {
+                        // User left the tab or locked screen: close SSE to save mobile battery & data
+                        if (state.liveEventSource) {
+                            state.liveEventSource.close();
+                            state.liveEventSource = null;
+                        }
+                    } else {
+                        // User returned to active tab: reconnect SSE stream and revalidate live scores
+                        initLiveEventStream();
+                        if (state.currentStatus === 'live' || state.selectedLeagueSlug === 'live') {
+                            loadLiveMatches({ background: true });
+                        }
+                    }
+                });
+            }
         } catch (err) {
             console.warn('SSE stream notice:', err.message);
         }
     }
 
     function applyRealtimeMatchUpdate(update) {
-        if (!update || !update.id) return;
-        const matchRow = document.querySelector(`.fs-match-row[data-event-id="${update.id}"]`);
+        if (!update || (!update.id && !update.eventId)) return;
+        const matchId = String(update.id || update.eventId);
+        const matchRow = document.querySelector(`.fs-match-row[data-event-id="${matchId}"]`);
+
+        const curHome = (update.homeScore !== undefined) ? update.homeScore : (update.home?.score ?? 0);
+        const curAway = (update.awayScore !== undefined) ? update.awayScore : (update.away?.score ?? 0);
+        const newHomeScore = String(curHome);
+        const newAwayScore = String(curAway);
+
+        const homeName = update.home?.displayName || update.home?.name || update.scoringTeam || 'Home';
+        const awayName = update.away?.displayName || update.away?.name || 'Away';
+        const homeLogo = update.home?.logo || '';
+
+        // Update in-memory live matches cache if present
+        if (state.liveMatchesCache && Array.isArray(state.liveMatchesCache)) {
+            const cachedMatch = state.liveMatchesCache.find(m => String(m.id || m.eventId) === matchId);
+            if (cachedMatch) {
+                if (cachedMatch.home) cachedMatch.home.score = curHome;
+                if (cachedMatch.away) cachedMatch.away.score = curAway;
+                if (cachedMatch.status) {
+                    cachedMatch.status.clock = update.clock || cachedMatch.status.clock;
+                    cachedMatch.status.detail = update.clock || cachedMatch.status.detail;
+                }
+            }
+        }
+
         if (matchRow) {
             const scoreDigits = matchRow.querySelectorAll('.fs-score-digit');
             const prevHomeScore = scoreDigits[0] ? scoreDigits[0].textContent.trim() : null;
             const prevAwayScore = scoreDigits[1] ? scoreDigits[1].textContent.trim() : null;
-            const newHomeScore = String(update.home?.score ?? 0);
-            const newAwayScore = String(update.away?.score ?? 0);
 
             if (scoreDigits[0]) scoreDigits[0].textContent = newHomeScore;
             if (scoreDigits[1]) scoreDigits[1].textContent = newAwayScore;
 
             const clockEl = matchRow.querySelector('.fs-status-live');
             if (clockEl) {
-                const newClock = formatMatchClock(update.status, update.status?.type);
+                const newClock = update.clock || formatMatchClock(update.status, update.status?.type);
                 // Never allow generic 'Live' text to override an existing concrete match clock!
                 if (isConcreteClock(newClock) || !isConcreteClock(clockEl.textContent)) {
                     clockEl.textContent = newClock;
                 }
             }
 
-            if (prevHomeScore !== null && (newHomeScore > prevHomeScore || newAwayScore > prevAwayScore)) {
+            const goalDetected = update.isGoal || (prevHomeScore !== null && (Number(newHomeScore) > Number(prevHomeScore) || Number(newAwayScore) > Number(prevAwayScore)));
+
+            if (goalDetected) {
                 playGoalSound();
                 matchRow.classList.add('goal-scored-highlight');
                 setTimeout(() => matchRow.classList.remove('goal-scored-highlight'), 4000);
-                const toastText = `⚽ GOAL! ${update.home?.displayName || 'Home'} ${newHomeScore} - ${newAwayScore} ${update.away?.displayName || 'Away'}`;
+                const toastText = `⚽ GOAL! ${homeName} ${newHomeScore} - ${newAwayScore} ${awayName}`;
                 showToast(toastText);
-                sendBrowserNotification(toastText, `${update.status?.displayClock || 'Live'} on NorraScore`, update.home?.logo || '/assets/icons/icon-192.png');
+                sendBrowserNotification(toastText, `${update.clock || update.status?.displayClock || 'Live'} on NorraScore`, homeLogo || '/assets/icons/icon-192.png');
             }
         }
 
-        if (state.currentEventId === update.id && elements['dialog-content']) {
+        if (state.currentEventId === matchId && elements['dialog-content']) {
             const scoreDigits = elements['dialog-content'].querySelector('.score-digits');
             if (scoreDigits) {
-                scoreDigits.textContent = `${update.home?.score ?? 0} - ${update.away?.score ?? 0}`;
+                scoreDigits.textContent = `${newHomeScore} - ${newAwayScore}`;
             }
             const minutePill = elements['dialog-content'].querySelector('.minute-pill');
             if (minutePill) {
-                const newClock = formatMatchClock(update.status, update.status?.type);
+                const newClock = update.clock || formatMatchClock(update.status, update.status?.type);
                 if (isConcreteClock(newClock) || !isConcreteClock(minutePill.textContent)) {
                     minutePill.textContent = newClock;
                 }
@@ -5591,21 +5691,25 @@
 
         if (!dialog) return;
 
-        if (downloadBtn) {
-            downloadBtn.addEventListener('click', () => {
-                if (state.siteSettings?.siteName && appName) {
-                    appName.textContent = state.siteSettings.siteName;
-                }
-                if (state.siteSettings?.logoUrl && appLogo) {
-                    appLogo.src = state.siteSettings.logoUrl;
-                }
-                if (typeof dialog.showModal === 'function') {
-                    dialog.showModal();
-                } else {
-                    dialog.setAttribute('open', '');
-                }
-            });
-        }
+        const openDownloadModal = (e) => {
+            if (e) e.preventDefault();
+            if (state.siteSettings?.siteName && appName) {
+                appName.textContent = state.siteSettings.siteName;
+            }
+            if (state.siteSettings?.logoUrl && appLogo) {
+                appLogo.src = state.siteSettings.logoUrl;
+            }
+            if (typeof dialog.showModal === 'function') {
+                dialog.showModal();
+            } else {
+                dialog.setAttribute('open', '');
+            }
+        };
+
+        if (downloadBtn) downloadBtn.addEventListener('click', openDownloadModal);
+        const footerDownloadLink = document.getElementById('footer-link-download');
+        if (footerDownloadLink) footerDownloadLink.addEventListener('click', openDownloadModal);
+        document.querySelectorAll('.open-download-app-btn').forEach(btn => btn.addEventListener('click', openDownloadModal));
 
         if (closeBtn) {
             closeBtn.addEventListener('click', () => {

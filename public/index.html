@@ -484,6 +484,62 @@
             </div>
         </section>
 
+        <!-- FAQ Section: Plans, Limits & Platform Intelligence -->
+        <section class="faq-section shell" id="faq-section" aria-label="Frequently Asked Questions" style="margin: 40px auto 20px;">
+            <div style="text-align: center; margin-bottom: 24px;">
+                <span class="pricing-badge" style="display: inline-block; padding: 4px 12px; border-radius: 20px; font-size: 11px; font-weight: 700; text-transform: uppercase; background: var(--color-primary-subtle); color: var(--color-primary); letter-spacing: 0.5px;">Platform Intelligence</span>
+                <h2 style="font-size: 22px; font-weight: 800; color: var(--text-main); margin: 8px 0 6px;">Frequently Asked Questions</h2>
+                <p style="font-size: 13.5px; color: var(--text-muted); max-width: 620px; margin: 0 auto;">Everything you need to know about API rate limits, Norra AI prediction sync, booking code conversions, and real-time live telemetry.</p>
+            </div>
+
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 16px;">
+                <div style="background: var(--bg-surface); border: 1px solid var(--border-subtle); border-radius: 10px; padding: 18px;">
+                    <h3 style="font-size: 14.5px; font-weight: 700; color: var(--text-main); margin: 0 0 8px;">What are the API rate limits and quotas for each tier?</h3>
+                    <p style="font-size: 13px; color: var(--text-muted); line-height: 1.6; margin: 0;">
+                        <strong>Free Developer:</strong> 120 req/min (100 req/hr sandbox) for testing across top free leagues (Premier League, La Liga, NPFL).<br>
+                        <strong>Starter ($10/mo):</strong> 500 req/min (1,000 req/hr) across all 100+ world competitions with Universal Booking Code conversions.<br>
+                        <strong>Pro ($29/mo):</strong> 1,500 req/min (10,000 req/hr) with lifetime H2H statistics, Norra AI prediction context, and live webhooks.<br>
+                        <strong>Enterprise ($79-$99/mo):</strong> 5,000 req/min (high throughput) with ML dataset streaming, custom match centers, and 99.9% SLA.
+                    </p>
+                </div>
+
+                <div style="background: var(--bg-surface); border: 1px solid var(--border-subtle); border-radius: 10px; padding: 18px;">
+                    <h3 style="font-size: 14.5px; font-weight: 700; color: var(--text-main); margin: 0 0 8px;">How does Norra AI ingest live scores, H2H, and match predictions?</h3>
+                    <p style="font-size: 13px; color: var(--text-muted); line-height: 1.6; margin: 0;">
+                        Through high-speed endpoints (<code>/api/v1/football/predictions-context/:eventId</code> and <code>/api/v1/football/training-data</code>) powered by the Norra Master Admin key. The engine ingests lifetime H2H records, 6-game team form guides, goal averages, clean sheet rates, and in-play shots/possession telemetry to formulate optimal predictions and betting markets.
+                    </p>
+                </div>
+
+                <div style="background: var(--bg-surface); border: 1px solid var(--border-subtle); border-radius: 10px; padding: 18px;">
+                    <h3 style="font-size: 14.5px; font-weight: 700; color: var(--text-main); margin: 0 0 8px;">How does the Universal Bet Booking Code Converter work?</h3>
+                    <p style="font-size: 13px; color: var(--text-muted); line-height: 1.6; margin: 0;">
+                        Our converter matches events, markets, and selections across both African and international bookmakers including SportyBet, Bet9ja, Bet365, 1xBet, Betway, MSport, BetKing, Stake.com, Betfair, DraftKings, and FanDuel. Paste a code from one provider and get a matched slip on another instantly.
+                    </p>
+                </div>
+
+                <div style="background: var(--bg-surface); border: 1px solid var(--border-subtle); border-radius: 10px; padding: 18px;">
+                    <h3 style="font-size: 14.5px; font-weight: 700; color: var(--text-main); margin: 0 0 8px;">How do real-time goal alerts and the mobile battery saver work?</h3>
+                    <p style="font-size: 13px; color: var(--text-muted); line-height: 1.6; margin: 0;">
+                        Our Server-Sent Events (SSE) Delta Stream sends ultra-compact score, clock, and event deltas (~120 bytes per match), saving up to 95% mobile data. Goal chimes and push notifications fire instantly, while background tabs automatically pause connections to conserve battery life.
+                    </p>
+                </div>
+
+                <div style="background: var(--bg-surface); border: 1px solid var(--border-subtle); border-radius: 10px; padding: 18px;">
+                    <h3 style="font-size: 14.5px; font-weight: 700; color: var(--text-main); margin: 0 0 8px;">Can I install NorraScore as an app on my phone or desktop?</h3>
+                    <p style="font-size: 13px; color: var(--text-muted); line-height: 1.6; margin: 0;">
+                        Yes! NorraScore is an official Progressive Web App (PWA). Click the <a href="javascript:void(0)" class="open-download-app-btn" style="color:var(--color-primary); font-weight:700;">📲 App</a> button in the navigation bar or footer to install directly to your home screen with zero app store delays, offline cache, and instant load times.
+                    </p>
+                </div>
+
+                <div style="background: var(--bg-surface); border: 1px solid var(--border-subtle); border-radius: 10px; padding: 18px;">
+                    <h3 style="font-size: 14.5px; font-weight: 700; color: var(--text-main); margin: 0 0 8px;">What betting market options are provided in the match overview?</h3>
+                    <p style="font-size: 13px; color: var(--text-muted); line-height: 1.6; margin: 0;">
+                        In place of raw GG/NG shorthand, we provide modern, standardized betting markets: Match Winner 1X2 Probabilities (Home, Draw, Away), Double Chance (1X, 12, X2), Over/Under 2.5 Total Match Goals, Both Teams To Score (BTTS) Yes/No probability, and First Team to Score.
+                    </p>
+                </div>
+            </div>
+        </section>
+
         <!-- SEO Knowledge Base & Competition Directory (Permanently Expanded Clean Section) -->
         <section class="seo-crawler-details seo-knowledge-section shell" id="seo-knowledge-section">
             <div class="seo-knowledge-inner">
@@ -649,6 +705,7 @@
                         <li><a href="/" id="footer-link-standings">League Standings</a></li>
                         <li><a href="/pricing">API Pricing Plans</a></li>
                         <li><a href="/account">Booking Converter</a></li>
+                        <li><a href="javascript:void(0)" id="footer-link-download" class="open-download-app-btn">📲 Download Mobile App</a></li>
                     </ul>
                 </div>
 
