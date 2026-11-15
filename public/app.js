@@ -227,7 +227,13 @@
     }
 
     function formatDate(value, options = {}) {
-        const date = new Date(value);
+        if (!value) return 'Time unavailable';
+        let val = value;
+        if (typeof val === 'string' && /^\d{8}$/.test(val.trim())) {
+            const s = val.trim();
+            val = `${s.slice(0, 4)}-${s.slice(4, 6)}-${s.slice(6, 8)}`;
+        }
+        const date = new Date(val);
         if (Number.isNaN(date.getTime())) return 'Time unavailable';
         return new Intl.DateTimeFormat('en-US', {
             timeZone: currentTimezone,
@@ -356,6 +362,7 @@
         }
 
         if (state.selectedLeagueSlug === 'all') {
+            inFlightAllFixturesPromise = null;
             loadAllLeagueFixtures();
         } else if (state.league) {
             loadFixtures();
@@ -737,7 +744,15 @@
     }
 
     function cleanTeamNameForDedup(name) {
-        return (name || '')
+        if (!name) return '';
+        const raw = String(name).trim();
+        const originalAlphanumeric = raw
+            .normalize('NFD')
+            .replace(/[\u0300-\u036f]/g, '')
+            .toLowerCase()
+            .replace(/[^a-z0-9]/g, '');
+
+        let s = (name || '')
             .normalize('NFD')
             .replace(/[\u0300-\u036f]/g, '')
             .toLowerCase()
@@ -757,6 +772,18 @@
             .replace(/\b(u-?23|u-?21|u-?20|u-?19|u-?18|u-?17|u-?16|u-?15|youth|reserves?|development)\b/gi, ' ')
             .replace(/\b(ii|iii|iv)\b/gi, ' ')
             .replace(/\s+[bB]$/g, ' ')
+            .replace(/\b(rc\s+)?deportivo\s+(la\s+)?coru[nñ]a(\s+abanca)?\b/gi, 'deportivo')
+            .replace(/\bdeportivo\s+abanca\b/gi, 'deportivo')
+            .replace(/\bmadrid\s+c\.?f\.?f?\.?\b/gi, 'madridcff')
+            .replace(/\bdux\s+logro[nñ]o\b|\blogro[nñ]o\s+femenino\b/gi, 'logrono')
+            .replace(/\bsport\s+boys(\s+association)?\b/gi, 'sportboys')
+            .replace(/\bcomerciantes\s+unidos\b/gi, 'comerciantesunidos')
+            .replace(/\buniversitario(\s+de\s+deportes)?\b/gi, 'universitario')
+            .replace(/\bparis\s+13(\s+atletico)?\b/gi, 'paris13')
+            .replace(/\bred\s+star(\s+fc)?\b/gi, 'redstar')
+            .replace(/\baf\s+vire\b|\bvire\b/gi, 'vire')
+            .replace(/\b(us\s+)?saint[- ]omer\b/gi, 'saintomer')
+            .replace(/\bstade\s+lavallois\b|\blaval\b/gi, 'laval')
             .replace(/\bsantos\s+laguna\b/g, 'santos')
             .replace(/\batl[^\s]*tico\b/gi, 'atletico')
             .replace(/\binternazionale\b|\binter\s+milan\b|\binter\b/g, 'inter')
@@ -801,6 +828,11 @@
             .replace(/\b(club|clube|csd|deportivo|fc|cf|sc|ac|cd|sd|ceif|afc|fk|sk|sv|ssc|as|rc|ud|rb|calcio|sad|sa|sport|gfc|bk|cf|fco|vf|us|cs|ca|ogc|sco|sm|tfc|hac|so|es|sd|ad|ce|asptt|uc)\b/gi, ' ')
             .replace(/\b(de\s+)?(junin|resistencia|cordoba|la\s+plata|valledupar|guatemala|sur-yon|de-grand-lieu|grandlieu)\b/gi, '')
             .replace(/[^a-z0-9]/g, '');
+
+        if (s.length < 2) {
+            s = originalAlphanumeric;
+        }
+        return s;
     }
 
     function signatureFuzzyMatch(sigA, sigB) {
@@ -1013,6 +1045,34 @@
             let matchedPairKey = null;
             if (pairBase && pairMap.has(pairBase)) {
                 matchedPairKey = pairBase;
+            } else if (pairBase) {
+                for (const [pKey, pEntry] of pairMap.entries()) {
+                    if (signatureFuzzyMatch(sig, pEntry.sig)) {
+                        matchedPairKey = pKey;
+                        break;
+                    }
+                    const mTier = getEventMatchTierClient(m);
+                    const eTier = getEventMatchTierClient(pEntry.item);
+                    if (mTier === eTier) {
+                        const { home: mH, away: mA } = competitorsFromEvent(m);
+                        const { home: eH, away: eA } = competitorsFromEvent(pEntry.item);
+                        const mHName = cleanTeamNameForDedup(mH.team?.displayName || mH.team?.name || m.home?.name || '');
+                        const mAName = cleanTeamNameForDedup(mA.team?.displayName || mA.team?.name || m.away?.name || '');
+                        const eHName = cleanTeamNameForDedup(eH.team?.displayName || eH.team?.name || pEntry.item.home?.name || '');
+                        const eAName = cleanTeamNameForDedup(eA.team?.displayName || eA.team?.name || pEntry.item.away?.name || '');
+                        if ((teamNamesFuzzyEqual(mHName, eHName) && teamNamesFuzzyEqual(mAName, eAName)) ||
+                            (teamNamesFuzzyEqual(mHName, eAName) && teamNamesFuzzyEqual(mAName, eHName))) {
+                            const mTime = m.date ? new Date(m.date).getTime() : 0;
+                            const eTime = pEntry.item.date ? new Date(pEntry.item.date).getTime() : 0;
+                            const eitherLive = (m.status?.state === 'in' || m.status?.isLive || pEntry.item.status?.state === 'in' || pEntry.item.status?.isLive);
+                            const closeInTime = (mTime && eTime) ? Math.abs(mTime - eTime) <= 36 * 3600 * 1000 : true;
+                            if (eitherLive || closeInTime) {
+                                matchedPairKey = pKey;
+                                break;
+                            }
+                        }
+                    }
+                }
             }
 
             if (matchedPairKey) {
@@ -1041,6 +1101,23 @@
             }
 
             if (!seenMap.has(sig)) {
+                let matchedSig = null;
+                for (const [sKey] of seenMap.entries()) {
+                    if (signatureFuzzyMatch(sig, sKey)) {
+                        matchedSig = sKey;
+                        break;
+                    }
+                }
+                if (matchedSig) {
+                    const existing = seenMap.get(matchedSig);
+                    const winner = score > existing.score ? m : existing.item;
+                    const secondary = score > existing.score ? existing.item : m;
+                    const merged = mergeMatches(winner, secondary);
+                    const newScore = Math.max(existing.score, score);
+                    seenMap.set(matchedSig, { item: merged, score: newScore });
+                    if (pairBase) pairMap.set(pairBase, { item: merged, score: newScore, sig: matchedSig });
+                    continue;
+                }
                 const entry = { item: m, score, sig };
                 seenMap.set(sig, entry);
                 if (pairBase) pairMap.set(pairBase, entry);
@@ -1161,6 +1238,41 @@
             slug = 'srb.lower';
             name = 'Serbian Prva Liga';
             country = 'Serbia';
+        }
+
+        // 0c. Peruvian Liga 1 correction
+        const isPeru = lowerSlug === 'per.1' || lowerName.includes('peru') || (lowerName.includes('liga 1') && (lowerName.includes('te apuesto') || allEvText.includes('peru') || allEvText.includes('comerciantes unidos') || allEvText.includes('sport boys') || allEvText.includes('universitario') || allEvText.includes('alianza lima') || allEvText.includes('sporting cristal') || allEvText.includes('melgar') || allEvText.includes('cusco') || allEvText.includes('cienciano') || allEvText.includes('vallejo') || allEvText.includes('chankas') || allEvText.includes('ad tarma') || allEvText.includes('grau')));
+        if (isPeru || ((lowerSlug === 'idn.1' || lowerSlug === 'other') && (allEvText.includes('sport boys') || allEvText.includes('comerciantes unidos') || allEvText.includes('universitario') || allEvText.includes('peru')))) {
+            slug = 'per.1';
+            name = 'Peruvian Liga 1';
+            country = 'Peru';
+        }
+
+        // 0d. Romanian SuperLiga correction
+        const isRomania = lowerSlug === 'rou.1' || (lowerName.includes('superliga') && (allEvText.includes('romania') || allEvText.includes('uta arad') || allEvText.includes('fcsb') || allEvText.includes('cluj') || allEvText.includes('craiova') || allEvText.includes('dinamo bucuresti') || allEvText.includes('rapid bucuresti') || allEvText.includes('farul') || allEvText.includes('hermannstadt') || allEvText.includes('petrolul') || allEvText.includes('botosani')));
+        if (isRomania || ((lowerSlug === 'idn.1' || lowerSlug === 'other') && (allEvText.includes('uta arad') || allEvText.includes('fcsb') || allEvText.includes('cluj') || allEvText.includes('craiova') || allEvText.includes('romania')))) {
+            slug = 'rou.1';
+            name = 'Romanian SuperLiga';
+            country = 'Romania';
+        }
+
+        // 0e. Coupe de France unification
+        if (lowerName.includes('coupe de france') || lowerSlug === 'fra.coupe_de_france' || lowerSlug.startsWith('fra.coupe') || ((lowerSlug === 'srb.1' || lowerSlug === 'fra.1' || lowerSlug === 'other') && (allEvText.includes('coupe de france') || allEvText.includes('paris 13') || allEvText.includes('red star fc') || allEvText.includes('stade lavallois') || allEvText.includes('af vire') || allEvText.includes('st-omer') || allEvText.includes('saint-omer') || allEvText.includes('bourges')))) {
+            slug = 'fra.coupe_de_france';
+            name = 'Coupe de France';
+            country = 'France';
+        }
+
+        // 0f. Bosnian leagues
+        if (lowerSlug.startsWith('bih') || allEvText.includes('bosnia') || allEvText.includes('herzegovina') || allEvText.includes('zeljeznicar') || allEvText.includes('sarajevo') || allEvText.includes('borac banja luka') || allEvText.includes('zrinjski') || allEvText.includes('velez mostar') || allEvText.includes('siroki brijeg')) {
+            country = 'Bosnia and Herzegovina';
+            if (lowerName.includes('prva liga') || lowerSlug === 'bih.2' || allEvText.includes('prva liga')) {
+                slug = 'bih.2';
+                name = 'Bosnian Prva Liga';
+            } else {
+                slug = 'bih.1';
+                name = 'Bosnian Premier League';
+            }
         }
 
         // 1. Identify domestic women's leagues and map them to their correct country and slug
@@ -2160,16 +2272,21 @@
             window.scrollTo({ top: Math.max(0, explorer.offsetTop - 70), behavior: 'smooth' });
         }
 
+        inFlightAllFixturesPromise = null;
         await loadAllLeagueFixtures();
     }
 
     let inFlightAllFixturesPromise = null;
+    let fixturesFetchSeq = 0;
     async function loadAllLeagueFixtures({ background = false, favoritesOnly = false, initialLive = null } = {}) {
-        if (inFlightAllFixturesPromise) {
+        if (background && inFlightAllFixturesPromise) {
             return inFlightAllFixturesPromise;
         }
 
+        const thisReqId = ++fixturesFetchSeq;
+
         if (!background) {
+            inFlightAllFixturesPromise = null;
             setLoading('fixtures', true);
             if (elements['fixtures-list']) elements['fixtures-list'].replaceChildren();
         }
@@ -2185,7 +2302,7 @@
 
                 const isFavorites = state.currentStatus === 'favorites' || Boolean(favoritesOnly);
                 const statusParam = isFavorites ? 'all' : (state.currentStatus || 'all');
-                let url = `/api/v1/football/fixtures?date=${encodeURIComponent(dateParam)}&limit=200`;
+                let url = `/api/v1/football/fixtures?date=${encodeURIComponent(dateParam)}&limit=600`;
                 if (statusParam && statusParam !== 'all') {
                     url += `&status=${encodeURIComponent(statusParam)}`;
                 }
@@ -2250,15 +2367,23 @@
                     return;
                 }
 
+                if (thisReqId !== fixturesFetchSeq) return;
+
                 // Deduplicate all fixtures globally across all feeds / providers
                 const dedupedMatches = deduplicateMatchesList(matches);
 
                 const groupsMap = new Map();
                 for (const m of dedupedMatches) {
                     const league = enrichLeagueMeta(m.league, m);
-                    const groupKey = (league.slug && league.slug !== 'w.other' && league.slug !== 'other' && !league.slug.endsWith('.lower'))
+                    let groupKey = (league.slug && league.slug !== 'w.other' && league.slug !== 'other' && !league.slug.endsWith('.lower'))
                         ? league.slug
                         : `league_${league.slug || 'other'}_${(league.name || 'other').toLowerCase().replace(/[^a-z0-9]/g, '_')}`;
+
+                    if (groupKey.startsWith('fra.coupe')) {
+                        groupKey = 'fra.coupe_de_france';
+                        league.name = 'Coupe de France';
+                        league.country = 'France';
+                    }
 
                     if (!groupsMap.has(groupKey)) {
                         groupsMap.set(groupKey, {
@@ -2269,6 +2394,7 @@
                     groupsMap.get(groupKey).events.push(m);
                 }
 
+                if (thisReqId !== fixturesFetchSeq) return;
                 renderAllLeaguesGrouped([...groupsMap.values()]);
             } catch (error) {
                 if (elements['fixtures-empty']) elements['fixtures-empty'].hidden = false;
@@ -3277,6 +3403,42 @@
         return event.team || null;
     }
 
+    function parseTimelineClockMinute(raw, text = '') {
+        if (raw === null || raw === undefined) raw = '';
+        const str = String(raw).trim();
+        // 1. Check for stoppage time like 45+2', 45+2, 90+4'
+        const stoppageMatch = str.match(/^(\d{1,3})\s*\+\s*(\d{1,2})/);
+        if (stoppageMatch) {
+            return parseInt(stoppageMatch[1], 10) + (parseInt(stoppageMatch[2], 10) * 0.01);
+        }
+        // 2. Check for regular minute like 45', 84
+        const minMatch = str.match(/^(\d{1,3})/);
+        if (minMatch) {
+            return parseInt(minMatch[1], 10);
+        }
+        // 3. Named milestones
+        const lower = (str + ' ' + (text || '')).toLowerCase();
+        if (lower.includes('ht') || lower.includes('half') || lower.includes('halftime')) {
+            return 45.99;
+        }
+        if (lower.includes('ft') || lower.includes('full') || lower.includes('fulltime') || lower.includes('ended')) {
+            return 999;
+        }
+        // 4. Try extracting minute from text (e.g. "Goal (48')", "Substitution 84'", "45+2' yellow card")
+        if (text) {
+            const textStoppage = String(text).match(/\b(\d{1,3})\s*\+\s*(\d{1,2})['’]?\b/);
+            if (textStoppage) {
+                return parseInt(textStoppage[1], 10) + (parseInt(textStoppage[2], 10) * 0.01);
+            }
+            const textMin = String(text).match(/\b(\d{1,3})['’]?\b/);
+            if (textMin) {
+                const m = parseInt(textMin[1], 10);
+                if (m <= 130) return m;
+            }
+        }
+        return 0;
+    }
+
     function normalizeMatchEvent(event, index, source, home, away) {
         const athlete = event.athletesInvolved?.[0] || event.athlete || null;
         const participants = (event.participants || []).map(participant =>
@@ -3305,12 +3467,22 @@
             cleanText = athleteName ? `${athleteName} · ${typeText}` : typeText;
         }
 
-        const clockDisplay = typeof event.clock === 'string'
+        let clockDisplay = typeof event.clock === 'string'
             ? event.clock
             : (event.clock?.displayValue || (event.clockValue ? `${event.clockValue}'` : ''));
-        const clockValue = typeof event.clockValue === 'number'
+        if (!clockDisplay && event.minute) {
+            clockDisplay = `${event.minute}'`;
+        }
+        if (!clockDisplay && cleanText) {
+            const m = cleanText.match(/\b(\d{1,3}(?:\+\d{1,2})?)['’]?\b/);
+            if (m && parseInt(m[1], 10) <= 130) {
+                clockDisplay = `${m[1]}'`;
+            }
+        }
+
+        const clockValue = typeof event.clockValue === 'number' && event.clockValue > 0
             ? event.clockValue
-            : (Number(event.clock?.value) || parseInt(event.clock, 10) || 0);
+            : parseTimelineClockMinute(clockDisplay, cleanText);
 
         return {
             id: event.id || `${source}-${index}`,
@@ -3491,11 +3663,10 @@
         }).join('');
 
         const timelineRows = (() => {
-            const seenTimeline = new Map();
+            const dedupedEvents = [];
             for (const event of events) {
-                const minute = parseInt(String(event.clock || event.minute || event.clockValue || '0').replace(/\D/g, ''), 10) || 0;
-                let kind = String(event.kind || event.type || '').toLowerCase();
                 const eventText = String(event.text || '').toLowerCase();
+                let kind = String(event.kind || event.type || '').toLowerCase();
                 if (event.scoringPlay || eventText.includes('goal') || kind.includes('goal')) {
                     kind = 'goal';
                     event.kind = 'goal';
@@ -3509,26 +3680,45 @@
                     kind = 'substitution';
                     event.kind = 'substitution';
                 }
+
+                const minuteNum = parseTimelineClockMinute(event.clock || event.minute || event.clockValue, event.text);
                 const side = event.team?.side || (event.team?.id && String(event.team.id) === String(home.team?.id) ? 'home' : (event.team?.id && String(event.team.id) === String(away.team?.id) ? 'away' : ''));
-                const player = (event.athlete?.displayName || event.athlete?.fullName || event.player || '').trim();
+                const player = (event.athlete?.displayName || event.athlete?.fullName || event.player || '').trim().toLowerCase();
                 const hasDetailedPlayer = Boolean(player && !/^event$/i.test(player));
 
-                // Deduplicate by minute, kind and side (suppress generic events when detailed ones exist)
-                const key = `${minute}|${kind}|${side}`;
-                if (seenTimeline.has(key)) {
-                    const existing = seenTimeline.get(key);
+                // Deduplicate: check if already in dedupedEvents
+                let matchedIndex = -1;
+                for (let i = 0; i < dedupedEvents.length; i++) {
+                    const ex = dedupedEvents[i];
+                    const exMin = parseTimelineClockMinute(ex.clock || ex.minute || ex.clockValue, ex.text);
+                    const exSide = ex.team?.side || (ex.team?.id && String(ex.team.id) === String(home.team?.id) ? 'home' : (ex.team?.id && String(ex.team.id) === String(away.team?.id) ? 'away' : ''));
+                    const exKind = ex.kind;
+                    const exPlayer = (ex.athlete?.displayName || ex.athlete?.fullName || ex.player || '').trim().toLowerCase();
+
+                    if (exKind === kind && (!side || !exSide || side === exSide)) {
+                        const closeTime = Math.abs(exMin - minuteNum) <= 1.5;
+                        const samePlayer = (player && exPlayer) ? (player.includes(exPlayer) || exPlayer.includes(player)) : true;
+                        if (closeTime && samePlayer) {
+                            matchedIndex = i;
+                            break;
+                        }
+                    }
+                }
+
+                if (matchedIndex >= 0) {
+                    const existing = dedupedEvents[matchedIndex];
                     const existingHasPlayer = Boolean((existing.athlete?.displayName || existing.player || '').trim());
                     if (!existingHasPlayer && hasDetailedPlayer) {
-                        seenTimeline.set(key, event);
+                        dedupedEvents[matchedIndex] = event;
                     }
-                    continue;
+                } else {
+                    dedupedEvents.push(event);
                 }
-                seenTimeline.set(key, event);
             }
-            const dedupedEvents = Array.from(seenTimeline.values());
+
             dedupedEvents.sort((x, y) => {
-                const ma = parseInt(String(x.clock || x.minute || x.clockValue || '0').replace(/\D/g, ''), 10) || 0;
-                const mb = parseInt(String(y.clock || y.minute || y.clockValue || '0').replace(/\D/g, ''), 10) || 0;
+                const ma = parseTimelineClockMinute(x.clock || x.minute || x.clockValue, x.text);
+                const mb = parseTimelineClockMinute(y.clock || y.minute || y.clockValue, y.text);
                 return ma - mb;
             });
             return dedupedEvents.map(event => {
@@ -3613,8 +3803,21 @@
         if (!homeAnalytics.recentMatches?.length && summary.lastFiveGames?.length) {
             const hL5 = summary.lastFiveGames.find(t => isMatchingClub(t.team, home.team)) || summary.lastFiveGames[0];
             if (hL5?.events?.length) {
-                homeAnalytics.recentMatches = hL5.events.map(ev => ({
-                    date: ev.gameDate,
+                const seenDays = new Set();
+                const validEvents = [];
+                const normHome = cleanTeamNameForDedup(home.team?.displayName || home.team?.name || '');
+                for (const ev of hL5.events) {
+                    const opp = ev.opponent?.displayName || 'Opponent';
+                    const oppNorm = cleanTeamNameForDedup(opp);
+                    if (oppNorm && (oppNorm === normHome || (normHome.length >= 5 && oppNorm.includes(normHome)))) continue;
+                    if (/\b(u-?1[5-9]|u-?2[0-3]|youth|reserves?|academy|primavera)\b/i.test(opp)) continue;
+                    const day = ev.gameDate ? String(ev.gameDate).slice(0, 10) : (ev.date ? String(ev.date).slice(0, 10) : '');
+                    if (day && seenDays.has(day)) continue;
+                    if (day) seenDays.add(day);
+                    validEvents.push(ev);
+                }
+                homeAnalytics.recentMatches = validEvents.map(ev => ({
+                    date: ev.gameDate || ev.date || '',
                     opponent: ev.opponent?.displayName || 'Opponent',
                     score: ev.score || '',
                     result: ev.gameResult || 'D',
@@ -3632,8 +3835,21 @@
         if (!awayAnalytics.recentMatches?.length && summary.lastFiveGames?.length) {
             const aL5 = summary.lastFiveGames.find(t => isMatchingClub(t.team, away.team)) || summary.lastFiveGames[1];
             if (aL5?.events?.length) {
-                awayAnalytics.recentMatches = aL5.events.map(ev => ({
-                    date: ev.gameDate,
+                const seenDays = new Set();
+                const validEvents = [];
+                const normAway = cleanTeamNameForDedup(away.team?.displayName || away.team?.name || '');
+                for (const ev of aL5.events) {
+                    const opp = ev.opponent?.displayName || 'Opponent';
+                    const oppNorm = cleanTeamNameForDedup(opp);
+                    if (oppNorm && (oppNorm === normAway || (normAway.length >= 5 && oppNorm.includes(normAway)))) continue;
+                    if (/\b(u-?1[5-9]|u-?2[0-3]|youth|reserves?|academy|primavera)\b/i.test(opp)) continue;
+                    const day = ev.gameDate ? String(ev.gameDate).slice(0, 10) : (ev.date ? String(ev.date).slice(0, 10) : '');
+                    if (day && seenDays.has(day)) continue;
+                    if (day) seenDays.add(day);
+                    validEvents.push(ev);
+                }
+                awayAnalytics.recentMatches = validEvents.map(ev => ({
+                    date: ev.gameDate || ev.date || '',
                     opponent: ev.opponent?.displayName || 'Opponent',
                     score: ev.score || '',
                     result: ev.gameResult || 'D',
@@ -3684,7 +3900,7 @@
                     const dateFormatted = m.date ? formatDate(m.date, { year: true, weekday: false }) : '';
                     return `<div style="display:flex; justify-content:space-between; align-items:center; padding:6px 10px; background:var(--bg-surface-elevated); border:1px solid var(--border-subtle); border-radius:6px; font-size:12px;">
                         <div style="display:flex; align-items:center; gap:6px; overflow:hidden;">
-                            ${dateFormatted ? `<span style="font-size:10.5px; color:var(--text-muted); min-width:44px;">${dateFormatted}</span>` : ''}
+                            ${dateFormatted && dateFormatted !== 'Time unavailable' ? `<span style="font-size:10.5px; color:var(--text-muted); min-width:68px;">${dateFormatted}</span>` : ''}
                             <span style="font-size:11px; color:var(--text-muted); font-weight:700; min-width:16px;">${venueLabel}</span>
                             <span style="font-weight:600; color:var(--text-main); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;" title="${escapeHtml(m.opponent || '')}">${escapeHtml(m.opponent || 'Opponent')}</span>
                         </div>
@@ -3838,8 +4054,8 @@
                 mid.push(fwd.pop());
             }
             while (mid.length > 5) {
-                if (def.length < 4) def.push(mid.shift());
-                else if (fwd.length < 3) fwd.unshift(mid.pop());
+                if (def.length < 5) def.push(mid.shift());
+                else if (fwd.length < 4) fwd.unshift(mid.pop());
                 else break;
             }
 
@@ -3853,11 +4069,11 @@
                     const shortName = parts.length > 1 ? parts[parts.length - 1] : name;
                     const jersey = p.jersey || p.shirtNumber || '•';
                     return `
-                        <div class="pitch-player-node" style="display:flex; flex-direction:column; align-items:center; text-align:center; max-width:68px; z-index:2;">
-                            <div style="width:28px; height:28px; border-radius:50%; background:${themeColor}; color:#ffffff; font-weight:800; font-size:12px; display:flex; align-items:center; justify-content:center; box-shadow:0 3px 6px rgba(0,0,0,0.4); border:2px solid #ffffff;">
+                        <div class="pitch-player-node" style="display:flex; flex-direction:column; align-items:center; text-align:center; min-width:0; flex:1 1 0; max-width:60px; z-index:2;">
+                            <div style="width:25px; height:25px; border-radius:50%; background:${themeColor}; color:#ffffff; font-weight:800; font-size:11px; display:flex; align-items:center; justify-content:center; box-shadow:0 3px 6px rgba(0,0,0,0.4); border:2px solid #ffffff; flex-shrink:0;">
                                 ${escapeHtml(jersey)}
                             </div>
-                            <span style="font-size:10px; font-weight:700; color:#ffffff; text-shadow:0 1px 4px rgba(0,0,0,0.9); margin-top:3px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:64px;">
+                            <span style="font-size:9.5px; font-weight:700; color:#ffffff; text-shadow:0 1px 4px rgba(0,0,0,0.9); margin-top:3px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:54px;">
                                 ${escapeHtml(shortName)}
                             </span>
                         </div>
@@ -4545,6 +4761,13 @@
                 favLink.href = res.branding.faviconUrl;
             }
 
+            // Standalone APK download link sync from admin settings
+            const apkDownloadLink = document.getElementById('apk-download-link');
+            if (apkDownloadLink && res.appSettings?.apkUrl) {
+                apkDownloadLink.href = res.appSettings.apkUrl;
+                apkDownloadLink.target = '_blank';
+            }
+
             // 3-Box Hero Bookmaker Promos Grid
             const promosContainer = document.getElementById('hero-promos-container');
             if (promosContainer) {
@@ -4712,21 +4935,29 @@
             if (p.html && String(p.html).trim()) {
                 let htmlContent = p.html;
                 if (!p.imageUrl && !/<img\b/i.test(htmlContent)) {
-                    // Prevent circular 28px overflow when label is longer than 3 characters (e.g. Norra AI)
-                    htmlContent = htmlContent.replace(/width:\s*28px;\s*height:\s*28px;\s*border-radius:\s*50%/g, 'min-width:28px;height:28px;padding:0 10px;border-radius:14px;white-space:nowrap');
+                    // Prevent circular or narrow width overflow when badge contains text
+                    htmlContent = htmlContent
+                        .replace(/width:\s*\d+px;?/gi, 'min-width:28px;width:auto;')
+                        .replace(/height:\s*\d+px;?/gi, 'height:28px;line-height:28px;')
+                        .replace(/border-radius:\s*(50%|10%|\d+px);?/gi, 'border-radius:14px;')
+                        .replace(/justify-content:\s*[^;]+;/gi, 'justify-content:center;');
+                    if (!htmlContent.includes('padding:')) {
+                        htmlContent = htmlContent.replace(/style="/i, 'style="padding:0 12px;white-space:nowrap;');
+                    }
                 }
                 return `<span class="footer-partner-item">${htmlContent}</span>`;
             }
-            const href = p.linkUrl || '#';
             if (p.imageUrl) {
+                const href = p.linkUrl || '#';
                 return `<span class="footer-partner-item"><a href="${escapeHtml(href)}" rel="${rel}" title="${title}" aria-label="${title}"${target}><img src="${escapeHtml(p.imageUrl)}" alt="${title}" width="${w}" height="${h}" style="width:${w}px;height:${h}px;object-fit:contain;" loading="lazy" decoding="async"></a></span>`;
             }
-            if (href && href !== '#') {
-                const labelText = String(p.label || 'Partner').trim();
+            const labelText = String(p.label || 'Partner').trim();
+            if (labelText) {
                 const isShort = labelText.length <= 3;
                 const pillStyle = isShort
-                    ? `display:inline-flex;align-items:center;justify-content:center;width:${w}px;height:${h}px;background:#0a1e3d;color:#fff;border-radius:50%;text-decoration:none;font:700 .78rem system-ui,sans-serif;`
-                    : `display:inline-flex;align-items:center;justify-content:center;min-width:${w}px;height:${h}px;padding:0 10px;background:#1e40af;color:#fff;border-radius:14px;text-decoration:none;font:600 .78rem system-ui,sans-serif;white-space:nowrap;`;
+                    ? `display:inline-flex;align-items:center;justify-content:center;width:${w}px;height:${h}px;line-height:${h}px;background:#0a1e3d;color:#fff;border-radius:50%;text-decoration:none;font:700 .78rem system-ui,sans-serif;`
+                    : `display:inline-flex;align-items:center;justify-content:center;min-width:${w}px;height:${h}px;line-height:${h}px;padding:0 12px;background:#1e40af;color:#fff;border-radius:14px;text-decoration:none;font:600 .78rem system-ui,sans-serif;white-space:nowrap;`;
+                const href = p.linkUrl || '#';
                 return `<span class="footer-partner-item"><a href="${escapeHtml(href)}" rel="${rel}" title="${title}" aria-label="${title}"${target} style="${pillStyle}">${escapeHtml(labelText)}</a></span>`;
             }
             return '';

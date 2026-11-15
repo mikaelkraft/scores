@@ -208,6 +208,50 @@ app.get('/privacy', (req, res) => {
     return res.sendFile(path.join(__dirname, 'public', 'privacy.html'));
 });
 
+// Standalone APK and Android App Package Download
+app.get(['/download/norrascore.apk', '/downloads/norrascore.apk', '/download/app.apk'], async (req, res) => {
+    try {
+        const SiteSetting = require('./models/siteSetting');
+        const settings = await SiteSetting.getGlobalSettings().catch(() => null);
+        const customUrl = settings?.appSettings?.apkUrl || process.env.APK_DOWNLOAD_URL;
+        if (customUrl && /^https?:\/\//i.test(customUrl)) {
+            return res.redirect(customUrl);
+        }
+
+        const apkPath = path.join(__dirname, 'public', 'download', 'norrascore.apk');
+        if (fs.existsSync(apkPath) && fs.statSync(apkPath).size > 100000) {
+            res.setHeader('Content-Type', 'application/vnd.android.package-archive');
+            res.setHeader('Content-Disposition', 'attachment; filename="norrascore.apk"');
+            return res.sendFile(apkPath);
+        }
+
+        return res.status(200).type('text/html; charset=utf-8').send(`<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Install NorraScore App</title>
+    <style>
+        body { background:#0a1226; color:#f8fafc; font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif; display:flex; align-items:center; justify-content:center; min-height:100vh; margin:0; padding:20px; box-sizing:border-box; }
+        .card { background:#111d38; border:1px solid rgba(255,255,255,0.1); border-radius:14px; padding:28px 24px; text-align:center; max-width:440px; width:100%; box-shadow:0 10px 25px rgba(0,0,0,0.5); }
+        .btn { display:inline-block; background:#2563eb; color:#fff; padding:12px 24px; border-radius:8px; text-decoration:none; font-weight:700; font-size:14px; margin-top:16px; }
+        .btn:hover { background:#1d4ed8; }
+    </style>
+</head>
+<body>
+    <div class="card">
+        <div style="font-size:36px; margin-bottom:12px;">📱</div>
+        <h3 style="margin:0 0 10px; font-size:18px;">Install Official NorraScore App</h3>
+        <p style="font-size:13px; color:#94a3b8; line-height:1.5; margin:0 0 16px;">The standalone APK package URL can be configured directly in the Admin Console. You can also install the full instant app on your phone with offline cache and sub-second live match alerts right now!</p>
+        <a class="btn" href="/?install=pwa">⚡ Launch &amp; Add to Home Screen</a>
+    </div>
+</body>
+</html>`);
+    } catch (err) {
+        return res.status(500).type('text/plain').send('Download error');
+    }
+});
+
 // OpenAPI is a bounded discovery document for API clients and answer engines.
 if (specs) {
     app.get('/openapi.json', (req, res) => {

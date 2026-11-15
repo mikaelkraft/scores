@@ -165,6 +165,10 @@ const SiteSettingSchema = new mongoose.Schema({
             ctaUrl: { type: String, default: '/pricing' },
             customHtml: { type: String, default: '' }
         }
+    },
+    appSettings: {
+        apkUrl: { type: String, default: '' },
+        pwaEnabled: { type: Boolean, default: true }
     }
 }, {
     collection: 'site_settings',

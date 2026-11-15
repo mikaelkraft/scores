@@ -353,6 +353,16 @@
                     </label>
                     <textarea id="setting-announcement" rows="2" style="margin-top: 8px;" placeholder="Global announcement message displayed to visitors..."></textarea>
                 </div>
+                <div class="admin-card" style="margin-top: 20px;">
+                    <h3 style="margin-top:0;">📲 Application &amp; Standalone APK Package</h3>
+                    <p style="color: var(--text-muted); font-size: 13px; margin-bottom: 12px;">
+                        Configure the standalone Android APK download destination. When users click &quot;Download APK&quot; or visit <code>/download/norrascore.apk</code>, they will be redirected to this link (e.g. GitHub Releases, Google Drive, APKPure, or S3 CDN).
+                    </p>
+                    <div class="form-group">
+                        <label for="setting-apk-url">Standalone APK Package Download URL</label>
+                        <input id="setting-apk-url" type="url" placeholder="https://github.com/.../releases/download/.../norrascore.apk">
+                    </div>
+                </div>
                 <div class="admin-card" style="margin-top: 20px; border: 1px dashed var(--border-subtle);">
                     <h3 style="margin-top:0;">Footer Supported &amp; Sponsored Brand Logos</h3>
                     <p style="color: var(--text-muted); font-size: 13px; margin-bottom: 12px;">

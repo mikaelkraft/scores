@@ -162,6 +162,8 @@ async function loadSettings() {
         document.getElementById('setting-announcement').value = globalSettings.announcement || '';
         const partnerTitleEl = document.getElementById('setting-partner-section-title');
         if (partnerTitleEl) partnerTitleEl.value = globalSettings.partnerSectionTitle || 'Supported & Sponsored';
+        const apkUrlEl = document.getElementById('setting-apk-url');
+        if (apkUrlEl) apkUrlEl.value = globalSettings.appSettings?.apkUrl || '';
         if (typeof renderPartnersEditor === 'function') {
             renderPartnersEditor(globalSettings.partnerAttributions || []);
         }
@@ -464,11 +466,16 @@ function addSportScoreRow() {
 }
 
 async function saveBrandingSettings() {
+    const apkUrl = document.getElementById('setting-apk-url')?.value.trim() || '';
     const payload = {
         siteTitle: document.getElementById('setting-site-title').value.trim(),
         tagline: document.getElementById('setting-tagline').value.trim(),
         announcementActive: document.getElementById('setting-announcement-active').checked,
         announcement: document.getElementById('setting-announcement').value.trim(),
+        appSettings: {
+            apkUrl,
+            pwaEnabled: true
+        },
         partnerSectionTitle: document.getElementById('setting-partner-section-title')?.value.trim() || '',
         partnerAttributions: collectPartnerAttributionsFromEditor()
     };

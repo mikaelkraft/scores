@@ -281,6 +281,134 @@ router.post('/api/account/resend-verification', async (req, res) => {
 });
 
 /**
+ * Process verified Google credential to authenticate or register user
+ */
+async function authenticateGoogleCredential(credential) {
+    if (!credential) {
+        throw new Error('Google authentication credential is required.');
+    }
+
+    const googleProfile = await googleAuthService.verifyIdToken(credential);
+    const { googleId, email, name, avatarUrl } = googleProfile;
+
+    // Check if user exists by googleId or email
+    let user = await User.findOne({
+        $or: [{ googleId }, { email }]
+    });
+
+    // Determine if user qualifies for admin role
+    const adminEmail = (config.ADMIN_EMAIL || '').toLowerCase().trim();
+    const isAdmin = (adminEmail && email === adminEmail) ||
+                    email === 'admin@mynorra.xyz' ||
+                    email.startsWith('admin@') ||
+                    (user && user.role === 'admin');
+
+    let isNewUser = false;
+    if (user) {
+        // Existing user: Link Google ID and mark email verified
+        if (!user.googleId) user.googleId = googleId;
+        user.isEmailVerified = true;
+        if (!user.avatarUrl && avatarUrl) user.avatarUrl = avatarUrl;
+        if (!user.fullName && name) user.fullName = name;
+        if (isAdmin && user.role !== 'admin') user.role = 'admin';
+        await user.save();
+    } else {
+        // New user registration via Google
+        isNewUser = true;
+        user = await User.create({
+            email,
+            fullName: name || '',
+            googleId,
+            avatarUrl,
+            authProvider: 'google',
+            isEmailVerified: true, // Google already verified this email
+            role: isAdmin ? 'admin' : 'user',
+            plan: isAdmin ? 'whitelabel' : 'free'
+        });
+
+        // Automatically issue API key
+        const keyString = ApiKey.generateKey();
+        await ApiKey.create({
+            key: keyString,
+            user: user._id,
+            name: `${user.fullName || 'Google'} ${isAdmin ? 'Admin' : 'Free'} Key`,
+            email: user.email,
+            plan: isAdmin ? 'whitelabel' : 'free',
+            rateLimitPerMinute: isAdmin ? 5000 : 120,
+            isAdFree: Boolean(isAdmin)
+        });
+    }
+
+    // Fetch user's active API key
+    const apiKey = await ApiKey.findOne({
+        $or: [{ user: user._id }, { email: user.email }],
+        active: true
+    }).lean();
+
+    const token = jwt.sign(
+        { userId: user._id, email: user.email, role: user.role, username: user.username || user.email.split('@')[0] },
+        JWT_SECRET,
+        { expiresIn: '30d' }
+    );
+
+    return {
+        user,
+        apiKey,
+        token,
+        isAdmin: user.role === 'admin',
+        redirectUrl: user.role === 'admin' ? '/admin' : '/account',
+        isNewUser
+    };
+}
+
+function renderGoogleAuthBridge(res, token, redirectUrl = '/account', isAdmin = false) {
+    res.setHeader('Content-Type', 'text/html; charset=utf-8');
+    return res.send(`<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Authenticating with Norra Scores...</title>
+    <style>
+        body { background: #0b1329; color: #f8fafc; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; display: flex; align-items: center; justify-content: center; height: 100vh; margin: 0; padding: 20px; box-sizing: border-box; }
+        .card { background: #111d38; border: 1px solid rgba(255,255,255,0.1); border-radius: 12px; padding: 32px 24px; text-align: center; max-width: 380px; width: 100%; box-shadow: 0 10px 25px rgba(0,0,0,0.5); }
+        .spinner { width: 40px; height: 40px; border: 3px solid rgba(56,189,248,0.2); border-top-color: #38bdf8; border-radius: 50%; animation: spin 0.8s linear infinite; margin: 0 auto 16px; }
+        @keyframes spin { to { transform: rotate(360deg); } }
+    </style>
+</head>
+<body>
+    <div class="card">
+        <div class="spinner"></div>
+        <h3 style="margin: 0 0 8px; font-size: 18px;">Signing you in...</h3>
+        <p style="margin: 0; font-size: 13px; color: #94a3b8;">Authenticating your Google account with Norra Scores.</p>
+    </div>
+    <script>
+        (function() {
+            var token = ${JSON.stringify(token)};
+            var redirectUrl = ${JSON.stringify(redirectUrl)};
+            var isAdmin = ${Boolean(isAdmin)};
+            try {
+                localStorage.setItem('norra_user_token', token);
+                if (isAdmin) {
+                    localStorage.setItem('norra_admin_token', token);
+                    localStorage.setItem('admin_token', token);
+                }
+            } catch(e) {}
+            if (window.opener && !window.opener.closed) {
+                try {
+                    window.opener.postMessage({ type: 'GOOGLE_AUTH_SUCCESS', token: token, redirectUrl: redirectUrl }, '*');
+                    setTimeout(function() { window.close(); }, 300);
+                    return;
+                } catch(e) {}
+            }
+            window.location.replace(redirectUrl + (redirectUrl.indexOf('?') === -1 ? '?token=' : '&token=') + encodeURIComponent(token));
+        })();
+    </script>
+</body>
+</html>`);
+}
+
+/**
  * POST /api/account/google
  * Google Sign-In & Sign-Up endpoint
  */
@@ -291,75 +419,15 @@ router.post('/api/account/google', async (req, res) => {
             return res.status(400).json({ error: 'Google authentication credential is required.' });
         }
 
-        const googleProfile = await googleAuthService.verifyIdToken(credential);
-        const { googleId, email, name, avatarUrl } = googleProfile;
-
-        // Check if user exists by googleId or email
-        let user = await User.findOne({
-            $or: [{ googleId }, { email }]
-        });
-
-        // Determine if user qualifies for admin role
-        const adminEmail = (config.ADMIN_EMAIL || '').toLowerCase().trim();
-        const isAdmin = (adminEmail && email === adminEmail) ||
-                        email === 'admin@mynorra.xyz' ||
-                        email.startsWith('admin@') ||
-                        (user && user.role === 'admin');
-
-        let isNewUser = false;
-        if (user) {
-            // Existing user: Link Google ID and mark email verified
-            if (!user.googleId) user.googleId = googleId;
-            user.isEmailVerified = true;
-            if (!user.avatarUrl && avatarUrl) user.avatarUrl = avatarUrl;
-            if (!user.fullName && name) user.fullName = name;
-            if (isAdmin && user.role !== 'admin') user.role = 'admin';
-            await user.save();
-        } else {
-            // New user registration via Google
-            isNewUser = true;
-            user = await User.create({
-                email,
-                fullName: name || '',
-                googleId,
-                avatarUrl,
-                authProvider: 'google',
-                isEmailVerified: true, // Google already verified this email
-                role: isAdmin ? 'admin' : 'user',
-                plan: isAdmin ? 'whitelabel' : 'free'
-            });
-
-            // Automatically issue API key
-            const keyString = ApiKey.generateKey();
-            await ApiKey.create({
-                key: keyString,
-                user: user._id,
-                name: `${user.fullName || 'Google'} ${isAdmin ? 'Admin' : 'Free'} Key`,
-                email: user.email,
-                plan: isAdmin ? 'whitelabel' : 'free',
-                rateLimitPerMinute: isAdmin ? 5000 : 120,
-                isAdFree: Boolean(isAdmin)
-            });
-        }
-
-        // Fetch user's active API key
-        const apiKey = await ApiKey.findOne({
-            $or: [{ user: user._id }, { email: user.email }],
-            active: true
-        }).lean();
-
-        const token = jwt.sign(
-            { userId: user._id, email: user.email, role: user.role, username: user.username || user.email.split('@')[0] },
-            JWT_SECRET,
-            { expiresIn: '30d' }
-        );
+        const authResult = await authenticateGoogleCredential(credential);
+        const { user, token, isAdmin, redirectUrl, isNewUser, apiKey } = authResult;
 
         return res.json({
             status: 'success',
             message: isNewUser ? 'Account registered successfully with Google!' : 'Welcome back!',
             token,
-            isAdmin: user.role === 'admin',
-            redirectUrl: user.role === 'admin' ? '/admin' : '/account',
+            isAdmin,
+            redirectUrl,
             user: {
                 id: user._id,
                 email: user.email,
@@ -491,15 +559,91 @@ router.get('/api/account/me', requireUser, async (req, res) => {
 });
 
 /**
- * GET /api/account/google/callback
- * Handles OAuth redirects safely back to /account
+ * GET /api/account/google/login
+ * Initiates standard Google OAuth2 authorization redirect for mobile & web clients
  */
-router.get('/api/account/google/callback', (req, res) => {
-    const { error, error_description } = req.query;
-    if (error) {
-        return res.redirect(`/account?auth_error=${encodeURIComponent(error_description || error)}`);
+router.get('/api/account/google/login', async (req, res) => {
+    try {
+        const clientId = await googleAuthService.getClientId();
+        if (!clientId) {
+            return res.redirect('/account?auth_error=Google+Sign-In+is+not+configured+yet');
+        }
+
+        const host = req.get('x-forwarded-host') || req.get('host');
+        const proto = req.get('x-forwarded-proto') || req.protocol || 'https';
+        const callbackUrl = `${proto}://${host}/api/account/google/callback`;
+
+        const googleAuthUrl = `https://accounts.google.com/o/oauth2/v2/auth?` +
+            `client_id=${encodeURIComponent(clientId)}&` +
+            `redirect_uri=${encodeURIComponent(callbackUrl)}&` +
+            `response_type=code&` +
+            `scope=${encodeURIComponent('openid email profile')}&` +
+            `access_type=online&` +
+            `prompt=select_account`;
+
+        return res.redirect(googleAuthUrl);
+    } catch (err) {
+        console.error('Google login initiation error:', err);
+        return res.redirect(`/account?auth_error=${encodeURIComponent(err.message)}`);
     }
-    return res.redirect('/account');
+});
+
+/**
+ * POST /api/account/google/callback
+ * Handles Google Identity Services redirect mode callback (form POST with credential)
+ */
+router.post('/api/account/google/callback', async (req, res) => {
+    try {
+        const credential = req.body?.credential || req.body?.id_token;
+        if (!credential) {
+            const error = req.body?.error || req.query?.error || 'No credential provided';
+            return res.redirect(`/account?auth_error=${encodeURIComponent(error)}`);
+        }
+
+        const authResult = await authenticateGoogleCredential(credential);
+        return renderGoogleAuthBridge(res, authResult.token, authResult.redirectUrl, authResult.isAdmin);
+    } catch (err) {
+        console.error('Google POST callback error:', err);
+        return res.redirect(`/account?auth_error=${encodeURIComponent(err.message)}`);
+    }
+});
+
+/**
+ * GET /api/account/google/callback
+ * Handles standard OAuth2 authorization code redirects from Google
+ */
+router.get('/api/account/google/callback', async (req, res) => {
+    try {
+        const { error, error_description, code, credential } = req.query;
+        if (error) {
+            return res.redirect(`/account?auth_error=${encodeURIComponent(error_description || error)}`);
+        }
+
+        if (credential) {
+            const authResult = await authenticateGoogleCredential(credential);
+            return renderGoogleAuthBridge(res, authResult.token, authResult.redirectUrl, authResult.isAdmin);
+        }
+
+        if (code) {
+            const host = req.get('x-forwarded-host') || req.get('host');
+            const proto = req.get('x-forwarded-proto') || req.protocol || 'https';
+            const callbackUrl = `${proto}://${host}/api/account/google/callback`;
+
+            const tokenData = await googleAuthService.exchangeCodeForTokens(code, callbackUrl);
+            const idToken = tokenData.id_token;
+            if (!idToken) {
+                throw new Error('Google did not return an id_token for authentication.');
+            }
+
+            const authResult = await authenticateGoogleCredential(idToken);
+            return renderGoogleAuthBridge(res, authResult.token, authResult.redirectUrl, authResult.isAdmin);
+        }
+
+        return res.redirect('/account');
+    } catch (err) {
+        console.error('Google GET callback error:', err);
+        return res.redirect(`/account?auth_error=${encodeURIComponent(err.message)}`);
+    }
 });
 
 /**

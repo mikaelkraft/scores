@@ -174,8 +174,26 @@ function triggerGoogleSignIn() {
         if (emailInput) emailInput.focus();
         return;
     }
+
+    // On mobile devices or browsers that restrict popups, direct standard OAuth redirect avoids white popup screens
+    const isMobile = /android|iphone|ipad|ipod|mobile/i.test(navigator.userAgent || '');
+    if (isMobile) {
+        window.location.assign('/api/account/google/login');
+        return;
+    }
+
     if (window.google && window.google.accounts && window.google.accounts.id) {
-        google.accounts.id.prompt();
+        try {
+            google.accounts.id.prompt((notification) => {
+                if (notification.isNotDisplayed() || notification.isSkippedMoment()) {
+                    window.location.assign('/api/account/google/login');
+                }
+            });
+        } catch (_) {
+            window.location.assign('/api/account/google/login');
+        }
+    } else {
+        window.location.assign('/api/account/google/login');
     }
 }
 
@@ -932,11 +950,43 @@ document.addEventListener('DOMContentLoaded', () => {
         window.applyTheme(savedTheme);
     }
 
+    // Check for token from Google OAuth redirect or external callback
+    const urlParams = new URLSearchParams(window.location.search);
+    const incomingToken = urlParams.get('token') || urlParams.get('auth_token');
+    if (incomingToken) {
+        userToken = incomingToken;
+        localStorage.setItem('norra_user_token', userToken);
+        const viewParam = urlParams.get('view');
+        const cleanUrl = window.location.pathname + (viewParam ? `?view=${viewParam}` : '');
+        window.history.replaceState({}, document.title, cleanUrl);
+    }
+
+    const authError = urlParams.get('auth_error');
+    if (authError) {
+        const errorEl = document.getElementById('auth-error');
+        if (errorEl) {
+            errorEl.textContent = 'Authentication notice: ' + decodeURIComponent(authError);
+            errorEl.style.display = 'block';
+        }
+    }
+
+    // Handle cross-window message from Google Auth popup if opened in popup mode
+    window.addEventListener('message', (event) => {
+        if (event.data && event.data.type === 'GOOGLE_AUTH_SUCCESS' && event.data.token) {
+            userToken = event.data.token;
+            localStorage.setItem('norra_user_token', userToken);
+            if (event.data.redirectUrl === '/admin') {
+                window.location.assign('/admin');
+            } else {
+                loadPortalData();
+            }
+        }
+    });
+
     // Initialize Google Auth
     initGoogleAuth();
 
     // Check email verification token in URL
-    const urlParams = new URLSearchParams(window.location.search);
     const verifyToken = urlParams.get('verify_token');
     if (verifyToken) {
         verifyEmailToken(verifyToken);

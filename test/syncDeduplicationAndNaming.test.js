@@ -1,6 +1,16 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
+const mongoose = require('mongoose');
 const { resolveLeagueSlug, enforceCountryOnSlug, isReserveOrBTeamName, normalizeTeamName, areTeamNamesMatching, getTeamCategory, getMatchTier } = require('../services/soccerSyncService');
+
+test.after(async () => {
+    try {
+        if (mongoose.connection && mongoose.connection.readyState !== 0) {
+            await mongoose.disconnect();
+        }
+    } catch (_) {}
+    process.exit(0);
+});
 
 test('resolveLeagueSlug explicitly rejects NCAA basketball and college non-soccer events', () => {
     assert.equal(resolveLeagueSlug('NCAA Men\'s Basketball', 'College Basketball', 's:40~l:41'), null);

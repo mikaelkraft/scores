@@ -64,6 +64,7 @@ router.get(['/api/v1/ads', '/api/ads/active', '/api/v1/settings/public'], option
                 bookiePromos: [],
                 bookmakerPromos: [],
                 socialLinks: settings.socialLinks || {},
+                appSettings: settings.appSettings || {},
                 partnerSectionTitle: resolvedPartnerSectionTitle,
                 partnerAttributions: resolvedPartnerAttributions
             });
@@ -110,6 +111,7 @@ router.get(['/api/v1/ads', '/api/ads/active', '/api/v1/settings/public'], option
                 isActive: p.active !== false
             })),
             socialLinks: settings.socialLinks || {},
+            appSettings: settings.appSettings || {},
             partnerSectionTitle: resolvedPartnerSectionTitle,
             partnerAttributions: resolvedPartnerAttributions
         });

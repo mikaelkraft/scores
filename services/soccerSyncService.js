@@ -580,20 +580,21 @@ async function syncLeagueFromLiveScoreStages(leagueDef, stages, now = new Date()
             const homeName = h.Nm || 'Home Club';
             const awayName = a.Nm || 'Away Club';
             // Demote mis-tagged lower-division games off top-flight boards
-            targetSlug = demoteIfNotTopFlight(targetSlug, homeName, awayName, leagueName);
+            let eventSlug = targetSlug;
+            eventSlug = demoteIfNotTopFlight(eventSlug, homeName, awayName, leagueName);
             // Fix cross-country pollution (Romanian clubs under Indonesia, Serbian under EPL, etc.)
-            targetSlug = inferCountryFromTeamNames(homeName, awayName, targetSlug);
+            eventSlug = inferCountryFromTeamNames(homeName, awayName, eventSlug);
             // Keep senior top-flight boards clean — no B/II/U21 sides mixed in
-            const seniorSlug = String(targetSlug || '').toLowerCase();
+            const seniorSlug = String(eventSlug || '').toLowerCase();
             const isSeniorTop = /\.[1]$/.test(seniorSlug) && !seniorSlug.includes('.w.') && !seniorSlug.includes('youth') && !seniorSlug.includes('u19') && !seniorSlug.includes('u21');
             if (isSeniorTop && (isReserveOrBTeamName(homeName) || isReserveOrBTeamName(awayName))) {
-                targetSlug = demoteToJuniorOrLowerTier(targetSlug, homeName, awayName, leagueName);
+                eventSlug = demoteToJuniorOrLowerTier(eventSlug, homeName, awayName, leagueName);
             }
             // Final gate: still on .1 with no known club → demote rather than drop
-            const updatedSeniorSlug = String(targetSlug || '').toLowerCase();
+            const updatedSeniorSlug = String(eventSlug || '').toLowerCase();
             const stillSeniorTop = /\.[1]$/.test(updatedSeniorSlug) && !updatedSeniorSlug.includes('.w.') && !updatedSeniorSlug.includes('youth') && !updatedSeniorSlug.includes('u19') && !updatedSeniorSlug.includes('u21');
             if (stillSeniorTop && TOP_FLIGHT_CLUBS[updatedSeniorSlug] && !hasTopFlightClub(updatedSeniorSlug, homeName, awayName)) {
-                targetSlug = demoteToJuniorOrLowerTier(targetSlug, homeName, awayName, leagueName);
+                eventSlug = demoteToJuniorOrLowerTier(eventSlug, homeName, awayName, leagueName);
             }
             const homeScore = parseInt(ev.Tr1 || 0, 10);
             const awayScore = parseInt(ev.Tr2 || 0, 10);
@@ -629,7 +630,7 @@ async function syncLeagueFromLiveScoreStages(leagueDef, stages, now = new Date()
                 awayName,
                 matchDate,
                 scoreboardDate,
-                leagueSlug: targetSlug
+                leagueSlug: eventSlug
             });
 
             if (existingMatch) {
@@ -663,18 +664,18 @@ async function syncLeagueFromLiveScoreStages(leagueDef, stages, now = new Date()
             } else {
                 matchBulkOps.push({
                     updateOne: {
-                        filter: { 'source.provider': 'livescore', 'source.event_id': eid, league_slug: targetSlug },
+                        filter: { 'source.provider': 'livescore', 'source.event_id': eid, league_slug: eventSlug },
                         update: {
                             $set: {
                                 source: {
                                     provider: 'livescore',
                                     event_id: eid,
                                     livescore_id: eid,
-                                    competition_id: String(stage.CompId || stage.Sid || targetSlug),
+                                    competition_id: String(stage.CompId || stage.Sid || eventSlug),
                                     uid: `ls:${eid}`,
                                     modified_at: now
                                 },
-                                league_slug: targetSlug,
+                                league_slug: eventSlug,
                                 scoreboard_date: scoreboardDate,
                                 date: matchDate,
                                 name: `${homeName} vs ${awayName}`,
@@ -1264,7 +1265,11 @@ const TEAM_COUNTRY_HINTS = [
     // Egypt
     [/al ahly|zamalek|pyramids|zed fc|\bzed\b|samanod|al masry|al mokawloon|enppi|ceramica cleopatra|future fc|national bank/i, 'egy'],
     // Serbia
-    [/napredak|partizan|crvena zvezda|red star|ofk bor|vojvodina|tsc backa|cukaricki|radnicki/i, 'srb'],
+    [/napredak|partizan|crvena zvezda|red star belgrade|fk crvena|ofk bor|vojvodina|tsc backa|cukaricki|radnicki/i, 'srb'],
+    // France
+    [/paris 13|red star fc|stade lavallois|\blaval\b|racing chambery|st\. omer|af vire|sedan|bourges|saint-renan|seyssinet|niort st\. florent|juventus de papus|tamponnaise|val yerres|cosne/i, 'fra'],
+    // Peru
+    [/comerciantes unidos|sport boys|universitario de deportes|alianza lima|sporting cristal|fbc melgar|\bmelgar\b|cienciano|cusco fc|cesar vallejo|adt tarma|deportivo garcilaso|cajamarca|los chankas|carlos mannucci|juan pablo|alianza atletico/i, 'per'],
     // Indonesia
     [/persija|persib|persebaya|arema|bali united|psm makassar|borneo|persita|persik|madura united/i, 'idn'],
     // Denmark
@@ -1624,7 +1629,8 @@ function resolveLeagueSlug(altGameNote = '', compDesc = '', uid = '') {
     }
 
     // --- PERU (Liga 1 Peru) ---
-    const isPeru = country.includes('peru') || text.includes('alianza lima') || text.includes('universitario de deportes') || text.includes('sporting cristal') || scd.includes('per.');
+    const isPeru = country.includes('peru') || text.includes('peru') || text.includes('peruvian') || text.includes('liga 1 peru') || text.includes('liga 1 te apuesto') || scd.includes('per.') ||
+                   /\b(comerciantes unidos|sport boys|universitario|alianza lima|sporting cristal|fbc melgar|\bmelgar\b|cienciano|cusco fc|cesar vallejo|adt tarma|deportivo garcilaso|cajamarca|chankas|carlos mannucci|juan pablo|alianza atletico)\b/i.test(text);
     if (isPeru) {
         return 'per.1';
     }
@@ -1732,7 +1738,7 @@ function resolveLeagueSlug(altGameNote = '', compDesc = '', uid = '') {
         return 'jpn.1';
     }
     if (country.includes('australia') || text.includes('aus.1') || text.includes('a-league')) return 'aus.1';
-    if (country.includes('indonesia') || text.includes('idn.1') || text.includes('liga 1')) return 'idn.1';
+    if (country.includes('indonesia') || text.includes('idn.1') || text.includes('bri liga 1') || text.includes('liga 1 indonesia') || (country.includes('indonesia') && text.includes('liga 1'))) return 'idn.1';
     if (country.includes('thailand') || text.includes('tha.1') || text.includes('thai league')) return 'tha.1';
     if (country.includes('malaysia') || text.includes('mys.1')) return 'mys.1';
     if (country.includes('singapore') || text.includes('sgp.1')) return 'sgp.1';
@@ -1793,7 +1799,14 @@ function resolveLeagueSlug(altGameNote = '', compDesc = '', uid = '') {
         if (text.includes('cup')) return 'cyp.cup';
         return 'cyp.1';
     }
-    if (country.includes('romania') || text.includes('rou.2') || text.includes('steaua') || text.includes('fcsb')) return 'rou.2';
+    // Early Coupe de France intercept to prevent mis-slotting into foreign cups/leagues
+    if (text.includes('coupe de france') || text.includes('french cup') || scd.includes('fra.coupe_de_france') || scd.includes('coupe-de-france')) {
+        return 'fra.coupe_de_france';
+    }
+    if (country.includes('romania') || text.includes('rou.1') || text.includes('rou.2') || text.includes('superliga romania') || text.includes('liga 1 romania') || text.includes('steaua') || text.includes('fcsb')) {
+        if (text.includes('liga 2') || text.includes('rou.2')) return 'rou.2';
+        return 'rou.1';
+    }
     if (country.includes('moldov') || text.includes('moldov') || text.includes('mda.1') || text.includes('zimbru') || text.includes('sireti') || text.includes('sheriff') || text.includes('petrocub') || text.includes('milsami') || text.includes('dacia buiucani') || text.includes('floresti') || text.includes('sfintul') || text.includes('cupa moldovei') || scd.includes('mda.') || scd.includes('mol.')) {
         if (text.includes('cupa') || text.includes('cup')) return 'mda.cup';
         return 'mda.1';
@@ -1801,7 +1814,7 @@ function resolveLeagueSlug(altGameNote = '', compDesc = '', uid = '') {
     if (country.includes('russia') || text.includes('rus.1') || text.includes('zenit') || text.includes('spartak')) return 'rus.1';
     if (country.includes('ukrain') || text.includes('ukr.1') || text.includes('shakhtar') || text.includes('dynamo kyiv')) return 'ukr.1';
     if (country.includes('czech') || text.includes('cze.1') || text.includes('slavia prague') || text.includes('sparta prague')) return 'cze.1';
-    if (country.includes('serbia') || text.includes('srb.') || text.includes('red star') || text.includes('partizan') || text.includes('prva liga srb')) {
+    if (country.includes('serbia') || text.includes('srb.') || text.includes('red star belgrade') || text.includes('crvena zvezda') || (text.includes('red star') && country.includes('serbia')) || text.includes('partizan') || text.includes('prva liga srb')) {
         if (text.includes('prva liga') || text.includes('srb.2') || text.includes('srb.lower')) return 'srb.lower';
         if (text.includes('kup') || text.includes('cup')) return 'srb.cup';
         return 'srb.1';

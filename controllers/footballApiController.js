@@ -171,7 +171,8 @@ const FREE_TIER_ALLOWED_LEAGUES = [
     'usa.1',            // Major League Soccer
     'ned.1',            // Dutch Eredivisie
     'por.1',            // Portuguese Primeira Liga
-    'tur.1'             // Turkish Süper Lig
+    'tur.1',            // Turkish Süper Lig
+    'nga.1'             // Nigerian Premier Football League
 ];
 
 function isFreePlanRestricted(apiKey) {
@@ -288,21 +289,19 @@ function makeFlexibleTeamRegex(rawName, isWomen = false) {
         .normalize('NFD')
         .replace(/[\u0300-\u036f]/g, '')
         .replace(/\b(18\d{2}|19\d{2}|20\d{2})\b/g, '')
-        .replace(/\b(04|05|96|98)\b/g, '');
+        .replace(/\b(04|05|96|98)\b/g, '')
+        .replace(/\b(fc|cf|sc|ac|cd|sd|afc|fk|sk|sv|ssc|as|rc|ud|rb|calcio|club|deportivo)\b/gi, ' ')
+        .replace(/\b(women|woman|ladies|femenin[oa]?|frauen|damen|vrouwen|fem|wfc)\b|\(w\)|\s+w$/gi, ' ')
+        .replace(/\s+/g, ' ')
+        .trim();
 
-    if (isFemale) {
-        cleaned = cleaned.replace(/\b(fc|cf|sc|ac|cd|afc|fk|sk|sv|ssc|as|rc|ud|rb|calcio|club)\b/gi, ' ');
-    } else {
-        cleaned = cleaned.replace(/\b(fc|cf|sc|ac|cd|afc|fk|sk|sv|ssc|as|rc|ud|rb|calcio|club|women|woman|w)\b/gi, ' ');
-    }
-    cleaned = cleaned.replace(/\s+/g, ' ').trim();
     const tokens = cleaned.split(' ').filter(t => t.length >= 3);
-    const youthSuffix = !isYouth ? '(?!\\s*(?:u-?\\d{2}|youth|academy|reserves?|primavera))' : '';
+    const youthSuffix = !isYouth ? '(?!\\s*(?:u-?\\d{2}|u-?23|u-?21|u-?19|u-?18|u-?17|youth|academy|reserves?|primavera))' : '';
     if (tokens.length >= 1) {
         const parts = tokens.slice(0, 3).map(t => t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
         return new RegExp('\\b' + parts.join('.*') + '\\b' + youthSuffix, 'i');
     }
-    if (cleaned.length >= 3) {
+    if (cleaned.length >= 2) {
         const escaped = cleaned.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
         return new RegExp('\\b' + escaped + '\\b' + youthSuffix, 'i');
     }
@@ -1210,7 +1209,7 @@ router.get('/fixtures', optionalApiKeyAuth, async (req, res) => {
     try {
         const { date, from, to, league, status = 'all', team } = req.query;
         const page = parseNumber(req.query.page, 1, 1000);
-        const limit = parseNumber(req.query.limit, 200, 500);
+        const limit = parseNumber(req.query.limit, 600, 1000);
 
         const filter = {};
 
@@ -1238,8 +1237,14 @@ router.get('/fixtures', optionalApiKeyAuth, async (req, res) => {
         } else if (date) {
             const key = parseDateParam(date);
             const yesterdayKey = parseDateParam('yesterday');
-            if (key === yesterdayKey && (status === 'finished' || status === 'all')) {
-                // Fixtures query for yesterday must only fetch completed post matches
+            const yr = parseInt(key.slice(0, 4), 10);
+            const mo = parseInt(key.slice(4, 6), 10);
+            const da = parseInt(key.slice(6, 8), 10);
+            const targetStart = new Date(Date.UTC(yr, mo - 1, da, 0, 0, 0, 0));
+            const targetEnd = new Date(Date.UTC(yr, mo - 1, da, 23, 59, 59, 999));
+            const formattedIsoKey = `${key.slice(0,4)}-${key.slice(4,6)}-${key.slice(6,8)}`;
+
+            if (key === yesterdayKey && status === 'finished') {
                 filter.$or = [
                     { scoreboard_date: yesterdayKey, 'status.state': 'post' },
                     { scoreboard_date: `${yesterdayKey.slice(0,4)}-${yesterdayKey.slice(4,6)}-${yesterdayKey.slice(6,8)}`, 'status.state': 'post' }
@@ -1247,7 +1252,8 @@ router.get('/fixtures', optionalApiKeyAuth, async (req, res) => {
             } else {
                 filter.$or = [
                     { scoreboard_date: key },
-                    { scoreboard_date: /^\d{8}$/.test(key) ? `${key.slice(0,4)}-${key.slice(4,6)}-${key.slice(6,8)}` : key }
+                    { scoreboard_date: formattedIsoKey },
+                    { date: { $gte: targetStart, $lte: targetEnd } }
                 ];
             }
         } else if (from || to) {
@@ -1568,11 +1574,11 @@ router.get('/fixtures', optionalApiKeyAuth, async (req, res) => {
             }
         }
 
-        // If today's board is empty, pull LiveScore date scoreboard + live feed (Mongo may be empty/out of sync)
-        if (isQueryingToday && seenFixturesMap.size === 0 && (status === 'all' || status === 'live' || status === 'finished' || status === 'scheduled')) {
+        // If query board is empty, pull LiveScore date scoreboard + live feed (Mongo may be empty/out of sync for this date)
+        if (seenFixturesMap.size === 0 && (status === 'all' || status === 'live' || status === 'finished' || status === 'scheduled')) {
             try {
-                const dayKey = parseDateParam('today');
-                const dayMatches = await fetchLiveScoreDayMatches(dayKey);
+                const targetDayKey = date ? parseDateParam(date) : parseDateParam('today');
+                const dayMatches = await fetchLiveScoreDayMatches(targetDayKey);
                 for (const m of dayMatches) {
                     if (status === 'live' && m.status?.state !== 'in') continue;
                     if (status === 'finished' && m.status?.state !== 'post') continue;
@@ -1586,22 +1592,24 @@ router.get('/fixtures', optionalApiKeyAuth, async (req, res) => {
                     }
                 }
             } catch (e) {
-                console.warn('Today LiveScore date fallback failed:', e.message);
+                console.warn('LiveScore date fallback failed:', e.message);
             }
-            try {
-                const freshLive = await getFormattedLiveMatches(null, false);
-                const liveList = Array.isArray(freshLive) ? freshLive : (freshLive?.matches || []);
-                for (const m of liveList) {
-                    const id = String(m.id || m.source?.event_id || '');
-                    const h = normalizeTeamName(m.home?.name || m.home?.displayName || '');
-                    const a = normalizeTeamName(m.away?.name || m.away?.displayName || '');
-                    const sig = id || `${h}_vs_${a}`;
-                    if (!seenFixturesMap.has(sig)) {
-                        seenFixturesMap.set(sig, { match: m, score: 10 });
+            if (isQueryingToday) {
+                try {
+                    const freshLive = await getFormattedLiveMatches(null, false);
+                    const liveList = Array.isArray(freshLive) ? freshLive : (freshLive?.matches || []);
+                    for (const m of liveList) {
+                        const id = String(m.id || m.source?.event_id || '');
+                        const h = normalizeTeamName(m.home?.name || m.home?.displayName || '');
+                        const a = normalizeTeamName(m.away?.name || m.away?.displayName || '');
+                        const sig = id || `${h}_vs_${a}`;
+                        if (!seenFixturesMap.has(sig)) {
+                            seenFixturesMap.set(sig, { match: m, score: 10 });
+                        }
                     }
+                } catch (e) {
+                    console.warn('Today empty-board live refresh failed:', e.message);
                 }
-            } catch (e) {
-                console.warn('Today empty-board live refresh failed:', e.message);
             }
         }
 
@@ -1659,10 +1667,11 @@ router.get('/fixtures', optionalApiKeyAuth, async (req, res) => {
                 const hName = m.home?.name || m.home?.displayName || '';
                 const aName = m.away?.name || m.away?.displayName || '';
                 let slug = m.league?.slug || m.league_slug || '';
-                // Men teams must not sit under women's league slugs
+                // Keep verified women's leagues intact (WSL, Liga F, NWSL, etc. have clubs like Arsenal, Barcelona without 'W' suffix)
+                const isVerifiedWomenLeague = /liga f|wsl|nwsl|frauen|femenil|d1 arkema|division 1 f/i.test(m.league?.name || m.note || '') || (slug && slug.includes('.w.'));
                 const womenSlug = /\.w\./i.test(slug) || /femenil|women/i.test(m.league?.name || '');
                 const womenTeams = looksWomenBlob(hName) || looksWomenBlob(aName);
-                if (womenSlug && !womenTeams) {
+                if (womenSlug && !womenTeams && !isVerifiedWomenLeague) {
                     slug = String(slug).replace(/\.w\./g, '.').replace(/\.w\./, '.');
                     if (slug.endsWith('.w')) slug = slug.slice(0, -2) + '.1';
                     if (m.league) m.league.slug = slug;
@@ -1756,11 +1765,11 @@ router.get('/fixtures', optionalApiKeyAuth, async (req, res) => {
             fixtures: dedupedMatches
         };
 
-        // Cache successful response; never park empty "today" boards for long (stale empty caused "No games today")
+        // Cache successful response; never park empty boards for long (prevents locking empty boards)
         const matchCount = responsePayload?.meta?.totalMatches ?? responsePayload?.matches?.length ?? 0;
-        const emptyToday = isQueryingToday && matchCount === 0;
+        const emptyBoard = matchCount === 0;
         fixturesResponseCache.set(cacheKey, {
-            timestamp: emptyToday ? (Date.now() - cacheTtlMs + 2000) : Date.now(),
+            timestamp: emptyBoard ? (Date.now() - cacheTtlMs + 2000) : Date.now(),
             hasLive,
             body: responsePayload
         });
@@ -2359,22 +2368,38 @@ router.get('/predictions-context/:eventId', optionalApiKeyAuth, async (req, res)
             const hL5 = espnSummary.lastFiveGames.find(g => String(g.team?.id) === homeId || isMatchClubName(g.team?.displayName || g.team?.name, hName)) || espnSummary.lastFiveGames[0];
             const aL5 = espnSummary.lastFiveGames.find(g => String(g.team?.id) === awayId || isMatchClubName(g.team?.displayName || g.team?.name, aName)) || espnSummary.lastFiveGames[1];
 
-            const dedupL5 = (evList) => {
+            const dedupL5 = (evList, targetName) => {
                 const seen = new Set();
+                const seenDays = new Set();
                 const out = [];
+                const isTargetYouth = /\b(u[-_]?\s*(?:15|16|17|18|19|20|21|23)|youth|academy|reserves?|primavera)\b/i.test(targetName);
+                const normTarget = String(targetName || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+
                 for (const ev of (evList || [])) {
-                    const key = `${String(ev.gameDate).slice(0, 10)}_${String(ev.opponent?.displayName || '').toLowerCase().replace(/[^a-z0-9]/g, '')}`;
-                    if (seen.has(key)) continue;
-                    seen.add(key);
+                    const oppName = String(ev.opponent?.displayName || ev.opponent?.name || '').trim();
+                    const normOpp = oppName.toLowerCase().replace(/[^a-z0-9]/g, '');
+                    if (!normOpp) continue;
+                    if (normTarget && (normOpp === normTarget || (normTarget.length >= 5 && normOpp.includes(normTarget)) || (normOpp.length >= 5 && normTarget.includes(normOpp)))) continue;
+
+                    const oppIsYouth = /\b(u[-_]?\s*(?:15|16|17|18|19|20|21|23)|youth|academy|reserves?|primavera)\b/i.test(oppName);
+                    if (!isTargetYouth && oppIsYouth) continue;
+
+                    const day = ev.gameDate ? String(ev.gameDate).slice(0, 10) : (ev.date ? String(ev.date).slice(0, 10) : '');
+                    const key = `${day}_${normOpp}`;
+                    if (key && seen.has(key)) continue;
+                    if (day && seenDays.has(day)) continue;
+
+                    if (key) seen.add(key);
+                    if (day) seenDays.add(day);
                     out.push(ev);
                 }
                 return out;
             };
 
             if (hL5?.events?.length) {
-                const formattedL5 = dedupL5(hL5.events).map(ev => ({
+                const formattedL5 = dedupL5(hL5.events, hName).map(ev => ({
                     id: String(ev.id),
-                    date: ev.gameDate,
+                    date: ev.gameDate || ev.date || '',
                     opponent: ev.opponent?.displayName || 'Opponent',
                     opponentLogo: ev.opponentLogo || ev.opponent?.logo || '',
                     venue: ev.atVs === '@' ? 'Away' : 'Home',
@@ -2394,9 +2419,9 @@ router.get('/predictions-context/:eventId', optionalApiKeyAuth, async (req, res)
             }
 
             if (aL5?.events?.length) {
-                const formattedL5 = dedupL5(aL5.events).map(ev => ({
+                const formattedL5 = dedupL5(aL5.events, aName).map(ev => ({
                     id: String(ev.id),
-                    date: ev.gameDate,
+                    date: ev.gameDate || ev.date || '',
                     opponent: ev.opponent?.displayName || 'Opponent',
                     opponentLogo: ev.opponentLogo || ev.opponent?.logo || '',
                     venue: ev.atVs === '@' ? 'Away' : 'Home',

@@ -3274,7 +3274,7 @@ dialog.match-dialog::backdrop {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    line-height: 0;
+    line-height: normal;
 }
 .footer-partner-item img {
     display: block;
