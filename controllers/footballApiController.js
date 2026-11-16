@@ -1204,9 +1204,43 @@ router.get('/fixtures', optionalApiKeyAuth, async (req, res) => {
     const cacheTtlMs = (isQueryingToday || isLiveFilter) ? 10000 : 120000;
 
     if (cached && (now - cached.timestamp < cacheTtlMs)) {
-        if (cached.hasLive || isLiveFilter) {
+        if (cached.hasLive || isLiveFilter || isQueryingToday) {
             res.set('Cache-Control', 'no-cache, no-store, must-revalidate');
             res.set('Pragma', 'no-cache');
+            // Dynamically overlay live in-play states so cached responses never carry stale scores or obsolete clocks
+            if (isQueryingToday && liveFeedMemoryCache.matches && liveFeedMemoryCache.matches.length > 0 && Array.isArray(cached.body?.matches)) {
+                const liveMap = new Map();
+                for (const lm of liveFeedMemoryCache.matches) {
+                    const id = String(lm.source?.event_id || lm.id || lm._id || '');
+                    if (id) liveMap.set(id, lm);
+                    const h = normalizeTeamName(lm.home?.name || lm.home?.displayName || '');
+                    const a = normalizeTeamName(lm.away?.name || lm.away?.displayName || '');
+                    if (h && a) liveMap.set(`${h}_vs_${a}`, lm);
+                }
+                for (let i = 0; i < cached.body.matches.length; i++) {
+                    const m = cached.body.matches[i];
+                    if (m.status?.completed || m.status?.state === 'post') continue;
+                    const mid = String(m.source?.event_id || m.id || m._id || '');
+                    const h = normalizeTeamName(m.home?.name || m.home?.displayName || '');
+                    const a = normalizeTeamName(m.away?.name || m.away?.displayName || '');
+                    const lm = liveMap.get(mid) || liveMap.get(`${h}_vs_${a}`);
+                    if (lm) {
+                        const existingClock = m.status?.clock || m.status?.detail;
+                        const incomingClock = lm.status?.clock || lm.status?.detail;
+                        const bestClock = isConcreteClock(incomingClock) ? incomingClock : (isConcreteClock(existingClock) ? existingClock : (incomingClock || 'Live'));
+                        m.status = {
+                            ...m.status,
+                            ...lm.status,
+                            clock: bestClock,
+                            detail: bestClock,
+                            displayClock: bestClock,
+                            shortDetail: bestClock
+                        };
+                        m.home = lm.home;
+                        m.away = lm.away;
+                    }
+                }
+            }
         } else {
             res.set('Cache-Control', 'public, max-age=30');
         }
@@ -1759,7 +1793,7 @@ router.get('/fixtures', optionalApiKeyAuth, async (req, res) => {
         try { setTimeout(() => preCacheMatchCrests(dedupedMatches), 300); } catch (_) {}
 
         const hasLive = dedupedMatches.some(m => m.status.isLive);
-        if (hasLive || status === 'live') {
+        if (hasLive || status === 'live' || isQueryingToday) {
             res.set('Cache-Control', 'no-cache, no-store, must-revalidate');
             res.set('Pragma', 'no-cache');
         } else {

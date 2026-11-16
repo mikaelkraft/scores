@@ -219,7 +219,7 @@ app.get(['/download/norrascore.apk', '/downloads/norrascore.apk', '/download/app
         }
 
         const apkPath = path.join(__dirname, 'public', 'download', 'norrascore.apk');
-        if (fs.existsSync(apkPath) && fs.statSync(apkPath).size > 100000) {
+        if (fs.existsSync(apkPath) && fs.statSync(apkPath).size > 10000) {
             res.setHeader('Content-Type', 'application/vnd.android.package-archive');
             res.setHeader('Content-Disposition', 'attachment; filename="norrascore.apk"');
             return res.sendFile(apkPath);
@@ -433,3 +433,6 @@ app.listen(PORT, '0.0.0.0', () => {
         deepSyncInterval.unref();
     }
 });
+
+module.exports = app;
+

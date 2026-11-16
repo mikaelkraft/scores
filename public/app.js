@@ -5403,8 +5403,17 @@
         if (!list || !liveMatches || !liveMatches.length) return false;
         let matchedCount = 0;
         for (const m of liveMatches) {
-            const row = list.querySelector(`.fs-match-row[data-event-id="${m.id}"]`);
+            const mid = String(m.id || '');
+            const muid = String(m.uid || '');
+            const msrc = String(m.source?.event_id || '');
+            const row = (mid ? list.querySelector(`.fs-match-row[data-event-id="${mid}"]`) : null) ||
+                        (muid ? list.querySelector(`.fs-match-row[data-event-id="${muid}"]`) : null) ||
+                        (msrc ? list.querySelector(`.fs-match-row[data-event-id="${msrc}"]`) : null);
             if (row) {
+                // Never revert a concluded match row back to in-play or scheduled!
+                if (row.querySelector('.fs-status-ft')) {
+                    continue;
+                }
                 matchedCount++;
                 const scoreDigits = row.querySelectorAll('.fs-score-digit');
                 if (scoreDigits.length >= 2) {
@@ -5419,10 +5428,19 @@
                         scoreDigits[1].classList.add('score-live');
                     }
                 }
-                const liveStatusEl = row.querySelector('.fs-status-live');
                 const clock = m.status?.clock || m.status?.detail || 'Live';
-                if (liveStatusEl && liveStatusEl.textContent !== clock) {
-                    liveStatusEl.textContent = clock;
+                const statusCol = row.querySelector('.fs-col-status');
+                if (statusCol) {
+                    const liveStatusEl = statusCol.querySelector('.fs-status-live');
+                    if (liveStatusEl) {
+                        if (liveStatusEl.textContent !== clock) {
+                            liveStatusEl.textContent = clock;
+                        }
+                    } else {
+                        // Smoothly transition scheduled match row to live in-play!
+                        row.classList.add('is-live-row');
+                        statusCol.innerHTML = `<span class="fs-status-live fs-pulse-dot">${escapeHtml(clock)}</span>`;
+                    }
                 }
             }
         }

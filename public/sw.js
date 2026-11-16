@@ -4,10 +4,11 @@
  * and passes live scores & telemetry strictly through network-first strategy.
  */
 
-const CACHE_NAME = 'norrascore-v1.1';
+const CACHE_NAME = 'norrascore-v1.0.0';
 const STATIC_ASSETS = [
     '/',
-    '/assets/styles-v9.css?v=9.27',
+    '/assets/styles.css?v=1.0.0',
+    '/assets/app.js?v=1.0.0',
     '/favicon.svg',
     '/favicon.ico',
     '/apple-touch-icon.png',
@@ -38,12 +39,14 @@ self.addEventListener('fetch', (event) => {
     const { request } = event;
     const url = new URL(request.url);
 
-    // 1. Live match data, SSE streams, accounts, and APIs: ALWAYS network-first (never serve stale match telemetry)
+    // 1. Live match data, SSE streams, accounts, downloads, and APIs: ALWAYS network-first (never serve stale match telemetry)
     if (
         request.method !== 'GET' ||
         url.pathname.startsWith('/api/') ||
         url.pathname.startsWith('/admin/') ||
         url.pathname.startsWith('/account/') ||
+        url.pathname.startsWith('/download/') ||
+        url.pathname.endsWith('.apk') ||
         url.pathname.includes('/live') ||
         request.headers.get('accept')?.includes('text/event-stream')
     ) {

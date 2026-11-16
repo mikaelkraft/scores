@@ -20,3 +20,10 @@ public/crests/*
 
 # MongoDB user creation script (contains passwords)
 create-mongodb-user.js
+
+# Android Build Artifacts
+android/bin/
+android/obj/
+android/gen/
+*.idsig
+

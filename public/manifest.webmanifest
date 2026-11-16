@@ -1,6 +1,7 @@
 {
   "name": "NorraScore - Live Football Scores & Telemetry",
   "short_name": "NorraScore",
+  "version": "1.0.0",
   "description": "Real-time football scores, telemetry, live match events, standings, lineups, and head-to-head records across 140+ global competitions.",
   "start_url": "/",
   "id": "/",
