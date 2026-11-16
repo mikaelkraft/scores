@@ -130,10 +130,13 @@ async function initGoogleAuth() {
                 if (window.google && window.google.accounts && window.google.accounts.id) {
                     clearInterval(checkGoogleReady);
                     try {
+                        const isMobileDevice = /android|iphone|ipad|ipod|mobile/i.test(navigator.userAgent || '');
                         google.accounts.id.initialize({
                             client_id: authConfig.googleClientId,
                             callback: handleGoogleCredentialResponse,
-                            auto_select: false
+                            auto_select: false,
+                            ux_mode: isMobileDevice ? 'redirect' : 'popup',
+                            login_uri: isMobileDevice ? `${window.location.origin}/api/account/google/callback` : undefined
                         });
 
                         const btnContainer = document.getElementById('google-signin-btn');

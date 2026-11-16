@@ -76,3 +76,20 @@ test('Foreign Country Fallback rejects stage names like 1st Leg, 2nd Leg, Semifi
     const leg2 = resolveLeagueSlug('Cup', '2nd Leg - Aggregate 3-1', '');
     assert.notEqual(leg2, '2nd.1');
 });
+
+test('Client and server ads & partner slot mapping preserves customHtml and targetUrl', () => {
+    const appSource = fs.readFileSync('./public/app-v9.js', 'utf8');
+    assert.match(appSource, /const customHtml = slotData\.customHtml \|\| slotData\.htmlContent;/);
+    assert.match(appSource, /const targetUrl = slotData\.targetUrl \|\| slotData\.linkUrl/);
+
+    const accountSource = fs.readFileSync('./public/account/index.html', 'utf8');
+    assert.match(accountSource, /Free Developer plans are limited to 3 free leagues \(Premier League, La Liga, NPFL\)/);
+    assert.doesNotMatch(accountSource, /top 10 world leagues/);
+});
+
+test.after(async () => {
+    try {
+        const mongoose = require('mongoose');
+        await mongoose.disconnect();
+    } catch (_) {}
+});

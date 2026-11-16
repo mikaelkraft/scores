@@ -83,3 +83,10 @@ test('keyCache evicts deleted or revoked API key immediately', () => {
     keyCache.delete(testKey);
     assert.equal(keyCache.has(testKey), false);
 });
+
+test.after(async () => {
+    try {
+        const mongoose = require('mongoose');
+        await mongoose.disconnect();
+    } catch (_) {}
+});

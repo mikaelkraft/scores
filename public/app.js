@@ -705,6 +705,9 @@
         [/ballkani|drita|prishtina|llapi|gjilani|ferizaj|dukagjini|malisheva|suhareka|trep[cç]a/i, 'kvx'],
         [/liefering|stripfing|first vienna|fac wien|floridsdorfer|lafnitz|sv horn|amstetten|bregenz|voitsberg|kapfenberg/i, 'aut.2'],
         [/zvijezda 09|potkozarje|slavija sarajevo|drina zvornik|stupcanica|celik zenica|jedinstvo bihac|buducnost banovici/i, 'bih.2'],
+        [/always ready|independiente petrolero|the strongest|bolivar|blooming|oriente petrolero|guabira|jorge wilstermann|nacional potosi|real tomayapo|real santa cruz|universitario de vinto|san antonio bulo bulo|royal pari|real oruro/i, 'bol'],
+        [/inac kobe|cerezo osaka|urawa reds|tokyo verdy|omiya ardija|albirex niigata|parceiro|elfen saitama|nojima stella|mynavi sendai|nadeshiko|vissel kobe|gamba osaka|kawasaki frontale|yokohama f.?marinos|kashima antlers|nagoya grampus|machida zelvia/i, 'jpn'],
+        [/leones negros|atletico morelia|atletico la paz|dorados de sinaloa|mineros de zacatecas|alebrijes|correcaminos|cancun fc|tapatio|venados|celaya|tepatitlan|cimarrones|tlaxcala|pumas\s*unam|tigres\s*uanl|club\s*america|chivas|guadalajara|monterrey|cruz\s*azul|santos\s*laguna|toluca|pachuca|necaxa|atlas|mazatlan|queretaro|tijuana|juarez/i, 'mex'],
     ];
 
     function clientTeamCountryConflict(slug, homeName, awayName) {
@@ -739,6 +742,7 @@
     function isReserveOrBTeam(name = '') {
         const s = String(name || '').trim();
         if (!s) return false;
+        if (/\bfortuna sittard\b/i.test(s)) return false;
         // Olympiacos B, Real Madrid II, Team Reserves, U21/U23, Primavera, Castilla
         if (/\b(u-?2[0-3]|u-?1[5-9]|youth|primavera|reserves?|development|academy)\b/i.test(s)) return true;
         if (/\s+[bB]$/.test(s) || /\s+II$/i.test(s) || /\s+2$/.test(s)) return true;
@@ -1316,7 +1320,7 @@
         } else if (lowerName.includes("nwsl") || lowerName.includes("national women's soccer league")) {
             country = 'USA';
             if (!slug || slug === 'w.other' || slug === 'other') slug = 'usa.w.1';
-        } else if (lowerName.includes("we league") || lowerName.includes("we-league") || lowerSlug === 'jpn.w.1' || ((lowerSlug.startsWith('jpn') || lowerSlug === 'w.international' || lowerSlug === 'mex.w.1') && (allEvText.includes('inac kobe') || allEvText.includes('cerezo osaka sakai') || allEvText.includes('urawa reds ladies') || allEvText.includes('tokyo verdy beleza') || allEvText.includes('elfen saitama') || allEvText.includes('we league') || allEvText.includes('we-league')))) {
+        } else if (lowerName.includes("we league") || lowerName.includes("we-league") || lowerSlug === 'jpn.w.1' || allEvText.includes('inac kobe') || allEvText.includes('cerezo osaka sakai') || allEvText.includes('urawa reds ladies') || allEvText.includes('tokyo verdy beleza') || allEvText.includes('elfen saitama') || (lowerSlug.startsWith('jpn') && (allEvText.includes('(w)') || allEvText.includes('ladies') || allEvText.includes('women')))) {
             country = 'Japan';
             slug = 'jpn.w.1';
             name = "Japan Women's WE League";
@@ -1584,7 +1588,8 @@
         }
 
         // 1k. Mexican Liga de Expansión MX
-        if (lowerSlug === 'mex.2' || lowerName.includes('expansion') || lowerName.includes('expansión') || ((lowerSlug === '2nd.1' || lowerSlug === '1st.1' || lowerSlug === 'mex.lower') && (allEvText.includes('leones negros') || allEvText.includes('morelia') || allEvText.includes('la paz') || allEvText.includes('dorados') || allEvText.includes('mineros de zacatecas') || allEvText.includes('alebrijes')))) {
+        const isBolivianMatch = lowerSlug.startsWith('bol') || allEvText.includes('always ready') || allEvText.includes('independiente petrolero') || allEvText.includes('the strongest') || allEvText.includes('oriente petrolero') || allEvText.includes('blooming') || allEvText.includes('bolivar');
+        if (!isBolivianMatch && (lowerSlug === 'mex.2' || lowerName.includes('expansion') || lowerName.includes('expansión') || ((lowerSlug === '2nd.1' || lowerSlug === '1st.1' || lowerSlug === 'mex.lower') && (allEvText.includes('leones negros') || allEvText.includes('morelia') || allEvText.includes('atletico la paz') || allEvText.includes('atlético la paz') || allEvText.includes('dorados') || allEvText.includes('mineros de zacatecas') || allEvText.includes('alebrijes'))))) {
             country = 'Mexico';
             slug = 'mex.2';
             name = 'Liga de Expansión MX';
@@ -2393,12 +2398,12 @@
                     matches = data.matches || data.fixtures || [];
                 }
 
+                if (thisReqId !== fixturesFetchSeq) return;
+
                 if (!matches.length) {
                     renderAllLeaguesGrouped([]);
                     return;
                 }
-
-                if (thisReqId !== fixturesFetchSeq) return;
 
                 // Deduplicate all fixtures globally across all feeds / providers
                 const dedupedMatches = deduplicateMatchesList(matches);
@@ -5018,14 +5023,15 @@
             return;
         }
 
-        if (slotData.customHtml && slotData.customHtml.trim()) {
-            el.innerHTML = `<span class="ad-slot-label">Sponsored Advertisement</span>` + slotData.customHtml;
+        const customHtml = slotData.customHtml || slotData.htmlContent;
+        const targetUrl = slotData.targetUrl || slotData.linkUrl || '#';
+        if (customHtml && customHtml.trim()) {
+            el.innerHTML = `<span class="ad-slot-label">Sponsored Advertisement</span>` + customHtml;
             el.hidden = false;
         } else if (slotData.imageUrl) {
-            const link = slotData.targetUrl || '#';
             el.innerHTML = `
                 <span class="ad-slot-label">Sponsored Advertisement</span>
-                <a href="${escapeHtml(link)}" target="_blank" rel="noopener noreferrer">
+                <a href="${escapeHtml(targetUrl)}" target="_blank" rel="noopener noreferrer">
                     <img src="${escapeHtml(slotData.imageUrl)}" alt="Sponsor" style="max-width:100%; height:auto; border-radius:8px;">
                 </a>
             `;

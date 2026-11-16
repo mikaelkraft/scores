@@ -448,9 +448,29 @@ router.get('/:league/fixtures', validateLeague, async(req, res) => {
 
         const filter = { league_slug: req.params.league };
         if (from || to) {
-            filter.scoreboard_date = {};
-            if (from) filter.scoreboard_date.$gte = from;
-            if (to) filter.scoreboard_date.$lte = to;
+            const fromKey = from ? String(from).replace(/[^0-9]/g, '').slice(0, 8) : null;
+            const toKey = to ? String(to).replace(/[^0-9]/g, '').slice(0, 8) : null;
+            const fromIso = fromKey && fromKey.length === 8 ? `${fromKey.slice(0, 4)}-${fromKey.slice(4, 6)}-${fromKey.slice(6, 8)}` : null;
+            const toIso = toKey && toKey.length === 8 ? `${toKey.slice(0, 4)}-${toKey.slice(4, 6)}-${toKey.slice(6, 8)}` : null;
+
+            const dateConds = [];
+            if (fromKey && toKey) {
+                dateConds.push(
+                    { scoreboard_date: { $gte: fromKey, $lte: toKey } },
+                    ...(fromIso && toIso ? [{ scoreboard_date: { $gte: fromIso, $lte: toIso } }, { date: { $gte: new Date(fromIso + 'T00:00:00.000Z'), $lte: new Date(toIso + 'T23:59:59.999Z') } }] : [])
+                );
+            } else if (fromKey) {
+                dateConds.push(
+                    { scoreboard_date: { $gte: fromKey } },
+                    ...(fromIso ? [{ scoreboard_date: { $gte: fromIso } }, { date: { $gte: new Date(fromIso + 'T00:00:00.000Z') } }] : [])
+                );
+            } else if (toKey) {
+                dateConds.push(
+                    { scoreboard_date: { $lte: toKey } },
+                    ...(toIso ? [{ scoreboard_date: { $lte: toIso } }, { date: { $lte: new Date(toIso + 'T23:59:59.999Z') } }] : [])
+                );
+            }
+            if (dateConds.length) filter.$or = dateConds;
         }
         const stateByStatus = { scheduled: 'pre', live: 'in', finished: 'post' };
         if (status !== 'all') {

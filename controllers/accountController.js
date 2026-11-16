@@ -394,14 +394,18 @@ function renderGoogleAuthBridge(res, token, redirectUrl = '/account', isAdmin = 
                     localStorage.setItem('admin_token', token);
                 }
             } catch(e) {}
+            var finalUrl = redirectUrl + (redirectUrl.indexOf('?') === -1 ? '?token=' : '&token=') + encodeURIComponent(token);
             if (window.opener && !window.opener.closed) {
                 try {
                     window.opener.postMessage({ type: 'GOOGLE_AUTH_SUCCESS', token: token, redirectUrl: redirectUrl }, '*');
-                    setTimeout(function() { window.close(); }, 300);
-                    return;
                 } catch(e) {}
+                setTimeout(function() {
+                    try { window.close(); } catch(e) {}
+                    window.location.replace(finalUrl);
+                }, 300);
+            } else {
+                window.location.replace(finalUrl);
             }
-            window.location.replace(redirectUrl + (redirectUrl.indexOf('?') === -1 ? '?token=' : '&token=') + encodeURIComponent(token));
         })();
     </script>
 </body>

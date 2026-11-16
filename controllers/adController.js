@@ -73,10 +73,16 @@ router.get(['/api/v1/ads', '/api/ads/active', '/api/v1/settings/public'], option
         const formatSlot = (slot) => {
             const raw = slot || {};
             const isEnabled = Boolean(raw.enabled || raw.isEnabled);
+            const html = raw.customHtml || raw.htmlContent || '';
+            const link = raw.targetUrl || raw.linkUrl || '#';
             return {
                 ...raw,
                 enabled: isEnabled,
-                isEnabled
+                isEnabled,
+                customHtml: html,
+                htmlContent: html,
+                targetUrl: link,
+                linkUrl: link
             };
         };
 

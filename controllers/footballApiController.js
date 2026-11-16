@@ -832,8 +832,21 @@ async function fetchLiveScoreDayMatches(dateKey) {
             if (!eid) continue;
             const h = ev.T1?.[0] || {};
             const a = ev.T2?.[0] || {};
-            const hName = h.Nm || h.Name || 'Home';
-            const aName = a.Nm || a.Name || 'Away';
+            let hName = h.Nm || h.Name || 'Home';
+            let aName = a.Nm || a.Name || 'Away';
+            let matchSlug = slug;
+
+            if (typeof inferCountryFromTeamNames === 'function') {
+                matchSlug = inferCountryFromTeamNames(hName, aName, matchSlug) || matchSlug;
+            }
+
+            const seniorSlug = String(matchSlug || '').toLowerCase();
+            const isSeniorTop = /\.[1]$/.test(seniorSlug) && !seniorSlug.includes('.w.') && !seniorSlug.includes('youth') && !seniorSlug.includes('u19') && !seniorSlug.includes('u21');
+            if (isSeniorTop && (isReserveOrBTeamName(hName) || isReserveOrBTeamName(aName))) {
+                matchSlug = demoteToJuniorOrLowerTier(matchSlug, hName, aName);
+            }
+
+            const matchLg = TARGET_LEAGUES.find(l => l.slug === matchSlug) || leagueMap.get(matchSlug) || lg || {};
             const hScore = ev.Tr1 != null && ev.Tr1 !== '' ? parseInt(ev.Tr1, 10) : null;
             const aScore = ev.Tr2 != null && ev.Tr2 !== '' ? parseInt(ev.Tr2, 10) : null;
             // Esd is often YYYYMMDDHHmmss
@@ -880,13 +893,13 @@ async function fetchLiveScoreDayMatches(dateKey) {
                 id: eid,
                 uid: `ls:${eid}`,
                 league: {
-                    slug,
-                    name: lg.name || leagueName,
-                    abbreviation: lg.abbreviation || String(leagueName).slice(0, 16),
-                    country: lg.country || country,
-                    logo: lg.logo || ''
+                    slug: matchSlug,
+                    name: matchLg.name || leagueName,
+                    abbreviation: matchLg.abbreviation || String(leagueName).slice(0, 16),
+                    country: matchSlug === 'mex.2' ? 'Mexico' : (matchLg.country || country),
+                    logo: matchLg.logo || ''
                 },
-                league_slug: slug,
+                league_slug: matchSlug,
                 scoreboard_date: key,
                 date: matchDate,
                 status: {
@@ -946,9 +959,9 @@ async function getFormattedLiveMatches(league, isFreeRestricted) {
     const now = Date.now();
     const CACHE_TTL_MS = 10000; // 10 seconds
 
-    // Stale-While-Revalidate: If we have live matches in memory, return immediately (< 5ms)
+    // Stale-While-Revalidate: If we have live matches (or empty result) cached in memory, return immediately (< 5ms)
     // and trigger background refresh if cache is older than TTL
-    if (liveFeedMemoryCache.matches.length > 0) {
+    if (liveFeedMemoryCache.timestamp > 0 && (now - liveFeedMemoryCache.timestamp < CACHE_TTL_MS || liveFeedMemoryCache.matches.length > 0)) {
         if (now - liveFeedMemoryCache.timestamp >= CACHE_TTL_MS && !liveFeedMemoryCache.inFlightPromise) {
             liveFeedMemoryCache.inFlightPromise = (async () => {
                 try {
@@ -988,7 +1001,7 @@ async function getFormattedLiveMatches(league, isFreeRestricted) {
 }
 
 // Proactive background cache warming & continuous refresh loop
-setTimeout(() => {
+const initWarmTimer = setTimeout(() => {
     fetchFreshWorldwideLiveMatches().then(m => {
         if (Array.isArray(m)) {
             liveFeedMemoryCache.matches = m;
@@ -996,8 +1009,9 @@ setTimeout(() => {
         }
     }).catch(() => {});
 }, 800);
+if (initWarmTimer && typeof initWarmTimer.unref === 'function') initWarmTimer.unref();
 
-setInterval(() => {
+const refreshLiveTimer = setInterval(() => {
     fetchFreshWorldwideLiveMatches().then(m => {
         if (Array.isArray(m)) {
             liveFeedMemoryCache.matches = m;
@@ -1005,6 +1019,7 @@ setInterval(() => {
         }
     }).catch(() => {});
 }, 12000);
+if (refreshLiveTimer && typeof refreshLiveTimer.unref === 'function') refreshLiveTimer.unref();
 
 /**
  * GET /api/v1/football/live & /api/v1/football/livescores
@@ -1710,13 +1725,22 @@ router.get('/fixtures', optionalApiKeyAuth, async (req, res) => {
                 const id = String(m.id || m.uid || m.source?.event_id || '').trim();
                 const h = normalizeTeamName(m.home?.name || m.home?.displayName || '');
                 const a = normalizeTeamName(m.away?.name || m.away?.displayName || '');
+                const rawD = m.scoreboardDate || m.scoreboard_date || (m.date ? new Date(m.date).toISOString().slice(0, 10) : '');
+                const dKey = String(rawD).replace(/[^0-9]/g, '').slice(0, 8);
+                const slug = String(m.league?.slug || m.league_slug || '');
+                const tier = getMatchTier(m.home?.name || m.home?.displayName || '', m.away?.name || m.away?.displayName || '', slug);
                 const pair = [h, a].filter(Boolean).sort().join('_vs_');
+                const pairKey = pair ? `${pair}_${dKey}_${tier}` : '';
                 if (id && seenId.has(id)) continue;
-                if (pair && seenPair.has(pair)) {
+                if (pairKey && seenPair.has(pairKey)) {
                     const existing = out.find(x => {
                         const xh = normalizeTeamName(x.home?.name || x.home?.displayName || '');
                         const xa = normalizeTeamName(x.away?.name || x.away?.displayName || '');
-                        return [xh, xa].filter(Boolean).sort().join('_vs_') === pair;
+                        const xRawD = x.scoreboardDate || x.scoreboard_date || (x.date ? new Date(x.date).toISOString().slice(0, 10) : '');
+                        const xDKey = String(xRawD).replace(/[^0-9]/g, '').slice(0, 8);
+                        const xSlug = String(x.league?.slug || x.league_slug || '');
+                        const xTier = getMatchTier(x.home?.name || x.home?.displayName || '', x.away?.name || x.away?.displayName || '', xSlug);
+                        return `${[xh, xa].filter(Boolean).sort().join('_vs_')}_${xDKey}_${xTier}` === pairKey;
                     });
                     if (existing) {
                         if ((!existing.home?.logo || /placeholder/i.test(existing.home.logo)) && m.home?.logo) existing.home.logo = m.home.logo;
@@ -1725,7 +1749,7 @@ router.get('/fixtures', optionalApiKeyAuth, async (req, res) => {
                     continue;
                 }
                 if (id) seenId.add(id);
-                if (pair) seenPair.add(pair);
+                if (pairKey) seenPair.add(pairKey);
                 out.push(m);
             }
             dedupedMatches.length = 0;
@@ -1992,8 +2016,8 @@ router.get('/predictions-context/:eventId', optionalApiKeyAuth, async (req, res)
         const aToken = extractSignificantToken(aName);
 
         // Fallback: looser name contains match when strict H2H query returned nothing
-        // Only run loose query if BOTH teams have a significant distinctive token of at least 4 characters!
-        if ((!h2hMatches || h2hMatches.length < 8) && hToken && aToken && hToken.length >= 4 && aToken.length >= 4) {
+        // Only run loose query if BOTH teams have a distinctive token and tokens are NOT identical (avoiding city-rival / intra-club collision)
+        if ((!h2hMatches || h2hMatches.length < 8) && hToken && aToken && hToken.length >= 4 && aToken.length >= 4 && hToken.toLowerCase() !== aToken.toLowerCase()) {
             try {
                 const hEsc = hToken.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
                 const aEsc = aToken.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -2005,6 +2029,7 @@ router.get('/predictions-context/:eventId', optionalApiKeyAuth, async (req, res)
                         finishedFilter,
                         excludeCurrentMatch,
                         genderFilter,
+                        { league_slug: { $not: { $regex: /youth|\.u\d+/i } } },
                         {
                             $or: [
                                 {
@@ -2024,10 +2049,13 @@ router.get('/predictions-context/:eventId', optionalApiKeyAuth, async (req, res)
                     ]
                 }).sort({ date: -1 }).limit(500).lean();
                 if (loose?.length) {
-                    // Merge loose hits into primary set (prefer richer primary, fill gaps)
+                    // Merge loose hits into primary set (drop self-play and senior vs youth of same club)
                     const seen = new Set((h2hMatches || []).map(m => String(m.source?.event_id || m._id)));
                     for (const m of loose) {
                         const id = String(m.source?.event_id || m._id);
+                        const lH = normalizeTeamName(m.home?.name || m.home?.display_name || '');
+                        const lA = normalizeTeamName(m.away?.name || m.away?.display_name || '');
+                        if (!lH || !lA || lH === lA) continue;
                         if (!seen.has(id)) { h2hMatches.push(m); seen.add(id); }
                     }
                 }
@@ -2189,6 +2217,17 @@ router.get('/predictions-context/:eventId', optionalApiKeyAuth, async (req, res)
                     const timeDiff = Math.abs(new Date(m.date).getTime() - new Date(match.date).getTime());
                     if (timeDiff < 12 * 3600 * 1000) return false;
                 }
+                const h = normalizeTeamName(m.homeTeam || '');
+                const a = normalizeTeamName(m.awayTeam || '');
+                if (!h || !a || h === a) return false; // Exclude self-play
+
+                // Exclude senior vs youth/reserves collisions of the same club
+                const rawH = String(m.homeTeam || '').toLowerCase();
+                const rawA = String(m.awayTeam || '').toLowerCase();
+                const youthRe = /\b(u[-_]?\s*(?:15|16|17|18|19|20|21|23)|youth|academy|reserves?|primavera|sub[-_]?\d+)\b/i;
+                if ((youthRe.test(rawH) && rawH.includes(a)) || (youthRe.test(rawA) && rawA.includes(h))) {
+                    return false;
+                }
                 return true;
             })
             .sort((a, b) => new Date(b.date) - new Date(a.date));
@@ -2263,6 +2302,10 @@ router.get('/predictions-context/:eventId', optionalApiKeyAuth, async (req, res)
                 const aNorm = normalizeTeamName(curA);
                 if (!hNorm || !aNorm || hNorm === aNorm) continue; // Drop corrupted self-play matches
 
+                const mIsYouth = /\b(u[-_]?\s*(?:15|16|17|18|19|20|21|23)|youth|academy|reserves?|primavera|sub[-_]?\d+)\b/i.test(`${curH} ${curA} ${m.note || ''}`) ||
+                    /youth|\.u\d+/i.test(String(m.league_slug || ''));
+                if (!isTargetYouth && mIsYouth) continue; // Exclude youth matches from senior form
+
                 const isHome = (teamId && String(m.home?.source_id) === teamId) || areTeamNamesMatching(curH, targetTeamName);
                 const isAway = (teamId && String(m.away?.source_id) === teamId) || areTeamNamesMatching(curA, targetTeamName);
                 if (!isHome && !isAway) continue;
@@ -2271,6 +2314,11 @@ router.get('/predictions-context/:eventId', optionalApiKeyAuth, async (req, res)
                 const opp = isHome ? curA : curH;
                 const oppNorm = normalizeTeamName(opp);
                 if (!oppNorm || oppNorm === normalizeTeamName(targetTeamName)) continue;
+
+                // Drop matches against own youth or reserve team
+                const rawOpp = String(opp).toLowerCase();
+                const rawTarget = String(targetTeamName).toLowerCase();
+                if ((rawOpp.includes(rawTarget) || rawTarget.includes(rawOpp)) && mIsYouth) continue;
 
                 const oppIsYouth = /\b(u[-_]?\s*(?:15|16|17|18|19|20|21|23)|youth|academy|reserves?|primavera)\b/i.test(opp) || String(m.league_slug || '').includes('youth') || String(m.league_slug || '').includes('.u');
                 if (!isTargetYouth && oppIsYouth) continue; // Exclude youth matches from senior form
