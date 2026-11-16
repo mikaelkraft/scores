@@ -240,10 +240,39 @@ function renderLeagueCards(leagues, baseUrl) {
     }
 
     const COUNTRY_CODES = {
-        'england': 'gb-eng', 'spain': 'es', 'italy': 'it', 'germany': 'de', 'france': 'fr',
-        'nigeria': 'ng', 'netherlands': 'nl', 'portugal': 'pt', 'brazil': 'br', 'argentina': 'ar',
-        'south africa': 'za', 'egypt': 'eg', 'morocco': 'ma', 'kenya': 'ke', 'ghana': 'gh',
-        'usa': 'us', 'saudi arabia': 'sa', 'turkey': 'tr', 'belgium': 'be', 'scotland': 'gb-sct'
+        england: 'gb-eng', scotland: 'gb-sct', wales: 'gb-wls', spain: 'es', italy: 'it',
+        germany: 'de', france: 'fr', netherlands: 'nl', portugal: 'pt', turkey: 'tr',
+        belgium: 'be', austria: 'at', switzerland: 'ch', denmark: 'dk', sweden: 'se',
+        norway: 'no', finland: 'fi', greece: 'gr', russia: 'ru', ukraine: 'ua',
+        poland: 'pl', czechia: 'cz', 'czech republic': 'cz', croatia: 'hr', serbia: 'rs',
+        romania: 'ro', hungary: 'hu', bulgaria: 'bg', slovakia: 'sk', slovenia: 'si',
+        ireland: 'ie', 'republic of ireland': 'ie', usa: 'us', 'united states': 'us',
+        canada: 'ca', mexico: 'mx', brazil: 'br', argentina: 'ar', colombia: 'co',
+        chile: 'cl', uruguay: 'uy', paraguay: 'py', peru: 'pe', ecuador: 'ec',
+        bolivia: 'bo', venezuela: 've', 'costa rica': 'cr', honduras: 'hn',
+        guatemala: 'gt', 'el salvador': 'sv', panama: 'pa', nicaragua: 'ni',
+        japan: 'jp', 'south korea': 'kr', 'korea republic': 'kr', china: 'cn',
+        australia: 'au', 'new zealand': 'nz', 'saudi arabia': 'sa', qatar: 'qa',
+        uae: 'ae', 'united arab emirates': 'ae', iran: 'ir', iraq: 'iq', jordan: 'jo',
+        bahrain: 'bh', kuwait: 'kw', oman: 'om', lebanon: 'lb', syria: 'sy',
+        uzbekistan: 'uz', india: 'in', indonesia: 'id', thailand: 'th', malaysia: 'my',
+        singapore: 'sg', vietnam: 'vn', philippines: 'ph', nigeria: 'ng',
+        'south africa': 'za', egypt: 'eg', morocco: 'ma', algeria: 'dz', tunisia: 'tn',
+        ghana: 'gh', kenya: 'ke', uganda: 'ug', cameroon: 'cm', senegal: 'sn',
+        tanzania: 'tz', zambia: 'zm', zimbabwe: 'zw', ethiopia: 'et', rwanda: 'rw',
+        'dr congo': 'cd', 'congo dr': 'cd', congo: 'cg', 'ivory coast': 'ci',
+        'cote d\'ivoire': 'ci', 'côte d\'ivoire': 'ci', sudan: 'sd', angola: 'ao',
+        botswana: 'bw', malawi: 'mw', mozambique: 'mz', namibia: 'na', benin: 'bj',
+        'burkina faso': 'bf', mali: 'ml', guinea: 'gn', gabon: 'ga', libya: 'ly',
+        jamaica: 'jm', 'trinidad and tobago': 'tt', haiti: 'ht', israel: 'il',
+        belarus: 'by', azerbaijan: 'az', armenia: 'am', georgia: 'ge',
+        'bosnia and herzegovina': 'ba', 'bosnia-herzegovina': 'ba', bosnia: 'ba',
+        montenegro: 'me', 'north macedonia': 'mk', macedonia: 'mk', kosovo: 'xk',
+        albania: 'al', cyprus: 'cy', malta: 'mt', kazakhstan: 'kz', moldova: 'md',
+        latvia: 'lv', lithuania: 'lt', estonia: 'ee', luxembourg: 'lu',
+        'faroe islands': 'fo', iceland: 'is', andorra: 'ad', 'san marino': 'sm',
+        gibraltar: 'gi', 'northern ireland': 'gb-nir', 'hong kong': 'hk', bangladesh: 'bd',
+        taiwan: 'tw', europe: 'eu', international: 'un', world: 'un'
     };
 
     const PRIORITY = ['England', 'Spain', 'Italy', 'Germany', 'France', 'International', 'Europe', 'Nigeria', 'South Africa', 'Saudi Arabia', 'USA', 'Brazil', 'Argentina'];
@@ -258,10 +287,13 @@ function renderLeagueCards(leagues, baseUrl) {
 
     return `<div class="country-accordion-grid">${sortedCountries.map(country => {
         const cLeagues = countryMap.get(country) || [];
-        const code = COUNTRY_CODES[country.toLowerCase()] || '';
+        const cleanName = country.toLowerCase().trim();
+        const code = COUNTRY_CODES[cleanName] || '';
+        const regionalIcons = { 'africa': '🌍', 'south america': '🌎', 'north america': '🌎', 'asia': '🌏' };
+        const regionalIcon = regionalIcons[cleanName];
         const flagHtml = code
-            ? `<img src="https://flagcdn.com/w40/${code}.png" alt="${escapeHtml(country)}" loading="lazy" style="width:20px; height:15px; object-fit:cover; border-radius:2px; flex-shrink:0;">`
-            : `<span style="font-size:16px; flex-shrink:0;">🌐</span>`;
+            ? `<img src="https://flagcdn.com/w40/${code}.png" alt="${escapeHtml(country)}" loading="lazy" style="width:20px; height:15px; object-fit:cover; border-radius:2px; flex-shrink:0;" onerror="this.onerror=null; this.outerHTML='<span style=\\'font-size:16px;\\'>🌐</span>';">`
+            : `<span style="font-size:16px; flex-shrink:0;">${regionalIcon || '🌐'}</span>`;
 
         if (cLeagues.length === 1) {
             const l = cLeagues[0];
@@ -570,7 +602,6 @@ function homeContent(context) {
 
     return `<section class="seo-directory shell" id="competitions" aria-labelledby="coverage-title">
         <div class="seo-section-heading">
-            <p class="overline">Global football competition index</p>
             <h2 id="coverage-title">Football live scores and fixtures today across world leagues</h2>
             <p>Browse live scores, fixtures, standings, and match statistics across ${escapeHtml(leagues.length)} active world competitions. Powered by the Norra AI analytics engine.</p>
         </div>
@@ -1133,9 +1164,9 @@ function pageMetadata(context) {
         title: 'Free Football Live Scores Today, Fixtures & Results',
         description: `Free live football scores today, fixtures, results and available league tables across ${context.leagues.length} verified competitions, plus an open football API.`,
         canonical: `${context.baseUrl}/`,
-        overline: 'Free live football score center and API',
-        heading: 'Free football live scores today, fixtures <em>&amp; results.</em>',
-        lede: "Follow today's football matches, live scores, schedules, results and verified league tables across England and Spain.",
+        overline: '',
+        heading: '',
+        lede: '',
         content: homeContent(context),
         pageKind: 'home',
         leagueSlug: '',

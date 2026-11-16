@@ -9,6 +9,9 @@
     <meta name="robots" content="{{SEO_ROBOTS}}">
     <meta name="theme-color" content="#0b0f19">
     <link rel="canonical" href="{{SEO_CANONICAL}}">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@600;700;800;900&family=Plus+Jakarta+Sans:wght@700;800&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="/assets/styles.css?v=1.0.0">
     <script>
         (function() {
@@ -309,7 +312,7 @@
         </section>
 
         <!-- Featured Promos Grid -->
-        <div class="hero-promos-grid" id="hero-promos-container" aria-label="Featured sports bookmakers" style="margin-top:24px;"></div>
+        <div class="hero-promos-grid" id="hero-promos-container" aria-label="Featured sports bookmakers"></div>
 
         <!-- Universal Bet Booking Code Converter Widget (hidden by default, toggled via admin settings) -->
         <section class="booking-converter-section" id="booking-converter-section" aria-label="Universal Bet Booking Code Converter" style="display:none;">
@@ -584,8 +587,10 @@
         <!-- SEO Knowledge Base & Competition Directory (Permanently Expanded Clean Section) -->
         <section class="seo-crawler-details seo-knowledge-section shell" id="seo-knowledge-section">
             <div class="seo-knowledge-inner">
-                <h1 id="page-title" class="seo-page-title" style="font-size:16px; margin:0 0 8px; color:var(--text-main);">{{SEO_HEADING}}</h1>
-                <p id="page-lede" class="seo-page-lede" style="margin:0 0 16px; color:var(--text-muted); line-height:1.6;">{{SEO_LEDE}}</p>
+                <div class="seo-page-header" id="seo-page-header">
+                    <h1 id="page-title" class="seo-page-title" style="font-size:16px; margin:0 0 8px; color:var(--text-main);">{{SEO_HEADING}}</h1>
+                    <p id="page-lede" class="seo-page-lede" style="margin:0 0 16px; color:var(--text-muted); line-height:1.6;">{{SEO_LEDE}}</p>
+                </div>
                 <div class="seo-page-body">
                     {{SEO_CONTENT}}
                 </div>
@@ -753,11 +758,11 @@
                 <div class="footer-col">
                     <h4>Top Competitions</h4>
                     <ul class="footer-col-links">
-                        <li><a href="/football/eng.1">Premier League</a></li>
-                        <li><a href="/football/esp.1">La Liga</a></li>
-                        <li><a href="/football/uefa.champions">Champions League</a></li>
-                        <li><a href="/football/ita.1">Serie A</a></li>
-                        <li><a href="/football/ger.1">Bundesliga</a></li>
+                        <li><a href="/football/eng.1"><img src="https://flagcdn.com/w40/gb-eng.png" alt="" loading="lazy" style="width:14px; height:10px; object-fit:cover; border-radius:2px; vertical-align:middle; margin-right:6px;">Premier League</a></li>
+                        <li><a href="/football/esp.1"><img src="https://flagcdn.com/w40/es.png" alt="" loading="lazy" style="width:14px; height:10px; object-fit:cover; border-radius:2px; vertical-align:middle; margin-right:6px;">La Liga</a></li>
+                        <li><a href="/football/uefa.champions"><img src="https://flagcdn.com/w40/eu.png" alt="" loading="lazy" style="width:14px; height:10px; object-fit:cover; border-radius:2px; vertical-align:middle; margin-right:6px;">Champions League</a></li>
+                        <li><a href="/football/ita.1"><img src="https://flagcdn.com/w40/it.png" alt="" loading="lazy" style="width:14px; height:10px; object-fit:cover; border-radius:2px; vertical-align:middle; margin-right:6px;">Serie A</a></li>
+                        <li><a href="/football/ger.1"><img src="https://flagcdn.com/w40/de.png" alt="" loading="lazy" style="width:14px; height:10px; object-fit:cover; border-radius:2px; vertical-align:middle; margin-right:6px;">Bundesliga</a></li>
                     </ul>
                 </div>
 

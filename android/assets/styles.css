@@ -239,12 +239,17 @@ body.theme-light .site-header {
 .brand-text {
     display: flex;
     align-items: center;
+    gap: 6px;
 }
 .brand-text strong {
-    font-size: 14.5px;
+    font-family: 'Outfit', 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
+    font-size: 16px;
     font-weight: 800;
     color: var(--text-main);
-    letter-spacing: -0.2px;
+    letter-spacing: -0.4px;
+    line-height: 1.1;
+    display: inline-flex;
+    align-items: center;
 }
 
 .nav-status {
@@ -475,8 +480,13 @@ body.theme-light .nav-link-norra:hover {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(min(100%, 280px), 1fr));
     gap: 16px;
-    margin-bottom: 30px;
+    margin-bottom: 16px;
     width: 100%;
+}
+.hero-promos-grid:empty {
+    display: none !important;
+    margin: 0 !important;
+    padding: 0 !important;
 }
 .promo-card {
     background: var(--bg-surface);
@@ -1320,11 +1330,12 @@ body.theme-light .matchday-picker-input::-webkit-calendar-picker-indicator {
 
 /* Stable minimum heights to prevent sudden viewport collapses or jumping to footer */
 .explorer,
-.data-panel,
-#league-dashboard,
-#fixtures-view,
+.data-panel {
+    min-height: 120px;
+    box-sizing: border-box;
+}
 .matches-grid {
-    min-height: 480px;
+    min-height: auto;
     box-sizing: border-box;
 }
 
@@ -1499,7 +1510,7 @@ body.theme-light .matchday-picker-input::-webkit-calendar-picker-indicator {
     display: flex;
     flex-direction: column;
     gap: 16px;
-    margin-bottom: 30px;
+    margin-bottom: 12px;
     width: 100%;
 }
 
@@ -2768,7 +2779,9 @@ dialog.match-dialog::backdrop {
         font-size: 14px;
     }
     .brand-text strong {
-        font-size: 14px;
+        font-family: 'Outfit', 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
+        font-size: 15px;
+        letter-spacing: -0.3px;
     }
     .nav-actions {
         gap: 4px;
@@ -3170,7 +3183,7 @@ dialog.match-dialog::backdrop {
 
 /* --- Universal Bet Booking Code Converter --- */
 .booking-converter-section {
-    margin: 32px auto 16px;
+    margin: 16px auto 16px;
     width: 100%;
     box-sizing: border-box;
 }
@@ -3605,3 +3618,11 @@ dialog.match-dialog::backdrop {
     line-height: 0;
     color: transparent;
 }
+
+/* SEO Knowledge Section Home Header Suppression */
+body[data-page-kind="home"] #seo-page-header,
+body[data-page-kind="home"] #page-title,
+body[data-page-kind="home"] #page-lede {
+    display: none !important;
+}
+

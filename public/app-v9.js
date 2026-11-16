@@ -2360,6 +2360,7 @@
         const leagueToolbar = document.getElementById('league-view-toolbar');
         if (leagueToolbar) leagueToolbar.style.display = 'none';
         switchView('fixtures');
+        if (elements['fixtures-list']) elements['fixtures-list'].style.minHeight = '';
 
         if (elements['league-card']) elements['league-card'].hidden = true;
         if (elements['welcome-state']) elements['welcome-state'].hidden = true;
@@ -2623,6 +2624,7 @@
         const leagueToolbar = document.getElementById('league-view-toolbar');
         if (leagueToolbar) leagueToolbar.style.display = 'none';
         switchView('fixtures');
+        if (elements['fixtures-list']) elements['fixtures-list'].style.minHeight = '';
 
         const explorer = document.querySelector('.explorer') || elements['fixtures-list'];
         if (explorer && window.scrollY > (explorer.offsetTop + 200)) {
@@ -2770,8 +2772,8 @@
 
         const prevScrollY = window.scrollY || window.pageYOffset || document.documentElement.scrollTop || 0;
         const fixturesContainer = elements['fixtures-list'];
-        if (fixturesContainer && prevScrollY > 0) {
-            fixturesContainer.style.minHeight = Math.max(fixturesContainer.offsetHeight, prevScrollY + window.innerHeight + 100) + 'px';
+        if (fixturesContainer) {
+            fixturesContainer.style.minHeight = '';
         }
 
         let totalCount = 0;
@@ -3100,6 +3102,7 @@
 
         // Clear global feed immediately so it does not flash under the league view
         if (elements['fixtures-list']) {
+            elements['fixtures-list'].style.minHeight = '';
             elements['fixtures-list'].innerHTML = '<div class="content-state"><span class="loader"></span> Loading league fixtures…</div>';
         }
         state.currentStatus = 'all';
@@ -3203,8 +3206,8 @@
         if (!elements['fixtures-list']) return;
         const prevScrollY = window.scrollY || window.pageYOffset || document.documentElement.scrollTop || 0;
         const fixturesContainer = elements['fixtures-list'];
-        if (fixturesContainer && prevScrollY > 0) {
-            fixturesContainer.style.minHeight = Math.max(fixturesContainer.offsetHeight, prevScrollY + window.innerHeight + 100) + 'px';
+        if (fixturesContainer) {
+            fixturesContainer.style.minHeight = '';
         }
 
         const hasFixtures = Boolean(fixtures && fixtures.length > 0);
