@@ -1536,6 +1536,9 @@ function resolveLeagueSlug(altGameNote = '', compDesc = '', uid = '') {
         if ((text.includes('fifa') || text.includes('world cup')) && (text.includes('u17') || text.includes('u-17'))) {
             return 'fifa.u17';
         }
+        if (text.includes('u21') || text.includes('u-21')) {
+            return 'intl.u21';
+        }
         return 'uefa.youth';
     }
 
@@ -2515,6 +2518,16 @@ function normalizeTeamName(name = '') {
         .replace(/\bmanta\s+f\.?c\.?\b/g, 'manta')
         .replace(/\bcd\s+sabadell\b|\bsabadell\b/g, 'sabadell')
         .replace(/\breal\s+sociedad\s+(b|ii)\b/g, 'realsociedadb')
+        // Cross-provider aliases for Spanish & Peruvian clubs
+        .replace(/\b(rc\s+)?celta(\s+vigo)?(\s+b|\s+fortuna)?\b/g, 'celtab')
+        .replace(/\b(cd\s+)?(ut\s+cajamarca|utc|u\.t\.c\.|univ(\.|ersidad)?\s+tecnica\s+de\s+cajamarca)\b/g, 'utc')
+        .replace(/\b(adt|asoc(\.|iacion)?\s+deportiva\s+tarma)\b/g, 'adt')
+        .replace(/\blos\s+chankas(\s+cyc)?\b/g, 'loschankas')
+        .replace(/\b(cd\s+|deportivo\s+)?moquegua\b/g, 'moquegua')
+        .replace(/\b(atletico\s+)?grau\b/g, 'atleticograu')
+        .replace(/\bbosnia\s*(?:and|-|&)\s*herzegovina\b/g, 'bosniaherzegovina')
+        .replace(/\bbosnia\s+herzegovina\b/g, 'bosniaherzegovina')
+        .replace(/\bcyc\b/gi, ' ')
         // Specific French & Spanish club aliases for cross-provider dedup
         .replace(/\bdijon\s+(fco|football\s+cote-d.or)\b/g, 'dijon')
         .replace(/\borleans\s+(us|loiret)?\b/g, 'orleans')
@@ -2550,6 +2563,9 @@ function areTeamNamesMatching(nameA = '', nameB = '', leagueSlugA = '', leagueSl
     const b = normalizeTeamName(nameB);
     if (!a || !b) return false;
     if (a === b) return true;
+    if ((a === 'utc' && (b === 'utc' || b.includes('utc') || b.includes('cajamarca'))) || (b === 'utc' && (a === 'utc' || a.includes('utc') || a.includes('cajamarca')))) return true;
+    if ((a === 'adt' && (b === 'adt' || b.includes('adt') || b.includes('tarma'))) || (b === 'adt' && (a === 'adt' || a.includes('adt') || a.includes('tarma')))) return true;
+    if ((a === 'celtab' && b === 'celtab') || (a.includes('celta') && b.includes('celta') && (a.includes('fortuna') || b.includes('fortuna') || a.includes('b') || b.includes('b')))) return true;
 
     // Distinct city rivals must not collide (e.g. Bristol City vs Bristol Rovers)
     const rivals = [

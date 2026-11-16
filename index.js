@@ -4,6 +4,7 @@ const nodeEnv = loadEnvConfig();
 
 const express = require('express');
 const path = require('path');
+const fs = require('fs');
 const morgan = require('morgan');
 const rateLimit = require('express-rate-limit');
 const compression = require('compression');
@@ -209,7 +210,16 @@ app.get('/privacy', (req, res) => {
 });
 
 // Standalone APK and Android App Package Download
-app.get(['/download/norrascore.apk', '/downloads/norrascore.apk', '/download/app.apk'], async (req, res) => {
+app.use('/download', express.static(path.join(__dirname, 'public', 'download'), {
+    setHeaders: (res, filePath) => {
+        if (filePath.endsWith('.apk')) {
+            res.set('Content-Type', 'application/vnd.android.package-archive');
+            res.set('Content-Disposition', 'attachment; filename="norrascore.apk"');
+        }
+    }
+}));
+
+app.get(['/download/norrascore.apk', '/downloads/norrascore.apk', '/download/app.apk', '/download', '/downloads'], async (req, res) => {
     try {
         const SiteSetting = require('./models/siteSetting');
         const settings = await SiteSetting.getGlobalSettings().catch(() => null);
@@ -248,6 +258,7 @@ app.get(['/download/norrascore.apk', '/downloads/norrascore.apk', '/download/app
 </body>
 </html>`);
     } catch (err) {
+        console.error('❌ Error in APK download endpoint:', err);
         return res.status(500).type('text/plain').send('Download error');
     }
 });

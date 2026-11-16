@@ -61,8 +61,8 @@
             <a class="brand" href="/" aria-label="Scores by Norra AI home">
                 <img id="header-logo-img" class="brand-logo-img" src="" alt="Norra AI" hidden>
                 <div id="header-brand-fallback" class="brand-text">
-                    <span class="brand-icon" aria-hidden="true">⚽</span>
-                    <strong>Norra Scores</strong>
+                    <span class="brand-icon" id="header-ball-icon" aria-hidden="true">⚽</span>
+                    <strong id="header-brand-title">Norra Scores</strong>
                 </div>
             </a>
 
@@ -81,9 +81,50 @@
                 <button class="nav-link nav-btn-download" type="button" id="header-download-btn" title="Download &amp; Install Mobile / Desktop App" style="display:inline-flex; align-items:center; gap:4px; font-weight:600; cursor:pointer;">📲 App</button>
                 <button class="btn-icon-toggle" id="sound-toggle" type="button" aria-label="Toggle goal sound alert" title="Goal Alert Sound (On/Off)">🔔</button>
                 <button class="btn-icon-toggle" id="theme-toggle" type="button" aria-label="Toggle light/dark theme" title="Toggle theme">🌓</button>
+                <button class="btn-icon-toggle mobile-hamburger-btn" id="mobile-hamburger-btn" type="button" aria-label="Open competitions menu" title="Competitions &amp; Countries">☰</button>
             </div>
         </nav>
     </header>
+
+    <!-- Mobile Slide-out Menu / Country & Competitions Drawer -->
+    <div class="mobile-drawer-overlay" id="mobile-drawer-overlay" aria-hidden="true"></div>
+    <aside class="mobile-country-drawer" id="mobile-country-drawer" aria-label="Competitions and country navigation" aria-hidden="true">
+        <div class="mobile-drawer-header">
+            <div style="display: flex; align-items: center; gap: 8px;">
+                <span style="font-size: 18px;">🌍</span>
+                <strong style="font-size: 15px; color: var(--text-main);">Countries &amp; Competitions</strong>
+            </div>
+            <button class="close-button" id="close-mobile-drawer" type="button" aria-label="Close menu">✕</button>
+        </div>
+
+        <!-- Quick Nav Extra Shortcuts Inside Mobile Drawer -->
+        <div class="mobile-drawer-quick-nav">
+            <div style="display: flex; gap: 8px; margin-bottom: 10px;">
+                <button class="mobile-quick-btn active" id="mobile-quick-all" type="button" data-mobile-slug="all" style="flex: 1; padding: 8px 10px; border-radius: 8px; border: 1px solid var(--border-subtle); background: var(--bg-surface-elevated); font-size: 12px; font-weight: 700; color: var(--text-main); cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 6px;">
+                    <span>🌐 All Games</span>
+                </button>
+                <button class="mobile-quick-btn" id="mobile-quick-live" type="button" data-mobile-slug="live" style="flex: 1; padding: 8px 10px; border-radius: 8px; border: 1px solid var(--border-subtle); background: var(--bg-surface-elevated); font-size: 12px; font-weight: 700; color: var(--text-main); cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 6px;">
+                    <span class="live-pulse-mini" style="font-size: 12px;">🔴</span>
+                    <span>Live <span class="fs-live-badge" id="mobile-live-count" style="display:none; font-size: 10px; padding: 1px 5px; border-radius: 8px; margin-left: 2px;">0</span></span>
+                </button>
+            </div>
+            <div class="mobile-drawer-extras" style="display: flex; flex-wrap: wrap; gap: 6px; padding-bottom: 12px; border-bottom: 1px solid var(--border-subtle);">
+                <a class="mobile-extra-link" href="https://mynorra.xyz" target="_blank" rel="noopener">🔮 Predictions ↗</a>
+                <a class="mobile-extra-link" href="/pricing">Pricing</a>
+                <a class="mobile-extra-link" href="/docs">Docs</a>
+                <a class="mobile-extra-link" href="/account">Account</a>
+                <button class="mobile-extra-link" id="mobile-menu-download-btn" type="button">📲 App</button>
+            </div>
+        </div>
+
+        <div class="mobile-drawer-search" style="margin: 12px 0 10px;">
+            <input type="text" id="mobile-country-filter" placeholder="Search country or competition..." aria-label="Search countries" style="width: 100%; box-sizing: border-box; padding: 8px 12px; border-radius: 8px; border: 1px solid var(--border-subtle); background: var(--bg-surface-elevated); color: var(--text-main); font-size: 13px;">
+        </div>
+
+        <nav class="mobile-country-list" id="mobile-country-list" aria-label="Mobile countries and leagues directory">
+            <!-- Dynamically populated with complete flags and accordion leagues -->
+        </nav>
+    </aside>
 
     <aside id="ad-slot-header" class="ad-slot-container shell" hidden></aside>
 
@@ -608,7 +649,7 @@
                     <img id="download-dialog-app-logo" src="/assets/icons/icon-192.png" alt="App Logo" style="width: 64px; height: 64px; border-radius: 14px; object-fit: contain; box-shadow: 0 4px 12px rgba(0,0,0,0.15);">
                     <div>
                         <h4 id="download-dialog-app-name" style="margin: 0 0 4px; font-size: 17px; color: var(--text-main);">NorraScore</h4>
-                        <p style="margin: 0; font-size: 12.5px; color: var(--text-muted);">Real-Time Football Telemetry &bull; Version 9.28</p>
+                        <p id="download-dialog-subtitle" style="margin: 0; font-size: 12.5px; color: var(--text-muted);">Real-Time Football Scores and Stats &bull; v1.0.0</p>
                         <span style="display: inline-block; margin-top: 4px; padding: 2px 8px; border-radius: 6px; font-size: 11px; font-weight: 700; background: rgba(16,185,129,0.15); color: #10b981;">Fast &bull; Offline Ready &bull; Zero Ads</span>
                     </div>
                 </div>
@@ -634,7 +675,7 @@
                                 <strong style="display: block; font-size: 14px; color: var(--text-main);">🤖 Android APK Package (TWA)</strong>
                                 <span style="font-size: 12px; color: var(--text-muted);">Standalone Android application package for sideloading &amp; Play Store.</span>
                             </div>
-                            <a id="apk-download-link" href="/download/norrascore.apk" class="btn-primary" style="padding: 8px 16px; font-size: 13px; text-decoration: none; display: inline-flex; align-items: center; gap: 6px;">
+                            <a id="apk-download-link" href="/download/norrascore.apk" download="norrascore.apk" class="btn-primary" style="padding: 8px 16px; font-size: 13px; text-decoration: none; display: inline-flex; align-items: center; gap: 6px;">
                                 <span>Download APK</span> <span>&darr;</span>
                             </a>
                         </div>

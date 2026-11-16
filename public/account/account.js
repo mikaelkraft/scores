@@ -1297,3 +1297,21 @@ async function sendTestWebhook() {
         if (label) label.textContent = 'Send Test Webhook Ping';
     }
 }
+
+// Sync custom branding into header
+(async function syncAccountBranding() {
+    try {
+        const res = await fetch('/api/v1/ads').then(r => r.json()).catch(() => null);
+        if (!res?.branding) return;
+        const ballIcon = document.querySelector('.brand-icon');
+        const brandTitle = document.querySelector('.brand-text strong');
+        if (res.branding.headerLogoUrl && ballIcon) {
+            ballIcon.innerHTML = `<img src="${res.branding.headerLogoUrl}" alt="Logo" style="width:26px; height:26px; object-fit:contain; border-radius:6px; display:block;">`;
+            ballIcon.style.background = 'transparent';
+            ballIcon.style.boxShadow = 'none';
+        }
+        if (res.branding.siteTitle && brandTitle) {
+            brandTitle.textContent = res.branding.siteTitle;
+        }
+    } catch {}
+})();

@@ -362,6 +362,7 @@
                 state.selectedLeagueSlug = 'all';
                 renderQuickLeaguePills('all');
                 renderDesktopSidebar('all');
+                renderMobileDrawer('all');
             }
         }
 
@@ -809,6 +810,15 @@
             .replace(/\bmanta\s+f\.?c\.?\b/g, 'manta')
             .replace(/\bcd\s+sabadell\b/g, 'sabadell')
             .replace(/\breal\s+sociedad\s+(b|ii)\b/g, 'realsociedadb')
+            .replace(/\b(rc\s+)?celta(\s+vigo)?(\s+b|\s+fortuna)?\b/gi, 'celtab')
+            .replace(/\b(cd\s+)?(ut\s+cajamarca|utc|u\.t\.c\.|univ(\.|ersidad)?\s+tecnica\s+de\s+cajamarca)\b/gi, 'utc')
+            .replace(/\b(adt|asoc(\.|iacion)?\s+deportiva\s+tarma)\b/gi, 'adt')
+            .replace(/\blos\s+chankas(\s+cyc)?\b/gi, 'loschankas')
+            .replace(/\b(cd\s+|deportivo\s+)?moquegua\b/gi, 'moquegua')
+            .replace(/\b(atletico\s+)?grau\b/gi, 'grau')
+            .replace(/\bbosnia\s*(?:and|-|&)\s*herzegovina\b/gi, 'bosniaherzegovina')
+            .replace(/\bbosnia\s+herzegovina\b/gi, 'bosniaherzegovina')
+            .replace(/\bcyc\b/gi, ' ')
             .replace(/\bmilton\s+keynes\s+dons\b|\bmk\s+dons\b/g, 'mkdons')
             .replace(/\bbrentford\s+(u21|u-21|academy|b)\b/g, 'brentfordu21')
             .replace(/\bmiddlesbrough\s+(u21|u-21|academy|b)\b/g, 'middlesbroughu21')
@@ -868,9 +878,12 @@
     function teamNamesFuzzyEqual(a, b) {
         if (!a || !b) return false;
         if (a === b) return true;
+        if ((a === 'utc' && (b === 'utc' || b.includes('utc') || b.includes('cajamarca'))) || (b === 'utc' && (a === 'utc' || a.includes('utc') || a.includes('cajamarca')))) return true;
+        if ((a === 'adt' && (b === 'adt' || b.includes('adt') || b.includes('tarma'))) || (b === 'adt' && (a === 'adt' || a.includes('adt') || a.includes('tarma')))) return true;
+        if ((a === 'celtab' && b === 'celtab') || (a.includes('celta') && b.includes('celta') && (a.includes('fortuna') || b.includes('fortuna') || a.includes('b') || b.includes('b')))) return true;
         const shorter = a.length <= b.length ? a : b;
         const longer = a.length > b.length ? a : b;
-        if (shorter.length >= 5 && (longer.startsWith(shorter) || longer.includes(shorter))) return true;
+        if (shorter.length >= 4 && (longer.startsWith(shorter) || longer.includes(shorter))) return true;
         if (shorter.length >= 6 && longer.length >= 6 && Math.abs(longer.length - shorter.length) <= 2) {
             if (longer.includes(shorter.slice(0, 6)) || shorter.includes(longer.slice(0, 6))) return true;
         }
@@ -1275,7 +1288,8 @@
         }
 
         // 0f. Bosnian leagues
-        if (lowerSlug.startsWith('bih') || allEvText.includes('bosnia') || allEvText.includes('herzegovina') || allEvText.includes('zeljeznicar') || allEvText.includes('sarajevo') || allEvText.includes('borac banja luka') || allEvText.includes('zrinjski') || allEvText.includes('velez mostar') || allEvText.includes('siroki brijeg')) {
+        const isYouthOrIntl = /\b(u-?23|u-?21|u-?20|u-?19|u-?18|u-?17|youth|international|friendly|friendlies)\b/i.test(allEvText);
+        if (!isYouthOrIntl && (lowerSlug.startsWith('bih') || allEvText.includes('zeljeznicar') || allEvText.includes('sarajevo') || allEvText.includes('borac banja luka') || allEvText.includes('zrinjski') || allEvText.includes('velez mostar') || allEvText.includes('siroki brijeg') || (allEvText.includes('bosnia') && !allEvText.includes('montenegro') && !allEvText.includes('u21')))) {
             country = 'Bosnia and Herzegovina';
             if (lowerName.includes('prva liga') || lowerSlug === 'bih.2' || allEvText.includes('prva liga')) {
                 slug = 'bih.2';
@@ -1284,6 +1298,10 @@
                 slug = 'bih.1';
                 name = 'Bosnian Premier League';
             }
+        } else if (isYouthOrIntl && (allEvText.includes('u21') || allEvText.includes('u-21')) && (allEvText.includes('bosnia') || allEvText.includes('montenegro'))) {
+            slug = 'intl.u21';
+            name = 'Under-21 International';
+            country = 'International';
         }
 
         // 1. Identify domestic women's leagues and map them to their correct country and slug
@@ -1664,22 +1682,53 @@
         norway: 'no', finland: 'fi', greece: 'gr', russia: 'ru', ukraine: 'ua',
         poland: 'pl', czechia: 'cz', 'czech republic': 'cz', croatia: 'hr', serbia: 'rs',
         romania: 'ro', hungary: 'hu', bulgaria: 'bg', slovakia: 'sk', slovenia: 'si',
-        ireland: 'ie', usa: 'us', 'united states': 'us', canada: 'ca', mexico: 'mx',
-        brazil: 'br', argentina: 'ar', colombia: 'co', chile: 'cl', uruguay: 'uy',
-        paraguay: 'py', peru: 'pe', ecuador: 'ec', bolivia: 'bo', venezuela: 've',
-        'costa rica': 'cr', honduras: 'hn', guatemala: 'gt', japan: 'jp', 'south korea': 'kr',
-        china: 'cn', australia: 'au', 'saudi arabia': 'sa', qatar: 'qa', uae: 'ae',
-        'united arab emirates': 'ae', iran: 'ir', iraq: 'iq', jordan: 'jo', bahrain: 'bh',
-        kuwait: 'kw', uzbekistan: 'uz', india: 'in', indonesia: 'id', thailand: 'th',
-        malaysia: 'my', singapore: 'sg', vietnam: 'vn', nigeria: 'ng', 'south africa': 'za',
-        egypt: 'eg', morocco: 'ma', algeria: 'dz', tunisia: 'tn', ghana: 'gh',
-        kenya: 'ke', uganda: 'ug', cameroon: 'cm', senegal: 'sn', tanzania: 'tz',
-        zambia: 'zm', 'new zealand': 'nz', botswana: 'bw', jamaica: 'jm', israel: 'il',
-        belarus: 'by', azerbaijan: 'az', armenia: 'am', libya: 'ly', zimbabwe: 'zw',
-        ethiopia: 'et', rwanda: 'rw', 'dr congo': 'cd', 'ivory coast': 'ci', sudan: 'sd',
-        angola: 'ao', malawi: 'mw', bosnia: 'ba', 'northern ireland': 'gb-nir', 'hong kong': 'hk',
-        bangladesh: 'bd', malta: 'mt', kazakhstan: 'kz'
+        ireland: 'ie', 'republic of ireland': 'ie', usa: 'us', 'united states': 'us',
+        canada: 'ca', mexico: 'mx', brazil: 'br', argentina: 'ar', colombia: 'co',
+        chile: 'cl', uruguay: 'uy', paraguay: 'py', peru: 'pe', ecuador: 'ec',
+        bolivia: 'bo', venezuela: 've', 'costa rica': 'cr', honduras: 'hn',
+        guatemala: 'gt', 'el salvador': 'sv', panama: 'pa', nicaragua: 'ni',
+        japan: 'jp', 'south korea': 'kr', 'korea republic': 'kr', china: 'cn',
+        australia: 'au', 'new zealand': 'nz', 'saudi arabia': 'sa', qatar: 'qa',
+        uae: 'ae', 'united arab emirates': 'ae', iran: 'ir', iraq: 'iq', jordan: 'jo',
+        bahrain: 'bh', kuwait: 'kw', oman: 'om', lebanon: 'lb', syria: 'sy',
+        uzbekistan: 'uz', india: 'in', indonesia: 'id', thailand: 'th', malaysia: 'my',
+        singapore: 'sg', vietnam: 'vn', philippines: 'ph', nigeria: 'ng',
+        'south africa': 'za', egypt: 'eg', morocco: 'ma', algeria: 'dz', tunisia: 'tn',
+        ghana: 'gh', kenya: 'ke', uganda: 'ug', cameroon: 'cm', senegal: 'sn',
+        tanzania: 'tz', zambia: 'zm', zimbabwe: 'zw', ethiopia: 'et', rwanda: 'rw',
+        'dr congo': 'cd', 'congo dr': 'cd', congo: 'cg', 'ivory coast': 'ci',
+        'cote d\'ivoire': 'ci', 'côte d\'ivoire': 'ci', sudan: 'sd', angola: 'ao',
+        botswana: 'bw', malawi: 'mw', mozambique: 'mz', namibia: 'na', benin: 'bj',
+        'burkina faso': 'bf', mali: 'ml', guinea: 'gn', gabon: 'ga', libya: 'ly',
+        jamaica: 'jm', 'trinidad and tobago': 'tt', haiti: 'ht', israel: 'il',
+        belarus: 'by', azerbaijan: 'az', armenia: 'am', georgia: 'ge',
+        'bosnia and herzegovina': 'ba', 'bosnia-herzegovina': 'ba', bosnia: 'ba',
+        montenegro: 'me', 'north macedonia': 'mk', macedonia: 'mk', kosovo: 'xk',
+        albania: 'al', cyprus: 'cy', malta: 'mt', kazakhstan: 'kz', moldova: 'md',
+        latvia: 'lv', lithuania: 'lt', estonia: 'ee', luxembourg: 'lu',
+        'faroe islands': 'fo', iceland: 'is', andorra: 'ad', 'san marino': 'sm',
+        gibraltar: 'gi', 'northern ireland': 'gb-nir', 'hong kong': 'hk', bangladesh: 'bd',
+        taiwan: 'tw', europe: 'eu', international: 'un', world: 'un'
     };
+
+    function getCountryFlagHtml(countryName, size = { width: 18, height: 13 }) {
+        const clean = String(countryName || '').toLowerCase().trim();
+        const code = COUNTRY_CODES[clean];
+        if (code) {
+            return `<img src="https://flagcdn.com/w40/${code}.png" alt="${escapeHtml(countryName)}" loading="lazy" style="width:${size.width}px; height:${size.height}px; object-fit:cover; border-radius:2px; flex-shrink:0; vertical-align:middle;" onerror="this.onerror=null; this.outerHTML='<span style=\\'font-size:${size.height}px; display:inline-block; vertical-align:middle;\\'>🌐</span>';">`;
+        }
+        const regionalIcons = {
+            'africa': '🌍',
+            'europe': '🇪🇺',
+            'south america': '🌎',
+            'north america': '🌎',
+            'asia': '🌏',
+            'international': '🌐',
+            'world': '🌐'
+        };
+        const icon = regionalIcons[clean] || '🌐';
+        return `<span style="font-size:${size.height}px; display:inline-block; vertical-align:middle; flex-shrink:0;">${icon}</span>`;
+    }
 
     function getLeagueCountryCode(league) {
         const slug = (league?.slug || '').toLowerCase();
@@ -1786,7 +1835,28 @@
             </button>
         `;
 
-        const leaguePills = state.leagues.map(l => {
+        // Keep horizontal ribbon clean: show top world competitions + active league + More button
+        const TOP_RIBBON_SLUGS = [
+            'eng.1', 'esp.1', 'uefa.champions', 'ita.1', 'ger.1', 'fra.1',
+            'nga.1', 'uefa.europa', 'uefa.europa.conf', 'caf.champions',
+            'usa.1', 'ksa.1', 'ned.1', 'por.1'
+        ];
+
+        const topLeagues = [];
+        for (const slug of TOP_RIBBON_SLUGS) {
+            const found = state.leagues.find(l => l.slug === slug);
+            if (found) topLeagues.push(found);
+        }
+
+        // If user selected a league not already in top ribbon, include it so the selected pill is visible
+        if (activeSlug && activeSlug !== 'all' && activeSlug !== 'live') {
+            const activeLeague = state.leagues.find(l => l.slug === activeSlug);
+            if (activeLeague && !topLeagues.some(l => l.slug === activeSlug)) {
+                topLeagues.push(activeLeague);
+            }
+        }
+
+        const leaguePills = topLeagues.map(l => {
             const avatarHtml = renderLeagueAvatarHtml(l, { size: 18, className: 'quick-league-avatar' });
             const isActive = l.slug === activeSlug;
             return `
@@ -1797,17 +1867,26 @@
             `;
         }).join('');
 
-        container.innerHTML = allPill + livePill + leaguePills;
+        const morePill = `
+            <button class="quick-league-btn quick-league-more-btn" id="quick-league-more-btn" type="button" title="Browse all countries &amp; competitions">
+                <span style="font-size:14px;">➕</span>
+                <span>More ▾</span>
+            </button>
+        `;
+
+        container.innerHTML = allPill + livePill + leaguePills + morePill;
 
         container.querySelectorAll('.quick-league-btn').forEach(btn => {
             btn.addEventListener('click', (e) => {
                 e.preventDefault();
                 const slug = btn.dataset.slug;
-                if (slug === 'all') {
+                if (btn.id === 'quick-league-more-btn') {
+                    openMobileDrawer();
+                } else if (slug === 'all') {
                     selectAllLeagues();
                 } else if (slug === 'live') {
                     selectLiveMatches();
-                } else {
+                } else if (slug) {
                     const league = state.leagues.find(item => item.slug === slug);
                     if (league) {
                         if (elements['country-select']) elements['country-select'].value = league.country || 'Other';
@@ -1918,11 +1997,7 @@
             for (const country of sortedCountries) {
                 const leagues = countriesMap.get(country) || [];
                 const matchesCount = leagues.reduce((sum, l) => sum + (l.matchCount || 0), 0);
-                const code = COUNTRY_CODES[country.toLowerCase()] || '';
-                const flagUrl = code ? `https://flagcdn.com/w40/${code}.png` : '';
-                const flagHtml = flagUrl
-                    ? `<img src="${flagUrl}" alt="" loading="lazy" style="width:16px; height:12px; object-fit:cover; border-radius:2px; flex-shrink:0;">`
-                    : `<span style="font-size:13px; line-height:1; flex-shrink:0;">${country === 'Africa' ? '🌍' : (country.includes('America') ? '🌎' : '🌐')}</span>`;
+                const flagHtml = getCountryFlagHtml(country, { width: 16, height: 12 });
 
                 const matchingLeagues = search
                     ? leagues.filter(l => l.name.toLowerCase().includes(search) || l.abbreviation?.toLowerCase().includes(search) || country.toLowerCase().includes(search))
@@ -1997,12 +2072,254 @@
         }
     }
 
+    function openMobileDrawer() {
+        const drawer = document.getElementById('mobile-country-drawer');
+        const overlay = document.getElementById('mobile-drawer-overlay');
+        if (drawer) {
+            drawer.classList.add('active');
+            drawer.setAttribute('aria-hidden', 'false');
+        }
+        if (overlay) {
+            overlay.classList.add('active');
+            overlay.setAttribute('aria-hidden', 'false');
+        }
+        document.body.style.overflow = 'hidden';
+    }
+
+    function closeMobileDrawer() {
+        const drawer = document.getElementById('mobile-country-drawer');
+        const overlay = document.getElementById('mobile-drawer-overlay');
+        if (drawer) {
+            drawer.classList.remove('active');
+            drawer.setAttribute('aria-hidden', 'true');
+        }
+        if (overlay) {
+            overlay.classList.remove('active');
+            overlay.setAttribute('aria-hidden', 'true');
+        }
+        document.body.style.overflow = '';
+    }
+
+    function initMobileDrawerEvents() {
+        const hamBtn = document.getElementById('mobile-hamburger-btn');
+        if (hamBtn && !hamBtn.dataset.wired) {
+            hamBtn.dataset.wired = 'true';
+            hamBtn.addEventListener('click', (e) => {
+                e.preventDefault();
+                const drawer = document.getElementById('mobile-country-drawer');
+                if (drawer && drawer.classList.contains('active')) {
+                    closeMobileDrawer();
+                } else {
+                    openMobileDrawer();
+                }
+            });
+        }
+
+        const closeBtn = document.getElementById('close-mobile-drawer');
+        if (closeBtn && !closeBtn.dataset.wired) {
+            closeBtn.dataset.wired = 'true';
+            closeBtn.addEventListener('click', (e) => {
+                e.preventDefault();
+                closeMobileDrawer();
+            });
+        }
+
+        const overlay = document.getElementById('mobile-drawer-overlay');
+        if (overlay && !overlay.dataset.wired) {
+            overlay.dataset.wired = 'true';
+            overlay.addEventListener('click', () => {
+                closeMobileDrawer();
+            });
+        }
+
+        const quickAll = document.getElementById('mobile-quick-all');
+        if (quickAll && !quickAll.dataset.wired) {
+            quickAll.dataset.wired = 'true';
+            quickAll.addEventListener('click', (e) => {
+                e.preventDefault();
+                closeMobileDrawer();
+                selectAllLeagues();
+            });
+        }
+
+        const quickLive = document.getElementById('mobile-quick-live');
+        if (quickLive && !quickLive.dataset.wired) {
+            quickLive.dataset.wired = 'true';
+            quickLive.addEventListener('click', (e) => {
+                e.preventDefault();
+                closeMobileDrawer();
+                selectLiveMatches();
+            });
+        }
+
+        const downloadBtn = document.getElementById('mobile-menu-download-btn');
+        if (downloadBtn && !downloadBtn.dataset.wired) {
+            downloadBtn.dataset.wired = 'true';
+            downloadBtn.addEventListener('click', (e) => {
+                e.preventDefault();
+                closeMobileDrawer();
+                const dlg = document.getElementById('download-dialog');
+                if (dlg) {
+                    dlg.classList.add('active');
+                    dlg.hidden = false;
+                }
+            });
+        }
+
+        if (!window.__mobileDrawerKeydownWired) {
+            window.__mobileDrawerKeydownWired = true;
+            window.addEventListener('keydown', (e) => {
+                if (e.key === 'Escape') {
+                    const drawer = document.getElementById('mobile-country-drawer');
+                    if (drawer && drawer.classList.contains('active')) {
+                        closeMobileDrawer();
+                    }
+                }
+            });
+        }
+    }
+
+    function renderMobileDrawer(activeSlug = 'all') {
+        const drawerList = document.getElementById('mobile-country-list');
+        const searchInput = document.getElementById('mobile-country-filter');
+        const quickAll = document.getElementById('mobile-quick-all');
+        const quickLive = document.getElementById('mobile-quick-live');
+        const liveCountBadge = document.getElementById('mobile-live-count');
+
+        initMobileDrawerEvents();
+
+        if (quickAll) {
+            quickAll.classList.toggle('active', !activeSlug || activeSlug === 'all');
+        }
+        if (quickLive) {
+            quickLive.classList.toggle('active', activeSlug === 'live');
+        }
+        if (liveCountBadge) {
+            if (state.liveMatchCount > 0) {
+                liveCountBadge.textContent = state.liveMatchCount;
+                liveCountBadge.style.display = 'inline-block';
+            } else {
+                liveCountBadge.style.display = 'none';
+            }
+        }
+
+        if (!drawerList || !state.leagues.length) return;
+
+        const countriesMap = new Map();
+        for (const l of state.leagues) {
+            const cName = l.country || 'International';
+            if (!countriesMap.has(cName)) {
+                countriesMap.set(cName, []);
+            }
+            countriesMap.get(cName).push(l);
+        }
+
+        const PRIORITY_COUNTRIES = [
+            'England', 'Spain', 'Italy', 'Germany', 'France', 'Nigeria', 'Africa',
+            'International', 'Europe', 'South America', 'Netherlands', 'Portugal',
+            'Saudi Arabia', 'USA', 'United States', 'Brazil', 'Argentina', 'South Africa',
+            'Egypt', 'Morocco', 'Ghana', 'Kenya', 'Turkey', 'Belgium', 'Scotland'
+        ];
+
+        const sortedCountries = Array.from(countriesMap.keys()).sort((a, b) => {
+            const aPri = PRIORITY_COUNTRIES.indexOf(a);
+            const bPri = PRIORITY_COUNTRIES.indexOf(b);
+            if (aPri !== -1 && bPri !== -1) return aPri - bPri;
+            if (aPri !== -1) return -1;
+            if (bPri !== -1) return 1;
+            return a.localeCompare(b, 'en');
+        });
+
+        function buildMobileCountryListHtml(filterText = '') {
+            const search = filterText.toLowerCase().trim();
+            let html = '';
+
+            for (const country of sortedCountries) {
+                const leagues = countriesMap.get(country) || [];
+                const matchesCount = leagues.reduce((sum, l) => sum + (l.matchCount || 0), 0);
+                const flagHtml = getCountryFlagHtml(country, { width: 18, height: 13 });
+
+                const matchingLeagues = search
+                    ? leagues.filter(l => l.name.toLowerCase().includes(search) || l.abbreviation?.toLowerCase().includes(search) || country.toLowerCase().includes(search))
+                    : leagues;
+
+                if (search && !country.toLowerCase().includes(search) && !matchingLeagues.length) {
+                    continue;
+                }
+
+                const isCountryActive = leagues.some(l => l.slug === activeSlug);
+                const autoExpand = Boolean(search) || isCountryActive;
+
+                html += `
+                    <div class="mobile-country-item ${autoExpand ? 'is-expanded' : ''}" data-country="${escapeHtml(country)}">
+                        <div class="mobile-country-header" role="button" tabindex="0">
+                            <div class="mobile-item-left">
+                                ${flagHtml}
+                                <span class="mobile-country-name">${escapeHtml(country)}</span>
+                            </div>
+                            <div style="display:flex; align-items:center; gap:4px;">
+                                ${matchesCount > 0 ? `<span class="sidebar-item-badge">${matchesCount}</span>` : ''}
+                                <span class="mobile-chevron">▶</span>
+                            </div>
+                        </div>
+                        <div class="mobile-country-leagues">
+                            ${matchingLeagues.map(l => {
+                                const isLActive = l.slug === activeSlug;
+                                return `
+                                    <button class="mobile-league-btn ${isLActive ? 'active' : ''}" type="button" data-slug="${escapeHtml(l.slug)}">
+                                        <span>${escapeHtml(l.name)}</span>
+                                        ${l.matchCount ? `<span style="font-size:10px; opacity:0.8;">${l.matchCount}</span>` : ''}
+                                    </button>
+                                `;
+                            }).join('')}
+                        </div>
+                    </div>
+                `;
+            }
+
+            if (!html) {
+                html = '<div style="padding:16px; font-size:12.5px; color:var(--text-muted); text-align:center;">No matching competitions found</div>';
+            }
+
+            drawerList.innerHTML = html;
+
+            drawerList.querySelectorAll('.mobile-country-header').forEach(hdr => {
+                hdr.addEventListener('click', () => {
+                    const item = hdr.closest('.mobile-country-item');
+                    if (item) item.classList.toggle('is-expanded');
+                });
+            });
+
+            drawerList.querySelectorAll('.mobile-league-btn').forEach(btn => {
+                btn.addEventListener('click', (e) => {
+                    e.preventDefault();
+                    const slug = btn.dataset.slug;
+                    if (slug) {
+                        closeMobileDrawer();
+                        selectLeague(slug);
+                        window.scrollTo({ top: 0, behavior: 'smooth' });
+                    }
+                });
+            });
+        }
+
+        buildMobileCountryListHtml(searchInput ? searchInput.value : '');
+
+        if (searchInput && !searchInput.dataset.wired) {
+            searchInput.dataset.wired = 'true';
+            searchInput.addEventListener('input', (e) => {
+                buildMobileCountryListHtml(e.target.value);
+            });
+        }
+    }
+
     async function selectLiveMatches() {
         state.selectedLeagueSlug = 'live';
         state.currentStatus = 'live';
         state.league = null;
         renderQuickLeaguePills('live');
         renderDesktopSidebar('live');
+        renderMobileDrawer('live');
         window.clearInterval(state.matchTimer);
 
         // Reset matchday date ribbon to Today since live in-play games are on today's calendar
@@ -2217,13 +2534,16 @@
         if (requestedView === 'live') {
             selectLiveMatches();
             renderDesktopSidebar('live');
+            renderMobileDrawer('live');
         } else if (requestedSlug && state.leagues.some(l => l.slug === requestedSlug)) {
             renderQuickLeaguePills(requestedSlug);
             renderDesktopSidebar(requestedSlug);
+            renderMobileDrawer(requestedSlug);
             selectLeague(requestedSlug);
         } else {
             renderQuickLeaguePills('all');
             renderDesktopSidebar('all');
+            renderMobileDrawer('all');
             selectAllLeagues();
         }
     }
@@ -2275,6 +2595,7 @@
         state.league = null;
         renderQuickLeaguePills('all');
         renderDesktopSidebar('all');
+        renderMobileDrawer('all');
         window.clearInterval(state.matchTimer);
 
         // Reset status filter to 'all' and activate the ALL status tab
@@ -2769,6 +3090,7 @@
         state.league = league;
         renderQuickLeaguePills(slug);
         renderDesktopSidebar(slug);
+        renderMobileDrawer(slug);
         window.clearInterval(state.matchTimer);
         updateLeagueCard(league);
         if (elements['welcome-state']) elements['welcome-state'].hidden = true;
@@ -3556,10 +3878,15 @@
     }
 
     function matchTimeline(summary, plays, home, away) {
-        const rawKeyEvents = [
-            ...(summary.keyEvents || []),
-            ...(summary.header?.competitions?.[0]?.details || [])
-        ];
+        const rawKeyEvents = [];
+        const seenRawKeyIds = new Set();
+        for (const ev of [...(summary.keyEvents || []), ...(summary.header?.competitions?.[0]?.details || [])]) {
+            const rawId = ev.id || `${ev.clock?.displayValue || ev.clock}_${ev.text}_${ev.type?.text}`;
+            if (!seenRawKeyIds.has(rawId)) {
+                seenRawKeyIds.add(rawId);
+                rawKeyEvents.push(ev);
+            }
+        }
         const keyEvents = rawKeyEvents.map((event, index) =>
             normalizeMatchEvent(event, index, 'key-event', home, away));
         const playEvents = (plays || []).map((event, index) =>
@@ -3571,7 +3898,7 @@
         for (const event of [...keyEvents, ...playEvents]) {
             const teamSide = event.team?.side || (event.team?.id && String(event.team.id) === String(home.team?.id) ? 'home' : (event.team?.id && String(event.team.id) === String(away.team?.id) ? 'away' : ''));
             const teamId = teamSide || String(event.team?.id || event.team?.source_id || event.team?.displayName || event.team?.name || '').toLowerCase();
-            const minute = event.clockValue || (parseInt(event.clock, 10) || 0);
+            const minute = event.clockValue || parseTimelineClockMinute(event.clock, event.text) || 0;
 
             // Format display clock if raw seconds
             if (typeof event.clock === 'string' && /^\d{3,}$/.test(event.clock.trim())) {
@@ -3579,28 +3906,40 @@
                 event.clock = `${Math.floor(num / 60)}'`;
             }
 
-            // Deduplicate matching goals, cards, and substitutions occurring in the same minute
             const athleteName = (event.athlete?.displayName || event.athlete?.fullName || '').toLowerCase().trim();
-            const incidentKey = event.kind === 'goal'
-                ? `goal|${minute}|${teamSide || teamId}`
-                : `${event.kind}|${minute}|${teamSide || teamId}|${athleteName || String(event.text || '').slice(0, 16).toLowerCase()}`;
+            const normalizedTextKey = String(event.text || '').toLowerCase().replace(/[^a-z0-9]/g, '');
 
-            if (seenIncidents.has(incidentKey)) {
-                const existing = seenIncidents.get(incidentKey);
-                const existingHasPlayer = Boolean(existing.athlete?.displayName || existing.athlete?.fullName);
-                const currentHasPlayer = Boolean(event.athlete?.displayName || event.athlete?.fullName);
-                if (!existingHasPlayer && currentHasPlayer) {
-                    existing.athlete = event.athlete;
-                    existing.participants = event.participants;
-                    existing.text = event.text;
+            // Robust duplicate detection across identical text or matching kind+minute
+            let isDuplicate = false;
+            for (const [key, existing] of seenIncidents.entries()) {
+                const exNorm = String(existing.text || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+                if (normalizedTextKey && exNorm && normalizedTextKey === exNorm) {
+                    isDuplicate = true;
+                    if ((!existing.clock || existing.clock === '—') && event.clock && event.clock !== '—') {
+                        existing.clock = event.clock;
+                        existing.clockValue = event.clockValue;
+                    }
+                    if (!existing.team && event.team) existing.team = event.team;
+                    break;
                 }
-                if (event.scoringPlay) existing.scoringPlay = true;
-                if (event.penaltyKick) existing.penaltyKick = true;
-                if (event.ownGoal) existing.ownGoal = true;
-                continue;
+                const exMin = existing.clockValue || parseTimelineClockMinute(existing.clock, existing.text) || 0;
+                const exSide = existing.team?.side || '';
+                const exAthlete = (existing.athlete?.displayName || existing.athlete?.fullName || '').toLowerCase().trim();
+                if (existing.kind === event.kind && Math.abs(exMin - minute) <= 1.5 && (!teamSide || !exSide || teamSide === exSide)) {
+                    if ((athleteName && exAthlete && (athleteName.includes(exAthlete) || exAthlete.includes(athleteName))) || (!athleteName && !exAthlete)) {
+                        isDuplicate = true;
+                        if ((!existing.clock || existing.clock === '—') && event.clock && event.clock !== '—') {
+                            existing.clock = event.clock;
+                            existing.clockValue = event.clockValue;
+                        }
+                        if (!existing.team && event.team) existing.team = event.team;
+                        break;
+                    }
+                }
             }
 
-            seenIncidents.set(incidentKey, event);
+            if (isDuplicate) continue;
+            seenIncidents.set(event.id || `${event.kind}-${minute}-${events.length}`, event);
             events.push(event);
         }
         return events.sort((left, right) => (left.clockValue || 0) - (right.clockValue || 0));
@@ -3724,8 +4063,14 @@
 
                 // Deduplicate: check if already in dedupedEvents
                 let matchedIndex = -1;
+                const cleanCurText = String(event.text || '').toLowerCase().replace(/[^a-z0-9]/g, '');
                 for (let i = 0; i < dedupedEvents.length; i++) {
                     const ex = dedupedEvents[i];
+                    const cleanExText = String(ex.text || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+                    if (cleanCurText && cleanExText && cleanCurText === cleanExText) {
+                        matchedIndex = i;
+                        break;
+                    }
                     const exMin = parseTimelineClockMinute(ex.clock || ex.minute || ex.clockValue, ex.text);
                     const exSide = ex.team?.side || (ex.team?.id && String(ex.team.id) === String(home.team?.id) ? 'home' : (ex.team?.id && String(ex.team.id) === String(away.team?.id) ? 'away' : ''));
                     const exKind = ex.kind;
@@ -3733,7 +4078,7 @@
 
                     if (exKind === kind && (!side || !exSide || side === exSide)) {
                         const closeTime = Math.abs(exMin - minuteNum) <= 1.5;
-                        const samePlayer = (player && exPlayer) ? (player.includes(exPlayer) || exPlayer.includes(player)) : true;
+                        const samePlayer = (player && exPlayer) ? (player.includes(exPlayer) || exPlayer.includes(player)) : (Boolean(player || exPlayer) ? (cleanCurText.includes(exPlayer) || cleanExText.includes(player)) : true);
                         if (closeTime && samePlayer) {
                             matchedIndex = i;
                             break;
@@ -3743,9 +4088,17 @@
 
                 if (matchedIndex >= 0) {
                     const existing = dedupedEvents[matchedIndex];
+                    if ((!existing.clock || existing.clock === '—') && event.clock && event.clock !== '—') {
+                        existing.clock = event.clock;
+                        existing.clockValue = event.clockValue;
+                    }
+                    if (!existing.team && event.team) {
+                        existing.team = event.team;
+                    }
                     const existingHasPlayer = Boolean((existing.athlete?.displayName || existing.player || '').trim());
                     if (!existingHasPlayer && hasDetailedPlayer) {
-                        dedupedEvents[matchedIndex] = event;
+                        existing.athlete = event.athlete;
+                        existing.text = event.text;
                     }
                 } else {
                     dedupedEvents.push(event);
@@ -3803,6 +4156,34 @@
         const predHints = predictions?.norraAiPredictionHints || {};
         const h2h = predictions?.h2h || {};
         let recentH2h = h2h.allMeetings || h2h.recentMeetings || [];
+
+        // Ensure finished games count into all-time H2H count & meetings list
+        if (isFinishedGame && home.score != null && away.score != null) {
+            const hScore = Number(home.score);
+            const aScore = Number(away.score);
+            const curEvId = String(summary.header?.id || state.currentEventId || '');
+            const curDateStr = competition.date ? new Date(competition.date).toDateString() : '';
+            const alreadyInRecent = recentH2h.some(m => String(m.id) === curEvId || (curDateStr && m.date && new Date(m.date).toDateString() === curDateStr));
+            if (!alreadyInRecent && !isNaN(hScore) && !isNaN(aScore)) {
+                const winner = hScore === aScore ? 'Draw' : (hScore > aScore ? (home.team?.displayName || 'Home') : (away.team?.displayName || 'Away'));
+                recentH2h = [{
+                    id: curEvId,
+                    date: competition.date || new Date().toISOString(),
+                    homeTeam: home.team?.displayName || 'Home',
+                    awayTeam: away.team?.displayName || 'Away',
+                    homeLogo: home.team?.logo || '',
+                    awayLogo: away.team?.logo || '',
+                    score: `${hScore} - ${aScore}`,
+                    winner,
+                    homeScore: hScore,
+                    awayScore: aScore,
+                    isHomeOriginal: true,
+                    competition: competitionName || 'Match',
+                    source: 'current'
+                }, ...recentH2h];
+            }
+        }
+
         if (!recentH2h.length && summary.seasonseries?.length) {
             const series = summary.seasonseries.find(s => s.type === 'head-to-head') || summary.seasonseries[0];
             if (series?.events?.length) {
@@ -4771,13 +5152,24 @@
                 announcementBar.style.display = 'block';
             }
 
-            // Header & Footer custom logos
+            // Header & Footer custom logos and brand synchronization
             const headerLogoImg = document.getElementById('header-logo-img');
             const headerBrandFallback = document.getElementById('header-brand-fallback');
-            if (headerLogoImg && res.branding?.headerLogoUrl) {
-                headerLogoImg.src = res.branding.headerLogoUrl;
-                headerLogoImg.hidden = false;
-                if (headerBrandFallback) headerBrandFallback.style.display = 'none';
+            const headerBallIcon = document.getElementById('header-ball-icon') || document.querySelector('.brand-icon');
+            const headerBrandTitle = document.getElementById('header-brand-title') || document.querySelector('.brand-text strong');
+
+            if (res.branding?.headerLogoUrl) {
+                if (headerBallIcon) {
+                    headerBallIcon.innerHTML = `<img src="${escapeHtml(res.branding.headerLogoUrl)}" alt="Logo" style="width:26px; height:26px; object-fit:contain; border-radius:6px; display:block;">`;
+                    headerBallIcon.style.background = 'transparent';
+                    headerBallIcon.style.boxShadow = 'none';
+                }
+                if (headerLogoImg) {
+                    headerLogoImg.src = res.branding.headerLogoUrl;
+                }
+            }
+            if (res.branding?.siteTitle && headerBrandTitle) {
+                headerBrandTitle.textContent = res.branding.siteTitle;
             }
 
             const footerLogoImg = document.getElementById('footer-logo-img');
@@ -5174,6 +5566,7 @@
                         state.selectedLeagueSlug = 'all';
                         renderQuickLeaguePills('all');
                         renderDesktopSidebar('all');
+                        renderMobileDrawer('all');
                     }
                     if (elements['dashboard-country']) elements['dashboard-country'].textContent = 'Favorites';
                     if (elements['dashboard-title']) elements['dashboard-title'].textContent = '⭐ My Pinned Games';
@@ -5183,6 +5576,7 @@
                         state.selectedLeagueSlug = 'all';
                         renderQuickLeaguePills('all');
                         renderDesktopSidebar('all');
+                        renderMobileDrawer('all');
                     }
                     if (elements['dashboard-country']) elements['dashboard-country'].textContent = state.league ? localCountryName(state.league.country) : 'World Football';
                     if (elements['dashboard-title']) elements['dashboard-title'].textContent = state.league ? `${state.league.name} · Finished` : '🏁 Finished Matches';
@@ -5197,6 +5591,7 @@
                         state.selectedLeagueSlug = 'all';
                         renderQuickLeaguePills('all');
                         renderDesktopSidebar('all');
+                        renderMobileDrawer('all');
                     }
                     if (elements['dashboard-country']) elements['dashboard-country'].textContent = state.league ? localCountryName(state.league.country) : 'World Football';
                     if (elements['dashboard-title']) elements['dashboard-title'].textContent = state.league ? `${state.league.name} · Scheduled` : '📅 Scheduled Matches';

@@ -1978,11 +1978,17 @@ router.get('/predictions-context/:eventId', optionalApiKeyAuth, async (req, res)
                 league_slug: { $not: { $regex: /\.w\./i } }
             };
 
+        const isCurrentMatchFinished = match.status?.state === 'post' ||
+            Boolean(match.status?.completed) ||
+            /STATUS_FINAL|STATUS_FULL_TIME|FT|Final/i.test(String(match.status?.name || match.status?.clock || match.status?.detail || ''));
+
         const finishedFilter = {
             $or: [
                 { 'status.state': { $in: ['post', 'final', 'completed'] } },
                 { 'status.completed': true },
                 { 'status.name': { $in: ['STATUS_FINAL', 'STATUS_FULL_TIME', 'STATUS_AFTER_ET', 'STATUS_AFTER_PK', 'FT', 'AET', 'AP'] } },
+                { 'status.clock': { $in: ['FT', 'Final', 'AET', 'AP'] } },
+                { 'status.detail': { $in: ['FT', 'Final', 'Full Time', 'AET', 'AP'] } },
                 { date: { $lt: new Date(Date.now() - 3 * 3600 * 1000) } }
             ]
         };
@@ -1993,6 +1999,8 @@ router.get('/predictions-context/:eventId', optionalApiKeyAuth, async (req, res)
             ...(eventId ? { 'source.event_id': { $ne: eventId } } : {})
         };
 
+        const h2hExcludeFilter = isCurrentMatchFinished ? {} : excludeCurrentMatch;
+
         // Run parallel queries: H2H, Home Recent Form, Away Recent Form, Standings
         let [h2hMatches, homeRecentMatches, awayRecentMatches, standingsGroup, leagueDoc] = await Promise.all([
             // H2H past meetings - fetch complete lifetime encounters without artificial cap
@@ -2000,7 +2008,7 @@ router.get('/predictions-context/:eventId', optionalApiKeyAuth, async (req, res)
                 $and: [
                     { $or: h2hOrClauses },
                     finishedFilter,
-                    excludeCurrentMatch,
+                    h2hExcludeFilter,
                     genderFilter
                 ]
             }).sort({ date: -1 }).limit(500).lean() : Promise.resolve([]),
@@ -2243,13 +2251,41 @@ router.get('/predictions-context/:eventId', optionalApiKeyAuth, async (req, res)
             }
         }
 
+        // If the current match is finished, ensure it is included in the lifetime H2H record
+        if (isCurrentMatchFinished) {
+            const mKey = String(match.source?.event_id || match._id || eventId);
+            if (!h2hMap.has(mKey)) {
+                const curHScore = Number(match.home?.score ?? match.home?.scoreValue);
+                const curAScore = Number(match.away?.score ?? match.away?.scoreValue);
+                if (!isNaN(curHScore) && !isNaN(curAScore)) {
+                    const winner = curHScore === curAScore ? 'Draw' : (curHScore > curAScore ? (curHName || 'Home') : (curAName || 'Away'));
+                    h2hMap.set(mKey, {
+                        id: mKey,
+                        date: match.date ? new Date(match.date).toISOString() : new Date().toISOString(),
+                        homeTeam: curHName || 'Home',
+                        awayTeam: curAName || 'Away',
+                        homeLogo: match.home?.logo || '',
+                        awayLogo: match.away?.logo || '',
+                        score: `${curHScore} - ${curAScore}`,
+                        winner,
+                        homeScore: curHScore,
+                        awayScore: curAScore,
+                        isHomeOriginal: true,
+                        competition: match.note || leagueDoc?.name || 'League',
+                        source: 'current'
+                    });
+                }
+            }
+        }
+
         // Compute Lifetime H2H statistics across all deduplicated historical encounters
         const allLifetimeH2h = Array.from(h2hMap.values())
             .filter(m => {
-                if (String(m.id) === String(eventId) || String(m.id) === String(match.source?.event_id) || String(m.id) === String(match._id)) return false;
-                if (match.date && m.date) {
+                const isThisMatch = String(m.id) === String(eventId) || String(m.id) === String(match.source?.event_id) || String(m.id) === String(match._id);
+                if (isThisMatch && !isCurrentMatchFinished) return false;
+                if (!isThisMatch && match.date && m.date) {
                     const timeDiff = Math.abs(new Date(m.date).getTime() - new Date(match.date).getTime());
-                    if (timeDiff < 12 * 3600 * 1000) return false;
+                    if (timeDiff < 2 * 3600 * 1000 && !isCurrentMatchFinished) return false;
                 }
                 const h = normalizeTeamName(m.homeTeam || '');
                 const a = normalizeTeamName(m.awayTeam || '');
