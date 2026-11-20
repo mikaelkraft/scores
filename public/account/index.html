@@ -15,7 +15,10 @@
     <meta property="og:image" content="https://scores.mynorra.xyz/og-image.png">
     <meta name="twitter:card" content="summary_large_image">
     <link rel="icon" href="/favicon.svg" type="image/svg+xml">
-    <link rel="stylesheet" href="/assets/styles-v8.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@600;700;800;900&family=Plus+Jakarta+Sans:wght@700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/assets/styles.css?v=1.0.0">
     <script>
         (function() {
             try {
@@ -835,5 +838,6 @@ console.log(`Synced ${live.length} live matches into Norra prediction engine.`);
         const yr = document.getElementById('current-year');
         if (yr) yr.textContent = new Date().getFullYear();
     </script>
+    <script src="/assets/shared-shell.js"></script>
 </body>
 </html>

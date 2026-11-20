@@ -618,7 +618,7 @@ function homeContent(context) {
             </article>
             <article>
                 <h2>Commercial Sports API Plans</h2>
-                <p>Integrate our low-latency sports API into your websites, apps, and betting platforms. Plans start at $10/mo with free developer sandboxes available in the <a href="/account">Developer Portal</a>.</p>
+                <p>Integrate our low-latency sports API into your websites, apps, and betting platforms. View live <a href="/pricing">API Pricing Tiers</a> or launch a free developer sandbox in the <a href="/account">Developer Portal</a>.</p>
             </article>
         </div>
     </section>`;
@@ -689,8 +689,8 @@ function apiContent(context) {
         <div class="api-pricing-pointer-card" style="background:var(--bg-surface); border:1px solid var(--border-subtle); border-radius:var(--card-radius); padding:24px 28px; margin:28px 0; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:16px;">
             <div>
                 <span class="overline" style="margin-bottom:4px; display:block; color:var(--color-primary); font-size:12px; font-weight:700;">Commercial Plans &amp; Developer Sandboxes</span>
-                <h3 style="margin:0 0 6px; font-size:20px; font-weight:800; color:var(--text-main);">Flexible Sports API Access Starting at $10/month</h3>
-                <p style="margin:0; font-size:13.5px; color:var(--text-muted); max-width:620px;">Choose from our Free Developer Sandbox ($0/mo), Starter ($10/mo), Pro ($29/mo), and Enterprise Whitelabel ($79/mo) plans. Global checkout via PayPal and Flutterwave in USD, EUR, GBP, and NGN.</p>
+                <h3 style="margin:0 0 6px; font-size:20px; font-weight:800; color:var(--text-main);">Flexible Commercial Sports API Tiers</h3>
+                <p style="margin:0; font-size:13.5px; color:var(--text-muted); max-width:620px;">Choose from our Free Developer Sandbox, Starter (<span data-tier-price="starter">Starter Tier</span>), Pro (<span data-tier-price="pro">Pro Tier</span>), and Enterprise Whitelabel (<span data-tier-price="whitelabel">Enterprise Tier</span>) plans. Global checkout via PayPal and Flutterwave in USD, EUR, GBP, and NGN.</p>
             </div>
             <div style="display:flex; gap:12px; align-items:center;">
                 <a href="/pricing" class="btn" style="padding:10px 20px; font-weight:700; font-size:13.5px; border-radius:6px; background:var(--color-primary); color:#ffffff; text-decoration:none;">View Pricing &amp; Plans &rarr;</a>

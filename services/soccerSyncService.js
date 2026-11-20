@@ -26,6 +26,7 @@ const TARGET_LEAGUES = [
     { slug: 'uefa.europa', name: 'UEFA Europa League', abbreviation: 'Europa League', country: 'International', kind: 'club', sort_order: 7, logo: 'https://a.espncdn.com/i/leaguelogos/soccer/500/2054.png' },
     { slug: 'uefa.europa.conf', name: 'UEFA Conference League', abbreviation: 'Conference League', country: 'International', kind: 'club', sort_order: 8, logo: 'https://a.espncdn.com/i/leaguelogos/soccer/500/20420.png' },
     { slug: 'ned.1', name: 'Dutch Eredivisie', abbreviation: 'Eredivisie', country: 'Netherlands', kind: 'club', sort_order: 9, logo: 'https://a.espncdn.com/i/leaguelogos/soccer/500/11.png' },
+    { slug: 'ned.2', name: 'Keuken Kampioen Divisie', abbreviation: 'Eerste Divisie', country: 'Netherlands', kind: 'club', sort_order: 55 },
     { slug: 'por.1', name: 'Portuguese Primeira Liga', abbreviation: 'Primeira Liga', country: 'Portugal', kind: 'club', sort_order: 10, logo: 'https://a.espncdn.com/i/leaguelogos/soccer/500/14.png' },
     { slug: 'eng.2', name: 'EFL Championship', abbreviation: 'Championship', country: 'England', kind: 'club', sort_order: 11, logo: 'https://a.espncdn.com/i/leaguelogos/soccer/500/24.png' },
     { slug: 'esp.2', name: 'Spanish Segunda División', abbreviation: 'La Liga 2', country: 'Spain', kind: 'club', sort_order: 12, logo: 'https://a.espncdn.com/i/leaguelogos/soccer/500/16.png' },
@@ -1739,8 +1740,8 @@ function resolveLeagueSlug(altGameNote = '', compDesc = '', uid = '') {
         return 'tur.1';
     }
 
-    if (country.includes('india') || text.includes('ind.1') || text.includes('ind.2')) {
-        if (text.includes('i-league') || text.includes('ind.2')) return 'ind.2';
+    if (country.includes('india') || text.includes('ind.1') || text.includes('ind.2') || text.includes('indian super league') || text.includes('india super league') || text.includes('indian football league') || text.includes('i-league')) {
+        if (text.includes('i-league') || text.includes('indian football league') || text.includes('ind.2')) return 'ind.2';
         return 'ind.1';
     }
     // SOUTH KOREA (K League 1 / K League 2 / Korea Cup)
@@ -1802,8 +1803,8 @@ function resolveLeagueSlug(altGameNote = '', compDesc = '', uid = '') {
         if (text.includes('cup') || text.includes('sco.cup')) return 'sco.cup';
         return 'sco.1';
     }
-    if (country.includes('netherlands') || country.includes('dutch') || text.includes('ned.1') || text.includes('eredivisie') || text.includes('ajax') || text.includes('psv') || text.includes('feyenoord')) {
-        if (text.includes('eerste') || text.includes('ned.2')) return 'ned.2';
+    if (country.includes('netherlands') || country.includes('dutch') || text.includes('ned.1') || text.includes('ned.2') || text.includes('eredivisie') || text.includes('keuken kampioen') || text.includes('eerste divisie') || text.includes('ajax') || text.includes('psv') || text.includes('feyenoord')) {
+        if (text.includes('eerste') || text.includes('keuken kampioen') || text.includes('ned.2')) return 'ned.2';
         if (text.includes('knvb') || text.includes('cup')) return 'ned.cup';
         return 'ned.1';
     }
@@ -1920,7 +1921,7 @@ function resolveLeagueSlug(altGameNote = '', compDesc = '', uid = '') {
 
     // FRANCE (Ligue 1 / Ligue 2 / National / Coupe de France)
     const isFrance = country.includes('france') || country.includes('french') || scd.includes('fra.');
-    if (isFrance || (isNeutralCountry && /\b(?:ligue\s*1|ligue\s*2|national|coupe de france)\b/i.test(text))) {
+    if (isFrance || (isNeutralCountry && /\b(?:ligue\s*1|ligue\s*2|championnat\s+national|national\s+[123]|coupe de france)\b/i.test(text))) {
         if (text.includes('coupe de france') || scd.includes('coupe-de-france') || scd.includes('fra.coupe_de_france')) return 'fra.coupe_de_france';
         if (text.includes('national 3') || scd.includes('fra.5')) return 'fra.5';
         if (text.includes('national 2') || scd.includes('fra.4')) return 'fra.4';
@@ -1932,7 +1933,7 @@ function resolveLeagueSlug(altGameNote = '', compDesc = '', uid = '') {
 
     // ENGLAND (EPL / Championship / League One / League Two / FA Cup / Carabao Cup / National Leagues)
     const isEngland = country.includes('england') || country.includes('english') || scd.includes('eng.');
-    if (isEngland || (isNeutralCountry && (text.includes('premier league') || text.includes('efl championship') || text.includes('sky bet championship') || (isEngland && text.includes('championship')) || text.includes('league 1') || text.includes('league 2') || text.includes('fa cup') || text.includes('efl')))) {
+    if (isEngland || (isNeutralCountry && (text.includes('premier league') || text.includes('efl championship') || text.includes('sky bet championship') || (isEngland && text.includes('championship')) || text.includes('national league') || text.includes('league 1') || text.includes('league 2') || text.includes('fa cup') || text.includes('efl')))) {
         const foreignIndicators = ['egypt', 'ghana', 'kenya', 'uganda', 'singapore', 'bahrain', 'canada', 'scotland', 'russia', 'ukraine', 'kuwait', 'new zealand', 'ireland', 'wales', 'jamaica', 'india', 'nigeria', 'south africa', 'tanzania', 'zambia', 'zimbabwe', 'ethiopia', 'rwanda', 'congo', 'cameroon', 'ivory', 'algeria', 'tunisia', 'sudan', 'angola', 'botswana', 'malawi', 'bangladesh', 'hong kong', 'malta', 'israel', 'kazakhstan', 'northern ireland', 'armenia', 'azerbaijan', 'georgia', 'belarus', 'libya', 'nbc', 'ligi kuu', 'psl', 'npfl', 'korea', 'south korea', 'k-league', 'kleague', 'china', 'chinese', 'csl', 'japan', 'j-league', 'asia', 'saff', 'aff', 'bhutan', 'nepal', 'maldives', 'sri lanka', 'pakistan'];
         const hasForeign = foreignIndicators.some(f => text.includes(f) || country.includes(f));
         if (!hasForeign && !isKorea && !isChina && !isJapan) {
@@ -2424,8 +2425,9 @@ function isReserveOrBTeamName(name = '') {
 
 function getTeamCategory(name = '', leagueSlug = '') {
     const s = `${name} ${leagueSlug}`.toLowerCase();
-    const isWomen = /\b(women|woman|ladies|femenin[oa]?|frauen|damen|vrouwen|fem|wfc|w)\b|\(w\)/i.test(s) ||
+    const isWomen = /\b(women|woman|ladies|femenin[oa]?|frauen|damen|vrouwen|fem|wfc|w|wsl|nwsl|uwcl)\b|\(w\)/i.test(s) ||
                     s.includes('liga f') || s.includes('femenil') || s.includes('damallsvenskan') || s.includes('toppserien') ||
+                    s.includes('wchampions') || s.includes('weuro') || s.includes('wwc') || s.includes('arkema') ||
                     s.includes('.w.') || s.startsWith('w.') || s.endsWith('.w');
     const isYouth = /\b(u-?23|u-?21|u-?20|u-?19|u-?18|u-?17|u-?16|u-?15|youth|primavera|reserves?|development)\b|\b(ii|b)\b$/i.test(s) ||
                     s.includes('youth') || s.includes('u21') || s.includes('u23') || s.includes('u20') || s.includes('u19') || s.includes('u18') || s.includes('u17') || s.includes('primavera');
@@ -2450,8 +2452,25 @@ function getMatchTier(homeName = '', awayName = '', leagueSlug = '') {
 function normalizeTeamName(name = '') {
     if (!name) return '';
     let s = String(name).toLowerCase()
+        // Transliterate non-NFD European/Nordic letters before NFD stripping (e.g. HB Køge -> HB Koge)
+        .replace(/ø/g, 'o')
+        .replace(/æ/g, 'ae')
+        .replace(/ß/g, 'ss')
+        .replace(/đ/g, 'd')
+        .replace(/ł/g, 'l')
+        .replace(/ð/g, 'd')
+        .replace(/þ/g, 'th')
         .normalize('NFD')
         .replace(/[\u0300-\u036f]/g, '')
+        // Canonical national team aliases (e.g. United States <-> USA)
+        .replace(/\bunited\s+states(?:\s+of\s+america)?\b|\bu\.?s\.?a\.?\b/g, 'usa')
+        .replace(/\bsouth\s+korea\b|\bkorea\s+republic\b/g, 'southkorea')
+        .replace(/\bnorth\s+korea\b|\bkorea\s+dpr\b/g, 'northkorea')
+        .replace(/\bivory\s+coast\b|\bcote\s*d['’ ]?ivoire\b/g, 'ivorycoast')
+        .replace(/\bczech\s+republic\b|\bczechia\b/g, 'czechia')
+        .replace(/\bunited\s+arab\s+emirates\b|\bu\.?a\.?e\.?\b/g, 'uae')
+        .replace(/\btrinidad\s*(?:and|&)\s*tobago\b/g, 'trinidadtobago')
+        .replace(/\b(?:st\.?|saint)\s+vincent(?:\s*(?:and|&)\s*the\s+grenadines)?\b/g, 'saintvincent')
         // Collapse dotted abbreviations like C.D., F.C., S.D., U.S.
         .replace(/\b([a-z])\.([a-z])\.([a-z])\.?/gi, '$1$2$3 ')
         .replace(/\b([a-z])\.([a-z])\.?/gi, '$1$2 ')

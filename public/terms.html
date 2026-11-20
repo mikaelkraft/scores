@@ -18,7 +18,10 @@
     <meta name="twitter:description" content="Terms of Service for Scores by Norra AI (scores.mynorra.xyz) football livescores and commercial sports API platform.">
     <meta name="twitter:image" content="https://scores.mynorra.xyz/og-image.png">
     <link rel="icon" href="/favicon.svg" type="image/svg+xml">
-    <link rel="stylesheet" href="/assets/styles-v8.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@600;700;800;900&family=Plus+Jakarta+Sans:wght@700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/assets/styles.css?v=1.0.0">
     <script>
         (function() {
             try {
@@ -166,9 +169,9 @@
             <p>Scores by Norra AI delivers real-time football scores, match clock telemetries, standings, team catalogs, and developer APIs. We offer flexible tiers designed for individual developers, commercial publishers, and enterprise platforms:</p>
             <ul>
                 <li><strong>Free Developer Tier ($0/mo):</strong> For non-commercial sandbox evaluation, local development, and hobby projects. Features standard rate limits (120 req/min) with ad-supported web views.</li>
-                <li><strong>Starter Tier ($10/mo):</strong> Commercial license permitting up to 100,000 API calls/month, sub-500ms latency, and ad-free access for growing sports blogs, mobile apps, and newsletters.</li>
-                <li><strong>Pro Tier ($29/mo):</strong> Professional commercial license featuring 500,000 API calls/month, dedicated live webhooks, complete player lineups, and head-to-head records.</li>
-                <li><strong>Whitelabel Tier ($79/mo):</strong> Complete whitelabel license with unbranded embeds, custom subdomains, unlimited webhook volume, and 99.9% uptime SLA.</li>
+                <li><strong>Starter Tier (<span data-tier-price="starter">Starter Plan</span>):</strong> Commercial license permitting up to 100,000 API calls/month, sub-500ms latency, and ad-free access for growing sports blogs, mobile apps, and newsletters.</li>
+                <li><strong>Pro Tier (<span data-tier-price="pro">Pro Plan</span>):</strong> Professional commercial license featuring 500,000 API calls/month, dedicated live webhooks, complete player lineups, and head-to-head records.</li>
+                <li><strong>Whitelabel Tier (<span data-tier-price="whitelabel">Enterprise Plan</span>):</strong> Complete whitelabel license with unbranded embeds, custom subdomains, unlimited webhook volume, and 99.9% uptime SLA.</li>
             </ul>
         </div>
 
@@ -335,5 +338,6 @@
         const yr = document.getElementById('current-year');
         if (yr) yr.textContent = new Date().getFullYear();
     </script>
+    <script src="/assets/shared-shell.js"></script>
 </body>
 </html>

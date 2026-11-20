@@ -31,11 +31,10 @@
         if (userInteractionTimeout) clearTimeout(userInteractionTimeout);
         userInteractionTimeout = setTimeout(() => {
             isUserInteracting = false;
-        }, 1200);
+        }, 400);
     }
     if (typeof window !== 'undefined') {
         window.addEventListener('scroll', markUserInteracting, { passive: true });
-        window.addEventListener('touchstart', markUserInteracting, { passive: true });
         window.addEventListener('touchmove', markUserInteracting, { passive: true });
         window.addEventListener('wheel', markUserInteracting, { passive: true });
     }
@@ -762,9 +761,24 @@
             .replace(/[^a-z0-9]/g, '');
 
         let s = (name || '')
+            .toLowerCase()
+            .replace(/ø/g, 'o')
+            .replace(/æ/g, 'ae')
+            .replace(/ß/g, 'ss')
+            .replace(/đ/g, 'd')
+            .replace(/ł/g, 'l')
+            .replace(/ð/g, 'd')
+            .replace(/þ/g, 'th')
             .normalize('NFD')
             .replace(/[\u0300-\u036f]/g, '')
-            .toLowerCase()
+            .replace(/\bunited\s+states(?:\s+of\s+america)?\b|\bu\.?s\.?a\.?\b/g, 'usa')
+            .replace(/\bsouth\s+korea\b|\bkorea\s+republic\b/g, 'southkorea')
+            .replace(/\bnorth\s+korea\b|\bkorea\s+dpr\b/g, 'northkorea')
+            .replace(/\bivory\s+coast\b|\bcote\s*d['’ ]?ivoire\b/g, 'ivorycoast')
+            .replace(/\bczech\s+republic\b|\bczechia\b/g, 'czechia')
+            .replace(/\bunited\s+arab\s+emirates\b|\bu\.?a\.?e\.?\b/g, 'uae')
+            .replace(/\btrinidad\s*(?:and|&)\s*tobago\b/g, 'trinidadtobago')
+            .replace(/\b(?:st\.?|saint)\s+vincent(?:\s*(?:and|&)\s*the\s+grenadines)?\b/g, 'saintvincent')
             .replace(/\b([a-z])\.([a-z])\.([a-z])\.?/gi, '$1$2$3 ')
             .replace(/\b([a-z])\.([a-z])\.?/gi, '$1$2 ')
             .replace(/\bst[.]?\s+/gi, 'saint ')
@@ -899,8 +913,9 @@
         const leagueName = ev.league?.name || ev.note || '';
         const s = `${hName} ${aName} ${slug} ${leagueName}`.toLowerCase();
 
-        const isWomen = /\b(women|woman|ladies|femenin[oa]?|frauen|damen|vrouwen|fem|wfc|w)\b|\(w\)/i.test(s) ||
+        const isWomen = /\b(women|woman|ladies|femenin[oa]?|frauen|damen|vrouwen|fem|wfc|w|wsl|nwsl|uwcl)\b|\(w\)/i.test(s) ||
                         s.includes('liga f') || s.includes('femenil') || s.includes('damallsvenskan') || s.includes('toppserien') ||
+                        s.includes('wchampions') || s.includes('weuro') || s.includes('wwc') || s.includes('arkema') ||
                         s.includes('.w.') || s.startsWith('w.') || s.endsWith('.w');
         const isYouth = /\b(u-?23|u-?21|u-?20|u-?19|u-?18|u-?17|u-?16|u-?15|youth|primavera|reserves?|development)\b/i.test(s) ||
                         s.includes('youth') || s.includes('u21') || s.includes('u23') || s.includes('u20') || s.includes('u19') || s.includes('u18') || s.includes('u17') || s.includes('primavera');
@@ -1613,6 +1628,28 @@
             name = 'Liga de Expansión MX';
         }
 
+        // 1l. Normalize Indian Super League / Indian Football League / Keuken Kampioen Divisie / English National League / UEFA Women's Champions League
+        if (lowerSlug === 'ind.1' || lowerName === 'india super league' || lowerName === 'indian super league') {
+            slug = 'ind.1';
+            name = 'Indian Super League';
+            country = 'India';
+        } else if (lowerSlug === 'ind.2' || lowerName.includes('indian football league') || lowerName.includes('i-league')) {
+            slug = 'ind.2';
+            name = 'Indian Football League';
+            country = 'India';
+        } else if (lowerSlug === 'ned.2' || lowerName.includes('keuken kampioen') || lowerName.includes('eerste divisie')) {
+            slug = 'ned.2';
+            name = 'Keuken Kampioen Divisie';
+            country = 'Netherlands';
+        } else if (lowerName === 'national league' && !lowerName.includes('championnat') && (country.toLowerCase() === 'france' || country.toLowerCase() === 'international' || !country)) {
+            slug = 'eng.5';
+            name = 'National League';
+            country = 'England';
+        } else if (lowerSlug === 'uefa.wchampions' || lowerName.includes("uefa women's champions")) {
+            slug = 'uefa.wchampions';
+            country = 'Europe';
+        }
+
         // 2. Infer country from slug prefix if country is missing or generic 'International'
         if (!country || country.toLowerCase() === 'international') {
             const prefix = slug.split('.')[0];
@@ -1623,10 +1660,13 @@
                 den: 'Denmark', swe: 'Sweden', nor: 'Norway', fin: 'Finland',
                 pol: 'Poland', rus: 'Russia', ukr: 'Ukraine', cze: 'Czech Republic',
                 bra: 'Brazil', arg: 'Argentina', col: 'Colombia', chi: 'Chile',
-                bol: 'Bolivia',
-                mex: 'Mexico', usa: 'USA', aus: 'Australia', jpn: 'Japan',
-                chn: 'China', kor: 'South Korea', ksa: 'Saudi Arabia',
-                egy: 'Egypt', rsa: 'South Africa', nga: 'Nigeria', mar: 'Morocco',
+                bol: 'Bolivia', uru: 'Uruguay', par: 'Paraguay', per: 'Peru', ecu: 'Ecuador', ven: 'Venezuela',
+                mex: 'Mexico', usa: 'USA', can: 'Canada', crc: 'Costa Rica', hon: 'Honduras', gtm: 'Guatemala', gua: 'Guatemala', pan: 'Panama', nic: 'Nicaragua',
+                aus: 'Australia', nzl: 'New Zealand', jpn: 'Japan',
+                chn: 'China', kor: 'South Korea', ksa: 'Saudi Arabia', sau: 'Saudi Arabia',
+                ind: 'India', idn: 'Indonesia', tha: 'Thailand', mys: 'Malaysia', sgp: 'Singapore', vnm: 'Vietnam',
+                qat: 'Qatar', uae: 'UAE', irn: 'Iran', irq: 'Iraq', jor: 'Jordan', bhr: 'Bahrain', kwt: 'Kuwait', omn: 'Oman', uzb: 'Uzbekistan',
+                egy: 'Egypt', rsa: 'South Africa', nga: 'Nigeria', mar: 'Morocco', gha: 'Ghana', ken: 'Kenya', uga: 'Uganda', sen: 'Senegal',
                 tza: 'Tanzania', zmb: 'Zambia', zwe: 'Zimbabwe', eth: 'Ethiopia',
                 rwa: 'Rwanda', cod: 'DR Congo', cmr: 'Cameroon', civ: 'Ivory Coast',
                 dza: 'Algeria', tun: 'Tunisia', sdn: 'Sudan', ago: 'Angola',
@@ -1638,7 +1678,8 @@
                 srb: 'Serbia', cro: 'Croatia', svk: 'Slovakia', svn: 'Slovenia',
                 hun: 'Hungary', bgr: 'Bulgaria', rou: 'Romania', geo: 'Georgia',
                 alb: 'Albania', cyp: 'Cyprus', kvx: 'Kosovo', mkd: 'North Macedonia',
-                mne: 'Montenegro', afc: 'Asia'
+                mne: 'Montenegro', isl: 'Iceland', lva: 'Latvia', ltu: 'Lithuania', est: 'Estonia', lux: 'Luxembourg', fro: 'Faroe Islands',
+                uefa: 'Europe', caf: 'Africa', afc: 'Asia', conmebol: 'South America', concacaf: 'North America'
             };
             if (countryMap[prefix]) {
                 country = countryMap[prefix];
@@ -2754,20 +2795,22 @@
                 }
 
                 if (thisReqId !== fixturesFetchSeq) return;
-                renderAllLeaguesGrouped([...groupsMap.values()]);
+                renderAllLeaguesGrouped([...groupsMap.values()], { background });
             } catch (error) {
-                if (elements['fixtures-empty']) elements['fixtures-empty'].hidden = false;
-                showToast(`Unable to load all fixtures: ${error.message}`);
+                if (thisReqId === fixturesFetchSeq) {
+                    if (elements['fixtures-empty']) elements['fixtures-empty'].hidden = false;
+                    showToast(`Unable to load all fixtures: ${error.message}`);
+                }
             } finally {
-                if (!background) setLoading('fixtures', false);
-                inFlightAllFixturesPromise = null;
+                if (!background && thisReqId === fixturesFetchSeq) setLoading('fixtures', false);
+                if (thisReqId === fixturesFetchSeq) inFlightAllFixturesPromise = null;
             }
         })();
 
         return inFlightAllFixturesPromise;
     }
 
-    function renderAllLeaguesGrouped(groupedData) {
+    function renderAllLeaguesGrouped(groupedData, { background = false } = {}) {
         if (!elements['fixtures-list']) return;
 
         const prevScrollY = window.scrollY || window.pageYOffset || document.documentElement.scrollTop || 0;
@@ -3021,12 +3064,12 @@
                 return;
             }
 
-            if (isUserInteracting) {
+            if (background && isUserInteracting && elements['fixtures-list'].children.length > 0) {
                 setTimeout(() => {
-                    if (!isUserInteracting && elements['fixtures-list']) {
-                        renderAllLeaguesGrouped(groupedData);
+                    if (elements['fixtures-list']) {
+                        renderAllLeaguesGrouped(groupedData, { background: false });
                     }
-                }, 1200);
+                }, 450);
                 return;
             }
 
@@ -3259,15 +3302,7 @@
             return;
         }
 
-        if (isUserInteracting) {
-            setTimeout(() => {
-                if (!isUserInteracting && elements['fixtures-list']) {
-                    renderFixtures(fixtures);
-                }
-            }, 1200);
-            return;
-        }
-
+        if (elements['fixtures-empty']) elements['fixtures-empty'].hidden = true;
         elements['fixtures-list'].innerHTML = nextHtml;
 
         if (prevScrollY > 0 && !isUserInteracting) {
@@ -3829,16 +3864,27 @@
         }
 
         let clockDisplay = typeof event.clock === 'string'
-            ? event.clock
-            : (event.clock?.displayValue || (event.clockValue ? `${event.clockValue}'` : ''));
+            ? event.clock.trim()
+            : String(event.clock?.displayValue || event.clock?.display_value || event.time?.displayValue || '').trim();
+        if (!clockDisplay && event.clock && typeof event.clock === 'object' && event.clock.value != null && Number(event.clock.value) > 0) {
+            const cv = Number(event.clock.value);
+            clockDisplay = cv > 180 ? `${Math.floor(cv / 60)}'` : `${Math.round(cv)}'`;
+        }
+        if (!clockDisplay && event.clockValue && Number(event.clockValue) > 0) {
+            const cv = Number(event.clockValue);
+            clockDisplay = cv > 180 ? `${Math.floor(cv / 60)}'` : `${Math.round(cv)}'`;
+        }
         if (!clockDisplay && event.minute) {
-            clockDisplay = `${event.minute}'`;
+            clockDisplay = `${String(event.minute).replace(/['’]+$/g, '')}'`;
         }
         if (!clockDisplay && cleanText) {
-            const m = cleanText.match(/\b(\d{1,3}(?:\+\d{1,2})?)['’]?\b/);
-            if (m && parseInt(m[1], 10) <= 130) {
+            const m = cleanText.match(/\b(\d{1,3}(?:\+\d{1,2})?)['’]\b/) || cleanText.match(/\b(\d{1,2}(?:\+\d{1,2})?)\s*(?:min|minute)/i);
+            if (m && parseInt(m[1], 10) > 0 && parseInt(m[1], 10) <= 130) {
                 clockDisplay = `${m[1]}'`;
             }
+        }
+        if (!clockDisplay && kind === 'substitution' && (event.period?.number === 2 || event.period === 2)) {
+            clockDisplay = 'HT';
         }
 
         const clockValue = typeof event.clockValue === 'number' && event.clockValue > 0
@@ -4129,8 +4175,9 @@
                     else if (kind.includes('end') || kind.includes('ft')) text = 'Full-time';
                     else text = player ? `Match incident — ${player}` : 'Match incident';
                 }
+                const displayMinute = String(event.clock || '').trim() || (event.clockValue > 0 ? `${Math.round(event.clockValue)}'` : '—');
                 return `<div class="timeline-item">
-                <span class="timeline-minute">${escapeHtml(event.clock || '—')}</span>
+                <span class="timeline-minute">${escapeHtml(displayMinute)}</span>
                 ${eventBadge(event.kind)}
                 <div class="timeline-details">
                     <p style="margin:0;">${escapeHtml(text)}</p>
@@ -4718,25 +4765,53 @@
                         </div>
                     ` : `
                         <!-- Attacking Momentum & Pressure Gauge -->
-                        <div class="momentum-gauge-card" style="background:var(--bg-canvas); border:1px solid var(--border-subtle); border-radius:10px; padding:16px; margin-bottom:20px; ${hasRealStats ? '' : 'display:none;'}">
-                            <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:6px; margin-bottom:10px;">
-                                <div style="display:flex; align-items:center; gap:6px;">
-                                    <span style="font-size:16px;">⚡</span>
-                                    <strong style="font-size:12.5px; text-transform:uppercase; color:var(--text-main); letter-spacing:0.5px;">Live Match Momentum &amp; Attacking Pressure</strong>
+                        <div class="momentum-gauge-card" style="${hasRealStats ? '' : 'display:none;'}">
+                            <div class="momentum-card-header">
+                                <div class="momentum-title-wrap">
+                                    <span class="momentum-icon" aria-hidden="true">⚡</span>
+                                    <strong class="momentum-title">Live Match Momentum &amp; Attacking Pressure</strong>
                                 </div>
-                                <span style="font-size:11.5px; font-weight:700; color:var(--color-primary);">${momentumVerdict}</span>
+                                <span class="momentum-verdict-pill">${momentumVerdict}</span>
                             </div>
-                            <div style="display:flex; justify-content:space-between; font-size:13px; font-weight:700; margin-bottom:8px;">
-                                <span style="color:#10b981;">${escapeHtml(home.team?.displayName || 'Home')} (${hMomentum}%)</span>
-                                <span style="color:#3b82f6;">(${aMomentum}%) ${escapeHtml(away.team?.displayName || 'Away')}</span>
+                            <div class="momentum-teams-row">
+                                <span class="momentum-team-home">
+                                    <span class="momentum-team-name">${escapeHtml(home.team?.displayName || 'Home')}</span>
+                                    <span class="momentum-pct-badge is-home">${hMomentum}%</span>
+                                </span>
+                                <span class="momentum-team-away">
+                                    <span class="momentum-pct-badge is-away">${aMomentum}%</span>
+                                    <span class="momentum-team-name">${escapeHtml(away.team?.displayName || 'Away')}</span>
+                                </span>
                             </div>
-                            <div style="height:12px; background:var(--bg-surface-elevated); border-radius:6px; overflow:hidden; display:flex; box-shadow:inset 0 1px 3px rgba(0,0,0,0.2);">
-                                <div style="width:${hMomentum}%; background:linear-gradient(90deg, #10b981, #059669); transition:width 0.4s ease;"></div>
-                                <div style="width:${aMomentum}%; background:linear-gradient(90deg, #2563eb, #3b82f6); transition:width 0.4s ease;"></div>
+                            <div class="momentum-bar-track" role="progressbar" aria-valuenow="${hMomentum}" aria-valuemin="0" aria-valuemax="100">
+                                <div class="momentum-bar-fill is-home" style="width:${hMomentum}%;"></div>
+                                <div class="momentum-bar-fill is-away" style="width:${aMomentum}%;"></div>
                             </div>
-                            <div style="display:flex; justify-content:space-between; font-size:11px; color:var(--text-muted); margin-top:6px;">
-                                <span>Possession: ${hPoss}% &bull; Shots: ${hShots} &bull; Corners: ${hCorners}</span>
-                                <span>Corners: ${aCorners} &bull; Shots: ${aShots} &bull; Possession: ${aPoss}%</span>
+                            <div class="momentum-stats-grid">
+                                <div class="momentum-stat-cell">
+                                    <span class="momentum-stat-label">Possession</span>
+                                    <div class="momentum-stat-values">
+                                        <strong class="is-home">${hPoss}%</strong>
+                                        <span class="momentum-stat-sep">vs</span>
+                                        <strong class="is-away">${aPoss}%</strong>
+                                    </div>
+                                </div>
+                                <div class="momentum-stat-cell">
+                                    <span class="momentum-stat-label">Total Shots</span>
+                                    <div class="momentum-stat-values">
+                                        <strong class="is-home">${hShots}</strong>
+                                        <span class="momentum-stat-sep">vs</span>
+                                        <strong class="is-away">${aShots}</strong>
+                                    </div>
+                                </div>
+                                <div class="momentum-stat-cell">
+                                    <span class="momentum-stat-label">Corners</span>
+                                    <div class="momentum-stat-values">
+                                        <strong class="is-home">${hCorners}</strong>
+                                        <span class="momentum-stat-sep">vs</span>
+                                        <strong class="is-away">${aCorners}</strong>
+                                    </div>
+                                </div>
                             </div>
                         </div>
 
@@ -5059,10 +5134,10 @@
         }
         const cleanTheme = theme === 'light' ? 'light' : 'dark';
         document.documentElement.setAttribute('data-theme', cleanTheme);
-        document.documentElement.className = cleanTheme === 'light' ? 'theme-light' : '';
+        document.documentElement.classList.toggle('theme-light', cleanTheme === 'light');
         if (document.body) {
             document.body.setAttribute('data-theme', cleanTheme);
-            document.body.className = cleanTheme === 'light' ? 'theme-light' : '';
+            document.body.classList.toggle('theme-light', cleanTheme === 'light');
         }
         const icon = cleanTheme === 'light' ? '🌙' : '☀️';
         const title = `Switch to ${cleanTheme === 'light' ? 'Dark' : 'Light'} Mode`;
@@ -5156,19 +5231,31 @@
             }
 
             // Header & Footer custom logos and brand synchronization
+            // When a custom logo is uploaded, hide the textual fallback and expand the logo for clear visibility
             const headerLogoImg = document.getElementById('header-logo-img');
             const headerBrandFallback = document.getElementById('header-brand-fallback');
             const headerBallIcon = document.getElementById('header-ball-icon') || document.querySelector('.brand-icon');
             const headerBrandTitle = document.getElementById('header-brand-title') || document.querySelector('.brand-text strong');
 
             if (res.branding?.headerLogoUrl) {
-                if (headerBallIcon) {
-                    headerBallIcon.innerHTML = `<img src="${escapeHtml(res.branding.headerLogoUrl)}" alt="Logo" style="width:26px; height:26px; object-fit:contain; border-radius:6px; display:block;">`;
-                    headerBallIcon.style.background = 'transparent';
-                    headerBallIcon.style.boxShadow = 'none';
-                }
                 if (headerLogoImg) {
                     headerLogoImg.src = res.branding.headerLogoUrl;
+                    headerLogoImg.alt = res.branding?.siteTitle || 'Norra Scores';
+                    headerLogoImg.hidden = false;
+                    headerLogoImg.style.display = 'block';
+                }
+                if (headerBrandFallback) {
+                    headerBrandFallback.style.display = 'none';
+                    headerBrandFallback.hidden = true;
+                }
+            } else {
+                if (headerLogoImg) {
+                    headerLogoImg.hidden = true;
+                    headerLogoImg.style.display = 'none';
+                }
+                if (headerBrandFallback) {
+                    headerBrandFallback.style.display = '';
+                    headerBrandFallback.hidden = false;
                 }
             }
             if (res.branding?.siteTitle && headerBrandTitle) {
@@ -5176,9 +5263,23 @@
             }
 
             const footerLogoImg = document.getElementById('footer-logo-img');
+            const footerBrandText = document.getElementById('footer-brand-text') || (footerLogoImg?.parentElement?.querySelector('span'));
             if (footerLogoImg && res.branding?.footerLogoUrl) {
                 footerLogoImg.src = res.branding.footerLogoUrl;
+                footerLogoImg.alt = res.branding?.siteTitle || 'Norra Scores';
                 footerLogoImg.hidden = false;
+                footerLogoImg.style.display = 'block';
+                if (footerBrandText) {
+                    footerBrandText.style.display = 'none';
+                    footerBrandText.hidden = true;
+                }
+            } else if (footerLogoImg) {
+                footerLogoImg.hidden = true;
+                footerLogoImg.style.display = 'none';
+                if (footerBrandText) {
+                    footerBrandText.style.display = '';
+                    footerBrandText.hidden = false;
+                }
             }
 
             // Custom Favicon
@@ -5277,6 +5378,21 @@
             if (l && plans.whitelabel.rateLimitPerMinute !== undefined) l.textContent = Number(plans.whitelabel.rateLimitPerMinute).toLocaleString();
             const est = document.getElementById('estimate-whitelabel-val');
             if (est && plans.whitelabel.priceUsd !== undefined) est.innerHTML = `~₦${(plans.whitelabel.priceUsd * 1600).toLocaleString()} /mo &bull; Billed monthly`;
+        }
+        if (plans.starter && plans.starter.priceUsd !== undefined) {
+            document.querySelectorAll('[data-tier-price="starter"]').forEach(el => {
+                el.textContent = `$${plans.starter.priceUsd}/mo`;
+            });
+        }
+        if (plans.pro && plans.pro.priceUsd !== undefined) {
+            document.querySelectorAll('[data-tier-price="pro"]').forEach(el => {
+                el.textContent = `$${plans.pro.priceUsd}/mo`;
+            });
+        }
+        if (plans.whitelabel && plans.whitelabel.priceUsd !== undefined) {
+            document.querySelectorAll('[data-tier-price="whitelabel"]').forEach(el => {
+                el.textContent = `$${plans.whitelabel.priceUsd}/mo`;
+            });
         }
     }
 
@@ -6295,7 +6411,7 @@
                             <div style="background: rgba(239, 68, 68, 0.08); border: 1px solid rgba(239, 68, 68, 0.3); border-radius: 8px; padding: 16px; text-align: center;">
                                 <span style="font-size: 24px;">⏳</span>
                                 <h4 style="margin: 6px 0; color: #ef4444;">Daily Free Conversion Limit Reached</h4>
-                                <p style="font-size: 13px; color: var(--text-muted); margin: 0 0 12px;">You've used all 2 free daily web conversions. Upgrade to Starter ($10/mo) for 500 conversions/day or Pro ($29/mo) for unlimited conversions.</p>
+                                <p style="font-size: 13px; color: var(--text-muted); margin: 0 0 12px;">You've used all 2 free daily web conversions. Upgrade to the Starter plan for 500 conversions/day or the Pro plan for unlimited conversions.</p>
                                 <a href="/pricing" class="btn-primary" style="display: inline-block; padding: 8px 16px; text-decoration: none; border-radius: 6px; font-weight: 700; font-size: 13px;">View Pricing Plans &rarr;</a>
                             </div>
                         `;

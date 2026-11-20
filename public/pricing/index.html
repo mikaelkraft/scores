@@ -18,7 +18,10 @@
     <meta name="twitter:description" content="Flexible, developer-friendly pricing for real-time live football scores, fixtures, standings, and universal booking code conversion across 100+ world leagues.">
     <meta name="twitter:image" content="https://scores.mynorra.xyz/og-image.png">
     <link rel="icon" href="/favicon.svg" type="image/svg+xml">
-    <link rel="stylesheet" href="/assets/styles-v8.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@600;700;800;900&family=Plus+Jakarta+Sans:wght@700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/assets/styles.css?v=1.0.0">
     <script>
         (function() {
             var theme = localStorage.getItem('norra_theme') || localStorage.getItem('theme') || 'dark';
@@ -282,9 +285,9 @@
                         <tr>
                             <th>Feature</th>
                             <th>Free Developer</th>
-                            <th>Starter ($10)</th>
-                            <th>Pro ($29)</th>
-                            <th>Enterprise ($79)</th>
+                            <th>Starter (<span data-tier-price-num="starter">Starter</span>)</th>
+                            <th>Pro (<span data-tier-price-num="pro">Pro</span>)</th>
+                            <th>Enterprise (<span data-tier-price-num="whitelabel">Enterprise</span>)</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -362,7 +365,7 @@
             <div class="faq-grid">
                 <div class="faq-card">
                     <h3 class="faq-question">What are the exact API rate limits and quotas?</h3>
-                    <p class="faq-answer"><strong>Free Developer:</strong> 120 req/min (100 req/hr sandbox) for development across free tier leagues.<br><strong>Starter ($10/mo):</strong> 500 req/min (1,000 req/hr) across all 100+ global leagues with booking conversions.<br><strong>Pro ($29/mo):</strong> 1,500 req/min (10,000 req/hr) with full H2H statistics, Norra AI prediction context, and live webhooks.<br><strong>Enterprise ($79-$99/mo):</strong> 5,000 req/min (high throughput) with ML streaming and whitelabeling.</p>
+                    <p class="faq-answer"><strong>Free Developer:</strong> 120 req/min (100 req/hr sandbox) for development across free tier leagues.<br><strong>Starter (<span data-tier-price="starter">Starter Tier</span>):</strong> 500 req/min (1,000 req/hr) across all 100+ global leagues with booking conversions.<br><strong>Pro (<span data-tier-price="pro">Pro Tier</span>):</strong> 1,500 req/min (10,000 req/hr) with full H2H statistics, Norra AI prediction context, and live webhooks.<br><strong>Enterprise (<span data-tier-price="whitelabel">Enterprise Tier</span>):</strong> 5,000 req/min (high throughput) with ML streaming and whitelabeling.</p>
                 </div>
                 <div class="faq-card">
                     <h3 class="faq-question">How does Norra AI ingest live football and prediction data?</h3>
@@ -576,5 +579,6 @@
             })
             .catch(() => {});
     </script>
+    <script src="/assets/shared-shell.js"></script>
 </body>
 </html>

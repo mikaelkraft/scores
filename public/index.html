@@ -541,9 +541,9 @@
                     <h3 style="font-size: 14.5px; font-weight: 700; color: var(--text-main); margin: 0 0 8px;">What are the API rate limits and quotas for each tier?</h3>
                     <p style="font-size: 13px; color: var(--text-muted); line-height: 1.6; margin: 0;">
                         <strong>Free Developer:</strong> 120 req/min (100 req/hr sandbox) for testing across top free leagues (Premier League, La Liga, NPFL).<br>
-                        <strong>Starter ($10/mo):</strong> 500 req/min (1,000 req/hr) across all 100+ world competitions with Universal Booking Code conversions.<br>
-                        <strong>Pro ($29/mo):</strong> 1,500 req/min (10,000 req/hr) with lifetime H2H statistics, Norra AI prediction context, and live webhooks.<br>
-                        <strong>Enterprise ($79-$99/mo):</strong> 5,000 req/min (high throughput) with ML dataset streaming, custom match centers, and 99.9% SLA.
+                        <strong>Starter (<span data-tier-price="starter">Starter Plan</span>):</strong> 500 req/min (1,000 req/hr) across all 100+ world competitions with Universal Booking Code conversions.<br>
+                        <strong>Pro (<span data-tier-price="pro">Pro Plan</span>):</strong> 1,500 req/min (10,000 req/hr) with lifetime H2H statistics, Norra AI prediction context, and live webhooks.<br>
+                        <strong>Enterprise (<span data-tier-price="whitelabel">Enterprise Plan</span>):</strong> 5,000 req/min (high throughput) with ML dataset streaming, custom match centers, and 99.9% SLA.
                     </p>
                 </div>
 
@@ -707,7 +707,7 @@
                 <div class="footer-brand-col">
                     <div class="footer-brand-title">
                         <img id="footer-logo-img" class="footer-logo-img" src="" alt="Norra AI" hidden>
-                        <span>Scores by Norra AI</span>
+                        <span id="footer-brand-text">Scores by Norra AI</span>
                     </div>
                     <p class="footer-brand-desc">
                         Real-time global football scores, fixtures, live tables, and high-throughput commercial sports APIs. Powered by the Norra AI analytics engine.
@@ -815,20 +815,21 @@
         (function() {
             function applyThemeUi(theme) {
                 var cleanTheme = theme === 'light' ? 'light' : 'dark';
+                var isLight = cleanTheme === 'light';
                 document.documentElement.setAttribute('data-theme', cleanTheme);
-                document.documentElement.className = cleanTheme === 'light' ? 'theme-light' : '';
+                document.documentElement.classList.toggle('theme-light', isLight);
                 if (document.body) {
                     document.body.setAttribute('data-theme', cleanTheme);
-                    document.body.className = cleanTheme === 'light' ? 'theme-light' : '';
+                    document.body.classList.toggle('theme-light', isLight);
                 }
-                var icon = cleanTheme === 'light' ? '🌙' : '☀️';
-                var title = 'Switch to ' + (cleanTheme === 'light' ? 'Dark' : 'Light') + ' Mode';
+                var icon = isLight ? '🌙' : '☀️';
+                var title = 'Switch to ' + (isLight ? 'Dark' : 'Light') + ' Mode';
                 var b1 = document.getElementById('theme-toggle');
                 var b2 = document.getElementById('sticky-theme-toggle');
                 if (b1) { b1.textContent = icon; b1.title = title; }
                 if (b2) { b2.textContent = icon; b2.title = title; }
                 var meta = document.querySelector('meta[name="theme-color"]');
-                if (meta) meta.setAttribute('content', cleanTheme === 'light' ? '#ffffff' : '#080b12');
+                if (meta) meta.setAttribute('content', isLight ? '#ffffff' : '#080b12');
             }
             window.applyTheme = applyThemeUi;
 
@@ -842,6 +843,7 @@
                 var next = current === 'dark' ? 'light' : 'dark';
                 document.documentElement.classList.add('no-theme-transition');
                 applyThemeUi(next);
+                void document.documentElement.offsetHeight;
                 try {
                     localStorage.setItem('norra_theme', next);
                     localStorage.setItem('theme', next);

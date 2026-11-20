@@ -20,6 +20,115 @@ const {
 
 const { optionalApiKeyAuth, assertLeagueAccess, getAllowedLeaguesForKey, PLAN_LIMITS, hasFeature, requireFeature, getPlanConfig } = require('../middleware/apiKeyAuth');
 
+// On-demand per-date cache for past/future date tabs when MongoDB lacks fixtures for that date
+const onDemandDateCache = new Map();
+const ON_DEMAND_DATE_TTL_MS = 3 * 60 * 1000;
+
+async function fetchOnDemandDateMatches(dateKey) {
+    if (!dateKey || !/^\d{8}$/.test(dateKey)) return [];
+    const cached = onDemandDateCache.get(dateKey);
+    if (cached && (Date.now() - cached.ts < ON_DEMAND_DATE_TTL_MS)) {
+        return cached.matches;
+    }
+    try {
+        const { resolveLeagueSlug } = require('../services/soccerSyncService');
+        const ctrl = new AbortController();
+        const timer = setTimeout(() => ctrl.abort(), 6500);
+        const res = await fetch(`https://prod-public-api.livescore.com/v1/api/app/date/soccer/${dateKey}/0`, {
+            signal: ctrl.signal,
+            headers: {
+                'User-Agent': 'Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 Chrome/120.0.0.0 Mobile Safari/537.36',
+                'Accept': 'application/json'
+            }
+        });
+        clearTimeout(timer);
+        if (!res.ok) return [];
+        const data = await res.json().catch(() => null);
+        if (!data || !Array.isArray(data.Stages)) return [];
+
+        const out = [];
+        for (const stage of data.Stages) {
+            const rawCountry = stage.Cnm || stage.Sdn || 'International';
+            const stageName = stage.Snm || 'Football Competition';
+            const leagueSlug = resolveLeagueSlug(stageName, rawCountry, stage.Scd || '') || 'other';
+            for (const ev of (stage.Events || [])) {
+                const eid = String(ev.Eid || '');
+                if (!eid) continue;
+                const h = ev.T1?.[0] || {};
+                const a = ev.T2?.[0] || {};
+                let matchDate = new Date(Date.UTC(
+                    parseInt(dateKey.slice(0, 4), 10),
+                    parseInt(dateKey.slice(4, 6), 10) - 1,
+                    parseInt(dateKey.slice(6, 8), 10),
+                    12, 0
+                ));
+                if (ev.Esd && String(ev.Esd).length >= 12) {
+                    const s = String(ev.Esd);
+                    matchDate = new Date(Date.UTC(
+                        parseInt(s.slice(0, 4), 10),
+                        parseInt(s.slice(4, 6), 10) - 1,
+                        parseInt(s.slice(6, 8), 10),
+                        parseInt(s.slice(8, 10), 10),
+                        parseInt(s.slice(10, 12), 10)
+                    ));
+                }
+                const rawClock = String(ev.Eps || '').trim();
+                const isFinished = rawClock === 'FT' || rawClock === 'AET' || rawClock === 'AP';
+                const isPostp = /Postp|Canc|Abd/i.test(rawClock);
+                const isNotStarted = !rawClock || rawClock === 'NS' || rawClock === 'Upcoming' || rawClock.includes(':') || ev.Epr === 0;
+                const isLive = !isFinished && !isPostp && !isNotStarted;
+                const state = isFinished || isPostp ? 'post' : (isLive ? 'in' : 'pre');
+                const hScore = (ev.Tr1 !== undefined && ev.Tr1 !== '') ? Number(ev.Tr1) : null;
+                const aScore = (ev.Tr2 !== undefined && ev.Tr2 !== '') ? Number(ev.Tr2) : null;
+
+                out.push({
+                    source: { provider: 'livescore', event_id: `ls_${eid}`, livescore_id: eid },
+                    league_slug: leagueSlug,
+                    league: { slug: leagueSlug, name: stageName, country: rawCountry },
+                    note: stageName,
+                    name: `${h.Nm || 'Home'} vs ${a.Nm || 'Away'}`,
+                    short_name: `${h.Abr || h.Nm || 'HOM'} vs ${a.Abr || a.Nm || 'AWY'}`,
+                    date: matchDate,
+                    scoreboard_date: dateKey,
+                    status: {
+                        state,
+                        detail: isPostp ? 'Postp.' : (isFinished ? rawClock : (isLive ? rawClock : 'Scheduled')),
+                        clock: isLive || isFinished ? rawClock : '',
+                        completed: isFinished || isPostp,
+                        isLive
+                    },
+                    home: {
+                        source_id: String(h.ID || ''),
+                        name: h.Nm || 'Home',
+                        display_name: h.Nm || 'Home',
+                        abbreviation: h.Abr || '',
+                        logo: h.Img ? `https://lsm-static-prod.livescore.com/medium/${h.Img}` : '',
+                        score: hScore,
+                        winner: isFinished && hScore !== null && aScore !== null ? hScore > aScore : false
+                    },
+                    away: {
+                        source_id: String(a.ID || ''),
+                        name: a.Nm || 'Away',
+                        display_name: a.Nm || 'Away',
+                        abbreviation: a.Abr || '',
+                        logo: a.Img ? `https://lsm-static-prod.livescore.com/medium/${a.Img}` : '',
+                        score: aScore,
+                        winner: isFinished && hScore !== null && aScore !== null ? aScore > hScore : false
+                    }
+                });
+            }
+        }
+        onDemandDateCache.set(dateKey, { ts: Date.now(), matches: out });
+        if (onDemandDateCache.size > 15) {
+            const oldestKey = onDemandDateCache.keys().next().value;
+            onDemandDateCache.delete(oldestKey);
+        }
+        return out;
+    } catch (_) {
+        return [];
+    }
+}
+
 // High-speed in-memory cache for worldwide live in-play scores
 let liveFeedMemoryCache = {
     timestamp: 0,
@@ -233,7 +342,67 @@ function inferMatchCountry(m) {
     if (slug.startsWith('rsa.')) return 'South Africa';
     if (slug.startsWith('jpn.')) return 'Japan';
     if (slug.startsWith('kor.')) return 'South Korea';
-    if (slug.startsWith('sau.')) return 'Saudi Arabia';
+    if (slug.startsWith('chn.')) return 'China';
+    if (slug.startsWith('ind.')) return 'India';
+    if (slug.startsWith('idn.')) return 'Indonesia';
+    if (slug.startsWith('tha.')) return 'Thailand';
+    if (slug.startsWith('mys.')) return 'Malaysia';
+    if (slug.startsWith('sgp.')) return 'Singapore';
+    if (slug.startsWith('vnm.')) return 'Vietnam';
+    if (slug.startsWith('sau.') || slug.startsWith('ksa.')) return 'Saudi Arabia';
+    if (slug.startsWith('qat.')) return 'Qatar';
+    if (slug.startsWith('uae.')) return 'UAE';
+    if (slug.startsWith('irn.')) return 'Iran';
+    if (slug.startsWith('irq.')) return 'Iraq';
+    if (slug.startsWith('jor.')) return 'Jordan';
+    if (slug.startsWith('omn.')) return 'Oman';
+    if (slug.startsWith('uzb.')) return 'Uzbekistan';
+    if (slug.startsWith('mar.')) return 'Morocco';
+    if (slug.startsWith('dza.')) return 'Algeria';
+    if (slug.startsWith('tun.')) return 'Tunisia';
+    if (slug.startsWith('cmr.')) return 'Cameroon';
+    if (slug.startsWith('sen.')) return 'Senegal';
+    if (slug.startsWith('civ.')) return 'Ivory Coast';
+    if (slug.startsWith('zmb.')) return 'Zambia';
+    if (slug.startsWith('zwe.')) return 'Zimbabwe';
+    if (slug.startsWith('eth.')) return 'Ethiopia';
+    if (slug.startsWith('rwa.')) return 'Rwanda';
+    if (slug.startsWith('cod.')) return 'DR Congo';
+    if (slug.startsWith('sdn.')) return 'Sudan';
+    if (slug.startsWith('ago.')) return 'Angola';
+    if (slug.startsWith('mwi.')) return 'Malawi';
+    if (slug.startsWith('can.')) return 'Canada';
+    if (slug.startsWith('uru.')) return 'Uruguay';
+    if (slug.startsWith('par.')) return 'Paraguay';
+    if (slug.startsWith('per.')) return 'Peru';
+    if (slug.startsWith('ecu.')) return 'Ecuador';
+    if (slug.startsWith('ven.')) return 'Venezuela';
+    if (slug.startsWith('bol.')) return 'Bolivia';
+    if (slug.startsWith('crc.')) return 'Costa Rica';
+    if (slug.startsWith('hon.')) return 'Honduras';
+    if (slug.startsWith('gtm.') || slug.startsWith('gua.')) return 'Guatemala';
+    if (slug.startsWith('pan.')) return 'Panama';
+    if (slug.startsWith('nic.')) return 'Nicaragua';
+    if (slug.startsWith('slv.')) return 'El Salvador';
+    if (slug.startsWith('nzl.')) return 'New Zealand';
+    if (slug.startsWith('isl.')) return 'Iceland';
+    if (slug.startsWith('fin.')) return 'Finland';
+    if (slug.startsWith('rus.')) return 'Russia';
+    if (slug.startsWith('ukr.')) return 'Ukraine';
+    if (slug.startsWith('cze.')) return 'Czech Republic';
+    if (slug.startsWith('irl.')) return 'Ireland';
+    if (slug.startsWith('nir.')) return 'Northern Ireland';
+    if (slug.startsWith('wal.')) return 'Wales';
+    if (slug.startsWith('lva.')) return 'Latvia';
+    if (slug.startsWith('ltu.')) return 'Lithuania';
+    if (slug.startsWith('est.')) return 'Estonia';
+    if (slug.startsWith('lux.')) return 'Luxembourg';
+    if (slug.startsWith('mlt.')) return 'Malta';
+    if (slug.startsWith('kaz.')) return 'Kazakhstan';
+    if (slug.startsWith('mda.') || slug.startsWith('mol.')) return 'Moldova';
+    if (slug.startsWith('hkg.')) return 'Hong Kong';
+    if (slug.startsWith('bgd.')) return 'Bangladesh';
+    if (slug.startsWith('afc.')) return 'Asia';
     if (slug.startsWith('caf.')) return 'Africa';
     if (slug.startsWith('uefa.')) return 'Europe';
     if (slug.startsWith('conmebol.')) return 'South America';
@@ -1361,6 +1530,33 @@ router.get('/fixtures', optionalApiKeyAuth, async (req, res) => {
             SoccerLeague.find({ active: true }).select('slug name abbreviation country logo').maxTimeMS(2500).lean().catch(() => [])
         ]);
 
+        // On-demand fallback for past/future dates (yesterday, tomorrow, custom YYYY-MM-DD) when DB has few/0 fixtures
+        if (!isQueryingToday && date && (matches.length < 5 || (league && league !== 'all' && matches.length === 0))) {
+            const targetKey = parseDateParam(date);
+            let onDemand = await fetchOnDemandDateMatches(targetKey);
+            if (isFreePlanRestricted(req.apiKey)) {
+                onDemand = onDemand.filter(m => FREE_TIER_ALLOWED_LEAGUES.includes(String(m.league_slug || '').toLowerCase()));
+            } else if (league && league !== 'all') {
+                const reqSlug = String(league).toLowerCase();
+                onDemand = onDemand.filter(m => String(m.league_slug || '').toLowerCase() === reqSlug);
+            }
+            if (status === 'live') {
+                onDemand = onDemand.filter(m => m.status?.state === 'in' || m.status?.isLive);
+            } else if (status === 'scheduled') {
+                onDemand = onDemand.filter(m => m.status?.state === 'pre');
+            } else if (status === 'finished') {
+                onDemand = onDemand.filter(m => m.status?.state === 'post' || m.status?.completed);
+            }
+            if (team) {
+                const tRx = new RegExp(String(team).trim(), 'i');
+                onDemand = onDemand.filter(m => tRx.test(m.home?.name || '') || tRx.test(m.away?.name || ''));
+            }
+            if (onDemand.length > 0) {
+                matches = [...matches, ...onDemand];
+                totalCount = matches.length;
+            }
+        }
+
         // If querying today, always merge real-time live in-play matches into the fixture results
         if (isQueryingToday && (status === 'all' || status === 'live')) {
             if (liveFeedMemoryCache.matches && liveFeedMemoryCache.matches.length > 0) {
@@ -1469,7 +1665,7 @@ router.get('/fixtures', optionalApiKeyAuth, async (req, res) => {
                     slug: leagueSlug,
                     name: lg.name || (targetLg?.name) || m.note || leagueSlug,
                     abbreviation: lg.abbreviation || (targetLg?.abbreviation) || leagueSlug,
-                    country: lg.country || (targetLg?.country) || inferMatchCountry(m),
+                    country: (lg.country && lg.country !== 'International') ? lg.country : ((targetLg?.country && targetLg.country !== 'International') ? targetLg.country : inferMatchCountry(m)),
                     logo: lg.logo || (targetLg?.logo) || ''
                 },
                 scoreboardDate: m.scoreboard_date || m.scoreboardDate,

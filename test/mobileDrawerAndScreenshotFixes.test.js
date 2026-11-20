@@ -71,7 +71,7 @@ test('Header brand elements support dynamic admin logo replacement and title syn
     assert.ok(html.includes('id="header-brand-title"'), 'Brand title must have id header-brand-title');
 
     const appJs = fs.readFileSync(path.join(__dirname, '../public/app.js'), 'utf8');
-    assert.ok(appJs.includes('headerBallIcon.innerHTML = `<img src="${escapeHtml(res.branding.headerLogoUrl)}"'), 'app.js must replace ball icon with custom admin header logo');
+    assert.ok(appJs.includes('headerLogoImg.src = res.branding.headerLogoUrl') && appJs.includes("headerBrandFallback.style.display = 'none'"), 'app.js must display expanded custom admin header logo and hide textual fallback');
     assert.ok(appJs.includes('headerBrandTitle.textContent = res.branding.siteTitle'), 'app.js must sync header-brand-title with admin siteTitle');
 });
 

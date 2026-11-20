@@ -18,7 +18,10 @@
     <meta name="twitter:description" content="Privacy Policy for Scores by Norra AI (scores.mynorra.xyz) football livescores and commercial sports API platform.">
     <meta name="twitter:image" content="https://scores.mynorra.xyz/og-image.png">
     <link rel="icon" href="/favicon.svg" type="image/svg+xml">
-    <link rel="stylesheet" href="/assets/styles-v8.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@600;700;800;900&family=Plus+Jakarta+Sans:wght@700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/assets/styles.css?v=1.0.0">
     <script>
         (function() {
             try {
@@ -162,7 +165,7 @@
             <ul>
                 <li><strong>Developer & Account Credentials:</strong> When creating an account or authenticating via Google One-Tap/OAuth, we store your full name, email address, password hash (for direct signups), and Google avatar/account ID. We never store raw plain-text passwords.</li>
                 <li><strong>API Usage Telemetry:</strong> Request counters, endpoint access stamps, user-agent signatures, and API key metrics used solely for enforcing fair-use rate limits and monitoring server health.</li>
-                <li><strong>Payment Transaction Records:</strong> For commercial subscribers ($10 Starter, $29 Pro, $79 Whitelabel), we record transaction references, plan status, and payment gateway tokens. Credit card details are handled directly by PCI-DSS certified gateways (Flutterwave & PayPal) and never touch our servers.</li>
+                <li><strong>Payment Transaction Records:</strong> For commercial subscribers (Starter, Pro, and Whitelabel tiers — see <a href="/pricing" style="color:var(--color-primary);">Pricing</a>), we record transaction references, plan status, and payment gateway tokens. Credit card details are handled directly by PCI-DSS certified gateways (Flutterwave & PayPal) and never touch our servers.</li>
                 <li><strong>Browser Preferences:</strong> We use client-side <code>localStorage</code> solely to remember your chosen theme (dark/light) and audio preference for goal alerts.</li>
             </ul>
         </div>
@@ -348,5 +351,6 @@
         const yr = document.getElementById('current-year');
         if (yr) yr.textContent = new Date().getFullYear();
     </script>
+    <script src="/assets/shared-shell.js"></script>
 </body>
 </html>
