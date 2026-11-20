@@ -146,32 +146,34 @@ const LEAGUE_PRIORITY_MAP = {
     'fra.1': 95,
     'uefa.europa': 94,
     'uefa.europa.conf': 93,
-    'eng.fa': 92,
-    'esp.copa_del_rey': 91,
-    'ita.coppa_italia': 90,
-    'ger.dfb_pokal': 89,
-    'eng.league_cup': 88,
-    'eng.2': 87,
-    'ned.1': 86,
-    'por.1': 85,
-    'bra.1': 84,
-    'arg.1': 83,
-    'nga.1': 82,
-    'sau.1': 81,
-    'mex.1': 80,
-    'col.1': 79,
-    'tur.1': 78,
-    'bel.1': 77,
-    'sco.1': 76,
-    'caf.champions': 75,
-    'afc.champions': 74,
-    'usa.1': 73,
-    'conmebol.libertadores': 72,
+    'ned.1': 92,
+    'por.1': 91,
+    'bra.1': 90,
+    'arg.1': 89,
+    'nga.1': 88,
+    'ksa.1': 87,
+    'sau.1': 87,
+    'mex.1': 86,
+    'col.1': 85,
+    'tur.1': 84,
+    'bel.1': 83,
+    'sco.1': 82,
+    'usa.1': 81,
+    'rus.1': 80,
+    'caf.champions': 79,
+    'afc.champions': 78,
+    'conmebol.libertadores': 77,
+    'eng.fa': 76,
+    'esp.copa_del_rey': 75,
+    'ita.coppa_italia': 74,
+    'ger.dfb_pokal': 73,
+    'eng.league_cup': 72,
     'conmebol.sudamericana': 71,
     'aut.1': 70,
     'sui.1': 69,
     'den.1': 68,
     'swe.1': 67,
+    'eng.2': 50,
     'nor.1': 66,
     'gre.1': 65,
     'egy.1': 64,
@@ -407,6 +409,28 @@ function inferMatchCountry(m) {
     if (slug.startsWith('uefa.')) return 'Europe';
     if (slug.startsWith('conmebol.')) return 'South America';
     if (slug.startsWith('concacaf.')) return 'North America';
+
+    // League name keyword fallback when slug is generic/other or DB had stale International
+    if (/\b(?:colombi|betplay)\b/.test(txt)) return 'Colombia';
+    if (/\b(?:peruv|peru|te apuesto)\b/.test(txt)) return 'Peru';
+    if (/\b(?:uruguay|auf uruguaya)\b/.test(txt)) return 'Uruguay';
+    if (/\b(?:russia|russian)\b/.test(txt)) return 'Russia';
+    if (/\b(?:saudi|roshn)\b/.test(txt)) return 'Saudi Arabia';
+    if (/\b(?:indian|india super|i-league)\b/.test(txt)) return 'India';
+    if (/\b(?:keuken kampioen|eerste divisie|eredivisie|dutch|netherlands)\b/.test(txt)) return 'Netherlands';
+    if (/\b(?:brazil|brasileir)\b/.test(txt)) return 'Brazil';
+    if (/\b(?:argentin)\b/.test(txt)) return 'Argentina';
+    if (/\b(?:chilean|chile)\b/.test(txt)) return 'Chile';
+    if (/\b(?:ecuador)\b/.test(txt)) return 'Ecuador';
+    if (/\b(?:paraguay)\b/.test(txt)) return 'Paraguay';
+    if (/\b(?:venezuel)\b/.test(txt)) return 'Venezuela';
+    if (/\b(?:bolivi)\b/.test(txt)) return 'Bolivia';
+    if (/\b(?:mexic|liga mx)\b/.test(txt)) return 'Mexico';
+    if (/\b(?:uefa)\b/.test(txt)) return 'Europe';
+    if (/\b(?:conmebol|libertadores|sudamericana)\b/.test(txt)) return 'South America';
+    if (/\b(?:concacaf)\b/.test(txt)) return 'North America';
+    if (/\b(?:caf|afcon)\b/.test(txt)) return 'Africa';
+    if (/\b(?:afc)\b/.test(txt)) return 'Asia';
     if (slug.startsWith('afc.')) return 'Asia';
     if (slug.startsWith('fifa.')) return 'International';
 
@@ -3265,19 +3289,27 @@ router.get('/leagues', async (req, res) => {
         return res.json({
             status: 'success',
             count: leagues.length,
-            leagues: leagues.map(l => ({
-                id: l.source?.source_id || l.slug,
-                name: l.name,
-                abbreviation: l.abbreviation,
-                slug: l.slug,
-                country: l.country,
-                kind: l.kind,
-                logo: l.logo,
-                season: l.season,
-                matchCount: countMap.get(l.slug) || 0,
-                lastSyncedAt: l.lastSyncedAt,
-                isAccessibleOnTier: isFreePlanRestricted(req.apiKey) ? FREE_TIER_ALLOWED_LEAGUES.includes(l.slug) : true
-            }))
+            leagues: leagues.map(l => {
+                const targetLg = TARGET_LEAGUES.find(t => t.slug === l.slug);
+                const resolvedCountry = (l.country && l.country !== 'International')
+                    ? l.country
+                    : ((targetLg?.country && targetLg.country !== 'International')
+                        ? targetLg.country
+                        : inferMatchCountry({ league_slug: l.slug, name: l.name, note: l.name }));
+                return {
+                    id: l.source?.source_id || l.slug,
+                    name: l.name,
+                    abbreviation: l.abbreviation,
+                    slug: l.slug,
+                    country: resolvedCountry,
+                    kind: l.kind,
+                    logo: l.logo,
+                    season: l.season,
+                    matchCount: countMap.get(l.slug) || 0,
+                    lastSyncedAt: l.lastSyncedAt,
+                    isAccessibleOnTier: isFreePlanRestricted(req.apiKey) ? FREE_TIER_ALLOWED_LEAGUES.includes(l.slug) : true
+                };
+            })
         });
     } catch (err) {
         return res.status(500).json({ error: 'Failed to fetch leagues: ' + err.message });

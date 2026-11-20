@@ -221,9 +221,12 @@ body.theme-light .site-header {
     cursor: pointer;
 }
 .brand-logo-img {
-    max-height: 28px;
-    max-width: 150px;
+    width: auto;
+    height: auto;
+    max-height: 36px;
+    max-width: 195px;
     object-fit: contain;
+    flex-shrink: 0;
 }
 .brand-icon {
     width: 28px;
@@ -3626,26 +3629,28 @@ body[data-page-kind="home"] #page-lede {
     display: none !important;
 }
 
-/* Expanded Custom Header & Footer Logos with Light-Mode Color Filter */
+/* Expanded Custom Header & Footer Logos with Light-Mode Color Filter (never squished) */
 .brand-logo-img {
-    height: 36px;
-    max-height: 40px;
-    width: auto;
-    max-width: 200px;
+    width: auto !important;
+    height: auto !important;
+    max-height: 36px;
+    max-width: 195px;
     object-fit: contain;
     display: block;
+    flex-shrink: 0;
     transition: filter 0.15s ease;
 }
 .brand-logo-img[hidden] {
     display: none !important;
 }
 .footer-logo-img {
-    height: 38px;
-    max-height: 44px;
-    width: auto;
-    max-width: 215px;
+    width: auto !important;
+    height: auto !important;
+    max-height: 40px;
+    max-width: 210px;
     object-fit: contain;
     display: block;
+    flex-shrink: 0;
     transition: filter 0.15s ease;
 }
 .footer-logo-img[hidden] {
@@ -3660,14 +3665,12 @@ body.theme-light .footer-logo-img,
 }
 @media (max-width: 768px) {
     .brand-logo-img {
-        height: 30px;
-        max-height: 34px;
-        max-width: 155px;
+        max-height: 30px;
+        max-width: 150px;
     }
     .footer-logo-img {
-        height: 34px;
-        max-height: 38px;
-        max-width: 185px;
+        max-height: 34px;
+        max-width: 180px;
     }
 }
 

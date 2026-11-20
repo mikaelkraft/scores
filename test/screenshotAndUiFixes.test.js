@@ -23,6 +23,11 @@ test('Team deduplication harmonizes United States/USA and Nordic HB Køge/HB Koe
     assert.equal(normalizeTeamName('HB Køge'), normalizeTeamName('HB Koege W'));
     assert.equal(areTeamNamesMatching('HB Køge', 'HB Koege W', 'uefa.wchampions', 'uefa.wchampions'), true);
     assert.equal(areTeamNamesMatching('Paris FC', 'Paris FC W', 'uefa.wchampions', 'uefa.wchampions'), true);
+
+    // Indian Super League relocation/rebrand: Hyderabad FC <-> Sporting Club Delhi & East Bengal FC <-> East Bengal Club
+    assert.equal(normalizeTeamName('Sporting Club Delhi'), normalizeTeamName('Hyderabad FC'));
+    assert.equal(areTeamNamesMatching('Sporting Club Delhi', 'Hyderabad FC', 'ind.1', 'ind.1'), true);
+    assert.equal(areTeamNamesMatching('East Bengal FC', 'East Bengal Club', 'ind.1', 'ind.1'), true);
 });
 
 test('League resolution fixes National League (England), Keuken Kampioen Divisie (Netherlands), and Indian leagues', () => {

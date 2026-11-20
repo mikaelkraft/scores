@@ -2471,6 +2471,8 @@ function normalizeTeamName(name = '') {
         .replace(/\bunited\s+arab\s+emirates\b|\bu\.?a\.?e\.?\b/g, 'uae')
         .replace(/\btrinidad\s*(?:and|&)\s*tobago\b/g, 'trinidadtobago')
         .replace(/\b(?:st\.?|saint)\s+vincent(?:\s*(?:and|&)\s*the\s+grenadines)?\b/g, 'saintvincent')
+        // Indian Super League relocation/rebrand alias: Hyderabad FC -> Sporting Club Delhi
+        .replace(/\b(?:sporting\s+club\s+delhi|sc\s+delhi|hyderabad(?:\s+fc)?)\b/g, 'scdelhi')
         // Collapse dotted abbreviations like C.D., F.C., S.D., U.S.
         .replace(/\b([a-z])\.([a-z])\.([a-z])\.?/gi, '$1$2$3 ')
         .replace(/\b([a-z])\.([a-z])\.?/gi, '$1$2 ')

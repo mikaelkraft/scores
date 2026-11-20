@@ -779,6 +779,7 @@
             .replace(/\bunited\s+arab\s+emirates\b|\bu\.?a\.?e\.?\b/g, 'uae')
             .replace(/\btrinidad\s*(?:and|&)\s*tobago\b/g, 'trinidadtobago')
             .replace(/\b(?:st\.?|saint)\s+vincent(?:\s*(?:and|&)\s*the\s+grenadines)?\b/g, 'saintvincent')
+            .replace(/\b(?:sporting\s+club\s+delhi|sc\s+delhi|hyderabad(?:\s+fc)?)\b/g, 'scdelhi')
             .replace(/\b([a-z])\.([a-z])\.([a-z])\.?/gi, '$1$2$3 ')
             .replace(/\b([a-z])\.([a-z])\.?/gi, '$1$2 ')
             .replace(/\bst[.]?\s+/gi, 'saint ')
@@ -1171,76 +1172,109 @@
     }
 
     const CLIENT_LEAGUE_PRIORITY = {
-        'uefa.champions': 100,
-        'eng.1': 99,
-        'esp.1': 98,
-        'ita.1': 97,
-        'ger.1': 96,
-        'fra.1': 95,
-        'uefa.europa': 94,
-        'uefa.europa.conf': 93,
-        'uefa.super_cup': 92,
-        'fifa.world': 91,
-        'eng.fa': 90,
-        'esp.copa_del_rey': 89,
-        'ita.coppa_italia': 88,
-        'ger.dfb_pokal': 87,
-        'eng.league_cup': 86,
-        'eng.2': 85,
-        'ned.1': 84,
-        'por.1': 83,
-        'bra.1': 82,
-        'arg.1': 81,
-        'nga.1': 80,
-        'sau.1': 79,
-        'mex.1': 78,
-        'col.1': 77,
-        'tur.1': 76,
-        'bel.1': 75,
-        'caf.champions': 74,
-        'caf.confed': 73,
-        'conmebol.libertadores': 72,
-        'conmebol.sudamericana': 71,
-        'sco.1': 70,
-        'afc.champions': 69,
-        'usa.1': 68,
-        'aut.1': 67,
-        'sui.1': 66,
-        'den.1': 65,
-        'swe.1': 64,
-        'nor.1': 63,
-        'gre.1': 62,
-        'egy.1': 61,
-        'rsa.1': 60,
-        'mar.1': 59,
-        'gha.1': 58,
-        'ken.1': 57,
-        'tza.1': 56,
-        'jpn.1': 55,
-        'kor.1': 54,
-        'aus.1': 53,
-        'bra.2': 52,
-        'esp.2': 51,
-        'ger.2': 50,
-        'ita.2': 49,
-        'fra.2': 48,
-        'por.2': 47,
-        'mex.2': 46,
-        'jpn.w.1': 52,
-        'bol.1': 52,
-        'bol.copa': 50
+        // Tier 1: Global Premier & European Big 5 Top Flights
+        'uefa.champions': 1000,
+        'eng.1': 990,
+        'esp.1': 980,
+        'ita.1': 970,
+        'ger.1': 960,
+        'fra.1': 950,
+        'uefa.europa': 940,
+        'uefa.europa.conf': 930,
+        'fifa.world': 925,
+        'uefa.euro': 920,
+        'uefa.super_cup': 915,
+        'caf.nations': 910,
+        'conmebol.america': 905,
+        'concacaf.nations': 900,
+
+        // Tier 2: Worldwide Senior Top-Flight Domestic Leagues (.1) & Premier Continental Cups
+        'ned.1': 890,
+        'por.1': 885,
+        'bra.1': 880,
+        'arg.1': 875,
+        'nga.1': 870,
+        'ksa.1': 865,
+        'sau.1': 865,
+        'mex.1': 860,
+        'tur.1': 855,
+        'bel.1': 850,
+        'sco.1': 845,
+        'usa.1': 840,
+        'col.1': 835,
+        'rus.1': 830,
+        'caf.champions': 825,
+        'conmebol.libertadores': 820,
+        'afc.champions': 815,
+        'uefa.wchampions': 810,
+        'aut.1': 805,
+        'sui.1': 800,
+        'den.1': 795,
+        'swe.1': 790,
+        'nor.1': 785,
+        'gre.1': 780,
+        'pol.1': 775,
+        'ukr.1': 770,
+        'cze.1': 765,
+        'cro.1': 760,
+        'srb.1': 755,
+        'rou.1': 750,
+        'egy.1': 745,
+        'rsa.1': 740,
+        'mar.1': 735,
+        'gha.1': 730,
+        'ken.1': 725,
+        'tza.1': 720,
+        'jpn.1': 715,
+        'kor.1': 710,
+        'aus.1': 705,
+        'chn.1': 700,
+        'ind.1': 695,
+        'per.1': 690,
+        'uru.1': 685,
+        'chi.1': 680,
+        'ecu.1': 675,
+        'bol.1': 670,
+        'eng.w.1': 665,
+        'esp.w.1': 660,
+        'usa.nwsl': 655,
+        'jpn.w.1': 652,
+
+        // Tier 3: Major Domestic & Secondary Continental Cups
+        'eng.fa': 640,
+        'esp.copa_del_rey': 635,
+        'ita.coppa_italia': 630,
+        'ger.dfb_pokal': 625,
+        'fra.coupe_de_france': 620,
+        'eng.league_cup': 615,
+        'caf.confed': 610,
+        'conmebol.sudamericana': 605,
+        'bol.copa': 580,
+
+        // Tier 4: Second-Division Leagues (.2) — strictly below all top-flight leagues
+        'eng.2': 500,
+        'esp.2': 495,
+        'ger.2': 490,
+        'ita.2': 485,
+        'fra.2': 480,
+        'ned.2': 475,
+        'bra.2': 470,
+        'por.2': 465,
+        'mex.2': 460
     };
 
     function getLeaguePriorityClient(slug = '') {
-        if (!slug) return 30;
+        if (!slug) return 200;
         const cleanSlug = String(slug).toLowerCase().trim();
         if (CLIENT_LEAGUE_PRIORITY[cleanSlug]) return CLIENT_LEAGUE_PRIORITY[cleanSlug];
-        if (cleanSlug.includes('youth') || cleanSlug.includes('u21') || cleanSlug.includes('u19') || cleanSlug.includes('u23')) return 20;
-        if (cleanSlug.includes('friendly') || cleanSlug === 'club.friendly') return 10;
-        if (cleanSlug.endsWith('.1')) return 55;
-        if (cleanSlug.endsWith('.2')) return 45;
-        if (cleanSlug.endsWith('.3') || cleanSlug.endsWith('.4')) return 35;
-        return 40;
+        if (cleanSlug.includes('youth') || cleanSlug.includes('u21') || cleanSlug.includes('u19') || cleanSlug.includes('u23')) return 120;
+        if (cleanSlug.includes('friendly') || cleanSlug === 'club.friendly') return 50;
+        // Any remaining senior top-flight (.1) league ALWAYS ranks above 2nd/lower tiers
+        if (cleanSlug.endsWith('.1') && !cleanSlug.includes('.w.')) return 650;
+        if (cleanSlug.endsWith('.w.1')) return 645;
+        if (cleanSlug.endsWith('.2')) return 420;
+        if (cleanSlug.endsWith('.3') || cleanSlug.endsWith('.4') || cleanSlug.endsWith('.5') || cleanSlug.endsWith('.lower')) return 300;
+        return 350;
     }
 
     function enrichLeagueMeta(league, ev = null) {
@@ -1683,6 +1717,53 @@
             };
             if (countryMap[prefix]) {
                 country = countryMap[prefix];
+            } else {
+                const nm = `${lowerName} ${lowerSlug}`;
+                if (/\b(?:colombi|betplay)\b/.test(nm)) country = 'Colombia';
+                else if (/\b(?:peruv|peru|te apuesto)\b/.test(nm)) country = 'Peru';
+                else if (/\b(?:uruguay|auf uruguaya)\b/.test(nm)) country = 'Uruguay';
+                else if (/\b(?:russia|russian)\b/.test(nm)) country = 'Russia';
+                else if (/\b(?:saudi|roshn)\b/.test(nm)) country = 'Saudi Arabia';
+                else if (/\b(?:indian|india super|i-league)\b/.test(nm)) country = 'India';
+                else if (/\b(?:keuken kampioen|eerste divisie|eredivisie|dutch|netherlands)\b/.test(nm)) country = 'Netherlands';
+                else if (/\b(?:brazil|brasileir)\b/.test(nm)) country = 'Brazil';
+                else if (/\b(?:argentin)\b/.test(nm)) country = 'Argentina';
+                else if (/\b(?:chilean|chile)\b/.test(nm)) country = 'Chile';
+                else if (/\b(?:ecuador)\b/.test(nm)) country = 'Ecuador';
+                else if (/\b(?:paraguay)\b/.test(nm)) country = 'Paraguay';
+                else if (/\b(?:venezuel)\b/.test(nm)) country = 'Venezuela';
+                else if (/\b(?:bolivi)\b/.test(nm)) country = 'Bolivia';
+                else if (/\b(?:mexic|liga mx)\b/.test(nm)) country = 'Mexico';
+                else if (/\b(?:japan|j1|j2|j-league)\b/.test(nm)) country = 'Japan';
+                else if (/\b(?:korea|k league|k-league)\b/.test(nm)) country = 'South Korea';
+                else if (/\b(?:china|chinese)\b/.test(nm)) country = 'China';
+                else if (/\b(?:egypt)\b/.test(nm)) country = 'Egypt';
+                else if (/\b(?:morocc)\b/.test(nm)) country = 'Morocco';
+                else if (/\b(?:nigeri|npfl)\b/.test(nm)) country = 'Nigeria';
+                else if (/\b(?:south africa)\b/.test(nm)) country = 'South Africa';
+                else if (/\b(?:scottish|scotland)\b/.test(nm)) country = 'Scotland';
+                else if (/\b(?:turkish|turkey|süper lig|super lig)\b/.test(nm)) country = 'Turkey';
+                else if (/\b(?:belgian|belgium|jupiler)\b/.test(nm)) country = 'Belgium';
+                else if (/\b(?:portug|primeira liga)\b/.test(nm)) country = 'Portugal';
+                else if (/\b(?:greek|greece)\b/.test(nm)) country = 'Greece';
+                else if (/\b(?:swiss|switzerland)\b/.test(nm)) country = 'Switzerland';
+                else if (/\b(?:austria)\b/.test(nm)) country = 'Austria';
+                else if (/\b(?:danish|denmark|superligaen)\b/.test(nm)) country = 'Denmark';
+                else if (/\b(?:swed|allsvenskan)\b/.test(nm)) country = 'Sweden';
+                else if (/\b(?:norw|eliteserien)\b/.test(nm)) country = 'Norway';
+                else if (/\b(?:polish|poland|ekstraklasa)\b/.test(nm)) country = 'Poland';
+                else if (/\b(?:ukrain)\b/.test(nm)) country = 'Ukraine';
+                else if (/\b(?:czech)\b/.test(nm)) country = 'Czech Republic';
+                else if (/\b(?:croat)\b/.test(nm)) country = 'Croatia';
+                else if (/\b(?:serbi)\b/.test(nm)) country = 'Serbia';
+                else if (/\b(?:romani)\b/.test(nm)) country = 'Romania';
+                else if (/\b(?:hungar)\b/.test(nm)) country = 'Hungary';
+                else if (/\b(?:bulgar)\b/.test(nm)) country = 'Bulgaria';
+                else if (/\b(?:uefa)\b/.test(nm)) country = 'Europe';
+                else if (/\b(?:conmebol|libertadores|sudamericana)\b/.test(nm)) country = 'South America';
+                else if (/\b(?:concacaf)\b/.test(nm)) country = 'North America';
+                else if (/\b(?:caf|afcon)\b/.test(nm)) country = 'Africa';
+                else if (/\b(?:afc)\b/.test(nm)) country = 'Asia';
             }
         }
 
@@ -1775,45 +1856,46 @@
         const slug = (league?.slug || '').toLowerCase();
         const prefix = slug.split('.')[0];
         const country = (league?.country || '').toLowerCase().trim();
-        if (COUNTRY_CODES[country]) return COUNTRY_CODES[country];
-        if (prefix === 'eng') return 'gb-eng';
-        if (prefix === 'sco') return 'gb-sct';
-        if (prefix === 'esp') return 'es';
-        if (prefix === 'ita') return 'it';
-        if (prefix === 'ger') return 'de';
-        if (prefix === 'fra') return 'fr';
-        if (prefix === 'ned') return 'nl';
-        if (prefix === 'por') return 'pt';
-        if (prefix === 'tur') return 'tr';
-        if (prefix === 'bel') return 'be';
-        if (prefix === 'aut') return 'at';
-        if (prefix === 'sui') return 'ch';
-        if (prefix === 'den') return 'dk';
-        if (prefix === 'swe') return 'se';
-        if (prefix === 'nor') return 'no';
-        if (prefix === 'gre') return 'gr';
-        if (prefix === 'usa') return 'us';
-        if (prefix === 'mex') return 'mx';
-        if (prefix === 'bra') return 'br';
-        if (prefix === 'arg') return 'ar';
-        if (prefix === 'col') return 'co';
-        if (prefix === 'jpn') return 'jp';
-        if (prefix === 'aus') return 'au';
-        if (prefix === 'chn') return 'cn';
-        if (prefix === 'ksa') return 'sa';
-        if (prefix === 'nga') return 'ng';
-        if (prefix === 'rsa') return 'za';
-        if (prefix === 'egy') return 'eg';
-        if (prefix === 'mar') return 'ma';
-        if (prefix === 'gha') return 'gh';
-        if (prefix === 'ken') return 'ke';
-        if (prefix === 'uga') return 'ug';
-        if (prefix === 'ind') return 'in';
-        if (prefix === 'idn') return 'id';
-        if (prefix === 'tha') return 'th';
-        if (prefix === 'mys') return 'my';
-        if (prefix === 'sgp') return 'sg';
-        return '';
+        const isGenericCountry = !country || country === 'international' || country === 'world' || country === 'other';
+        if (!isGenericCountry && COUNTRY_CODES[country]) return COUNTRY_CODES[country];
+
+        const PREFIX_TO_FLAG = {
+            eng: 'gb-eng', sco: 'gb-sct', wal: 'gb-wls', nir: 'gb-nir', irl: 'ie',
+            esp: 'es', ita: 'it', ger: 'de', fra: 'fr', ned: 'nl', por: 'pt',
+            tur: 'tr', bel: 'be', aut: 'at', sui: 'ch', den: 'dk', swe: 'se',
+            nor: 'no', fin: 'fi', gre: 'gr', pol: 'pl', rus: 'ru', ukr: 'ua',
+            cze: 'cz', cro: 'hr', srb: 'rs', rou: 'ro', hun: 'hu', bgr: 'bg',
+            svk: 'sk', svn: 'si', bih: 'ba', mne: 'me', mkd: 'mk', kvx: 'xk',
+            alb: 'al', cyp: 'cy', geo: 'ge', arm: 'am', aze: 'az', blr: 'by',
+            isr: 'il', isl: 'is', lva: 'lv', ltu: 'lt', est: 'ee', lux: 'lu',
+            mlt: 'mt', kaz: 'kz', mda: 'md', mol: 'md', fro: 'fo',
+            usa: 'us', can: 'ca', mex: 'mx', crc: 'cr', hon: 'hn', gtm: 'gt', gua: 'gt',
+            pan: 'pa', nic: 'ni', slv: 'sv', jam: 'jm',
+            bra: 'br', arg: 'ar', col: 'co', chi: 'cl', uru: 'uy', par: 'py',
+            per: 'pe', ecu: 'ec', bol: 'bo', ven: 've',
+            jpn: 'jp', kor: 'kr', chn: 'cn', aus: 'au', nzl: 'nz',
+            ksa: 'sa', sau: 'sa', qat: 'qa', uae: 'ae', irn: 'ir', irq: 'iq',
+            jor: 'jo', bhr: 'bh', kwt: 'kw', omn: 'om', uzb: 'uz',
+            ind: 'in', idn: 'id', tha: 'th', mys: 'my', sgp: 'sg', vnm: 'vn', hkg: 'hk', bgd: 'bd',
+            nga: 'ng', rsa: 'za', egy: 'eg', mar: 'ma', dza: 'dz', tun: 'tn',
+            gha: 'gh', ken: 'ke', uga: 'ug', cmr: 'cm', sen: 'sn', civ: 'ci',
+            tza: 'tz', zmb: 'zm', zwe: 'zw', eth: 'et', rwa: 'rw', cod: 'cd',
+            sdn: 'sd', ago: 'ao', bwa: 'bw', mwi: 'mw', lby: 'ly',
+            uefa: 'eu'
+        };
+        if (PREFIX_TO_FLAG[prefix]) return PREFIX_TO_FLAG[prefix];
+
+        const nm = String(league?.name || '').toLowerCase();
+        if (/\b(?:colombi|betplay)\b/.test(nm)) return 'co';
+        if (/\b(?:peruv|peru|te apuesto)\b/.test(nm)) return 'pe';
+        if (/\b(?:uruguay|auf uruguaya)\b/.test(nm)) return 'uy';
+        if (/\b(?:russia|russian)\b/.test(nm)) return 'ru';
+        if (/\b(?:saudi|roshn)\b/.test(nm)) return 'sa';
+        if (/\b(?:indian|india super|i-league)\b/.test(nm)) return 'in';
+        if (/\b(?:keuken kampioen|eerste divisie|eredivisie|dutch|netherlands)\b/.test(nm)) return 'nl';
+        if (/\b(?:uefa)\b/.test(nm)) return 'eu';
+
+        return COUNTRY_CODES[country] || '';
     }
 
     function renderLeagueAvatarHtml(league, { size = 18, className = 'league-avatar' } = {}) {
