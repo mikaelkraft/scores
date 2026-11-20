@@ -3923,6 +3923,61 @@ async function syncLiveScoreboards() {
     return updatedCount;
 }
 
+/**
+ * Procedural Atlas Storage Hygiene:
+ * Strips heavy ephemeral blobs (lineups, commentary, odds, broadcasts, news, videos, officials, leaders)
+ * from finished matches older than keepFullDays (default 7) and prunes soccer_match_events older than
+ * keepEventsDays (default 14). Preserves 100% of scores, home/away stats, key_events, H2H, and Norra AI
+ * /training-data vectors. Old match lineups are hydrated on-demand in RAM via sendSummary.
+ */
+async function pruneOldTelemetryStorage({ keepFullDays = 7, keepEventsDays = 14 } = {}) {
+    if (mongoose.connection.readyState !== 1) return { strippedMatches: 0, prunedEvents: 0 };
+    try {
+        const matchCutoff = new Date(Date.now() - keepFullDays * 86400 * 1000);
+        const eventCutoff = new Date(Date.now() - keepEventsDays * 86400 * 1000);
+
+        const stripRes = await SoccerMatch.updateMany(
+            {
+                date: { $lt: matchCutoff },
+                'status.state': 'post',
+                $or: [
+                    { 'lineups.0': { $exists: true } },
+                    { 'commentary.0': { $exists: true } },
+                    { 'odds.0': { $exists: true } },
+                    { 'broadcasts.0': { $exists: true } },
+                    { 'news.0': { $exists: true } },
+                    { 'videos.0': { $exists: true } }
+                ]
+            },
+            {
+                $set: {
+                    lineups: [],
+                    commentary: [],
+                    odds: [],
+                    broadcasts: [],
+                    news: [],
+                    videos: [],
+                    officials: [],
+                    leaders: []
+                }
+            }
+        );
+
+        const delRes = await SoccerMatchEvent.deleteMany({ created_at: { $lt: eventCutoff } });
+        const summary = {
+            strippedMatches: stripRes.modifiedCount || 0,
+            prunedEvents: delRes.deletedCount || 0
+        };
+        if (summary.strippedMatches > 0 || summary.prunedEvents > 0) {
+            console.log(`🧹 [StorageHygiene] Stripped blobs from ${summary.strippedMatches} matches (> ${keepFullDays}d) and pruned ${summary.prunedEvents} events (> ${keepEventsDays}d).`);
+        }
+        return summary;
+    } catch (err) {
+        console.warn('[StorageHygiene] Auto-prune notice:', err.message);
+        return { strippedMatches: 0, prunedEvents: 0 };
+    }
+}
+
 module.exports = {
     syncLeague,
     syncLeagueFromLiveScoreStages,
@@ -3932,6 +3987,7 @@ module.exports = {
     syncLiveScoreInPlay,
     syncInGameStats,
     cleanupStuckMatchesAndPurgeNcaa,
+    pruneOldTelemetryStorage,
     getTeamCategory,
     isReserveOrBTeamName,
     hasTopFlightClub,

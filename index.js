@@ -388,7 +388,7 @@ app.listen(PORT, '0.0.0.0', () => {
     }, 2000);
 
     // Auto-sync live scores and world leagues in background
-    const { syncAllLeagues, syncLiveScoreboards, syncLiveScoreInPlay, syncInGameStats, cleanupStuckMatchesAndPurgeNcaa } = require('./services/soccerSyncService');
+    const { syncAllLeagues, syncLiveScoreboards, syncLiveScoreInPlay, syncInGameStats, cleanupStuckMatchesAndPurgeNcaa, pruneOldTelemetryStorage } = require('./services/soccerSyncService');
 
     // Initial live scoreboard and in-play ingestion on boot (5 seconds after server is accepting traffic)
     setTimeout(async () => {
@@ -442,6 +442,19 @@ app.listen(PORT, '0.0.0.0', () => {
     }, 6 * 60 * 60 * 1000);
     if (deepSyncInterval && typeof deepSyncInterval.unref === 'function') {
         deepSyncInterval.unref();
+    }
+
+    // Daily procedural Atlas storage hygiene (preserves scores, stats, key_events, H2H & Norra AI training feeds)
+    if (typeof pruneOldTelemetryStorage === 'function') {
+        const initialPruneTimer = setTimeout(() => {
+            pruneOldTelemetryStorage().catch(() => {});
+        }, 10 * 60 * 1000);
+        if (initialPruneTimer && typeof initialPruneTimer.unref === 'function') initialPruneTimer.unref();
+
+        const dailyPruneInterval = setInterval(() => {
+            pruneOldTelemetryStorage().catch(() => {});
+        }, 24 * 60 * 60 * 1000);
+        if (dailyPruneInterval && typeof dailyPruneInterval.unref === 'function') dailyPruneInterval.unref();
     }
 });
 

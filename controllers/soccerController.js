@@ -624,7 +624,7 @@ async function sendSummary(req, res) {
             || Boolean(match.source?.livescore_id)
             || String(match.source?.event_id || req.eventId).length <= 8;
 
-        if (!hasStats || isLiveScoreEvent || !summary.keyEvents?.length) {
+        if (!hasStats || isLiveScoreEvent || !summary.keyEvents?.length || !summary.rosters?.length) {
             try {
                 const { fetchLiveScoreMatchDetails } = require('../services/soccerSyncService');
                 const lsId = match.source?.livescore_id || (String(match.source?.provider || '').toLowerCase() === 'livescore' ? match.source?.event_id : null) || req.eventId;
@@ -662,7 +662,11 @@ async function sendSummary(req, res) {
             }
 
         const isLive = match.status?.state === 'in';
-        const ttl = isLive ? 5 : 60;
+        const ttl = isLive ? 5 : 600;
+        if (summaryServerCache.size >= 150) {
+            const oldestKey = summaryServerCache.keys().next().value;
+            summaryServerCache.delete(oldestKey);
+        }
         summaryServerCache.set(req.eventId, {
             data: summary,
             expiresAt: Date.now() + ttl * 1000,
