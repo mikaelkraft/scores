@@ -557,11 +557,7 @@ async function syncLeagueFromLiveScoreStages(leagueDef, stages, now = new Date()
         const country = stage.Cnm || stage.Sdn || 'International';
         const leagueName = stage.Snm || 'Football Competition';
         const resolved = resolveLeagueSlug(leagueName, country, stage.Scd || '');
-        if (resolved === targetSlug) return true;
-        if (targetCountryLower && country.toLowerCase() === targetCountryLower) {
-            return true;
-        }
-        return false;
+        return resolved === targetSlug;
     });
 
     if (matchingStages.length === 0) return 0;
@@ -1684,7 +1680,7 @@ function resolveLeagueSlug(altGameNote = '', compDesc = '', uid = '') {
 
     // --- AFRICAN DOMESTIC COMPETITIONS ---
     if (country.includes('tanzan') || text.includes('tza.1') || text.includes('nbc premier') || text.includes('ligi kuu') || text.includes('mbeya') || text.includes('singida') || text.includes('simba') || text.includes('yanga') || text.includes('azam')) return 'tza.1';
-    if (country.includes('nigeria') || text.includes('npfl') || text.includes('nga.1') || text.includes('rivers united') || text.includes('enugu rangers') || text.includes('enyimba') || text.includes('bendel insurance')) return 'nga.1';
+    if (country.includes('nigeria') || text.includes('npfl') || text.includes('nga.1') || /\b(rivers united|enugu rangers|enyimba|bendel insurance|ranchers bees|plateau united|sporting lagos|kwara united|shooting stars|remo stars|kano pillars|nasarawa united|abia warriors|katsina united|bayelsa united|akwa united|sunshine stars|heartland|niger tornadoes|el-kanemi|ikorodu city|warri wolves|lobi stars)\b/i.test(text)) return 'nga.1';
     if (country.includes('south africa') || text.includes('psl') || text.includes('betway premiership') || text.includes('rsa.1') || text.includes('mamelodi sundowns') || text.includes('kaizer chiefs') || text.includes('orlando pirates')) return 'rsa.1';
     if (country.includes('egypt') || text.includes('egy.1') || text.includes('al ahly') || text.includes('zamalek')) {
         if (text.includes('cup') || text.includes('league cup')) return 'egy.cup';
@@ -3639,21 +3635,26 @@ async function syncLiveScoreboards() {
             fetchJson(`https://site.api.espn.com/apis/site/v2/sports/soccer/all/scoreboard?dates=${yesterdayStr}&limit=300`).catch(() => ({ events: [] }))
         ]);
 
-        const feedResults = [defaultScoreboard, todayScoreboard, yestScoreboard];
+        const feedResults = [];
         const batchSize = 5;
         for (let i = 0; i < CORE_AND_REGIONAL_SCOREBOARD_FEEDS.length; i += batchSize) {
             const batch = CORE_AND_REGIONAL_SCOREBOARD_FEEDS.slice(i, i + batchSize);
             const batchRes = await Promise.all(
-                batch.map(slug =>
-                    fetchJson(`https://site.api.espn.com/apis/site/v2/sports/soccer/${slug}/scoreboard`)
-                        .then(data => ({
-                            events: (data.events || []).map(e => ({ ...e, _forcedLeagueSlug: slug }))
-                        }))
-                        .catch(() => ({ events: [] }))
-                )
+                batch.map(async slug => {
+                    const [defFeed, todayFeed] = await Promise.all([
+                        fetchJson(`https://site.api.espn.com/apis/site/v2/sports/soccer/${slug}/scoreboard`).catch(() => ({ events: [] })),
+                        fetchJson(`https://site.api.espn.com/apis/site/v2/sports/soccer/${slug}/scoreboard?dates=${todayStr}`).catch(() => ({ events: [] }))
+                    ]);
+                    const combined = [...(todayFeed.events || []), ...(defFeed.events || [])];
+                    return {
+                        events: combined.map(e => ({ ...e, _forcedLeagueSlug: slug }))
+                    };
+                })
             );
             feedResults.push(...batchRes);
         }
+        // Global scoreboards come AFTER forced core league feeds so Big-5 matches always keep their exact _forcedLeagueSlug
+        feedResults.push(defaultScoreboard, todayScoreboard, yestScoreboard);
         const events = [];
         const seenEvIds = new Set();
         for (const res of feedResults) {

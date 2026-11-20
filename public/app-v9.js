@@ -3814,6 +3814,8 @@
             fetchJson(`/api/v1/football/predictions-context/${encodeURIComponent(eventId)}${predQuery}`)
         ]);
 
+        if (state.currentEventId !== eventId) return;
+
         let summary = summaryResult.status === 'fulfilled' ? summaryResult.value : null;
 
         if (!summary) {
@@ -3825,6 +3827,8 @@
                 }
             } catch (err) {}
         }
+
+        if (state.currentEventId !== eventId) return;
 
         if (!summary) {
             if (elements['dialog-content']) {
@@ -4784,7 +4788,11 @@
                 (summary.note || summary.header?.season?.displayName || 'Football Competition');
             competitionName = cleanCompetitionName(competitionName);
 
-            elements['dialog-content'].innerHTML = `
+            // Skip tearing down the modal DOM during silent background refreshes if nothing changed or user is mid-scroll
+            if (silent && isUserInteracting && elements['dialog-content'].querySelector('.drawer-tabs')) {
+                return;
+            }
+            const nextDialogHtml = `
                 <section class="drawer-header-card">
                     <div class="team-vs-team-row">
                         <div class="team-side">
@@ -5146,18 +5154,29 @@
                 </div>
             `;
 
-            // Bind drawer tabs
-            elements['dialog-content'].querySelectorAll('.drawer-tab').forEach(tabBtn => {
-                tabBtn.addEventListener('click', (e) => {
+            if (silent && elements['dialog-content'].dataset.lastHtmlLen === String(nextDialogHtml.length) && elements['dialog-content'].innerHTML === nextDialogHtml) {
+                return;
+            }
+            elements['dialog-content'].innerHTML = nextDialogHtml;
+            elements['dialog-content'].dataset.lastHtmlLen = String(nextDialogHtml.length);
+
+            // Single delegated click listener on dialog-content so tab clicks never glitch or duplicate
+            if (!elements['dialog-content'].dataset.tabsDelegated) {
+                elements['dialog-content'].dataset.tabsDelegated = '1';
+                elements['dialog-content'].addEventListener('click', (e) => {
+                    const tabBtn = e.target.closest('.drawer-tab');
+                    if (!tabBtn || !elements['dialog-content'].contains(tabBtn)) return;
                     e.preventDefault();
+                    e.stopPropagation();
                     const target = tabBtn.dataset.drawerTab;
+                    if (!target) return;
                     state.drawerActiveTab = target;
                     elements['dialog-content'].querySelectorAll('.drawer-tab').forEach(b => b.classList.toggle('active', b === tabBtn));
                     elements['dialog-content'].querySelectorAll('.drawer-tab-content').forEach(c => {
                         c.hidden = c.id !== `drawer-tab-${target}`;
                     });
                 });
-            });
+            }
 
             // Restore horizontal tabs scroll position so drawer doesn't jerk back to start during live refresh
             const newTabs = elements['dialog-content'].querySelector('.drawer-tabs');

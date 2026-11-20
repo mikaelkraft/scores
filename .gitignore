@@ -27,3 +27,6 @@ android/obj/
 android/gen/
 *.idsig
 
+
+# Local MongoDB archive exports (move to 5TB drive)
+archives/
