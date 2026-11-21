@@ -43,6 +43,7 @@ class GoogleAuthService {
         return new Promise((resolve, reject) => {
             const req = https.request('https://oauth2.googleapis.com/token', {
                 method: 'POST',
+                timeout: 10000,
                 headers: {
                     'Content-Type': 'application/x-www-form-urlencoded',
                     'Content-Length': Buffer.byteLength(postData.toString())
@@ -63,6 +64,9 @@ class GoogleAuthService {
                 });
             });
 
+            req.on('timeout', () => {
+                req.destroy(new Error('Google token exchange timed out.'));
+            });
             req.on('error', (err) => reject(new Error(`Google token exchange failed: ${err.message}`)));
             req.write(postData.toString());
             req.end();
@@ -82,7 +86,7 @@ class GoogleAuthService {
 
         return new Promise((resolve, reject) => {
             const url = `https://oauth2.googleapis.com/tokeninfo?id_token=${encodeURIComponent(idToken)}`;
-            https.get(url, (res) => {
+            const req = https.get(url, { timeout: 10000 }, (res) => {
                 let data = '';
                 res.on('data', chunk => data += chunk);
                 res.on('end', () => {
@@ -96,12 +100,21 @@ class GoogleAuthService {
                             return reject(new Error('Google profile did not contain required email or user identifier.'));
                         }
 
-                        // Verify audience if client ID is configured
-                        if (expectedClientId && parsed.aud && parsed.aud !== expectedClientId) {
-                            console.warn(`[GoogleAuth] Warning: token aud (${parsed.aud}) does not match configured clientId (${expectedClientId})`);
+                        // Strictly verify issuer, expiration, audience, and email verification
+                        if (parsed.iss && parsed.iss !== 'accounts.google.com' && parsed.iss !== 'https://accounts.google.com') {
+                            return reject(new Error('Invalid Google token issuer.'));
+                        }
+                        if (parsed.exp && Number(parsed.exp) * 1000 <= Date.now()) {
+                            return reject(new Error('Google ID token has expired.'));
+                        }
+                        if (expectedClientId && parsed.aud !== expectedClientId) {
+                            return reject(new Error('Google token audience does not match configured Client ID.'));
                         }
 
                         const emailVerified = parsed.email_verified === true || parsed.email_verified === 'true';
+                        if (!emailVerified) {
+                            return reject(new Error('Google account email is not verified.'));
+                        }
 
                         resolve({
                             googleId: parsed.sub,
@@ -114,7 +127,11 @@ class GoogleAuthService {
                         reject(new Error(`Failed to parse Google response: ${err.message}`));
                     }
                 });
-            }).on('error', (err) => {
+            });
+            req.on('timeout', () => {
+                req.destroy(new Error('Google verification request timed out.'));
+            });
+            req.on('error', (err) => {
                 reject(new Error(`Google verification request failed: ${err.message}`));
             });
         });

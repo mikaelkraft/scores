@@ -928,6 +928,29 @@ body.theme-light .nav-link-norra:hover {
     box-shadow: var(--shadow-sm);
     transition: var(--transition-smooth);
     width: 100%;
+    content-visibility: auto;
+    contain-intrinsic-size: 0 260px;
+}
+.fs-load-more-leagues-wrap {
+    display: flex;
+    justify-content: center;
+    padding: 16px 8px 24px;
+}
+.fs-load-more-leagues-btn {
+    padding: 10px 22px;
+    border-radius: 999px;
+    border: 1px solid var(--border-strong);
+    background: var(--bg-surface-elevated);
+    color: var(--text-main);
+    font-weight: 700;
+    font-size: 13px;
+    cursor: pointer;
+    transition: background 0.15s ease, border-color 0.15s ease, transform 0.12s ease;
+}
+.fs-load-more-leagues-btn:hover {
+    border-color: var(--accent-primary);
+    background: var(--bg-surface);
+    transform: translateY(-1px);
 }
 .fs-league-section:hover {
     border-color: var(--border-strong);

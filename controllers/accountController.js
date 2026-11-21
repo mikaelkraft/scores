@@ -296,11 +296,10 @@ async function authenticateGoogleCredential(credential) {
         $or: [{ googleId }, { email }]
     });
 
-    // Determine if user qualifies for admin role
+    // Determine if user qualifies for admin role (strict allowlist — never match arbitrary admin@* domains)
     const adminEmail = (config.ADMIN_EMAIL || '').toLowerCase().trim();
     const isAdmin = (adminEmail && email === adminEmail) ||
                     email === 'admin@mynorra.xyz' ||
-                    email.startsWith('admin@') ||
                     (user && user.role === 'admin');
 
     let isNewUser = false;
@@ -577,11 +576,25 @@ router.get('/api/account/google/login', async (req, res) => {
         const proto = req.get('x-forwarded-proto') || req.protocol || 'https';
         const callbackUrl = `${proto}://${host}/api/account/google/callback`;
 
+        // Signed short-lived OAuth2 state token to prevent Login CSRF attacks
+        const oauthState = jwt.sign(
+            { purpose: 'google_oauth_state', nonce: crypto.randomBytes(16).toString('hex') },
+            JWT_SECRET,
+            { expiresIn: '10m' }
+        );
+        res.cookie?.('norra_oauth_state', oauthState, {
+            httpOnly: true,
+            sameSite: 'lax',
+            secure: proto === 'https',
+            maxAge: 10 * 60 * 1000
+        });
+
         const googleAuthUrl = `https://accounts.google.com/o/oauth2/v2/auth?` +
             `client_id=${encodeURIComponent(clientId)}&` +
             `redirect_uri=${encodeURIComponent(callbackUrl)}&` +
             `response_type=code&` +
             `scope=${encodeURIComponent('openid email profile')}&` +
+            `state=${encodeURIComponent(oauthState)}&` +
             `access_type=online&` +
             `prompt=select_account`;
 
@@ -629,6 +642,19 @@ router.get('/api/account/google/callback', async (req, res) => {
         }
 
         if (code) {
+            const { state } = req.query;
+            if (!state) {
+                return res.redirect('/account?auth_error=Missing+OAuth+state+parameter.+Please+try+signing+in+again.');
+            }
+            try {
+                const decodedState = jwt.verify(String(state), JWT_SECRET);
+                if (!decodedState || decodedState.purpose !== 'google_oauth_state') {
+                    throw new Error('Invalid OAuth state');
+                }
+            } catch (_) {
+                return res.redirect('/account?auth_error=Invalid+or+expired+OAuth+session.+Please+try+signing+in+again.');
+            }
+
             const host = req.get('x-forwarded-host') || req.get('host');
             const proto = req.get('x-forwarded-proto') || req.protocol || 'https';
             const callbackUrl = `${proto}://${host}/api/account/google/callback`;

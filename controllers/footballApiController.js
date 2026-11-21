@@ -1548,23 +1548,25 @@ router.get('/fixtures', optionalApiKeyAuth, async (req, res) => {
         ];
         const needsPriorityMerge = (!league || league === 'all') && !isFreePlanRestricted(req.apiKey);
 
+        const slimMatchSelect = 'source.event_id source.provider source.uid source.livescore_id league_slug name short_name date scoreboard_date status.state status.name status.description status.detail status.short_detail status.clock status.period status.completed status.suspended home.source_id home.name home.display_name home.abbreviation home.logo home.score home.winner away.source_id away.name away.display_name away.abbreviation away.logo away.score away.winner note';
+
         let [totalCount, priorityMatches, generalMatches, storedLeagues] = await Promise.all([
-            SoccerMatch.countDocuments(filter).maxTimeMS(8000).catch(() => 0),
+            SoccerMatch.countDocuments(filter).maxTimeMS(6000).catch(() => 0),
             needsPriorityMerge
                 ? SoccerMatch.find({ ...filter, league_slug: { $in: PRIORITY_GUARANTEED_LEAGUES } })
-                    .select('source league_slug name short_name date scoreboard_date status home away note venue broadcasts attendance odds')
+                    .select(slimMatchSelect)
                     .sort({ date: 1 })
-                    .limit(300)
+                    .limit(250)
                     .maxTimeMS(6000)
                     .lean()
                     .catch(() => [])
                 : Promise.resolve([]),
             SoccerMatch.find(filter)
-                .select('source league_slug name short_name date scoreboard_date status home away note venue broadcasts attendance odds')
+                .select(slimMatchSelect)
                 .sort({ date: 1 })
                 .skip((page - 1) * limit)
                 .limit(limit)
-                .maxTimeMS(8000)
+                .maxTimeMS(10000)
                 .lean()
                 .catch(() => []),
             SoccerLeague.find({ active: true }).select('slug name abbreviation country logo').maxTimeMS(2500).lean().catch(() => [])

@@ -73,7 +73,23 @@ self.addEventListener('fetch', (event) => {
         return;
     }
 
-    // 3. Static assets, fonts, icons, crests: Stale-While-Revalidate
+    // 3. Core CSS & JS bundles: Network-first with offline cache fallback so UI/header/footer updates land immediately
+    if (url.pathname.endsWith('.css') || url.pathname.endsWith('.js')) {
+        event.respondWith(
+            fetch(request).then((networkResponse) => {
+                if (networkResponse && networkResponse.status === 200) {
+                    const responseToCache = networkResponse.clone();
+                    caches.open(CACHE_NAME).then((cache) => {
+                        cache.put(request, responseToCache);
+                    });
+                }
+                return networkResponse;
+            }).catch(() => caches.match(request))
+        );
+        return;
+    }
+
+    // 4. Static images, fonts, icons, crests: Stale-While-Revalidate
     event.respondWith(
         caches.match(request).then((cachedResponse) => {
             const fetchPromise = fetch(request).then((networkResponse) => {

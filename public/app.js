@@ -2996,7 +2996,7 @@
         const globallyRenderedSignatures = new Set();
         const globallyRenderedIds = new Set();
 
-        const html = sortedGroups.map(({ league, events }) => {
+        const sectionBlocks = sortedGroups.map(({ league, events }) => {
             if (!events || !events.length) return '';
 
             // Deduplicate events within this league using full tier-aware signature
@@ -3116,7 +3116,20 @@
                     </div>
                 </div>
             `;
-        }).join('');
+        }).filter(Boolean);
+
+        // Progressive chunking: mount first 20 top-flight competitions immediately so mobile browsers
+        // stay responsive (~1,500 DOM nodes instead of 24,000), and reveal remaining leagues on demand.
+        const INITIAL_LEAGUE_CHUNK = 20;
+        const shouldChunk = !state.searchQuery && sectionBlocks.length > INITIAL_LEAGUE_CHUNK;
+        const currentChunkCount = shouldChunk
+            ? Math.min(sectionBlocks.length, Math.max(INITIAL_LEAGUE_CHUNK, Number(state.visibleLeagueChunkCount) || INITIAL_LEAGUE_CHUNK))
+            : sectionBlocks.length;
+        const remainingLeaguesCount = sectionBlocks.length - currentChunkCount;
+        const loadMoreHtml = remainingLeaguesCount > 0
+            ? `<div class="fs-load-more-leagues-wrap" id="fs-load-more-leagues-wrap"><button type="button" class="fs-load-more-leagues-btn" id="fs-load-more-leagues-btn">Show More Competitions (+${remainingLeaguesCount} more leagues)</button></div>`
+            : '';
+        const html = sectionBlocks.slice(0, currentChunkCount).join('') + loadMoreHtml;
 
         if (elements['fixture-count']) elements['fixture-count'].textContent = formatNumber(totalCount);
         if (elements['fixtures-load-more']) elements['fixtures-load-more'].hidden = true;
@@ -3183,38 +3196,69 @@
                 fixturesContainer.style.minHeight = '';
             }
 
-            elements['fixtures-list'].querySelectorAll('.fs-league-view-btn').forEach(btn => {
-                btn.addEventListener('click', (e) => {
-                    e.stopPropagation();
-                    const slug = btn.dataset.slug;
-                    selectLeague(slug).then(() => switchView('standings'));
+            const bindLeagueSectionInteractions = (root) => {
+                if (!root) return;
+                root.querySelectorAll('.fs-league-view-btn').forEach(btn => {
+                    if (btn.dataset.boundClick) return;
+                    btn.dataset.boundClick = '1';
+                    btn.addEventListener('click', (e) => {
+                        e.stopPropagation();
+                        const slug = btn.dataset.slug;
+                        selectLeague(slug).then(() => switchView('standings'));
+                    });
                 });
-            });
 
-            elements['fixtures-list'].querySelectorAll('.fs-league-header').forEach(header => {
-                header.addEventListener('click', (e) => {
-                    if (e.target.closest('.fs-league-view-btn')) return;
-                    const slug = header.dataset.toggleSlug;
-                    if (!slug) return;
-                    const section = header.closest('.fs-league-section');
-                    const matchesContainer = section?.querySelector('.fs-league-matches');
-                    const chevron = header.querySelector('.fs-collapse-chevron');
+                root.querySelectorAll('.fs-league-header').forEach(header => {
+                    if (header.dataset.boundClick) return;
+                    header.dataset.boundClick = '1';
+                    header.addEventListener('click', (e) => {
+                        if (e.target.closest('.fs-league-view-btn')) return;
+                        const slug = header.dataset.toggleSlug;
+                        if (!slug) return;
+                        const section = header.closest('.fs-league-section');
+                        const matchesContainer = section?.querySelector('.fs-league-matches');
+                        const chevron = header.querySelector('.fs-collapse-chevron');
 
-                    if (state.collapsedLeagues.has(slug)) {
-                        state.collapsedLeagues.delete(slug);
-                        if (matchesContainer) matchesContainer.style.display = 'block';
-                        if (section) section.classList.remove('is-collapsed');
-                        if (chevron) chevron.classList.remove('is-collapsed');
-                        header.setAttribute('aria-expanded', 'true');
-                    } else {
-                        state.collapsedLeagues.add(slug);
-                        if (matchesContainer) matchesContainer.style.display = 'none';
-                        if (section) section.classList.add('is-collapsed');
-                        if (chevron) chevron.classList.add('is-collapsed');
-                        header.setAttribute('aria-expanded', 'false');
+                        if (state.collapsedLeagues.has(slug)) {
+                            state.collapsedLeagues.delete(slug);
+                            if (matchesContainer) matchesContainer.style.display = 'block';
+                            if (section) section.classList.remove('is-collapsed');
+                            if (chevron) chevron.classList.remove('is-collapsed');
+                            header.setAttribute('aria-expanded', 'true');
+                        } else {
+                            state.collapsedLeagues.add(slug);
+                            if (matchesContainer) matchesContainer.style.display = 'none';
+                            if (section) section.classList.add('is-collapsed');
+                            if (chevron) chevron.classList.add('is-collapsed');
+                            header.setAttribute('aria-expanded', 'false');
+                        }
+                    });
+                });
+            };
+
+            bindLeagueSectionInteractions(elements['fixtures-list']);
+
+            const loadMoreBtn = elements['fixtures-list'].querySelector('#fs-load-more-leagues-btn');
+            if (loadMoreBtn && remainingLeaguesCount > 0) {
+                let shownLeagues = currentChunkCount;
+                loadMoreBtn.addEventListener('click', () => {
+                    const nextEnd = Math.min(sectionBlocks.length, shownLeagues + INITIAL_LEAGUE_CHUNK);
+                    const batchHtml = sectionBlocks.slice(shownLeagues, nextEnd).join('');
+                    const wrap = elements['fixtures-list'].querySelector('#fs-load-more-leagues-wrap');
+                    if (wrap && batchHtml) {
+                        wrap.insertAdjacentHTML('beforebegin', batchHtml);
+                        bindLeagueSectionInteractions(elements['fixtures-list']);
+                    }
+                    shownLeagues = nextEnd;
+                    state.visibleLeagueChunkCount = shownLeagues;
+                    const stillLeft = sectionBlocks.length - shownLeagues;
+                    if (stillLeft > 0) {
+                        loadMoreBtn.textContent = `Show More Competitions (+${stillLeft} more leagues)`;
+                    } else if (wrap) {
+                        wrap.remove();
                     }
                 });
-            });
+            }
 
             if (state.searchQuery) {
                 applyLiveSearch(state.searchQuery);

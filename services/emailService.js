@@ -7,10 +7,11 @@ class EmailService {
         const settings = await SiteSetting.getGlobalSettings().catch(() => null);
         const smtp = settings?.smtpSettings || {};
 
-        const host = smtp.host || config.SMTP_HOST;
-        const port = parseInt(smtp.port || config.SMTP_PORT || 587, 10);
-        const secure = smtp.secure !== undefined ? Boolean(smtp.secure) : (port === 465);
-        const user = smtp.user || config.SMTP_USER;
+        const host = String(smtp.host || config.SMTP_HOST || '').trim();
+        const port = parseInt(smtp.port || config.SMTP_PORT || 587, 10) || 587;
+        // Port 465 uses implicit TLS (secure: true); port 587 uses STARTTLS (secure: false, requireTLS: true)
+        const secure = port === 465 ? true : (port === 587 ? false : Boolean(smtp.secure));
+        const user = String(smtp.user || config.SMTP_USER || '').trim();
         const pass = smtp.pass || config.SMTP_PASS;
 
         if (smtp.enabled !== false && host && user && pass) {
@@ -19,10 +20,14 @@ class EmailService {
                     host,
                     port,
                     secure,
+                    requireTLS: port === 587,
+                    connectionTimeout: 10000,
+                    greetingTimeout: 10000,
+                    socketTimeout: 15000,
                     auth: { user, pass },
                     tls: { rejectUnauthorized: false }
                 }),
-                from: smtp.fromEmail || config.SMTP_FROM || 'Norra AI <support@mynorra.xyz>',
+                from: smtp.fromEmail || config.SMTP_FROM || `Norra AI <${user}>`,
                 isMock: false
             };
         }
@@ -40,7 +45,7 @@ class EmailService {
     async sendVerificationEmail({ email, name, token, siteUrl }) {
         const base = (siteUrl || config.PUBLIC_SITE_URL || 'https://scores.mynorra.xyz').replace(/\/$/, '');
         const verifyLink = `${base}/account?verify_token=${encodeURIComponent(token)}`;
-        const recipientName = name || email.split('@')[0];
+        const recipientName = String(name || email.split('@')[0]).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
         const subject = 'Confirm your email — Scores by Norra AI';
         const html = `
