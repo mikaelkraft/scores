@@ -3602,35 +3602,94 @@ const CANONICAL_LEADERS = {
  * Aggregates top goalscorers and assists for a league
  */
 async function getLeagueLeaders(leagueSlug) {
-    const canonical = CANONICAL_LEADERS[leagueSlug];
+    const slug = String(leagueSlug || '').toLowerCase();
+    const canonical = CANONICAL_LEADERS[slug];
+
+    // 1) Prefer ESPN official statistics (accurate top-flight scorers)
+    try {
+        const espnUrl = `https://site.api.espn.com/apis/site/v2/sports/soccer/${encodeURIComponent(slug)}/statistics`;
+        const espn = await fetchUpstreamJsonFast(espnUrl, 6000).catch(() => null);
+        const cats = espn?.stats || [];
+        const goalsCat = cats.find(c => /goal/i.test(String(c.name || c.displayName || ''))) || cats[0];
+        const assistsCat = cats.find(c => /assist/i.test(String(c.name || c.displayName || '')));
+        const parseGoals = (L) => {
+            const v = Number(L.value);
+            if (Number.isFinite(v) && v > 0) return v;
+            const m = String(L.displayValue || L.shortDisplayValue || '').match(/goals?:\s*(\d+)/i);
+            return m ? Number(m[1]) : 0;
+        };
+        const parseAssists = (L) => {
+            const m = String(L.shortDisplayValue || L.displayValue || '').match(/a(?:ssists?)?:\s*(\d+)/i);
+            if (m) return Number(m[1]);
+            const v = Number(L.value);
+            return Number.isFinite(v) ? v : 0;
+        };
+        const mapLeader = (L, idx, kind) => {
+            const ath = L.athlete || {};
+            const team = L.team || ath.team || {};
+            const goals = kind === 'goals' ? parseGoals(L) : 0;
+            const assists = kind === 'assists' ? parseAssists(L) : parseAssists(L);
+            return {
+                rank: idx + 1,
+                name: ath.displayName || ath.shortName || 'Player',
+                team: team.displayName || team.name || '',
+                teamLogo: team.logos?.[0]?.href || (team.id ? `https://a.espncdn.com/i/teamlogos/soccer/500/${team.id}.png` : ''),
+                goals: kind === 'goals' ? goals : goals,
+                penalties: 0,
+                assists: kind === 'assists' ? assists : (kind === 'goals' ? parseAssists(L) : assists)
+            };
+        };
+        const topScorers = (goalsCat?.leaders || []).slice(0, 20).map((L, i) => mapLeader(L, i, 'goals')).filter(p => p.goals > 0);
+        const topAssists = (assistsCat?.leaders || []).slice(0, 15).map((L, i) => mapLeader(L, i, 'assists')).filter(p => p.assists > 0);
+        if (topScorers.length >= 3) {
+            return { status: 'success', league: slug, source: 'espn', topScorers, topAssists };
+        }
+    } catch (e) {
+        console.warn('ESPN leaders fetch failed:', e.message);
+    }
+
+    // 2) Aggregate from THIS season's key_events only (avoid stale/wrong-league pollution)
     const scorersMap = new Map();
     const assistsMap = new Map();
-
     try {
+        const seasonStart = new Date(Date.UTC(new Date().getUTCFullYear(), 6, 1)); // Jul 1 of current year
         const matches = await SoccerMatch.find({
-            league_slug: leagueSlug,
-            'key_events.0': { $exists: true }
-        }).select('key_events home away').lean();
+            league_slug: slug,
+            'key_events.0': { $exists: true },
+            date: { $gte: seasonStart }
+        }).select('key_events home away league_slug date').limit(500).lean();
 
         for (const m of matches) {
+            // Skip obvious non-senior name noise if slug is top flight
+            const hName = m.home?.name || '';
+            const aName = m.away?.name || '';
+            if (/\.1$/.test(slug) && /(u-?1[89]|u-?2[01]|women|\bw\b|reserves?)/i.test(hName + ' ' + aName)) continue;
+
             for (const ev of (m.key_events || [])) {
-                const isGoal = ev.scoringPlay || ev.type?.id === 'goal' || ev.type?.text?.toLowerCase() === 'goal' || String(ev.text || '').toLowerCase().includes('goal');
-                if (isGoal) {
-                    const athlete = ev.athlete?.displayName || ev.athlete?.fullName || ev.athletesInvolved?.[0]?.displayName || '';
-                    if (athlete) {
-                        const team = ev.team?.name || (ev.team?.side === 'away' ? m.away?.name : m.home?.name) || 'Club';
-                        const logo = (ev.team?.side === 'away' ? m.away?.logo : m.home?.logo) || '';
-                        const key = `${athlete.toLowerCase()}|${team.toLowerCase()}`;
-                        if (!scorersMap.has(key)) {
-                            scorersMap.set(key, { name: athlete, team, teamLogo: logo, goals: 0, penalties: 0, assists: 0 });
-                        }
-                        const entry = scorersMap.get(key);
-                        entry.goals += 1;
-                        if (ev.penaltyKick || String(ev.text || '').toLowerCase().includes('penalty')) {
-                            entry.penalties += 1;
+                const isGoal = ev.scoringPlay || ev.type?.id === 'goal' || String(ev.type?.text || '').toLowerCase() === 'goal' || /\bgoal\b/i.test(String(ev.text || ''));
+                if (!isGoal) continue;
+                const athlete = ev.athlete?.displayName || ev.athlete?.fullName || ev.athletesInvolved?.[0]?.displayName || '';
+                if (!athlete || athlete.length < 2) continue;
+                const team = ev.team?.name || (ev.team?.side === 'away' ? m.away?.name : m.home?.name) || 'Club';
+                // Guard: team should look like it belongs with this match
+                if (team && hName && aName) {
+                    const tn = String(team).toLowerCase();
+                    if (!hName.toLowerCase().includes(tn.slice(0, 5)) && !aName.toLowerCase().includes(tn.slice(0, 5))
+                        && !tn.includes(hName.toLowerCase().slice(0, 5)) && !tn.includes(aName.toLowerCase().slice(0, 5))) {
+                        // still allow if team string is short side label
+                        if (tn !== 'home' && tn !== 'away') {
+                            /* keep — side mapping can differ */
                         }
                     }
                 }
+                const logo = (ev.team?.side === 'away' ? m.away?.logo : m.home?.logo) || '';
+                const key = `${athlete.toLowerCase()}|${String(team).toLowerCase()}`;
+                if (!scorersMap.has(key)) {
+                    scorersMap.set(key, { name: athlete, team, teamLogo: logo, goals: 0, penalties: 0, assists: 0 });
+                }
+                const entry = scorersMap.get(key);
+                entry.goals += 1;
+                if (ev.penaltyKick || /penalty/i.test(String(ev.text || ''))) entry.penalties += 1;
             }
         }
     } catch (_) {}
@@ -3640,10 +3699,16 @@ async function getLeagueLeaders(leagueSlug) {
         .slice(0, 15)
         .map((item, idx) => ({ rank: idx + 1, ...item }));
 
-    if (dynamicScorers.length >= 3) {
+    // 3) Canonical curated list if dynamic is thin or clearly wrong (lower-league names for top flights)
+    const looksPolluted = dynamicScorers.length >= 3 && /\.1$/.test(slug) && dynamicScorers.slice(0, 5).every(p =>
+        /eastleigh|deportivo|toma\b|weggen|non-league|national league/i.test(`${p.name} ${p.team}`)
+    );
+
+    if (dynamicScorers.length >= 5 && !looksPolluted) {
         return {
             status: 'success',
-            league: leagueSlug,
+            league: slug,
+            source: 'events',
             topScorers: dynamicScorers,
             topAssists: Array.from(assistsMap.values()).slice(0, 10).map((item, idx) => ({ rank: idx + 1, ...item }))
         };
@@ -3652,7 +3717,8 @@ async function getLeagueLeaders(leagueSlug) {
     if (canonical) {
         return {
             status: 'success',
-            league: leagueSlug,
+            league: slug,
+            source: 'canonical',
             topScorers: canonical.scorers,
             topAssists: canonical.assists
         };
@@ -3660,7 +3726,8 @@ async function getLeagueLeaders(leagueSlug) {
 
     return {
         status: 'success',
-        league: leagueSlug,
+        league: slug,
+        source: 'events',
         topScorers: dynamicScorers,
         topAssists: []
     };
