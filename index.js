@@ -150,7 +150,27 @@ app.get('/assets/index.html', (req, res) => {
     return res.status(404).type('text/plain').send('Not found');
 });
 
-// Crawlers, browsers and social scrapers expect these at the site root.
+// Uploaded custom favicon (Admin Branding) wins over static defaults
+let cachedFaviconUrl = { url: '', ts: 0 };
+async function resolveCustomFavicon(req, res, next) {
+    try {
+        if (Date.now() - cachedFaviconUrl.ts > 60000) {
+            const SiteSettings = require('./models/siteSettings');
+            const doc = await SiteSettings.findOne().select('branding.faviconUrl branding.headerLogoUrl').lean().catch(() => null);
+            const url = String(doc?.branding?.faviconUrl || '').trim()
+                || String(doc?.branding?.headerLogoUrl || '').trim();
+            cachedFaviconUrl = { url, ts: Date.now() };
+        }
+        if (cachedFaviconUrl.url && !cachedFaviconUrl.url.startsWith(req.path)) {
+            res.set('Cache-Control', 'public, max-age=300');
+            return res.redirect(302, cachedFaviconUrl.url);
+        }
+    } catch (_) {}
+    return next();
+}
+app.get(['/favicon.ico', '/favicon.svg', '/apple-touch-icon.png', '/apple-touch-icon-precomposed.png'], resolveCustomFavicon);
+
+// Crawlers, browsers and social scrapers expect these at the site root (fallback after custom branding).
 const ROOT_ASSETS = {
     '/favicon.ico': 'favicon.ico',
     '/favicon.svg': 'favicon.svg',
@@ -165,23 +185,6 @@ for (const [route, file] of Object.entries(ROOT_ASSETS)) {
         return res.sendFile(path.join(__dirname, 'public', file));
     });
 }
-
-// Serve uploaded custom favicon from Admin Branding for /favicon.ico and /favicon.svg
-let cachedFaviconUrl = { url: '', ts: 0 };
-app.get(['/favicon.ico', '/favicon.svg'], async (req, res, next) => {
-    try {
-        if (Date.now() - cachedFaviconUrl.ts > 60000) {
-            const SiteSettings = require('./models/siteSettings');
-            const doc = await SiteSettings.findOne().select('branding.faviconUrl').lean().catch(() => null);
-            cachedFaviconUrl = { url: String(doc?.branding?.faviconUrl || '').trim(), ts: Date.now() };
-        }
-        if (cachedFaviconUrl.url && cachedFaviconUrl.url !== req.path) {
-            res.set('Cache-Control', 'public, max-age=300');
-            return res.redirect(302, cachedFaviconUrl.url);
-        }
-    } catch (_) {}
-    return next();
-});
 
 app.use('/assets', express.static(path.join(__dirname, 'public'), {
     index: false,

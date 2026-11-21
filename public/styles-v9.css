@@ -3881,3 +3881,6 @@ body.theme-light .footer-logo-img,
     }
 }
 
+
+.brand-logo-img:not([hidden]){display:block!important;height:36px;width:auto;max-width:200px;object-fit:contain;}
+.brand-text[hidden],#header-brand-fallback[hidden]{display:none!important;}
