@@ -4,7 +4,9 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Admin Console | Scores by Norra AI</title>
-    <link rel="icon" id="site-favicon" href="/favicon.svg" type="image/svg+xml">
+    <link rel="icon" id="site-favicon" href="/favicon.ico" sizes="any">
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@600;700;800;900&family=Plus+Jakarta+Sans:wght@700;800&display=swap" rel="stylesheet">
@@ -219,20 +221,18 @@
     <header class="site-header" role="banner">
         <nav class="nav shell" aria-label="Main navigation">
             <a class="brand" href="/" aria-label="Scores by Norra AI home">
-                <img id="header-logo-img" class="brand-logo-img" src="" alt="Norra AI" hidden>
+                <img id="header-logo-img" class="brand-logo-img" src="" alt="Norra Scores" hidden>
                 <div id="header-brand-fallback" class="brand-text">
                     <span class="brand-icon" id="header-ball-icon" aria-hidden="true">⚽</span>
                     <strong id="header-brand-title">Norra Scores</strong>
                 </div>
             </a>
-
             <div class="nav-actions">
                 <a class="nav-link nav-btn-live" href="/?view=live" id="header-live-btn"><span class="live-pulse-dot" aria-hidden="true"></span>Live</a>
-                <a class="nav-link nav-link-norra" href="https://mynorra.xyz" target="_blank" rel="noopener">Predictions <span class="ext-icon" aria-hidden="true">↗</span></a>
                 <a class="nav-link" href="/pricing">Pricing</a>
                 <a class="nav-link docs-link" href="/docs">Docs</a>
                 <a class="nav-link" href="/account" id="nav-account-link">Account</a>
-                <a class="nav-link nav-btn-download" href="/download/norrascore.apk" download="norrascore.apk" title="Download Mobile App" style="display:inline-flex; align-items:center; gap:4px; font-weight:600;">📲 App</a>
+                <a class="nav-link active" href="/admin">Admin</a>
                 <button class="btn-icon-toggle" id="theme-toggle" type="button" aria-label="Toggle light/dark theme" title="Toggle theme">🌓</button>
             </div>
         </nav>

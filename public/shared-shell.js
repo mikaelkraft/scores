@@ -54,30 +54,84 @@
     function applyBrandingAndPricing(cfg) {
         if (!cfg) return;
         var b = cfg.branding || {};
+        var title = b.siteTitle || b.brandName || '';
+        var headerLogo = b.headerLogoUrl || b.logoUrl || b.siteLogoUrl || '';
+        var footerLogo = b.footerLogoUrl || headerLogo || '';
+        var favicon = b.faviconUrl || b.appleTouchIconUrl || '';
+
         var headerLogoImg = document.getElementById('header-logo-img');
         var headerBrandFallback = document.getElementById('header-brand-fallback');
         var headerBrandTitle = document.getElementById('header-brand-title') || document.querySelector('.brand-text strong');
+        var headerBallIcon = document.getElementById('header-ball-icon');
 
-        if (b.headerLogoUrl && headerLogoImg) {
-            headerLogoImg.src = b.headerLogoUrl;
-            headerLogoImg.alt = b.siteTitle || 'Norra Scores';
+        // Uploaded header logo takes over brand text (icon + title)
+        if (headerLogo && headerLogoImg) {
+            headerLogoImg.onload = function () {
+                headerLogoImg.hidden = false;
+                headerLogoImg.style.display = 'block';
+                if (headerBrandFallback) {
+                    headerBrandFallback.style.display = 'none';
+                    headerBrandFallback.hidden = true;
+                }
+            };
+            headerLogoImg.onerror = function () {
+                headerLogoImg.hidden = true;
+                headerLogoImg.style.display = 'none';
+                if (headerBrandFallback) {
+                    headerBrandFallback.style.display = '';
+                    headerBrandFallback.hidden = false;
+                }
+            };
+            headerLogoImg.alt = title || 'Norra Scores';
+            headerLogoImg.src = headerLogo;
+            // optimistic show if cached
             headerLogoImg.hidden = false;
             headerLogoImg.style.display = 'block';
             if (headerBrandFallback) {
                 headerBrandFallback.style.display = 'none';
                 headerBrandFallback.hidden = true;
             }
+        } else if (headerLogoImg) {
+            headerLogoImg.hidden = true;
+            headerLogoImg.style.display = 'none';
+            if (headerBrandFallback) {
+                headerBrandFallback.style.display = '';
+                headerBrandFallback.hidden = false;
+            }
         }
-        if (b.siteTitle && headerBrandTitle) {
-            headerBrandTitle.textContent = b.siteTitle;
+
+        if (title) {
+            if (headerBrandTitle) headerBrandTitle.textContent = title;
+            // Document title: keep page suffix if present
+            try {
+                var base = document.title || '';
+                if (/norra|scores/i.test(base) || !base) {
+                    var path = (location.pathname || '/').replace(/\/+$/, '') || '/';
+                    var pageBit = {
+                        '/pricing': 'Pricing',
+                        '/docs': 'API Docs',
+                        '/account': 'Account',
+                        '/admin': 'Admin',
+                        '/privacy': 'Privacy',
+                        '/terms': 'Terms'
+                    }[path];
+                    document.title = pageBit ? (title + ' · ' + pageBit) : title;
+                }
+            } catch (e) {}
+            var brandLinks = document.querySelectorAll('a.brand');
+            brandLinks.forEach(function (a) {
+                a.setAttribute('aria-label', title + ' home');
+            });
         }
 
         var footerLogoImg = document.getElementById('footer-logo-img');
-        var footerBrandText = document.getElementById('footer-brand-text') ||
-            (footerLogoImg && footerLogoImg.parentElement ? footerLogoImg.parentElement.querySelector('span') : null);
-        if (b.footerLogoUrl && footerLogoImg) {
-            footerLogoImg.src = b.footerLogoUrl;
-            footerLogoImg.alt = b.siteTitle || 'Norra Scores';
+        var footerBrandText = document.getElementById('footer-brand-text');
+        if (!footerBrandText && footerLogoImg && footerLogoImg.parentElement) {
+            footerBrandText = footerLogoImg.parentElement.querySelector('span');
+        }
+        if (footerLogo && footerLogoImg) {
+            footerLogoImg.alt = title || 'Norra Scores';
+            footerLogoImg.src = footerLogo;
             footerLogoImg.hidden = false;
             footerLogoImg.style.display = 'block';
             if (footerBrandText) {
@@ -86,20 +140,30 @@
             }
         }
 
-        if (b.faviconUrl) {
-            var icons = document.querySelectorAll('link[rel="icon"], link[rel="shortcut icon"], link[rel="apple-touch-icon"], #site-favicon');
-            if (icons.length > 0) {
+        // Favicons + apple-touch across the site
+        if (favicon) {
+            var selectors = 'link[rel="icon"], link[rel="shortcut icon"], link[rel="apple-touch-icon"], #site-favicon';
+            var icons = document.querySelectorAll(selectors);
+            if (icons.length) {
                 icons.forEach(function (link) {
                     link.removeAttribute('type');
-                    link.href = b.faviconUrl;
+                    link.href = favicon;
                 });
             } else {
                 var fav = document.createElement('link');
                 fav.rel = 'icon';
-                fav.href = b.faviconUrl;
+                fav.href = favicon;
                 document.head.appendChild(fav);
             }
+            // Ensure apple-touch-icon exists
+            if (!document.querySelector('link[rel="apple-touch-icon"]')) {
+                var at = document.createElement('link');
+                at.rel = 'apple-touch-icon';
+                at.href = favicon;
+                document.head.appendChild(at);
+            }
         }
+
 
         // Sync social links if present in footer (and create optional icon buttons if absent on secondary pages)
         if (cfg.socialLinks && typeof cfg.socialLinks === 'object') {
