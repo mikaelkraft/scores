@@ -1183,6 +1183,34 @@ const TEAM_NAME_ALIASES = {
     'bayern munchen': 'bayern',
     'borussia dortmund': 'dortmund',
     'bvb': 'dortmund',
+    "borussia m'gladbach": 'monchengladbach',
+    'borussia mgladbach': 'monchengladbach',
+    'borussia monchengladbach': 'monchengladbach',
+    'borussia mönchengladbach': 'monchengladbach',
+    'mönchengladbach': 'monchengladbach',
+    'gladbach': 'monchengladbach',
+    'alaves': 'alaves',
+    'deportivo alaves': 'alaves',
+    'deportivo alavés': 'alaves',
+    'alavés': 'alaves',
+    'deportivo a coruna': 'deportivo',
+    'deportivo la coruna': 'deportivo',
+    'deportivo de la coruna': 'deportivo',
+    'depor': 'deportivo',
+    'fenerbahce': 'fenerbahce',
+    'fenerbahçe': 'fenerbahce',
+    'fenerbahçe sk': 'fenerbahce',
+    'amed sportif': 'amed',
+    'amed sfk': 'amed',
+    'caykur rizespor': 'rizespor',
+    'rizespor': 'rizespor',
+    'tsg hoffenheim': 'hoffenheim',
+    'hoffenheim': 'hoffenheim',
+    '1. fc union berlin': 'union berlin',
+    'union berlin': 'union berlin',
+    'sc paderborn 07': 'paderborn',
+    'paderborn': 'paderborn',
+    'sv elversberg': 'elversberg',
     'sporting cp': 'sporting',
     'sporting lisbon': 'sporting',
     'vitoria de guimaraes': 'vitoria guimaraes',
@@ -2458,6 +2486,18 @@ function normalizeTeamName(name = '') {
         .replace(/þ/g, 'th')
         .normalize('NFD')
         .replace(/[\u0300-\u036f]/g, '')
+        .replace(/borussia\s+m['']?gladbach|borussia\s+m[oö]nchengladbach|m[oö]nchengladbach/g, 'monchengladbach')
+        .replace(/deportivo\s+alav[eé]s|\balav[eé]s\b/g, 'alaves')
+        .replace(/deportivo\s+(a\s+)?(la\s+)?coru[nñ]a|\bdepor\b/g, 'deportivo')
+        .replace(/fenerbah[cç]e/g, 'fenerbahce')
+        .replace(/\bamed\s+(sportif|sfk)\b/g, 'amed')
+        .replace(/caykur\s+rizespor|\brizespor\b/g, 'rizespor')
+        .replace(/tsg\s+hoffenheim|\bhoffenheim\b/g, 'hoffenheim')
+        .replace(/1\.?\s*fc\s+union\s+berlin|\bunion\s+berlin\b/g, 'unionberlin')
+        .replace(/sc\s+paderborn(\s+07)?|\bpaderborn\b/g, 'paderborn')
+        .replace(/sv\s+elversberg|\belversberg\b/g, 'elversberg')
+        .replace(/\bkocaelispor\b/g, 'kocaelispor')
+
         // Canonical national team aliases (e.g. United States <-> USA)
         .replace(/\bunited\s+states(?:\s+of\s+america)?\b|\bu\.?s\.?a\.?\b/g, 'usa')
         .replace(/\bsouth\s+korea\b|\bkorea\s+republic\b/g, 'southkorea')

@@ -1860,8 +1860,9 @@ router.get('/fixtures', optionalApiKeyAuth, async (req, res) => {
             }
         }
 
-        // If query board is empty, pull LiveScore date scoreboard + live feed (Mongo may be empty/out of sync for this date)
-        if (seenFixturesMap.size === 0 && (status === 'all' || status === 'live' || status === 'finished' || status === 'scheduled')) {
+        // ALWAYS merge LiveScore date scoreboard (additive). Mongo is often partial —
+        // previously this only ran when the board was empty, which dropped LASK, most NPFL, etc.
+        if (status === 'all' || status === 'live' || status === 'finished' || status === 'scheduled') {
             try {
                 const targetDayKey = date ? parseDateParam(date) : parseDateParam('today');
                 const dayMatches = await fetchLiveScoreDayMatches(targetDayKey);
@@ -1872,13 +1873,31 @@ router.get('/fixtures', optionalApiKeyAuth, async (req, res) => {
                     const id = String(m.id || m.source?.event_id || '');
                     const h = normalizeTeamName(m.home?.name || m.home?.displayName || '');
                     const a = normalizeTeamName(m.away?.name || m.away?.displayName || '');
+                    // Prefer event id; also pair-key so LiveScore fills gaps Mongo missed
                     const sig = id || `${h}_vs_${a}`;
-                    if (!seenFixturesMap.has(sig)) {
+                    const pairSig = (h && a) ? `${h}_vs_${a}` : '';
+                    let already = seenFixturesMap.has(sig);
+                    if (!already && pairSig) {
+                        for (const [k, v] of seenFixturesMap) {
+                            const mh = normalizeTeamName(v.match?.home?.name || v.match?.home?.displayName || '');
+                            const ma = normalizeTeamName(v.match?.away?.name || v.match?.away?.displayName || '');
+                            if ([mh, ma].sort().join('_vs_') === [h, a].sort().join('_vs_')) {
+                                already = true;
+                                // Prefer LiveScore if Mongo row lacks logo/score
+                                const cur = v.match;
+                                const curScore = (cur?.home?.logo ? 1 : 0) + (cur?.away?.logo ? 1 : 0) + (cur?.home?.score != null ? 2 : 0);
+                                const newScore = (m?.home?.logo ? 1 : 0) + (m?.away?.logo ? 1 : 0) + (m?.home?.score != null ? 2 : 0);
+                                if (newScore > curScore) seenFixturesMap.set(k, { match: m, score: Math.max(v.score, 12) });
+                                break;
+                            }
+                        }
+                    }
+                    if (!already) {
                         seenFixturesMap.set(sig, { match: m, score: 12 });
                     }
                 }
             } catch (e) {
-                console.warn('LiveScore date fallback failed:', e.message);
+                console.warn('LiveScore date merge failed:', e.message);
             }
             if (isQueryingToday) {
                 try {
@@ -1894,7 +1913,7 @@ router.get('/fixtures', optionalApiKeyAuth, async (req, res) => {
                         }
                     }
                 } catch (e) {
-                    console.warn('Today empty-board live refresh failed:', e.message);
+                    console.warn('Today live merge failed:', e.message);
                 }
             }
         }
@@ -2546,6 +2565,24 @@ router.get('/predictions-context/:eventId', optionalApiKeyAuth, async (req, res)
                 return true;
             })
             .sort((a, b) => new Date(b.date) - new Date(a.date));
+
+        // Collapse duplicate historical rows (same day + same pair + same score from multi-source ingest)
+        {
+            const seen = new Set();
+            const deduped = [];
+            for (const m of allRecentH2h) {
+                const d = m.date ? new Date(m.date).toISOString().slice(0, 10) : '';
+                const h = normalizeTeamName(m.homeTeam || '');
+                const a = normalizeTeamName(m.awayTeam || '');
+                const sc = `${m.homeScore ?? m.home?.score ?? ''}-${m.awayScore ?? m.away?.score ?? ''}`;
+                const key = `${[h, a].sort().join('_vs_')}_${d}_${sc}`;
+                if (seen.has(key)) continue;
+                seen.add(key);
+                deduped.push(m);
+            }
+            allRecentH2h.length = 0;
+            deduped.forEach(m => allRecentH2h.push(m));
+        }
 
         let homeWins = 0;
         let awayWins = 0;
