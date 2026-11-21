@@ -250,8 +250,19 @@
 
     function init() {
         bindThemeButtons();
-        fetch('/api/config/public', { headers: { Accept: 'application/json' } })
-            .then(function (r) { return r.ok ? r.json() : null; })
+        function loadCfg(url) {
+            return fetch(url, { headers: { Accept: 'application/json' } })
+                .then(function (r) { return r.ok ? r.json() : null; });
+        }
+        loadCfg('/api/v1/settings/public')
+            .then(function (cfg) {
+                if (cfg && (cfg.branding || cfg.plans)) return cfg;
+                return loadCfg('/api/v1/ads');
+            })
+            .then(function (cfg) {
+                if (!cfg) return loadCfg('/api/ads/active');
+                return cfg;
+            })
             .then(applyBrandingAndPricing)
             .catch(function () {});
     }
