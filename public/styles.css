@@ -3907,3 +3907,21 @@ body.theme-light .footer-logo-img,
     gap: 12px;
     flex-wrap: wrap;
 }
+
+.shell-mobile-nav .mobile-extra-link {
+    display: block;
+    padding: 12px 14px;
+    border-radius: 10px;
+    border: 1px solid var(--border-subtle);
+    background: var(--bg-surface-elevated);
+    color: var(--text-main);
+    text-decoration: none;
+    font-size: 14px;
+    font-weight: 600;
+}
+@media (max-width: 900px) {
+    .mobile-hamburger-btn { display: inline-flex !important; align-items: center; justify-content: center; }
+}
+@media (min-width: 901px) {
+    .mobile-hamburger-btn { display: none !important; }
+}
