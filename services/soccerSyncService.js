@@ -209,6 +209,23 @@ const TARGET_LEAGUES = [
 ];
 
 const LIVESCORE_STAGE_TABLE_MAP = {
+    // Big 5 + top European
+    'eng.1': 'https://prod-public-api.livescore.com/v1/api/app/stage/soccer/england/premier-league/1',
+    'esp.1': 'https://prod-public-api.livescore.com/v1/api/app/stage/soccer/spain/laliga/1',
+    'ger.1': 'https://prod-public-api.livescore.com/v1/api/app/stage/soccer/germany/bundesliga/1',
+    'ita.1': 'https://prod-public-api.livescore.com/v1/api/app/stage/soccer/italy/serie-a/1',
+    'fra.1': 'https://prod-public-api.livescore.com/v1/api/app/stage/soccer/france/ligue-1/1',
+    'ned.1': 'https://prod-public-api.livescore.com/v1/api/app/stage/soccer/holland/eredivisie/1',
+    'por.1': 'https://prod-public-api.livescore.com/v1/api/app/stage/soccer/portugal/primeira-liga/1',
+    'tur.1': 'https://prod-public-api.livescore.com/v1/api/app/stage/soccer/turkey/super-lig/1',
+    'bel.1': 'https://prod-public-api.livescore.com/v1/api/app/stage/soccer/belgium/jupiler-pro-league/1',
+    'sco.1': 'https://prod-public-api.livescore.com/v1/api/app/stage/soccer/scotland/premiership/1',
+    'sui.1': 'https://prod-public-api.livescore.com/v1/api/app/stage/soccer/switzerland/super-league/1',
+    'aut.1': 'https://prod-public-api.livescore.com/v1/api/app/stage/soccer/austria/bundesliga/1',
+    // Americas / Asia / Middle East
+    'bra.1': 'https://prod-public-api.livescore.com/v1/api/app/stage/soccer/brazil/serie-a/1',
+    'ksa.1': 'https://prod-public-api.livescore.com/v1/api/app/stage/soccer/saudi-arabia/saudi-professional-league/1',
+    // Africa
     'nga.1': 'https://prod-public-api.livescore.com/v1/api/app/stage/soccer/nigeria/npfl/1',
     'gha.1': 'https://prod-public-api.livescore.com/v1/api/app/stage/soccer/ghana/premier-league/1',
     'ken.1': 'https://prod-public-api.livescore.com/v1/api/app/stage/soccer/kenya/premier-league/1',
@@ -218,6 +235,12 @@ const LIVESCORE_STAGE_TABLE_MAP = {
     'mar.1': 'https://prod-public-api.livescore.com/v1/api/app/stage/soccer/morocco/botola-pro/1',
     'kvx.1': 'https://prod-public-api.livescore.com/v1/api/app/stage/soccer/kosovo/superliga/1'
 };
+
+// ESPN standings slug map (same slug works for most top leagues on site.api.espn.com)
+const ESPN_STANDINGS_SLUGS = new Set([
+    'eng.1','esp.1','ger.1','ita.1','fra.1','ned.1','por.1','tur.1','bel.1','sco.1',
+    'bra.1','arg.1','mex.1','usa.1','nga.1','ksa.1','aut.1','sui.1','den.1','swe.1'
+]);
 
 const proxyManager = require('./proxyManager');
 
@@ -747,7 +770,13 @@ async function syncLiveScoreStandingsForLeague(slug, now = new Date()) {
     if (!stageUrl) return 0;
     try {
         const data = await fetchJson(stageUrl);
-        const teams = data?.Stages?.[0]?.LeagueTable?.L?.[0]?.Tables?.[0]?.team || [];
+        const tables = data?.Stages?.[0]?.LeagueTable?.L?.[0]?.Tables || [];
+        // Prefer overall table (most teams); skip pure home/away mini-tables
+        let teams = [];
+        for (const tb of tables) {
+            const list = tb?.team || [];
+            if (Array.isArray(list) && list.length > teams.length) teams = list;
+        }
         if (!Array.isArray(teams) || teams.length === 0) return 0;
 
         const currentYear = new Date().getUTCFullYear();
@@ -814,6 +843,121 @@ async function syncLiveScoreStandingsForLeague(slug, now = new Date()) {
         return 0;
     }
 }
+
+/**
+ * Refresh standings from ESPN site.api for a league slug (eng.1, esp.1, …).
+ * Used when LiveScore stage map has no URL or returns empty.
+ */
+async function syncEspnStandingsForLeague(slug, now = new Date()) {
+    if (!ESPN_STANDINGS_SLUGS.has(String(slug || '').toLowerCase())) return 0;
+    const url = `https://site.api.espn.com/apis/v2/sports/soccer/${slug}/standings`;
+    try {
+        const data = await fetchJson(url);
+        const children = data?.children || [];
+        let entriesRaw = [];
+        for (const ch of children) {
+            const e = ch?.standings?.entries || [];
+            if (e.length > entriesRaw.length) entriesRaw = e;
+        }
+        if (!entriesRaw.length) return 0;
+
+        const currentYear = new Date().getUTCFullYear();
+        const normalizedEntries = entriesRaw.map((e, idx) => {
+            const statsArr = e.stats || [];
+            const get = (name) => {
+                const hit = statsArr.find(s => s.name === name || s.abbreviation === name);
+                return hit ? Number(hit.value ?? hit.displayValue ?? 0) : 0;
+            };
+            const rank = Number(e.rank ?? get('rank') ?? (idx + 1));
+            const statsMap = new Map();
+            statsMap.set('rank', rank);
+            statsMap.set('gamesPlayed', get('gamesPlayed'));
+            statsMap.set('wins', get('wins'));
+            statsMap.set('ties', get('ties'));
+            statsMap.set('losses', get('losses'));
+            statsMap.set('pointsFor', get('pointsFor') || get('goalsFor'));
+            statsMap.set('pointsAgainst', get('pointsAgainst') || get('goalsAgainst'));
+            statsMap.set('pointDifferential', get('pointDifferential') || get('goalDifference'));
+            statsMap.set('points', get('points'));
+
+            const team = e.team || {};
+            const logo = (team.logos && team.logos[0] && team.logos[0].href)
+                || (team.id ? `https://a.espncdn.com/i/teamlogos/soccer/500/${team.id}.png` : '');
+            return {
+                rank,
+                club: {
+                    source_id: String(team.id || `espn-${idx}`),
+                    display_name: team.displayName || team.name || 'Club',
+                    abbreviation: team.abbreviation || '',
+                    logo
+                },
+                stats: statsMap
+            };
+        });
+
+        await SoccerStanding.deleteMany({
+            league_slug: slug,
+            $or: [
+                { group_id: { $ne: 'overall' } },
+                { season_year: { $lt: currentYear } }
+            ]
+        });
+
+        await SoccerStanding.updateOne(
+            { league_slug: slug, season_year: currentYear, group_id: 'overall' },
+            {
+                $set: {
+                    group_name: 'League Table',
+                    entries: normalizedEntries,
+                    last_synced_at: now
+                },
+                $setOnInsert: { created_at: now }
+            },
+            { upsert: true }
+        );
+        return normalizedEntries.length;
+    } catch (err) {
+        console.warn(`ESPN standings sync failed for ${slug}:`, err.message);
+        return 0;
+    }
+}
+
+/**
+ * Ensure standings for a league are present and not stale (default 4h).
+ * Prefers LiveScore stage tables, falls back to ESPN.
+ */
+async function ensureFreshStandings(slug, maxAgeMs = 4 * 60 * 60 * 1000) {
+    if (!slug) return 0;
+    const currentYear = new Date().getUTCFullYear();
+    const now = new Date();
+    try {
+        const existing = await SoccerStanding.findOne({
+            league_slug: slug,
+            season_year: currentYear,
+            group_id: 'overall',
+            'entries.0': { $exists: true }
+        }).select('last_synced_at entries').lean();
+
+        const age = existing?.last_synced_at ? (now - new Date(existing.last_synced_at)) : Infinity;
+        if (existing && age < maxAgeMs && (existing.entries || []).length >= 8) {
+            return existing.entries.length;
+        }
+
+        let n = 0;
+        if (LIVESCORE_STAGE_TABLE_MAP[slug]) {
+            n = await syncLiveScoreStandingsForLeague(slug, now);
+        }
+        if (n < 8) {
+            const espnN = await syncEspnStandingsForLeague(slug, now);
+            if (espnN > n) n = espnN;
+        }
+        return n;
+    } catch (err) {
+        console.warn(`ensureFreshStandings(${slug}) failed:`, err.message);
+        return 0;
+    }
+}
+
 
 async function syncLeague(leagueDef) {
     const slug = leagueDef.slug;
@@ -4034,6 +4178,8 @@ module.exports = {
     demoteIfNotTopFlight,
     demoteToJuniorOrLowerTier,
     syncLiveScoreStandingsForLeague,
+    syncEspnStandingsForLeague,
+    ensureFreshStandings,
     LIVESCORE_STAGE_TABLE_MAP,
     inferCountryFromTeamNames,
     applyTeamAlias,

@@ -231,7 +231,7 @@ const {
     isConcreteClock,
     formatMatchClock
 } = require('../services/soccerSerializer');
-const { normalizeTeamName, areTeamNamesMatching, getTeamCategory, getMatchTier, resolveMatchEspnId, resolveLeagueSlug, enforceCountryOnSlug, isReserveOrBTeamName, formatLiveScoreLogo, TARGET_LEAGUES, inferCountryFromTeamNames, demoteToJuniorOrLowerTier, syncLiveScoreStandingsForLeague, LIVESCORE_STAGE_TABLE_MAP } = require('../services/soccerSyncService');
+const { normalizeTeamName, areTeamNamesMatching, getTeamCategory, getMatchTier, resolveMatchEspnId, resolveLeagueSlug, enforceCountryOnSlug, isReserveOrBTeamName, formatLiveScoreLogo, TARGET_LEAGUES, inferCountryFromTeamNames, demoteToJuniorOrLowerTier, syncLiveScoreStandingsForLeague, syncEspnStandingsForLeague, ensureFreshStandings, LIVESCORE_STAGE_TABLE_MAP } = require('../services/soccerSyncService');
 
 function formatDateKey(d = new Date()) {
     const y = d.getUTCFullYear();
@@ -3478,15 +3478,19 @@ router.get(['/standings', '/standings/:league'], async (req, res) => {
         }
 
         const currentYear = new Date().getUTCFullYear();
-        if (requestedSlug && requestedSlug !== 'all' && LIVESCORE_STAGE_TABLE_MAP && LIVESCORE_STAGE_TABLE_MAP[requestedSlug]) {
-            const hasCurrentLiveTable = await SoccerStanding.findOne({
-                league_slug: requestedSlug,
-                season_year: currentYear,
-                group_id: 'overall',
-                'entries.0': { $exists: true }
-            }).lean();
-            if (!hasCurrentLiveTable) {
-                await syncLiveScoreStandingsForLeague(requestedSlug);
+        // Always refresh specific-league tables when missing or stale (was: only African LiveScore map + only if empty)
+        if (requestedSlug && requestedSlug !== 'all') {
+            try {
+                await ensureFreshStandings(requestedSlug, 3 * 60 * 60 * 1000);
+            } catch (e) {
+                console.warn('ensureFreshStandings failed:', e.message);
+                try {
+                    if (LIVESCORE_STAGE_TABLE_MAP && LIVESCORE_STAGE_TABLE_MAP[requestedSlug]) {
+                        await syncLiveScoreStandingsForLeague(requestedSlug);
+                    } else if (typeof syncEspnStandingsForLeague === 'function') {
+                        await syncEspnStandingsForLeague(requestedSlug);
+                    }
+                } catch (_) {}
             }
         }
 
