@@ -856,6 +856,14 @@
             .replace(/\bparis\s+(saint[- ]?germain|sg)\b/g, 'psg')
             .replace(/\bmanchester\s+city\b/g, 'mancity')
             .replace(/\bbayern(\s+munich|\s+munchen)?\b/g, 'bayern')
+            .replace(/borussia\s+m['']?gladbach|borussia\s+m[oö]nchengladbach|m[oö]nchengladbach/g, 'monchengladbach')
+            .replace(/deportivo\s+alav[eé]s|\balav[eé]s\b/g, 'alaves')
+            .replace(/deportivo\s+(a\s+)?(la\s+)?coru[nñ]a|\bdepor\b/g, 'deportivo')
+            .replace(/fenerbah[cç]e/g, 'fenerbahce')
+            .replace(/1\.?\s*fc\s+union\s+berlin|\bunion\s+berlin\b/g, 'unionberlin')
+            .replace(/sc\s+paderborn(\s+07)?|\bpaderborn\b/g, 'paderborn')
+            .replace(/tsg\s+hoffenheim|\bhoffenheim\b/g, 'hoffenheim')
+            .replace(/\bamed\s+(sportif|sfk)\b/g, 'amed')
             .replace(/\bdijon\s+(fco|football\s+cote-d.or)\b/g, 'dijon')
             .replace(/\borleans\s+(us|loiret)?\b/g, 'orleans')
             .replace(/\bla\s+roche(-sur-yon)?(\s+vf)?\b/g, 'laroche')
@@ -5115,31 +5123,82 @@
                 </div>
 
                 <div id="drawer-tab-info" class="drawer-tab-content" ${activeTab === 'info' ? '' : 'hidden'}>
-                    <h4 style="margin:0 0 12px; font-size:14px; color:var(--text-main);">Match Information</h4>
-                    <div style="background:var(--bg-canvas); border:1px solid var(--border-subtle); border-radius:8px; padding:16px; font-size:13px;">
-                        <p style="margin:6px 0;"><strong>Competition:</strong> ${escapeHtml(competitionName)}</p>
-                        <p style="margin:6px 0;"><strong>Date &amp; Time:</strong> ${formatDate(competition.date, { year: true })} at ${formatTime(competition.date)}</p>
-                        <p style="margin:6px 0;"><strong>Venue / Stadium:</strong> ${escapeHtml(cleanVenueName)}${cleanVenueCity ? ` (${escapeHtml(cleanVenueCity)})` : ''}</p>
-                        ${competition.attendance ? `<p style="margin:6px 0;"><strong>Attendance:</strong> ${Number(competition.attendance).toLocaleString()} spectators</p>` : ''}
-                        ${summary.gameInfo?.officials?.length ? `<p style="margin:6px 0;"><strong>Referee:</strong> ${escapeHtml(summary.gameInfo.officials.map(o => o.displayName).join(', '))}</p>` : ''}
+                    <h4 style="margin:0 0 14px; font-size:14px; font-weight:700; color:var(--text-main); letter-spacing:-0.01em;">Match Information</h4>
+                    <div style="display:grid; grid-template-columns:1fr; gap:10px;">
+                        <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px;">
+                            <div style="background:var(--bg-canvas); border:1px solid var(--border-subtle); border-radius:12px; padding:14px 16px;">
+                                <div style="font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:0.06em; color:var(--text-muted); margin-bottom:6px;">Competition</div>
+                                <div style="font-size:13.5px; font-weight:600; color:var(--text-main); line-height:1.35;">${escapeHtml(competitionName)}</div>
+                            </div>
+                            <div style="background:var(--bg-canvas); border:1px solid var(--border-subtle); border-radius:12px; padding:14px 16px;">
+                                <div style="font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:0.06em; color:var(--text-muted); margin-bottom:6px;">Kickoff</div>
+                                <div style="font-size:13.5px; font-weight:600; color:var(--text-main); line-height:1.35;">${formatTime(competition.date)}</div>
+                                <div style="font-size:11.5px; color:var(--text-muted); margin-top:3px;">${formatDate(competition.date, { year: true })}</div>
+                            </div>
+                        </div>
+                        <div style="background:var(--bg-canvas); border:1px solid var(--border-subtle); border-radius:12px; padding:14px 16px;">
+                            <div style="font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:0.06em; color:var(--text-muted); margin-bottom:6px;">Venue</div>
+                            <div style="font-size:13.5px; font-weight:600; color:var(--text-main); line-height:1.35;">${escapeHtml(cleanVenueName || 'TBC')}</div>
+                            ${cleanVenueCity ? `<div style="font-size:11.5px; color:var(--text-muted); margin-top:3px;">${escapeHtml(cleanVenueCity)}</div>` : ''}
+                        </div>
+                        ${competition.attendance ? `
+                        <div style="background:var(--bg-canvas); border:1px solid var(--border-subtle); border-radius:12px; padding:14px 16px; display:flex; justify-content:space-between; align-items:center;">
+                            <div>
+                                <div style="font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:0.06em; color:var(--text-muted); margin-bottom:4px;">Attendance</div>
+                                <div style="font-size:15px; font-weight:700; color:var(--text-main);">${Number(competition.attendance).toLocaleString()}</div>
+                            </div>
+                            <span style="font-size:11px; color:var(--text-muted);">spectators</span>
+                        </div>` : ''}
+                        ${summary.gameInfo?.officials?.length ? `
+                        <div style="background:var(--bg-canvas); border:1px solid var(--border-subtle); border-radius:12px; padding:14px 16px;">
+                            <div style="font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:0.06em; color:var(--text-muted); margin-bottom:6px;">Officials</div>
+                            <div style="font-size:13px; font-weight:600; color:var(--text-main);">${escapeHtml(summary.gameInfo.officials.map(o => o.displayName).join(' · '))}</div>
+                        </div>` : ''}
                     </div>
 
                     ${(homeStanding || awayStanding) ? `
-                        <h4 style="margin:20px 0 10px; font-size:14px; color:var(--text-main);">Current Table Standing Context</h4>
-                        <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px;">
+                        <h4 style="margin:22px 0 12px; font-size:14px; font-weight:700; color:var(--text-main); letter-spacing:-0.01em;">Table Context</h4>
+                        <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px;">
                             ${homeStanding ? `
-                                <div style="background:var(--bg-canvas); border:1px solid var(--border-subtle); border-radius:8px; padding:12px; font-size:12.5px;">
-                                    <strong>${escapeHtml(home.team?.displayName || 'Home')}</strong>: Rank <strong>#${homeStanding.rank}</strong> &bull; Points: <strong>${homeStanding.points ?? '—'}</strong> &bull; GD: <strong>${homeStanding.goalDifferential ?? '—'}</strong>
+                                <div style="background:linear-gradient(180deg, var(--bg-canvas) 0%, var(--bg-surface) 100%); border:1px solid var(--border-subtle); border-radius:12px; padding:14px;">
+                                    <div style="font-size:12px; font-weight:700; color:var(--text-main); margin-bottom:10px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${escapeHtml(home.team?.displayName || 'Home')}</div>
+                                    <div style="display:flex; gap:8px; align-items:flex-end;">
+                                        <div style="flex:1; text-align:center;">
+                                            <div style="font-size:20px; font-weight:800; color:var(--color-primary); line-height:1;">#${homeStanding.rank}</div>
+                                            <div style="font-size:10px; color:var(--text-muted); margin-top:4px; text-transform:uppercase; letter-spacing:0.04em;">Rank</div>
+                                        </div>
+                                        <div style="flex:1; text-align:center;">
+                                            <div style="font-size:18px; font-weight:700; color:var(--text-main); line-height:1;">${homeStanding.points ?? '—'}</div>
+                                            <div style="font-size:10px; color:var(--text-muted); margin-top:4px; text-transform:uppercase; letter-spacing:0.04em;">Pts</div>
+                                        </div>
+                                        <div style="flex:1; text-align:center;">
+                                            <div style="font-size:18px; font-weight:700; color:var(--text-main); line-height:1;">${homeStanding.goalDifferential ?? '—'}</div>
+                                            <div style="font-size:10px; color:var(--text-muted); margin-top:4px; text-transform:uppercase; letter-spacing:0.04em;">GD</div>
+                                        </div>
+                                    </div>
                                 </div>
                             ` : ''}
                             ${awayStanding ? `
-                                <div style="background:var(--bg-canvas); border:1px solid var(--border-subtle); border-radius:8px; padding:12px; font-size:12.5px;">
-                                    <strong>${escapeHtml(away.team?.displayName || 'Away')}</strong>: Rank <strong>#${awayStanding.rank}</strong> &bull; Points: <strong>${awayStanding.points ?? '—'}</strong> &bull; GD: <strong>${awayStanding.goalDifferential ?? '—'}</strong>
+                                <div style="background:linear-gradient(180deg, var(--bg-canvas) 0%, var(--bg-surface) 100%); border:1px solid var(--border-subtle); border-radius:12px; padding:14px;">
+                                    <div style="font-size:12px; font-weight:700; color:var(--text-main); margin-bottom:10px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${escapeHtml(away.team?.displayName || 'Away')}</div>
+                                    <div style="display:flex; gap:8px; align-items:flex-end;">
+                                        <div style="flex:1; text-align:center;">
+                                            <div style="font-size:20px; font-weight:800; color:var(--color-primary); line-height:1;">#${awayStanding.rank}</div>
+                                            <div style="font-size:10px; color:var(--text-muted); margin-top:4px; text-transform:uppercase; letter-spacing:0.04em;">Rank</div>
+                                        </div>
+                                        <div style="flex:1; text-align:center;">
+                                            <div style="font-size:18px; font-weight:700; color:var(--text-main); line-height:1;">${awayStanding.points ?? '—'}</div>
+                                            <div style="font-size:10px; color:var(--text-muted); margin-top:4px; text-transform:uppercase; letter-spacing:0.04em;">Pts</div>
+                                        </div>
+                                        <div style="flex:1; text-align:center;">
+                                            <div style="font-size:18px; font-weight:700; color:var(--text-main); line-height:1;">${awayStanding.goalDifferential ?? '—'}</div>
+                                            <div style="font-size:10px; color:var(--text-muted); margin-top:4px; text-transform:uppercase; letter-spacing:0.04em;">GD</div>
+                                        </div>
+                                    </div>
                                 </div>
                             ` : ''}
                         </div>
                     ` : ''}
-                </div>
 
                 <div id="drawer-tab-predictions" class="drawer-tab-content" ${activeTab === 'predictions' ? '' : 'hidden'}>
                     <div class="prediction-card">
