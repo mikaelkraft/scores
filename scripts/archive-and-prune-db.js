@@ -17,6 +17,7 @@
 const fs = require('fs');
 const path = require('path');
 const zlib = require('zlib');
+const { execFileSync } = require('child_process');
 const mongoose = require('../database');
 const SoccerMatch = require('../models/soccerMatch');
 const SoccerMatchEvent = require('../models/soccerMatchEvent');
@@ -25,6 +26,19 @@ const DRY_RUN = process.argv.includes('--dry-run');
 const KEEP_FULL_DAYS = Number(process.env.KEEP_FULL_DAYS || 7);
 const KEEP_EVENTS_DAYS = Number(process.env.KEEP_EVENTS_DAYS || 14);
 const ARCHIVE_DIR = process.env.ARCHIVE_DIR || path.join(__dirname, '../archives');
+const RCLONE_DEST = process.env.RCLONE_DEST || 'Gdrive:NorraScores-Backups/';
+
+function offloadToGoogleDrive(localFilePath) {
+    if (!localFilePath || !fs.existsSync(localFilePath)) return false;
+    try {
+        execFileSync('rclone', ['copy', localFilePath, RCLONE_DEST], { stdio: 'inherit', timeout: 120000 });
+        console.log(`☁️  Offloaded ${path.basename(localFilePath)} -> ${RCLONE_DEST}`);
+        return true;
+    } catch (err) {
+        console.warn(`⚠️  rclone offload skipped/failed for ${path.basename(localFilePath)} (kept locally):`, err.message);
+        return false;
+    }
+}
 
 async function run() {
     await new Promise(r => (mongoose.connection.readyState === 1 ? r() : mongoose.connection.once('open', r)));
@@ -84,6 +98,7 @@ async function run() {
             gz.end();
         });
         console.log(`Archived ${archived} full match records -> ${archivePath}`);
+        offloadToGoogleDrive(archivePath);
 
         const stripRes = await SoccerMatch.updateMany(heavyMatchFilter, {
             $set: {
@@ -119,6 +134,7 @@ async function run() {
             gz.end();
         });
         console.log(`Archived ${archivedEv} match events -> ${eventsPath}`);
+        offloadToGoogleDrive(eventsPath);
 
         const delRes = await SoccerMatchEvent.deleteMany({ created_at: { $lt: eventCutoff } });
         console.log(`Pruned ${delRes.deletedCount} old match events from Atlas.`);
