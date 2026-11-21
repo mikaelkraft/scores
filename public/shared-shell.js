@@ -248,8 +248,112 @@
         }
     }
 
+    
+    function ensureMobileNavDrawer() {
+        if (document.getElementById('mobile-country-drawer') || document.getElementById('shell-mobile-drawer')) {
+            // Homepage already has full competitions drawer — only bind if needed
+            bindHamburgerOnly();
+            return;
+        }
+        if (document.getElementById('shell-mobile-drawer')) return;
+
+        var overlay = document.createElement('div');
+        overlay.className = 'mobile-drawer-overlay';
+        overlay.id = 'mobile-drawer-overlay';
+        overlay.setAttribute('aria-hidden', 'true');
+
+        var aside = document.createElement('aside');
+        aside.className = 'mobile-country-drawer';
+        aside.id = 'shell-mobile-drawer';
+        aside.setAttribute('aria-label', 'Site menu');
+        aside.setAttribute('aria-hidden', 'true');
+        aside.innerHTML = [
+            '<div class="mobile-drawer-header">',
+            '  <div style="display:flex;align-items:center;gap:8px;">',
+            '    <span style="font-size:18px;">☰</span>',
+            '    <strong style="font-size:15px;color:var(--text-main);">Menu</strong>',
+            '  </div>',
+            '  <button class="close-button" id="close-mobile-drawer" type="button" aria-label="Close menu">✕</button>',
+            '</div>',
+            '<nav class="shell-mobile-nav" style="display:flex;flex-direction:column;gap:6px;padding-top:8px;">',
+            '  <a class="mobile-extra-link" href="/?view=live">🔴 Live Scores</a>',
+            '  <a class="mobile-extra-link" href="/">📅 Fixtures &amp; Tables</a>',
+            '  <a class="mobile-extra-link" href="https://mynorra.xyz" target="_blank" rel="noopener">🔮 Predictions ↗</a>',
+            '  <a class="mobile-extra-link" href="/pricing">Pricing</a>',
+            '  <a class="mobile-extra-link" href="/docs">API Docs</a>',
+            '  <a class="mobile-extra-link" href="/account">Account &amp; API Keys</a>',
+            '  <a class="mobile-extra-link" href="/download/norrascore.apk" download="norrascore.apk">📲 Download App</a>',
+            '  <a class="mobile-extra-link" href="/terms">Terms of Service</a>',
+            '  <a class="mobile-extra-link" href="/privacy">Privacy Policy</a>',
+            '</nav>'
+        ].join('');
+
+        document.body.appendChild(overlay);
+        document.body.appendChild(aside);
+        bindHamburgerOnly();
+    }
+
+    function openShellDrawer() {
+        var overlay = document.getElementById('mobile-drawer-overlay');
+        var drawer = document.getElementById('shell-mobile-drawer') || document.getElementById('mobile-country-drawer');
+        if (overlay) {
+            overlay.classList.add('active');
+            overlay.setAttribute('aria-hidden', 'false');
+        }
+        if (drawer) {
+            drawer.classList.add('active');
+            drawer.setAttribute('aria-hidden', 'false');
+        }
+        document.body.style.overflow = 'hidden';
+    }
+
+    function closeShellDrawer() {
+        var overlay = document.getElementById('mobile-drawer-overlay');
+        var drawer = document.getElementById('shell-mobile-drawer') || document.getElementById('mobile-country-drawer');
+        if (overlay) {
+            overlay.classList.remove('active');
+            overlay.setAttribute('aria-hidden', 'true');
+        }
+        if (drawer) {
+            drawer.classList.remove('active');
+            drawer.setAttribute('aria-hidden', 'true');
+        }
+        document.body.style.overflow = '';
+    }
+
+    function bindHamburgerOnly() {
+        var ham = document.getElementById('mobile-hamburger-btn');
+        var closeBtn = document.getElementById('close-mobile-drawer');
+        var overlay = document.getElementById('mobile-drawer-overlay');
+        if (ham && !ham.dataset.shellBound) {
+            ham.dataset.shellBound = '1';
+            ham.addEventListener('click', function (e) {
+                e.preventDefault();
+                // If homepage app.js already handles it, still OK to toggle our classes
+                var drawer = document.getElementById('mobile-country-drawer') || document.getElementById('shell-mobile-drawer');
+                if (drawer && drawer.classList.contains('active')) closeShellDrawer();
+                else openShellDrawer();
+            });
+        }
+        if (closeBtn && !closeBtn.dataset.shellBound) {
+            closeBtn.dataset.shellBound = '1';
+            closeBtn.addEventListener('click', function (e) {
+                e.preventDefault();
+                closeShellDrawer();
+            });
+        }
+        if (overlay && !overlay.dataset.shellBound) {
+            overlay.dataset.shellBound = '1';
+            overlay.addEventListener('click', closeShellDrawer);
+        }
+        document.addEventListener('keydown', function (e) {
+            if (e.key === 'Escape') closeShellDrawer();
+        });
+    }
+
     function init() {
         bindThemeButtons();
+        ensureMobileNavDrawer();
         function loadCfg(url) {
             return fetch(url, { headers: { Accept: 'application/json' } })
                 .then(function (r) { return r.ok ? r.json() : null; });
