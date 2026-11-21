@@ -67,19 +67,33 @@
             background: var(--bg-surface);
             border: 1px solid var(--border-subtle);
             border-radius: var(--card-radius);
-            padding: 24px;
+            padding: 20px;
             margin-bottom: 24px;
+            width: 100%;
+            max-width: 100%;
+            box-sizing: border-box;
+            overflow-x: hidden;
+        }
+        .partner-row {
+            width: 100%;
+            max-width: 100%;
+            box-sizing: border-box;
+            overflow-x: hidden;
         }
         .form-grid {
             display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-            gap: 20px;
+            grid-template-columns: repeat(auto-fit, minmax(min(100%, 240px), 1fr));
+            gap: 16px;
             margin-top: 15px;
+            width: 100%;
+            box-sizing: border-box;
         }
         .form-group {
             display: flex;
             flex-direction: column;
             gap: 6px;
+            min-width: 0;
+            max-width: 100%;
         }
         .form-group label {
             font-size: 13px;
@@ -87,6 +101,9 @@
             color: var(--text-main);
         }
         .form-group input, .form-group textarea, .form-group select {
+            width: 100%;
+            max-width: 100%;
+            box-sizing: border-box;
             padding: 10px 14px;
             border: 1px solid var(--border-subtle);
             border-radius: 8px;

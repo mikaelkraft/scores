@@ -751,9 +751,12 @@
         return false;
     }
 
+    const _cleanTeamNameCache = new Map();
     function cleanTeamNameForDedup(name) {
         if (!name) return '';
-        const raw = String(name).trim();
+        const rawKey = String(name);
+        if (_cleanTeamNameCache.has(rawKey)) return _cleanTeamNameCache.get(rawKey);
+        const raw = rawKey.trim();
         const originalAlphanumeric = raw
             .normalize('NFD')
             .replace(/[\u0300-\u036f]/g, '')
@@ -865,6 +868,8 @@
         if (s.length < 2) {
             s = originalAlphanumeric;
         }
+        if (_cleanTeamNameCache.size > 4000) _cleanTeamNameCache.clear();
+        _cleanTeamNameCache.set(rawKey, s);
         return s;
     }
 
@@ -1072,37 +1077,49 @@
 
         const seenMap = new Map();
         const pairMap = new Map();
+        const tokenBuckets = new Map();
+        const addToBuckets = (pKey, hName, aName) => {
+            const keys = [hName.slice(0, 3), aName.slice(0, 3)].filter(k => k.length >= 2);
+            for (const k of keys) {
+                let arr = tokenBuckets.get(k);
+                if (!arr) { arr = []; tokenBuckets.set(k, arr); }
+                arr.push(pKey);
+            }
+        };
 
         for (const m of matchList) {
             const sig = getEventDedupSignature(m);
             const pairBase = getPairBaseKey(m);
             const score = getEventQualityScore(m);
+            const mTier = getEventMatchTierClient(m);
+            const { home: mH, away: mA } = competitorsFromEvent(m);
+            const mHName = cleanTeamNameForDedup(mH.team?.displayName || mH.team?.name || m.home?.name || '');
+            const mAName = cleanTeamNameForDedup(mA.team?.displayName || mA.team?.name || m.away?.name || '');
+            const mTime = m.date ? new Date(m.date).getTime() : 0;
 
-            // 1. Check pairBase collapse (collapses live match with its scheduled fixture or cross-provider variant)
+            // 1. Check pairBase collapse (O(1) exact + bucketed fuzzy lookup — zero main-thread freeze)
             let matchedPairKey = null;
             if (pairBase && pairMap.has(pairBase)) {
                 matchedPairKey = pairBase;
             } else if (pairBase) {
-                for (const [pKey, pEntry] of pairMap.entries()) {
+                const candidateKeys = new Set();
+                const b1 = mHName.length >= 2 ? tokenBuckets.get(mHName.slice(0, 3)) : null;
+                const b2 = mAName.length >= 2 ? tokenBuckets.get(mAName.slice(0, 3)) : null;
+                if (b1) for (let i = 0; i < b1.length; i++) candidateKeys.add(b1[i]);
+                if (b2) for (let i = 0; i < b2.length; i++) candidateKeys.add(b2[i]);
+
+                for (const pKey of candidateKeys) {
+                    const pEntry = pairMap.get(pKey);
+                    if (!pEntry) continue;
                     if (signatureFuzzyMatch(sig, pEntry.sig)) {
                         matchedPairKey = pKey;
                         break;
                     }
-                    const mTier = getEventMatchTierClient(m);
-                    const eTier = getEventMatchTierClient(pEntry.item);
-                    if (mTier === eTier) {
-                        const { home: mH, away: mA } = competitorsFromEvent(m);
-                        const { home: eH, away: eA } = competitorsFromEvent(pEntry.item);
-                        const mHName = cleanTeamNameForDedup(mH.team?.displayName || mH.team?.name || m.home?.name || '');
-                        const mAName = cleanTeamNameForDedup(mA.team?.displayName || mA.team?.name || m.away?.name || '');
-                        const eHName = cleanTeamNameForDedup(eH.team?.displayName || eH.team?.name || pEntry.item.home?.name || '');
-                        const eAName = cleanTeamNameForDedup(eA.team?.displayName || eA.team?.name || pEntry.item.away?.name || '');
-                        if ((teamNamesFuzzyEqual(mHName, eHName) && teamNamesFuzzyEqual(mAName, eAName)) ||
-                            (teamNamesFuzzyEqual(mHName, eAName) && teamNamesFuzzyEqual(mAName, eHName))) {
-                            const mTime = m.date ? new Date(m.date).getTime() : 0;
-                            const eTime = pEntry.item.date ? new Date(pEntry.item.date).getTime() : 0;
+                    if (mTier === pEntry.tier) {
+                        if ((teamNamesFuzzyEqual(mHName, pEntry.hName) && teamNamesFuzzyEqual(mAName, pEntry.aName)) ||
+                            (teamNamesFuzzyEqual(mHName, pEntry.aName) && teamNamesFuzzyEqual(mAName, pEntry.hName))) {
                             const eitherLive = (m.status?.state === 'in' || m.status?.isLive || pEntry.item.status?.state === 'in' || pEntry.item.status?.isLive);
-                            const closeInTime = (mTime && eTime) ? Math.abs(mTime - eTime) <= 36 * 3600 * 1000 : true;
+                            const closeInTime = (mTime && pEntry.time) ? Math.abs(mTime - pEntry.time) <= 36 * 3600 * 1000 : true;
                             if (eitherLive || closeInTime) {
                                 matchedPairKey = pKey;
                                 break;
@@ -1115,20 +1132,23 @@
             if (matchedPairKey) {
                 const existing = pairMap.get(matchedPairKey);
                 const exItem = existing.item;
-                const mTime = m.date ? new Date(m.date).getTime() : 0;
-                const exTime = exItem.date ? new Date(exItem.date).getTime() : 0;
                 const eitherLive = (m.status?.state === 'in' || m.status?.isLive || exItem.status?.state === 'in' || exItem.status?.isLive);
-                const closeInTime = (mTime && exTime) ? Math.abs(mTime - exTime) <= 36 * 3600 * 1000 : true;
+                const closeInTime = (mTime && existing.time) ? Math.abs(mTime - existing.time) <= 36 * 3600 * 1000 : true;
 
                 if (eitherLive || closeInTime) {
                     const winner = score > existing.score ? m : exItem;
                     const secondary = score > existing.score ? exItem : m;
                     const merged = mergeMatches(winner, secondary);
                     const newScore = Math.max(existing.score, score);
-                    pairMap.set(matchedPairKey, { item: merged, score: newScore, sig: existing.sig });
+                    pairMap.set(matchedPairKey, { ...existing, item: merged, score: newScore });
                     seenMap.set(existing.sig, { item: merged, score: newScore });
                     continue;
                 }
+            }
+
+            if (pairBase && !pairMap.has(pairBase)) {
+                pairMap.set(pairBase, { item: m, score, sig, tier: mTier, hName: mHName, aName: mAName, time: mTime });
+                addToBuckets(pairBase, mHName, mAName);
             }
 
             // 2. Signature match
@@ -1997,7 +2017,7 @@
             </button>
         `;
 
-        container.innerHTML = allPill + livePill + leaguePills + morePill;
+        container.innerHTML = allPill + leaguePills + morePill;
 
         container.querySelectorAll('.quick-league-btn').forEach(btn => {
             btn.addEventListener('click', (e) => {
@@ -2784,7 +2804,7 @@
 
                 const isFavorites = state.currentStatus === 'favorites' || Boolean(favoritesOnly);
                 const statusParam = isFavorites ? 'all' : (state.currentStatus || 'all');
-                let url = `/api/v1/football/fixtures?date=${encodeURIComponent(dateParam)}&limit=600`;
+                let url = `/api/v1/football/fixtures?date=${encodeURIComponent(dateParam)}&limit=1200`;
                 if (statusParam && statusParam !== 'all') {
                     url += `&status=${encodeURIComponent(statusParam)}`;
                 }
@@ -2984,13 +3004,8 @@
             for (const ev of events) {
                 const sig = getEventDedupSignature(ev);
                 if (!sig || sig === '_vs_') continue;
-                let alreadyShown = globallyRenderedSignatures.has(sig) || (ev.id && globallyRenderedIds.has(String(ev.id)));
-                if (!alreadyShown) {
-                    for (const prev of globallyRenderedSignatures) {
-                        if (signatureFuzzyMatch(sig, prev)) { alreadyShown = true; break; }
-                    }
-                }
-                if (alreadyShown) continue; // Skip: already rendered (exact or fuzzy name variant)
+                const alreadyShown = globallyRenderedSignatures.has(sig) || (ev.id && globallyRenderedIds.has(String(ev.id)));
+                if (alreadyShown) continue; // Skip: already rendered (deduplicateMatchesList already collapsed fuzzy variants)
                 // Drop B/reserve sides from senior top-flight boards
                 const slug = (league?.slug || ev.league_slug || '').toLowerCase();
                 const isSeniorTop = /\.[1]$/.test(slug) && !slug.includes('.w.') && !slug.includes('youth');
@@ -5383,15 +5398,20 @@
                 }
             }
 
-            // Custom Favicon
+            // Custom Favicon (update ALL icon links & strip svg mime type so PNG/ICO/WebP renders everywhere)
             if (res.branding?.faviconUrl) {
-                let favLink = document.getElementById('site-favicon') || document.querySelector('link[rel="icon"]');
-                if (!favLink) {
-                    favLink = document.createElement('link');
+                const iconLinks = document.querySelectorAll('link[rel="icon"], link[rel="shortcut icon"], link[rel="apple-touch-icon"], #site-favicon');
+                if (iconLinks.length > 0) {
+                    iconLinks.forEach(link => {
+                        link.removeAttribute('type');
+                        link.href = res.branding.faviconUrl;
+                    });
+                } else {
+                    const favLink = document.createElement('link');
                     favLink.rel = 'icon';
+                    favLink.href = res.branding.faviconUrl;
                     document.head.appendChild(favLink);
                 }
-                favLink.href = res.branding.faviconUrl;
             }
 
             // Standalone APK download link sync from admin settings

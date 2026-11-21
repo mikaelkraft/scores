@@ -87,8 +87,18 @@
         }
 
         if (b.faviconUrl) {
-            var fav = document.getElementById('site-favicon') || document.querySelector('link[rel="icon"]');
-            if (fav) fav.href = b.faviconUrl;
+            var icons = document.querySelectorAll('link[rel="icon"], link[rel="shortcut icon"], link[rel="apple-touch-icon"], #site-favicon');
+            if (icons.length > 0) {
+                icons.forEach(function (link) {
+                    link.removeAttribute('type');
+                    link.href = b.faviconUrl;
+                });
+            } else {
+                var fav = document.createElement('link');
+                fav.rel = 'icon';
+                fav.href = b.faviconUrl;
+                document.head.appendChild(fav);
+            }
         }
 
         // Sync social links if present in footer

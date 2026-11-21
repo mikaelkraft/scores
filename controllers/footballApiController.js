@@ -1443,7 +1443,7 @@ router.get('/fixtures', optionalApiKeyAuth, async (req, res) => {
     try {
         const { date, from, to, league, status = 'all', team } = req.query;
         const page = parseNumber(req.query.page, 1, 1000);
-        const limit = parseNumber(req.query.limit, 600, 1000);
+        const limit = parseNumber(req.query.limit, 600, 1500);
 
         const filter = {};
 
@@ -1541,8 +1541,24 @@ router.get('/fixtures', optionalApiKeyAuth, async (req, res) => {
             ];
         }
 
-        let [totalCount, matches, storedLeagues] = await Promise.all([
+        const PRIORITY_GUARANTEED_LEAGUES = [
+            'uefa.champions', 'uefa.europa', 'uefa.europa.conf',
+            'eng.1', 'esp.1', 'ita.1', 'ger.1', 'fra.1',
+            'nga.1', 'ned.1', 'por.1', 'bra.1', 'arg.1', 'ksa.1', 'usa.1', 'mex.1', 'tur.1', 'bel.1', 'sco.1', 'rus.1', 'col.1'
+        ];
+        const needsPriorityMerge = (!league || league === 'all') && !isFreePlanRestricted(req.apiKey);
+
+        let [totalCount, priorityMatches, generalMatches, storedLeagues] = await Promise.all([
             SoccerMatch.countDocuments(filter).maxTimeMS(8000).catch(() => 0),
+            needsPriorityMerge
+                ? SoccerMatch.find({ ...filter, league_slug: { $in: PRIORITY_GUARANTEED_LEAGUES } })
+                    .select('source league_slug name short_name date scoreboard_date status home away note venue broadcasts attendance odds')
+                    .sort({ date: 1 })
+                    .limit(300)
+                    .maxTimeMS(6000)
+                    .lean()
+                    .catch(() => [])
+                : Promise.resolve([]),
             SoccerMatch.find(filter)
                 .select('source league_slug name short_name date scoreboard_date status home away note venue broadcasts attendance odds')
                 .sort({ date: 1 })
@@ -1553,6 +1569,13 @@ router.get('/fixtures', optionalApiKeyAuth, async (req, res) => {
                 .catch(() => []),
             SoccerLeague.find({ active: true }).select('slug name abbreviation country logo').maxTimeMS(2500).lean().catch(() => [])
         ]);
+
+        // Merge guaranteed top-flight matches first so busy Saturdays never truncate EPL/LaLiga/SerieA/Bundesliga/NPFL
+        let matches = generalMatches;
+        if (priorityMatches.length > 0) {
+            const seenPIds = new Set(priorityMatches.map(m => String(m._id)));
+            matches = [...priorityMatches, ...generalMatches.filter(m => !seenPIds.has(String(m._id)))];
+        }
 
         // On-demand fallback for past/future dates (yesterday, tomorrow, custom YYYY-MM-DD) when DB has few/0 fixtures
         if (!isQueryingToday && date && (matches.length < 5 || (league && league !== 'all' && matches.length === 0))) {

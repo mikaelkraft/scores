@@ -166,6 +166,23 @@ for (const [route, file] of Object.entries(ROOT_ASSETS)) {
     });
 }
 
+// Serve uploaded custom favicon from Admin Branding for /favicon.ico and /favicon.svg
+let cachedFaviconUrl = { url: '', ts: 0 };
+app.get(['/favicon.ico', '/favicon.svg'], async (req, res, next) => {
+    try {
+        if (Date.now() - cachedFaviconUrl.ts > 60000) {
+            const SiteSettings = require('./models/siteSettings');
+            const doc = await SiteSettings.findOne().select('branding.faviconUrl').lean().catch(() => null);
+            cachedFaviconUrl = { url: String(doc?.branding?.faviconUrl || '').trim(), ts: Date.now() };
+        }
+        if (cachedFaviconUrl.url && cachedFaviconUrl.url !== req.path) {
+            res.set('Cache-Control', 'public, max-age=300');
+            return res.redirect(302, cachedFaviconUrl.url);
+        }
+    } catch (_) {}
+    return next();
+});
+
 app.use('/assets', express.static(path.join(__dirname, 'public'), {
     index: false,
     maxAge: 0,
