@@ -2,8 +2,24 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
+const mongoose = require('mongoose');
 
 const dailyBoardCache = require('../services/dailyBoardCache');
+const { resolveLeagueSlug } = require('../services/soccerSyncService');
+
+test.after(async () => {
+    try { await mongoose.disconnect(); } catch (_) {}
+});
+
+test('resolveLeagueSlug never demotes top-flight ESPN live UIDs containing digits 2 or 3 to .lower', () => {
+    assert.equal(resolveLeagueSlug('LALIGA', '', 's:600~l:740~e:401882804'), 'esp.1');
+    assert.equal(resolveLeagueSlug('English Premier League', '', 's:600~l:700~e:401879234'), 'eng.1');
+    assert.equal(resolveLeagueSlug('Bundesliga', '', 's:600~l:710~e:401882345'), 'ger.1');
+    assert.equal(resolveLeagueSlug('LALIGA', 'Matchday 22', 's:600~l:740~e:401882804'), 'esp.1');
+    assert.equal(resolveLeagueSlug('LaLiga 2', 'Spain', ''), 'esp.2');
+    assert.equal(resolveLeagueSlug('2. Bundesliga', 'Germany', ''), 'ger.2');
+    assert.equal(resolveLeagueSlug('Premier League 2', 'England', ''), 'eng.u21');
+});
 
 test('dailyBoardCache stores render-ready board and filters by status in memory', () => {
     dailyBoardCache.clearBoardCache();

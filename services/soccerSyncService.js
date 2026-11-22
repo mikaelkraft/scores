@@ -1607,7 +1607,9 @@ function resolveLeagueSlug(altGameNote = '', compDesc = '', uid = '') {
     const leagueRaw = String(altGameNote || '').trim();
     const countryRaw = String(compDesc || '').trim();
     const uidRaw = String(uid || '').trim();
-    const text = `${leagueRaw} ${countryRaw} ${uidRaw}`.toLowerCase();
+    // Strip opaque numeric provider UIDs (e.g. "s:600~l:740~e:401882804") from text so random digits like '2'/'3' never demote .1 leagues to .lower
+    const uidForText = /^(?:s:\d+|ls:\d+|\d+)$/i.test(uidRaw) ? '' : uidRaw.replace(/~?[elsc]:\d+/gi, ' ').trim();
+    const text = `${leagueRaw} ${countryRaw} ${uidForText}`.toLowerCase();
     const country = countryRaw.toLowerCase();
     const league = leagueRaw.toLowerCase();
     const scd = uidRaw.toLowerCase();
@@ -1751,7 +1753,7 @@ function resolveLeagueSlug(altGameNote = '', compDesc = '', uid = '') {
     if (text.includes('fifa world cup') || text.includes('fifa.world')) return 'fifa.world';
 
     // 4b. Friendlies (Must run before domestic leagues so matches like "Friendly: Vietnam vs Chinese Taipei" resolve to intl.friendly)
-    const isNeutralCountry = !country || country === 'international' || country === 'world' || country === 'europe' || country === 'global';
+    const isNeutralCountry = !country || country === 'international' || country === 'world' || country === 'europe' || country === 'global' || /^(?:matchday|week|round|jornada|spieltag|giornata|journ[eé]e|group|stage|\d+(?:st|nd|rd|th)?\s*leg|semifinal|quarterfinal|final)\b/i.test(country);
     if (text.includes('international friendly') || ((text.includes('friendly') || scd.includes('friendly')) && !text.includes('club') && (country.includes('international') || text.includes('fifa') || isNeutralCountry))) {
         return 'intl.friendly';
     }
@@ -2056,7 +2058,7 @@ function resolveLeagueSlug(altGameNote = '', compDesc = '', uid = '') {
         if (/(?:segunda\s*federaci|2[ªa.]?\s*(?:federaci|rfef)|segunda\s*rfef|segunda\s*b|segunda\s*division\s*rfef)/i.test(text) || scd.includes('esp.4')) return 'esp.4';
         if (/(?:primera\s*federaci|1[ªa.]?\s*(?:federaci|rfef)|primera\s*rfef|primera\s*division\s*rfef)/i.test(text) || scd.includes('esp.3')) return 'esp.3';
         if (text.includes('laliga 2') || text.includes('laliga2') || text.includes('hypermotion') || /segunda\s*divisi/i.test(text) || scd.includes('esp.2')) return 'esp.2';
-        if ((/\b(?:laliga|la\s+liga)\b/i.test(text) && !text.includes('2') && !text.includes('hypermotion')) || scd === 'esp.1' || (/primera\s*divisi/i.test(text) && !text.includes('rfef') && !text.includes('femenin'))) return 'esp.1';
+        if ((/\b(?:laliga|la\s+liga)\b/i.test(text) && !/\b(?:laliga\s*2|la\s+liga\s*2|laliga2|hypermotion|segunda)\b/i.test(text)) || scd === 'esp.1' || (/primera\s*divisi/i.test(text) && !text.includes('rfef') && !text.includes('femenin'))) return 'esp.1';
         return 'esp.lower';
     }
 
@@ -2086,7 +2088,7 @@ function resolveLeagueSlug(altGameNote = '', compDesc = '', uid = '') {
         if (text.includes('regionalliga') || scd.includes('ger.4')) return 'ger.4';
         if (text.includes('3. liga') || text.includes('3 liga') || text.includes('3.liga') || scd.includes('ger.3')) return 'ger.3';
         if (text.includes('2. bundesliga') || text.includes('2 bundesliga') || text.includes('2-bundesliga') || scd.includes('ger.2')) return 'ger.2';
-        if ((text.includes('bundesliga') && !text.includes('2') && !text.includes('3') && !text.includes('frauen')) || scd === 'ger.1' || text.includes('1. bundesliga')) return 'ger.1';
+        if ((text.includes('bundesliga') && !/\b(?:2\.?\s*bundesliga|3\.?\s*liga|frauen)\b/i.test(text)) || scd === 'ger.1' || text.includes('1. bundesliga')) return 'ger.1';
         return 'ger.lower';
     }
 
@@ -2119,7 +2121,7 @@ function resolveLeagueSlug(altGameNote = '', compDesc = '', uid = '') {
             if (text.includes('fa cup') || text.includes('eng.fa')) return 'eng.fa';
             if (text.includes('carabao') || text.includes('efl cup') || (text.includes('league cup') && !text.includes('scot') && !text.includes('thai') && !text.includes('egypt')) || text.includes('eng.league_cup')) return 'eng.league_cup';
             if ((text.includes('efl trophy') || scd.includes('efl-trophy') || (text.includes('trophy') && (text.includes('papa john') || text.includes('bristol') || isEngland))) && !text.includes('korea') && !text.includes('china')) return 'eng.trophy';
-            if (((text.includes('premier league') || text.includes('epl')) && !text.includes('2') && !text.includes('u21') && !text.includes('u18')) || scd === 'eng.1') return 'eng.1';
+            if (((text.includes('premier league') || text.includes('epl')) && !/\b(?:premier\s+league\s+2|pl2|u21|u18|u23)\b/i.test(text)) || scd === 'eng.1') return 'eng.1';
             return 'eng.lower';
         }
     }

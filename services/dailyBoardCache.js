@@ -34,7 +34,7 @@ function getWatDateKey(nowMs = Date.now()) {
 
 function isGenericSlug(slug) {
     const s = String(slug || '').trim().toLowerCase();
-    return !s || s === 'other' || s === 'w.other' || s === 'international' || s === 'all' || s === 'unknown';
+    return !s || s === 'other' || s === 'w.other' || s === 'international' || s === 'all' || s === 'unknown' || s.endsWith('.lower');
 }
 
 function matchIdentityKeys(m) {

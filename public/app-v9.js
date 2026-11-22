@@ -1098,7 +1098,7 @@
             // Preserve canonical specific league slug (e.g. esp.1) over generic/empty slugs (other) during live merges
             const isWeakSlug = (s) => {
                 const v = String(s || '').trim().toLowerCase();
-                return !v || v === 'other' || v === 'w.other' || v === 'international' || v === 'all';
+                return !v || v === 'other' || v === 'w.other' || v === 'international' || v === 'all' || v.endsWith('.lower');
             };
             const winSlug = winner.league?.slug || winner.league_slug || '';
             const secSlug = secondary.league?.slug || secondary.league_slug || '';
