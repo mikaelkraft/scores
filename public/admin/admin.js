@@ -998,9 +998,11 @@ async function saveAuthAndEmailSettings() {
         host: document.getElementById('setting-smtp-host').value.trim(),
         port: parseInt(document.getElementById('setting-smtp-port').value) || 587,
         user: document.getElementById('setting-smtp-user').value.trim(),
-        pass: document.getElementById('setting-smtp-pass').value,
         fromEmail: document.getElementById('setting-smtp-from').value.trim() || 'Norra AI <support@mynorra.xyz>'
     };
+    // Only send password when the field was edited — empty would wipe stored app password
+    const passVal = document.getElementById('setting-smtp-pass').value;
+    if (passVal && passVal.trim()) smtpSettings.pass = passVal.replace(/\s+/g, '');
 
     try {
         const res = await fetch('/api/admin/settings', {

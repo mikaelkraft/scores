@@ -860,6 +860,8 @@
             .replace(/deportivo\s+alav[eé]s|\balav[eé]s\b/g, 'alaves')
             .replace(/deportivo\s+(a\s+)?(la\s+)?coru[nñ]a|\bdepor\b/g, 'deportivo')
             .replace(/fenerbah[cç]e/g, 'fenerbahce')
+            .replace(/ı/g,'i').replace(/ş/g,'s').replace(/ğ/g,'g').replace(/ç/g,'c')
+            .replace(/kasimpa[sṣş]a|kasımpa[sş]a/g, 'kasimpasa')
             .replace(/1\.?\s*fc\s+union\s+berlin|\bunion\s+berlin\b/g, 'unionberlin')
             .replace(/sc\s+paderborn(\s+07)?|\bpaderborn\b/g, 'paderborn')
             .replace(/tsg\s+hoffenheim|\bhoffenheim\b/g, 'hoffenheim')
@@ -1727,7 +1729,7 @@
                 aus: 'Australia', nzl: 'New Zealand', jpn: 'Japan',
                 chn: 'China', kor: 'South Korea', ksa: 'Saudi Arabia', sau: 'Saudi Arabia',
                 ind: 'India', idn: 'Indonesia', tha: 'Thailand', mys: 'Malaysia', sgp: 'Singapore', vnm: 'Vietnam',
-                qat: 'Qatar', uae: 'UAE', irn: 'Iran', irq: 'Iraq', jor: 'Jordan', bhr: 'Bahrain', kwt: 'Kuwait', omn: 'Oman', uzb: 'Uzbekistan',
+                qat: 'Qatar', uae: 'UAE', irn: 'Iran', irq: 'Iraq', jor: 'Jordan', bhr: 'Bahrain', kwt: 'Kuwait', omn: 'Oman', oma: 'Oman', uzb: 'Uzbekistan', phi: 'Philippines', vie: 'Vietnam', smr: 'San Marino', ner: 'Niger', bul: 'Bulgaria',
                 egy: 'Egypt', rsa: 'South Africa', nga: 'Nigeria', mar: 'Morocco', gha: 'Ghana', ken: 'Kenya', uga: 'Uganda', sen: 'Senegal',
                 tza: 'Tanzania', zmb: 'Zambia', zwe: 'Zimbabwe', eth: 'Ethiopia',
                 rwa: 'Rwanda', cod: 'DR Congo', cmr: 'Cameroon', civ: 'Ivory Coast',
@@ -1759,6 +1761,14 @@
                 else if (/\b(?:chilean|chile)\b/.test(nm)) country = 'Chile';
                 else if (/\b(?:ecuador)\b/.test(nm)) country = 'Ecuador';
                 else if (/\b(?:paraguay)\b/.test(nm)) country = 'Paraguay';
+                else if (/\b(?:honduran|honduras)\b/.test(nm)) country = 'Honduras';
+                else if (/\b(?:guatemalan|guatemala)\b/.test(nm)) country = 'Guatemala';
+                else if (/\b(?:philippine|philippines|\bpfl\b)\b/.test(nm)) country = 'Philippines';
+                else if (/\b(?:\boman\b|professional league)\b/.test(nm) && /oman/.test(nm)) country = 'Oman';
+                else if (/\b(?:vietnam|v-league|v\.league)\b/.test(nm)) country = 'Vietnam';
+                else if (/\b(?:san marino|sammarinese)\b/.test(nm)) country = 'San Marino';
+                else if (/\bniger\b/.test(nm) && !/nigeria|npfl/.test(nm)) country = 'Niger';
+                else if (/\b(?:bulgarian|bulgaria)\b/.test(nm)) country = 'Bulgaria';
                 else if (/\b(?:venezuel)\b/.test(nm)) country = 'Venezuela';
                 else if (/\b(?:bolivi)\b/.test(nm)) country = 'Bolivia';
                 else if (/\b(?:mexic|liga mx)\b/.test(nm)) country = 'Mexico';
@@ -1842,7 +1852,7 @@
         uae: 'ae', 'united arab emirates': 'ae', iran: 'ir', iraq: 'iq', jordan: 'jo',
         bahrain: 'bh', kuwait: 'kw', oman: 'om', lebanon: 'lb', syria: 'sy',
         uzbekistan: 'uz', india: 'in', indonesia: 'id', thailand: 'th', malaysia: 'my',
-        singapore: 'sg', vietnam: 'vn', philippines: 'ph', nigeria: 'ng',
+        singapore: 'sg', vietnam: 'vn', philippines: 'ph', nigeria: 'ng', niger: 'ne',
         'south africa': 'za', egypt: 'eg', morocco: 'ma', algeria: 'dz', tunisia: 'tn',
         ghana: 'gh', kenya: 'ke', uganda: 'ug', cameroon: 'cm', senegal: 'sn',
         tanzania: 'tz', zambia: 'zm', zimbabwe: 'zw', ethiopia: 'et', rwanda: 'rw',
@@ -2777,11 +2787,7 @@
         switchView('fixtures');
         if (elements['fixtures-list']) elements['fixtures-list'].style.minHeight = '';
 
-        const explorer = document.querySelector('.explorer') || elements['fixtures-list'];
-        if (explorer && window.scrollY > (explorer.offsetTop + 200)) {
-            window.scrollTo({ top: Math.max(0, explorer.offsetTop - 70), behavior: 'smooth' });
-        }
-
+        // Do not yank scroll while the user is already reading the board
         inFlightAllFixturesPromise = null;
         await loadAllLeagueFixtures();
     }
@@ -3301,11 +3307,6 @@
 
         const leagueToolbar = document.getElementById('league-view-toolbar');
         if (leagueToolbar) leagueToolbar.style.display = 'flex';
-
-        const explorer = document.querySelector('.explorer') || elements['fixtures-list'];
-        if (explorer && window.scrollY > (explorer.offsetTop + 200)) {
-            window.scrollTo({ top: Math.max(0, explorer.offsetTop - 70), behavior: 'smooth' });
-        }
 
         await Promise.allSettled([loadFixtures(), loadStandings()]);
     }

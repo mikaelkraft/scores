@@ -284,8 +284,29 @@ function isFreePlanRestricted(apiKey) {
 
 function inferMatchCountry(m) {
     if (!m) return 'International';
-    const slug = String(m.league_slug || '').toLowerCase();
-    const txt = `${m.note || ''} ${m.name || ''} ${slug}`.toLowerCase();
+    const slug = String(m.league_slug || m.league?.slug || '').toLowerCase();
+    const lgName = m.league?.name || m.league?.displayName || m.competition?.name || '';
+    const lgCountry = m.league?.country || '';
+    const txt = `${m.note || ''} ${m.name || ''} ${lgName} ${lgCountry} ${slug}`.toLowerCase();
+    // Descriptive slug / league-title countries (LiveScore often emits argentine.nacional.b etc.)
+    if (/argentine|argentina|\barg\./.test(txt)) return 'Argentina';
+    if (/colombian|colombia|\bcol\./.test(txt)) return 'Colombia';
+    if (/paraguayan|paraguay|\bpar\./.test(txt)) return 'Paraguay';
+    if (/honduran|honduras|\bhon\./.test(txt)) return 'Honduras';
+    if (/guatemalan|guatemala|\bgtm\.|\bgua\./.test(txt)) return 'Guatemala';
+    if (/philippine|philippines|\bphi\./.test(txt)) return 'Philippines';
+    if (/\boman\b|\boma\.|\bomn\./.test(txt)) return 'Oman';
+    if (/vietnam|\bvie\.|\bvnm\.|v-league|v\.league/.test(txt)) return 'Vietnam';
+    if (/san\s*marino|sammarinese|\bsmr\./.test(txt)) return 'San Marino';
+    if (/\bniger\b(?!ia)|\bner\.|super ligue/.test(txt) && !/nigeria|npfl/.test(txt)) return 'Niger';
+    if (/bulgarian|bulgaria|\bbul\./.test(txt)) return 'Bulgaria';
+    if (/bolivian|bolivia|\bbol\./.test(txt)) return 'Bolivia';
+    if (/ecuador|\becu\./.test(txt)) return 'Ecuador';
+    if (/peruvian|peru|\bper\./.test(txt)) return 'Peru';
+    if (/uruguayan|uruguay|\buru\./.test(txt)) return 'Uruguay';
+    if (/chilean|chile|\bchi\./.test(txt)) return 'Chile';
+    if (/mexican|mexico|\bmex\./.test(txt)) return 'Mexico';
+    if (/saudi|\bksa\.|\bsau\./.test(txt)) return 'Saudi Arabia';
     
     // Check league slug prefix first to avoid false positives (e.g. sui.w.1 != England WSL)
     if (slug.startsWith('eng.')) return 'England';
@@ -1714,7 +1735,7 @@ router.get('/fixtures', optionalApiKeyAuth, async (req, res) => {
                     slug: leagueSlug,
                     name: lg.name || (targetLg?.name) || m.note || leagueSlug,
                     abbreviation: lg.abbreviation || (targetLg?.abbreviation) || leagueSlug,
-                    country: (lg.country && lg.country !== 'International') ? lg.country : ((targetLg?.country && targetLg.country !== 'International') ? targetLg.country : inferMatchCountry(m)),
+                    country: (function(){ const inferred = inferMatchCountry({ ...m, league: { ...(m.league||{}), name: lg.name || m.league?.name, slug: lg.slug || m.league_slug }, league_slug: lg.slug || m.league_slug }); const c = (lg.country && lg.country !== 'International') ? lg.country : ((targetLg?.country && targetLg.country !== 'International') ? targetLg.country : inferred); return (c && c !== 'International') ? c : inferred; })(),
                     logo: lg.logo || (targetLg?.logo) || ''
                 },
                 scoreboardDate: m.scoreboard_date || m.scoreboardDate,

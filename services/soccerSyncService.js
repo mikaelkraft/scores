@@ -1326,6 +1326,9 @@ const TEAM_NAME_ALIASES = {
     'fc bayern': 'bayern',
     'bayern munchen': 'bayern',
     'borussia dortmund': 'dortmund',
+    'kasimpasa': 'kasimpasa',
+    'kasımpaşa': 'kasimpasa',
+    'kasımpasa': 'kasimpasa',
     'bvb': 'dortmund',
     "borussia m'gladbach": 'monchengladbach',
     'borussia mgladbach': 'monchengladbach',
@@ -2623,6 +2626,21 @@ function normalizeTeamName(name = '') {
         // Transliterate non-NFD European/Nordic letters before NFD stripping (e.g. HB Køge -> HB Koge)
         .replace(/ø/g, 'o')
         .replace(/æ/g, 'ae')
+        .replace(/ı/g, 'i')
+        .replace(/İ/g, 'i')
+        .replace(/ş/g, 's')
+        .replace(/Ş/g, 's')
+        .replace(/ğ/g, 'g')
+        .replace(/Ğ/g, 'g')
+        .replace(/ç/g, 'c')
+        .replace(/Ç/g, 'c')
+        .replace(/ü/g, 'u')
+        .replace(/Ü/g, 'u')
+        .replace(/ö/g, 'o')
+        .replace(/Ö/g, 'o')
+        .replace(/ā/g, 'a')
+        .replace(/ṣ|Ṣ/g, 's')
+        .replace(/kasimpa[sṣ]a|kasımpa[sş]a/g, 'kasimpasa')
         .replace(/ß/g, 'ss')
         .replace(/đ/g, 'd')
         .replace(/ł/g, 'l')

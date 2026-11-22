@@ -150,33 +150,47 @@ router.put('/api/admin/settings', requireAdmin, async (req, res) => {
  */
 router.post('/api/admin/test-smtp', requireAdmin, async (req, res) => {
     try {
-        const { toEmail } = req.body;
-        const target = toEmail || req.admin?.email || 'admin@mynorra.xyz';
         const emailService = require('../services/emailService');
+        const SiteSetting = require('../models/siteSetting');
+        const settings = await SiteSetting.getGlobalSettings().catch(() => null);
+        const smtpUser = String(settings?.smtpSettings?.user || '').trim();
+        const { toEmail } = req.body || {};
+        // Prefer explicit target, then SMTP mailbox (Gmail delivers reliably to self), then admin email
+        const target = toEmail || smtpUser || req.admin?.email || 'admin@mynorra.xyz';
         const { transporter, from, isMock } = await emailService.getTransporter();
 
         if (isMock || !transporter) {
-            return res.status(400).json({ error: 'Live SMTP is not enabled or credentials (host, username, password) are missing.' });
+            return res.status(400).json({
+                error: 'Live SMTP is not enabled or credentials (host, username, password) are missing. Re-save SMTP with the Gmail App Password filled in.'
+            });
         }
 
-        await transporter.verify();
+        try {
+            await transporter.verify();
+        } catch (verErr) {
+            return res.status(500).json({
+                error: `SMTP verify failed: ${verErr.message}. For Gmail use an App Password (not your normal password) and leave From as the Gmail address.`
+            });
+        }
+
         await transporter.sendMail({
             from,
             to: target,
-            subject: '✅ SMTP Configuration Test — Scores by Norra AI',
+            subject: 'SMTP Configuration Test — Scores by Norra AI',
+            text: `SMTP test OK at ${new Date().toISOString()} from ${from}`,
             html: `
                 <div style="font-family:sans-serif; padding:20px; color:#1e293b;">
-                    <h2 style="color:#10b981;">🎉 SMTP Dispatch Connected Successfully!</h2>
-                    <p>This test email confirms that your SMTP server settings are correctly configured in the Norra AI Admin Console and capable of delivering developer confirmation emails.</p>
-                    <hr style="border:none; border-top:1px solid #e2e8f0; margin:20px 0;">
-                    <p style="font-size:12px; color:#64748b;">Timestamp: ${new Date().toISOString()}</p>
+                    <h2 style="color:#10b981;">SMTP connected</h2>
+                    <p>This confirms SMTP can deliver mail for Scores by Norra AI.</p>
+                    <p style="font-size:12px; color:#64748b;">From: ${from}<br>To: ${target}<br>Time: ${new Date().toISOString()}</p>
                 </div>
             `
         });
 
-        return res.json({ status: 'success', message: `Test email successfully delivered to ${target}!` });
+        return res.json({ status: 'success', success: true, message: `Test email delivered to ${target}` });
     } catch (err) {
-        return res.status(500).json({ error: 'SMTP connection failed: ' + err.message });
+        const msg = err.response || err.message || String(err);
+        return res.status(500).json({ error: 'SMTP send failed: ' + msg });
     }
 });
 
