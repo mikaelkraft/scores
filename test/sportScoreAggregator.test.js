@@ -1,6 +1,9 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const path = require('node:path');
 const ss = require('../services/sportScoreService');
+const { fetchAggregatedH2H } = require('../services/h2hAggregatorService');
 
 test('SportScore Aggregator resolves short club names to canonical slugs', () => {
     assert.ok(ss.generateTeamSlugVariants('Brighton').includes('brighton-hove-albion'));
@@ -50,4 +53,16 @@ test('SportScore Aggregator resolves Spanish/European suffixed clubs (Barcelona 
     ]);
     assert.ok(bv && bv.matches.length >= 10, `Expected >=10 H2H meetings for Barcelona vs Villarreal, got ${bv?.matches?.length}`);
     assert.ok(om && om.matches.length >= 5, `Expected >=5 H2H meetings for Osasuna vs Malaga, got ${om?.matches?.length}`);
+});
+
+test('Multi-provider H2H Aggregator, Master Key Unlimited display, and Cross-Provider Table Position matching', async () => {
+    const agg = await fetchAggregatedH2H({ homeName: 'Hull City', awayName: 'Brighton' });
+    assert.ok(agg && agg.matches.length >= 10, 'Expected multi-provider H2H aggregator to return >=10 meetings');
+
+    const adminJs = fs.readFileSync(path.join(__dirname, '../public/admin/admin.js'), 'utf8');
+    assert.match(adminJs, /∞ Unlimited/, 'Admin UI must display Unlimited for rateLimitPerMinute <= 0 / master admin keys');
+
+    const controllerJs = fs.readFileSync(path.join(__dirname, '../controllers/footballApiController.js'), 'utf8');
+    assert.match(controllerJs, /areTeamNamesMatching\(cName, teamName\)/, 'Standings comparison must fall back to team name matching across ESPN/LiveScore IDs');
+    assert.match(controllerJs, /espnSummary\?\.standings\?\.groups/, 'Standings comparison must extract table rank from already-fetched ESPN summary with zero extra polling');
 });

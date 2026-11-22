@@ -701,7 +701,7 @@ async function loadApiKeysAndUsers() {
                         <td><code>${escapeHtml(k.keyMasked || k.key || '••••••••')}</code></td>
                         <td><strong>${escapeHtml(k.name || 'API Client')}</strong><br><small style="color:var(--text-muted);">${escapeHtml(k.email || '')}</small></td>
                         <td><span style="text-transform:uppercase; font-weight:600;">${escapeHtml(k.plan || 'pro')}</span></td>
-                        <td>${k.rateLimitPerMinute}</td>
+                        <td>${(!k.rateLimitPerMinute || Number(k.rateLimitPerMinute) <= 0 || k.plan === 'admin' || k.plan === 'internal') ? '<span style="color:#10b981;font-weight:700;">∞ Unlimited</span>' : `${k.rateLimitPerMinute} req/m`}</td>
                         <td>${k.isAdFree ? '✅ Yes' : '❌ No'}</td>
                         <td>${k.totalRequests || 0}</td>
                         <td>${k.expiresAt ? new Date(k.expiresAt).toLocaleDateString() : 'Never'}</td>

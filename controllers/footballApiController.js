@@ -1246,7 +1246,7 @@ if (refreshLiveTimer && typeof refreshLiveTimer.unref === 'function') refreshLiv
  * Global real-time in-play match scores & minutes across all leagues in ONE call.
  * Specifically optimized for Norra AI live match tickers and livescore polling.
  */
-router.get(['/live', '/livescores'], async (req, res) => {
+router.get(['/live', '/livescores'], optionalApiKeyAuth, async (req, res) => {
     try {
         const { league } = req.query;
         const result = await getFormattedLiveMatches(league, isFreePlanRestricted(req.apiKey));
@@ -2543,13 +2543,13 @@ router.get('/predictions-context/:eventId', optionalApiKeyAuth, async (req, res)
             }
         }
 
-        // Enrich with SportScore Open Developer API H2H encounters (https://sportscore.com/developer)
+        // Enrich with multi-provider H2H aggregator (SportScore + TheSportsDB canonical delegation)
         const curHName = match.home?.displayName || match.home?.name || '';
         const curAName = match.away?.displayName || match.away?.name || '';
         if (h2hMap.size < 8 && curHName && curAName) {
             try {
-                const { fetchSportScoreH2H } = require('../services/sportScoreService');
-                const ssData = await fetchSportScoreH2H({ homeName: curHName, awayName: curAName });
+                const { fetchAggregatedH2H } = require('../services/h2hAggregatorService');
+                const ssData = await fetchAggregatedH2H({ homeName: curHName, awayName: curAName });
                 if (ssData?.matches && Array.isArray(ssData.matches) && ssData.matches.length > 0) {
                     for (const sm of ssData.matches) {
                         const smId = sm.url || `${sm.home}_vs_${sm.away}_${sm.time}`;
@@ -2934,28 +2934,74 @@ router.get('/predictions-context/:eventId', optionalApiKeyAuth, async (req, res)
             }
         }
 
-        // Standing comparison
+        // Standing comparison (matches by source_id first, then flexible team name fallback + already-fetched ESPN standings — ZERO extra polling!)
         let homeStanding = null;
         let awayStanding = null;
         if (standingsGroup && Array.isArray(standingsGroup.entries)) {
-            const findStanding = (id) => standingsGroup.entries.find(e => String(e.club?.source_id) === id);
-            const hEntry = findStanding(homeId);
-            const aEntry = findStanding(awayId);
+            const findStanding = (id, teamName) => {
+                if (id) {
+                    const byId = standingsGroup.entries.find(e => String(e.club?.source_id) === String(id));
+                    if (byId) return byId;
+                }
+                if (teamName) {
+                    return standingsGroup.entries.find(e => {
+                        const cName = e.club?.display_name || e.club?.name || e.club?.short_name || '';
+                        return cName && areTeamNamesMatching(cName, teamName);
+                    });
+                }
+                return null;
+            };
+            const hEntry = findStanding(homeId, hName);
+            const aEntry = findStanding(awayId, aName);
 
+            const extractStat = (entry, key) => entry?.stats?.get ? entry.stats.get(key) : entry?.stats?.[key] ?? null;
             if (hEntry) {
                 homeStanding = {
                     rank: hEntry.rank,
-                    points: hEntry.stats?.get ? hEntry.stats.get('points') : hEntry.stats?.points ?? null,
-                    goalDifferential: hEntry.stats?.get ? hEntry.stats.get('pointDifferential') : hEntry.stats?.pointDifferential ?? null
+                    points: extractStat(hEntry, 'points'),
+                    played: extractStat(hEntry, 'gamesPlayed'),
+                    goalDifferential: extractStat(hEntry, 'pointDifferential')
                 };
             }
             if (aEntry) {
                 awayStanding = {
                     rank: aEntry.rank,
-                    points: aEntry.stats?.get ? aEntry.stats.get('points') : aEntry.stats?.points ?? null,
-                    goalDifferential: aEntry.stats?.get ? aEntry.stats.get('pointDifferential') : aEntry.stats?.pointDifferential ?? null
+                    points: extractStat(aEntry, 'points'),
+                    played: extractStat(aEntry, 'gamesPlayed'),
+                    goalDifferential: extractStat(aEntry, 'pointDifferential')
                 };
             }
+        }
+        // Fallback: extract table position from already-fetched ESPN summary standings (zero extra HTTP calls)
+        if ((!homeStanding || !awayStanding) && espnSummary?.standings?.groups?.length) {
+            const espnEntries = [];
+            for (const g of espnSummary.standings.groups) {
+                const list = g?.standings?.entries || [];
+                for (let idx = 0; idx < list.length; idx++) {
+                    espnEntries.push({ entry: list[idx], fallbackRank: idx + 1 });
+                }
+            }
+            const pickFromEspn = (teamName) => {
+                if (!teamName) return null;
+                const found = espnEntries.find(({ entry }) => {
+                    const n = entry?.team?.displayName || entry?.team?.name || entry?.team?.shortDisplayName || '';
+                    return n && areTeamNamesMatching(n, teamName);
+                });
+                if (!found) return null;
+                const statsArr = Array.isArray(found.entry?.stats) ? found.entry.stats : [];
+                const getS = (name) => {
+                    const st = statsArr.find(s => s.name === name || s.type === name || s.abbreviation === name);
+                    return st?.value ?? st?.displayValue ?? null;
+                };
+                return {
+                    rank: Number(getS('rank') || found.fallbackRank),
+                    points: getS('points') != null ? Number(getS('points')) : null,
+                    played: getS('gamesPlayed') != null ? Number(getS('gamesPlayed')) : null,
+                    goalDifferential: getS('pointDifferential') != null ? Number(getS('pointDifferential')) : null
+                };
+            };
+            if (!homeStanding) homeStanding = pickFromEspn(hName);
+            if (!awayStanding) awayStanding = pickFromEspn(aName);
         }
 
         // Norra AI Baseline Probabilities (Heuristic calculation for seamless model feeding)
@@ -3537,7 +3583,7 @@ async function synthesizeStandingsFromMatches(leagueSlug) {
     }
 }
 
-router.get(['/standings', '/standings/:league'], async (req, res) => {
+router.get(['/standings', '/standings/:league'], optionalApiKeyAuth, async (req, res) => {
     try {
         const filter = {};
         const requestedSlug = String(req.params.league || req.query.league || '').toLowerCase();
@@ -4522,6 +4568,7 @@ async function handleCrestProxy(req, res) {
  * Simulates real-time event delivery (goal, status change, full-time) to a user's webhook URL.
  */
 router.post('/webhooks/test', optionalApiKeyAuth, async (req, res) => {
+    if (!requireFeature(req, res, 'webhooks', 'Real-time event webhooks')) return;
     const { targetUrl, eventType = 'match.goal', secret = '' } = req.body || {};
 
     if (!targetUrl || typeof targetUrl !== 'string') {
