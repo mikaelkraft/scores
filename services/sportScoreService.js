@@ -170,6 +170,20 @@ function slugifyTeamPair(home, away) {
  * (e.g. "Brighton", "Wolves", "Spurs", "PSG", "Inter") resolve cleanly to SportScore's exact slugs.
  */
 const TEAM_SLUG_ALIASES = {
+    'barcelona': ['fc-barcelona', 'barcelona'],
+    'villarreal': ['villarreal-cf', 'villarreal'],
+    'osasuna': ['ca-osasuna', 'osasuna'],
+    'malaga': ['malaga-cf', 'malaga'],
+    'sevilla': ['sevilla-fc', 'sevilla'],
+    'valencia': ['valencia-cf', 'valencia'],
+    'getafe': ['getafe', 'getafe-cf'],
+    'girona': ['girona-fc', 'girona'],
+    'elche': ['elche-cf', 'elche'],
+    'granada': ['granada-cf', 'granada'],
+    'cadiz': ['cadiz-cf', 'cadiz'],
+    'levante': ['levante-ud', 'levante'],
+    'las-palmas': ['ud-las-palmas', 'las-palmas'],
+    'almeria': ['ud-almeria', 'almeria'],
     'brighton': ['brighton-hove-albion'],
     'brighton-and-hove-albion': ['brighton-hove-albion'],
     'hull': ['hull-city'],
@@ -268,6 +282,56 @@ const TEAM_SLUG_ALIASES = {
 
 const matchDetailCache = new Map();
 const teamRecentCache = new Map();
+const verifiedTeamSlugCache = new Map(); // normalizeKey(name) -> { ts, slug }
+
+/**
+ * Resolve and cache a team's exact verified SportScore slug via /api/widget/team/ (24h cache).
+ * Eliminates N*M Cartesian guessing across Spanish (-cf, ca-, ud-), Italian (ac-, as-, ssc-),
+ * German (fc-, vfl-, vfb-, sv-), French (rc-, ogc-, stade-), and English club slugs.
+ */
+async function resolveVerifiedSportScoreSlug(teamName) {
+    if (!teamName) return null;
+    const key = normalizeKey(teamName);
+    if (!key) return null;
+    if (verifiedTeamSlugCache.has(key)) {
+        const entry = verifiedTeamSlugCache.get(key);
+        if (Date.now() - entry.ts < 24 * 60 * 60 * 1000) return entry.slug;
+    }
+
+    const baseClean = String(teamName)
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, '-')
+        .replace(/^-+|-+$/g, '');
+
+    const candidates = new Set(generateTeamSlugVariants(teamName));
+    if (baseClean && !baseClean.includes('-')) {
+        // Common European club prefixes/suffixes on SportScore
+        for (const v of [`fc-${baseClean}`, `${baseClean}-cf`, `${baseClean}-fc`, `ca-${baseClean}`, `ud-${baseClean}`, `cd-${baseClean}`, `as-${baseClean}`, `ac-${baseClean}`, `sc-${baseClean}`]) {
+            candidates.add(v);
+        }
+    } else if (baseClean) {
+        candidates.add(`${baseClean}-cf`);
+        candidates.add(`${baseClean}-fc`);
+    }
+
+    const list = Array.from(candidates).slice(0, 8);
+    for (let i = 0; i < list.length; i += 4) {
+        const batch = list.slice(i, i + 4);
+        const results = await Promise.all(
+            batch.map((slug) => fetchJson(`${BASE}/api/widget/team/?sport=football&slug=${encodeURIComponent(slug)}`, 4000).then((d) => ({ slug, ok: Boolean(d?.team?.slug || (Array.isArray(d?.matches) && d.matches.length)) })).catch(() => ({ slug, ok: false })))
+        );
+        const hit = results.find((r) => r.ok);
+        if (hit) {
+            verifiedTeamSlugCache.set(key, { ts: Date.now(), slug: hit.slug });
+            return hit.slug;
+        }
+    }
+
+    verifiedTeamSlugCache.set(key, { ts: Date.now(), slug: null });
+    return null;
+}
 
 /**
  * Fetch SportScore match detail (incidents, confirmed lineups, stats, logos) by team names or explicit slug.
@@ -549,7 +613,7 @@ async function fetchSportScoreH2H({ homeName, awayName } = {}) {
     const homeVariants = generateTeamSlugVariants(homeName);
     const awayVariants = generateTeamSlugVariants(awayName);
 
-    // 1. Fast parallel check on canonical primary pair
+    // 1. Fast parallel check on canonical primary pair (plus verified team slugs if cached)
     const primaryPairs = [
         [homeVariants[0], awayVariants[0]],
         [awayVariants[0], homeVariants[0]]
@@ -578,6 +642,37 @@ async function fetchSportScoreH2H({ homeName, awayName } = {}) {
             };
             h2hMemoryCache.set(cacheKey, { ts: Date.now(), data: result });
             return result;
+        }
+    }
+
+    // 2. Resolve each team's verified SportScore slug independently in parallel (O(1), 24h cached)
+    //    Solves Spanish (-cf, ca-, ud-), Italian (ac-, as-), German (fc-, sv-) & worldwide slug mismatches!
+    const [verifiedHome, verifiedAway] = await Promise.all([
+        resolveVerifiedSportScoreSlug(homeName),
+        resolveVerifiedSportScoreSlug(awayName)
+    ]);
+    if (verifiedHome && verifiedAway && verifiedHome !== verifiedAway) {
+        const verifiedResults = await Promise.all([
+            fetchJson(`${BASE}/api/v1/h2h/?team1=${encodeURIComponent(verifiedHome)}&team2=${encodeURIComponent(verifiedAway)}`, 4000).then(data => ({ t1: verifiedHome, t2: verifiedAway, data })).catch(() => null),
+            fetchJson(`${BASE}/api/v1/h2h/?team1=${encodeURIComponent(verifiedAway)}&team2=${encodeURIComponent(verifiedHome)}`, 4000).then(data => ({ t1: verifiedAway, t2: verifiedHome, data })).catch(() => null)
+        ]);
+        for (const r of verifiedResults) {
+            if (r?.data?.matches && Array.isArray(r.data.matches) && r.data.matches.length > 0) {
+                indexLogosFromMatches(r.data.matches);
+                const result = {
+                    summary: r.data.summary || {
+                        team1_wins: 0,
+                        team2_wins: 0,
+                        draws: 0,
+                        meetings: r.data.matches.length
+                    },
+                    matches: r.data.matches,
+                    team1Slug: r.t1,
+                    team2Slug: r.t2
+                };
+                h2hMemoryCache.set(cacheKey, { ts: Date.now(), data: result });
+                return result;
+            }
         }
     }
 

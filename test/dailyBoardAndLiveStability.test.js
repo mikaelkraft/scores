@@ -24,12 +24,13 @@ test('resolveLeagueSlug never demotes top-flight ESPN live UIDs containing digit
 test('dailyBoardCache stores render-ready board and filters by status in memory', () => {
     dailyBoardCache.clearBoardCache();
     const dateKey = '20261122';
+    const liveKickoffIso = new Date(Date.now() - 45 * 60 * 1000).toISOString();
     const sampleMatches = [
         {
             id: '1810740',
             league_slug: 'esp.1',
             league: { slug: 'esp.1', name: 'Spanish La Liga', country: 'Spain' },
-            date: '2026-11-22T13:00:00.000Z',
+            date: liveKickoffIso,
             scoreboard_date: dateKey,
             home: { name: 'Barcelona', score: 0 },
             away: { name: 'Villarreal', score: 2 },
@@ -78,12 +79,13 @@ test('dailyBoardCache stores render-ready board and filters by status in memory'
 test('dailyBoardCache.patchLiveMatchesInBoard preserves canonical league_slug (esp.1) during HT updates', () => {
     dailyBoardCache.clearBoardCache();
     const dateKey = '20261122';
+    const liveKickoffIso = new Date(Date.now() - 50 * 60 * 1000).toISOString();
     dailyBoardCache.setReadyBoard(dateKey, [
         {
             id: '1810740',
             league_slug: 'esp.1',
             league: { slug: 'esp.1', name: 'Spanish La Liga', country: 'Spain' },
-            date: '2026-11-22T13:00:00.000Z',
+            date: liveKickoffIso,
             scoreboard_date: dateKey,
             home: { name: 'Barcelona', score: 0 },
             away: { name: 'Villarreal', score: 2 },
@@ -97,7 +99,7 @@ test('dailyBoardCache.patchLiveMatchesInBoard preserves canonical league_slug (e
             id: '1810740',
             league_slug: 'other',
             league: { slug: 'other', name: 'Spain', country: '' },
-            date: '2026-11-22T13:00:00.000Z',
+            date: liveKickoffIso,
             home: { name: 'Barcelona', score: 1 },
             away: { name: 'Villarreal', score: 2 },
             status: { state: 'in', isLive: true, completed: false, clock: 'HT', detail: 'HT' }
@@ -110,6 +112,32 @@ test('dailyBoardCache.patchLiveMatchesInBoard preserves canonical league_slug (e
     assert.equal(board.matches[0].league_slug, 'esp.1');
     assert.equal(board.matches[0].home.score, 1);
     assert.equal(board.matches[0].status.clock, 'HT');
+});
+
+test('dailyBoardCache.patchLiveMatchesInBoard auto-finalizes 90+ matches to FT once they leave live feed', () => {
+    dailyBoardCache.clearBoardCache();
+    const dateKey = '20261122';
+    dailyBoardCache.setReadyBoard(dateKey, [
+        {
+            id: '401878755',
+            league_slug: 'eng.1',
+            league: { slug: 'eng.1', name: 'English Premier League', country: 'England' },
+            date: new Date(Date.now() - 125 * 60 * 1000).toISOString(),
+            scoreboard_date: dateKey,
+            home: { name: 'Liverpool', score: 2 },
+            away: { name: 'Manchester United', score: 1 },
+            status: { state: 'in', isLive: true, completed: false, clock: "90'+3'", detail: "90'+3'" }
+        }
+    ]);
+
+    // Full live snapshot arrives without Liverpool vs Man Utd (match finished!)
+    dailyBoardCache.patchLiveMatchesInBoard(dateKey, [], { isFullSnapshot: true });
+    const board = dailyBoardCache.getReadyBoard(dateKey);
+    assert.equal(board.matches[0].status.state, 'post');
+    assert.equal(board.matches[0].status.completed, true);
+    assert.equal(board.matches[0].status.isLive, false);
+    assert.equal(board.matches[0].status.clock, 'FT');
+    assert.equal(board.matches[0].home.winner, true);
 });
 
 test('dailyBoardCache.hasActiveMatchWindow detects active kickoff windows and backs off when idle', () => {

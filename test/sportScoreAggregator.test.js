@@ -42,3 +42,12 @@ test('SportScore Aggregator fetches real Hull City vs Brighton H2H even with sho
     assert.ok(Array.isArray(h2h.matches) && h2h.matches.length >= 10, `Expected >=10 H2H meetings, got ${h2h?.matches?.length}`);
     assert.ok(h2h.summary.meetings >= 10);
 });
+
+test('SportScore Aggregator resolves Spanish/European suffixed clubs (Barcelona vs Villarreal, Osasuna vs Malaga)', async () => {
+    const [bv, om] = await Promise.all([
+        ss.fetchSportScoreH2H({ homeName: 'Barcelona', awayName: 'Villarreal' }),
+        ss.fetchSportScoreH2H({ homeName: 'Osasuna', awayName: 'Malaga' })
+    ]);
+    assert.ok(bv && bv.matches.length >= 10, `Expected >=10 H2H meetings for Barcelona vs Villarreal, got ${bv?.matches?.length}`);
+    assert.ok(om && om.matches.length >= 5, `Expected >=5 H2H meetings for Osasuna vs Malaga, got ${om?.matches?.length}`);
+});

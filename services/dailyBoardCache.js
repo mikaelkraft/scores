@@ -101,11 +101,61 @@ function setReadyBoard(dateKey, matches) {
     return entry;
 }
 
+function parseClockMinutes(m) {
+    const raw = String(m?.status?.clock || m?.status?.detail || '').trim();
+    if (/90\+|9[0-9]|1[0-2][0-9]|AET|ET|Pen/i.test(raw)) return 90;
+    const match = raw.match(/(\d+)/);
+    return match ? parseInt(match[1], 10) : 0;
+}
+
+function finalizeMatchToFt(m) {
+    const hScore = Number(m?.home?.score ?? 0);
+    const aScore = Number(m?.away?.score ?? 0);
+    const hasScores = !Number.isNaN(hScore) && !Number.isNaN(aScore);
+    return {
+        ...m,
+        _missedLivePolls: 0,
+        status: {
+            ...(m.status || {}),
+            state: 'post',
+            name: 'STATUS_FULL_TIME',
+            description: 'Full Time',
+            clock: 'FT',
+            detail: 'FT',
+            short_detail: 'FT',
+            completed: true,
+            isLive: false
+        },
+        home: {
+            ...(m.home || {}),
+            ...(hasScores ? { winner: hScore > aScore } : {})
+        },
+        away: {
+            ...(m.away || {}),
+            ...(hasScores ? { winner: aScore > hScore } : {})
+        }
+    };
+}
+
 function getReadyBoard(dateKey, { status = 'all', maxAgeMs = 12 * 60 * 60 * 1000 } = {}) {
     const key = normalizeDateKey(dateKey);
     const entry = boardsByDate.get(key);
     if (!entry) return null;
     if (maxAgeMs > 0 && (Date.now() - entry.generatedAt > maxAgeMs)) return null;
+
+    // Auto-finalize any match stuck in live state well past full-time (e.g., 90+ games after kickoff + 115m)
+    const nowMs = Date.now();
+    for (let i = 0; i < entry.matches.length; i++) {
+        const m = entry.matches[i];
+        if (!isMatchLive(m)) continue;
+        const kickoffTs = m.date ? Date.parse(m.date) : NaN;
+        if (!Number.isFinite(kickoffTs)) continue;
+        const elapsedMs = nowMs - kickoffTs;
+        const mins = parseClockMinutes(m);
+        if (elapsedMs > 135 * 60 * 1000 || (mins >= 88 && elapsedMs > 115 * 60 * 1000)) {
+            entry.matches[i] = finalizeMatchToFt(m);
+        }
+    }
 
     let filtered = entry.matches;
     if (status === 'live') {
@@ -125,15 +175,20 @@ function getReadyBoard(dateKey, { status = 'all', maxAgeMs = 12 * 60 * 60 * 1000
     };
 }
 
-function patchLiveMatchesInBoard(dateKey, liveMatches) {
+function patchLiveMatchesInBoard(dateKey, liveMatches, { isFullSnapshot = true } = {}) {
     const key = normalizeDateKey(dateKey);
     const entry = boardsByDate.get(key);
-    if (!entry || !Array.isArray(liveMatches) || !liveMatches.length) return 0;
+    if (!entry || !Array.isArray(liveMatches)) return 0;
 
+    const nowMs = Date.now();
+    const liveKeySet = new Set();
     let patchedCount = 0;
+
     for (const live of liveMatches) {
         if (!live) continue;
         const keys = matchIdentityKeys(live);
+        for (const k of keys) liveKeySet.add(k);
+
         let existingIdx = -1;
         for (const k of keys) {
             if (entry.indexByKey.has(k)) {
@@ -147,13 +202,15 @@ function patchLiveMatchesInBoard(dateKey, liveMatches) {
             // Never revert a completed match back to live unless explicit non-completed live score
             if (isMatchFinished(existing) && !isMatchFinished(live)) continue;
 
-            // Preserve canonical specific league metadata (e.g., esp.1) over generic live slugs (other)
+            // Preserve canonical specific league metadata (e.g., esp.1) over generic live slugs (other/.lower)
             const existingSlug = existing.league?.slug || existing.league_slug || '';
             const liveSlug = live.league?.slug || live.league_slug || '';
             const keepExistingLeague = !isGenericSlug(existingSlug) && (isGenericSlug(liveSlug) || existingSlug !== liveSlug);
 
             const merged = {
                 ...existing,
+                _missedLivePolls: 0,
+                _lastSeenLiveAt: nowMs,
                 status: {
                     ...(existing.status || {}),
                     ...(live.status || {})
@@ -176,7 +233,7 @@ function patchLiveMatchesInBoard(dateKey, liveMatches) {
         } else {
             // Newly detected live match not yet in board: append and index
             const idx = entry.matches.length;
-            const copy = { ...live };
+            const copy = { ...live, _missedLivePolls: 0, _lastSeenLiveAt: nowMs };
             entry.matches.push(copy);
             for (const k of keys) {
                 if (!entry.indexByKey.has(k)) entry.indexByKey.set(k, idx);
@@ -189,8 +246,31 @@ function patchLiveMatchesInBoard(dateKey, liveMatches) {
         }
     }
 
+    // Reconcile matches that were live in the cached board but dropped out of the latest full live snapshot -> FT
+    if (isFullSnapshot) {
+        for (let i = 0; i < entry.matches.length; i++) {
+            const m = entry.matches[i];
+            if (!isMatchLive(m)) continue;
+            const keys = matchIdentityKeys(m);
+            const stillLive = keys.some((k) => liveKeySet.has(k));
+            if (stillLive) continue;
+
+            const missed = (m._missedLivePolls || 0) + 1;
+            const mins = parseClockMinutes(m);
+            const kickoffTs = m.date ? Date.parse(m.date) : NaN;
+            const elapsedMs = Number.isFinite(kickoffTs) ? (nowMs - kickoffTs) : 0;
+
+            if (mins >= 85 || missed >= 2 || elapsedMs >= 115 * 60 * 1000) {
+                entry.matches[i] = finalizeMatchToFt(m);
+                patchedCount++;
+            } else {
+                entry.matches[i] = { ...m, _missedLivePolls: missed };
+            }
+        }
+    }
+
     if (patchedCount > 0) {
-        entry.lastPatchedAt = Date.now();
+        entry.lastPatchedAt = nowMs;
     }
     return patchedCount;
 }
