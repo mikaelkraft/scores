@@ -12,22 +12,29 @@ class EmailService {
         // Port 465 uses implicit TLS (secure: true); port 587 uses STARTTLS (secure: false, requireTLS: true)
         const secure = port === 465 ? true : (port === 587 ? false : Boolean(smtp.secure));
         const user = String(smtp.user || config.SMTP_USER || '').trim();
-        const pass = smtp.pass || config.SMTP_PASS;
+        // Gmail app passwords are often pasted with spaces — strip them
+        const pass = String(smtp.pass || config.SMTP_PASS || '').replace(/\s+/g, '');
 
         if (smtp.enabled !== false && host && user && pass) {
+            const isGmail = /gmail\.com|google\.com|googlemail/i.test(host) || /@gmail\.com$/i.test(user);
+            // Gmail rejects From addresses outside the authenticated mailbox unless Send As is configured
+            let from = String(smtp.fromEmail || config.SMTP_FROM || '').trim();
+            if (!from || (isGmail && !from.toLowerCase().includes(user.toLowerCase()))) {
+                from = `Norra AI <${user}>`;
+            }
             return {
                 transporter: nodemailer.createTransport({
                     host,
                     port,
                     secure,
                     requireTLS: port === 587,
-                    connectionTimeout: 10000,
-                    greetingTimeout: 10000,
-                    socketTimeout: 15000,
+                    connectionTimeout: 15000,
+                    greetingTimeout: 15000,
+                    socketTimeout: 20000,
                     auth: { user, pass },
                     tls: { rejectUnauthorized: false }
                 }),
-                from: smtp.fromEmail || config.SMTP_FROM || `Norra AI <${user}>`,
+                from,
                 isMock: false
             };
         }
