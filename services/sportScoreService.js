@@ -166,21 +166,123 @@ function slugifyTeamPair(home, away) {
 }
 
 /**
- * Fetch SportScore match detail (incidents, logos) by team names or explicit slug.
+ * Canonical short-name -> SportScore slug aliases so LiveScore/ESPN abbreviations
+ * (e.g. "Brighton", "Wolves", "Spurs", "PSG", "Inter") resolve cleanly to SportScore's exact slugs.
+ */
+const TEAM_SLUG_ALIASES = {
+    'brighton': ['brighton-hove-albion'],
+    'brighton-and-hove-albion': ['brighton-hove-albion'],
+    'hull': ['hull-city'],
+    'wolves': ['wolverhampton-wanderers'],
+    'wolverhampton': ['wolverhampton-wanderers'],
+    'spurs': ['tottenham-hotspur'],
+    'tottenham': ['tottenham-hotspur'],
+    'west-ham': ['west-ham-united'],
+    'newcastle': ['newcastle-united'],
+    'man-city': ['manchester-city'],
+    'man-utd': ['manchester-united'],
+    'man-united': ['manchester-united'],
+    'nottm-forest': ['nottingham-forest'],
+    'nottingham': ['nottingham-forest'],
+    'leicester': ['leicester-city'],
+    'leeds': ['leeds-united'],
+    'ipswich': ['ipswich-town'],
+    'luton': ['luton-town'],
+    'norwich': ['norwich-city'],
+    'coventry': ['coventry-city'],
+    'sheffield-utd': ['sheffield-united'],
+    'sheffield-wed': ['sheffield-wednesday'],
+    'west-brom': ['west-bromwich-albion'],
+    'wba': ['west-bromwich-albion'],
+    'qpr': ['queens-park-rangers'],
+    'bournemouth': ['afc-bournemouth'],
+    'crystal-palace': ['crystal-palace'],
+    'blackburn': ['blackburn-rovers'],
+    'bolton': ['bolton-wanderers'],
+    'derby': ['derby-county'],
+    'stoke': ['stoke-city'],
+    'swansea': ['swansea-city'],
+    'cardiff': ['cardiff-city'],
+    'birmingham': ['birmingham-city'],
+    'bristol-city': ['bristol-city'],
+    'preston': ['preston-north-end'],
+    'huddersfield': ['huddersfield-town'],
+    'charlton': ['charlton-athletic'],
+    'wigan': ['wigan-athletic'],
+    'plymouth': ['plymouth-argyle'],
+    'inter': ['inter-milan', 'internazionale'],
+    'ac-milan': ['ac-milan', 'milan'],
+    'milan': ['ac-milan'],
+    'verona': ['hellas-verona'],
+    'roma': ['as-roma'],
+    'lazio': ['ss-lazio', 'lazio'],
+    'napoli': ['ssc-napoli', 'napoli'],
+    'psg': ['paris-saint-germain'],
+    'paris-sg': ['paris-saint-germain'],
+    'marseille': ['olympique-marseille', 'olympique-de-marseille'],
+    'monaco': ['as-monaco', 'monaco'],
+    'st-etienne': ['as-saint-etienne', 'saint-etienne'],
+    'saint-etienne': ['as-saint-etienne', 'saint-etienne'],
+    'atletico': ['atletico-madrid'],
+    'atl-madrid': ['atletico-madrid'],
+    'athletic': ['athletic-bilbao', 'athletic-club'],
+    'athletic-club': ['athletic-bilbao', 'athletic-club'],
+    'betis': ['real-betis'],
+    'celta': ['celta-vigo', 'rc-celta-de-vigo'],
+    'sociedad': ['real-sociedad'],
+    'alaves': ['deportivo-alaves'],
+    'espanyol': ['rcd-espanyol', 'espanyol'],
+    'mallorca': ['rcd-mallorca', 'mallorca'],
+    'rayo': ['rayo-vallecano'],
+    'valladolid': ['real-valladolid'],
+    'oviedo': ['real-oviedo'],
+    'racing-santander': ['racing-santander', 'racing-de-santander'],
+    'dortmund': ['borussia-dortmund'],
+    'gladbach': ['borussia-monchengladbach'],
+    'm-gladbach': ['borussia-monchengladbach'],
+    'leverkusen': ['bayer-leverkusen', 'bayer-04-leverkusen'],
+    'leipzig': ['rb-leipzig'],
+    'frankfurt': ['eintracht-frankfurt'],
+    'stuttgart': ['vfb-stuttgart'],
+    'bremen': ['werder-bremen', 'sv-werder-bremen'],
+    'freiburg': ['sc-freiburg'],
+    'hoffenheim': ['tsg-hoffenheim', 'hoffenheim'],
+    'mainz': ['mainz-05', 'fsv-mainz-05'],
+    'augsburg': ['fc-augsburg'],
+    'koln': ['fc-koln', '1-fc-koln'],
+    'hamburg': ['hamburger-sv'],
+    'schalke': ['fc-schalke-04', 'schalke-04'],
+    'sporting': ['sporting-cp', 'sporting-lisbon'],
+    'porto': ['fc-porto'],
+    'benfica': ['sl-benfica', 'benfica'],
+    'braga': ['sc-braga', 'sporting-braga'],
+    'guimaraes': ['vitoria-guimaraes', 'vitoria-sc'],
+    'ajax': ['afc-ajax', 'ajax'],
+    'psv': ['psv-eindhoven'],
+    'feyenoord': ['feyenoord-rotterdam', 'feyenoord'],
+    'az': ['az-alkmaar'],
+    'twente': ['fc-twente'],
+    'utrecht': ['fc-utrecht'],
+    'sparta-rotterdam': ['sparta-rotterdam']
+};
+
+const matchDetailCache = new Map();
+const teamRecentCache = new Map();
+
+/**
+ * Fetch SportScore match detail (incidents, confirmed lineups, stats, logos) by team names or explicit slug.
  */
 async function fetchSportScoreMatchDetail({ homeName, awayName, slug } = {}) {
-    let trySlug = slug || '';
-    if (!trySlug && homeName && awayName) {
-        trySlug = slugifyTeamPair(homeName, awayName);
+    const cacheKey = slug || [normalizeKey(homeName), normalizeKey(awayName)].sort().join('::');
+    if (cacheKey && matchDetailCache.has(cacheKey)) {
+        const entry = matchDetailCache.get(cacheKey);
+        if (Date.now() - entry.ts < 5 * 60 * 1000) return entry.data;
     }
-    // Also try reverse home/away
+
     const candidates = [];
-    if (trySlug) candidates.push(trySlug);
-    if (homeName && awayName) {
-        const rev = slugifyTeamPair(awayName, homeName);
-        if (rev && rev !== trySlug) candidates.push(rev);
-    }
-    // Search cache for url slug
+    if (slug) candidates.push(slug);
+
+    // 1. Search cached live/recent SportScore matches for exact URL slug first
     await ensureSportScoreCache();
     const hKey = normalizeKey(homeName);
     const aKey = normalizeKey(awayName);
@@ -191,23 +293,128 @@ async function fetchSportScoreMatchDetail({ homeName, awayName, slug } = {}) {
             || (hKey && mh && (mh.includes(hKey) || hKey.includes(mh)) && aKey && ma && (ma.includes(aKey) || aKey.includes(ma)));
         if (same && m.url) {
             const parts = String(m.url).split('/').filter(Boolean);
-            // /football/match/{slug}/{id}/
             const idx = parts.indexOf('match');
             if (idx >= 0 && parts[idx + 1]) candidates.unshift(parts[idx + 1]);
         }
     }
 
-    const seen = new Set();
-    for (const s of candidates) {
-        if (!s || seen.has(s)) continue;
-        seen.add(s);
-        const data = await fetchJson(`${BASE}/api/widget/match/?sport=football&slug=${encodeURIComponent(s)}`, 7000);
-        if (data?.match) {
-            indexLogosFromMatches([data.match]);
-            return data.match;
+    // 2. Generate canonical slug combinations (handles "Brighton" -> "brighton-hove-albion", etc.)
+    if (homeName && awayName) {
+        const hVars = generateTeamSlugVariants(homeName).slice(0, 3);
+        const aVars = generateTeamSlugVariants(awayName).slice(0, 3);
+        for (const hv of hVars) {
+            for (const av of aVars) {
+                candidates.push(`${hv}-vs-${av}`);
+                candidates.push(`${av}-vs-${hv}`);
+            }
         }
     }
+
+    const uniqueCandidates = Array.from(new Set(candidates.filter(Boolean))).slice(0, 8);
+    // Probe in small parallel batches for fast resolution
+    for (let i = 0; i < uniqueCandidates.length; i += 4) {
+        const batch = uniqueCandidates.slice(i, i + 4);
+        const results = await Promise.all(
+            batch.map((s) => fetchJson(`${BASE}/api/widget/match/?sport=football&slug=${encodeURIComponent(s)}`, 5500))
+        );
+        for (const data of results) {
+            if (data?.match) {
+                indexLogosFromMatches([data.match]);
+                if (cacheKey) matchDetailCache.set(cacheKey, { ts: Date.now(), data: data.match });
+                return data.match;
+            }
+        }
+    }
+    if (cacheKey) matchDetailCache.set(cacheKey, { ts: Date.now(), data: null });
     return null;
+}
+
+/**
+ * Convert SportScore match.lineups into our standard summary.rosters shape.
+ */
+function lineupsToRosters(ssMatch) {
+    const lu = ssMatch?.lineups;
+    if (!lu || typeof lu !== 'object') return [];
+    const mapSide = (sideKey, formation, xi, bench, teamName, teamLogo) => {
+        const starters = Array.isArray(xi) ? xi.map((p) => ({
+            starter: true,
+            jersey: p.number != null ? String(p.number) : '',
+            position: { abbreviation: p.position || '' },
+            athlete: { displayName: p.name || 'Player', fullName: p.name || 'Player' },
+            captain: Boolean(p.captain),
+            rating: p.rating && p.rating !== '0.0' ? p.rating : null
+        })) : [];
+        const subs = Array.isArray(bench) ? bench.map((p) => ({
+            starter: false,
+            jersey: p.number != null ? String(p.number) : '',
+            position: { abbreviation: p.position || '' },
+            athlete: { displayName: p.name || 'Player', fullName: p.name || 'Player' },
+            captain: false,
+            rating: p.rating && p.rating !== '0.0' ? p.rating : null
+        })) : [];
+        if (!starters.length && !subs.length) return null;
+        return {
+            homeAway: sideKey,
+            formation: formation || '',
+            confirmed: Boolean(lu.confirmed),
+            team: { displayName: teamName || (sideKey === 'home' ? 'Home' : 'Away'), logo: teamLogo || '' },
+            roster: [...starters, ...subs]
+        };
+    };
+    const out = [];
+    const h = mapSide('home', lu.home_formation, lu.home_xi, lu.home_bench, ssMatch.home, ssMatch.home_logo);
+    const a = mapSide('away', lu.away_formation, lu.away_xi, lu.away_bench, ssMatch.away, ssMatch.away_logo);
+    if (h) out.push(h);
+    if (a) out.push(a);
+    return out;
+}
+
+/**
+ * Fetch recent finished matches for a club from SportScore /api/widget/team/
+ * Returns SoccerMatch-compatible objects for seamless Last-5 form enrichment across all world leagues.
+ */
+async function fetchSportScoreTeamRecentMatches(teamName) {
+    if (!teamName) return [];
+    const key = normalizeKey(teamName);
+    if (!key) return [];
+    if (teamRecentCache.has(key)) {
+        const entry = teamRecentCache.get(key);
+        if (Date.now() - entry.ts < 15 * 60 * 1000) return entry.data;
+    }
+
+    const variants = generateTeamSlugVariants(teamName).slice(0, 4);
+    for (const slug of variants) {
+        const data = await fetchJson(`${BASE}/api/widget/team/?sport=football&slug=${encodeURIComponent(slug)}`, 5000);
+        if (data?.matches && Array.isArray(data.matches) && data.matches.length > 0) {
+            indexLogosFromMatches(data.matches);
+            const finished = data.matches
+                .filter((m) => m && (m.status === 'finished' || /finished|ft/i.test(String(m.status_text || ''))) && m.home_score != null && m.away_score != null)
+                .map((m) => ({
+                    _id: m.url || `ss_${slug}_${m.time}`,
+                    source: { provider: 'sportscore', event_id: m.url || `ss_${slug}_${m.time}` },
+                    date: m.time ? new Date(m.time) : new Date(),
+                    note: m.competition || 'League',
+                    league_slug: 'sportscore.form',
+                    status: { state: 'post', completed: true, clock: 'FT', detail: 'FT' },
+                    home: {
+                        name: m.home || 'Home',
+                        display_name: m.home || 'Home',
+                        logo: m.home_logo || '',
+                        score: Number(m.home_score)
+                    },
+                    away: {
+                        name: m.away || 'Away',
+                        display_name: m.away || 'Away',
+                        logo: m.away_logo || '',
+                        score: Number(m.away_score)
+                    }
+                }));
+            teamRecentCache.set(key, { ts: Date.now(), data: finished });
+            return finished;
+        }
+    }
+    teamRecentCache.set(key, { ts: Date.now(), data: [] });
+    return [];
 }
 
 /**
@@ -256,13 +463,25 @@ function generateTeamSlugVariants(name = '') {
     if (!clean) return [];
 
     const variants = new Set();
+    // 1. Canonical SportScore aliases first (e.g. "brighton" -> "brighton-hove-albion", "wolves" -> "wolverhampton-wanderers")
+    if (TEAM_SLUG_ALIASES[clean]) {
+        for (const alias of TEAM_SLUG_ALIASES[clean]) variants.add(alias);
+    }
     variants.add(clean);
+
+    // Strip "&" / "-and-" variants (e.g. "brighton-and-hove-albion" -> "brighton-hove-albion")
+    if (clean.includes('-and-')) {
+        variants.add(clean.replace(/-and-/g, '-'));
+    }
 
     // Strip common FC/CF/CD/SC prefixes and suffixes
     const stripped = clean
         .replace(/^(fc|cf|cd|sc|afc|ac|as|rc|ud|sk|fk|ca)-/, '')
         .replace(/-(fc|cf|cd|sc|afc|ac|as|rc|ud|sk|fk|ca)$/, '');
     if (stripped && stripped !== clean) {
+        if (TEAM_SLUG_ALIASES[stripped]) {
+            for (const alias of TEAM_SLUG_ALIASES[stripped]) variants.add(alias);
+        }
         variants.add(stripped);
     }
 
@@ -362,40 +581,46 @@ async function fetchSportScoreH2H({ homeName, awayName } = {}) {
         }
     }
 
-    // 2. Secondary fallback on variants if primary didn't match
+    // 2. Secondary fallback on variants in parallel batches if primary didn't match
     const tested = new Set(primaryPairs.map(([a, b]) => `${a}::${b}`));
     const pairs = [];
-    for (const h of homeVariants.slice(0, 3)) {
-        for (const a of awayVariants.slice(0, 3)) {
-            pairs.push([h, a]);
-            pairs.push([a, h]);
+    for (const h of homeVariants.slice(0, 4)) {
+        for (const a of awayVariants.slice(0, 4)) {
+            const k1 = `${h}::${a}`;
+            const k2 = `${a}::${h}`;
+            if (!tested.has(k1) && h !== a) { tested.add(k1); pairs.push([h, a]); }
+            if (!tested.has(k2) && h !== a) { tested.add(k2); pairs.push([a, h]); }
+            if (pairs.length >= 12) break;
         }
+        if (pairs.length >= 12) break;
     }
 
-    for (const [t1, t2] of pairs) {
-        const pairKey = `${t1}::${t2}`;
-        if (tested.has(pairKey)) continue;
-        tested.add(pairKey);
-
-        const url = `${BASE}/api/v1/h2h/?team1=${encodeURIComponent(t1)}&team2=${encodeURIComponent(t2)}`;
-        const data = await fetchJson(url, 3500);
-        if (data?.matches && Array.isArray(data.matches) && data.matches.length > 0) {
-            indexLogosFromMatches(data.matches);
-            const result = {
-                summary: data.summary || {
-                    team1_wins: 0,
-                    team2_wins: 0,
-                    draws: 0,
-                    meetings: data.matches.length
-                },
-                matches: data.matches,
-                team1Slug: t1,
-                team2Slug: t2
-            };
-            h2hMemoryCache.set(cacheKey, { ts: Date.now(), data: result });
-            return result;
+    for (let i = 0; i < pairs.length; i += 4) {
+        const batch = pairs.slice(i, i + 4);
+        const batchRes = await Promise.all(
+            batch.map(([t1, t2]) => {
+                const url = `${BASE}/api/v1/h2h/?team1=${encodeURIComponent(t1)}&team2=${encodeURIComponent(t2)}`;
+                return fetchJson(url, 3500).then(data => ({ t1, t2, data })).catch(() => null);
+            })
+        );
+        for (const r of batchRes) {
+            if (r?.data?.matches && Array.isArray(r.data.matches) && r.data.matches.length > 0) {
+                indexLogosFromMatches(r.data.matches);
+                const result = {
+                    summary: r.data.summary || {
+                        team1_wins: 0,
+                        team2_wins: 0,
+                        draws: 0,
+                        meetings: r.data.matches.length
+                    },
+                    matches: r.data.matches,
+                    team1Slug: r.t1,
+                    team2Slug: r.t2
+                };
+                h2hMemoryCache.set(cacheKey, { ts: Date.now(), data: result });
+                return result;
+            }
         }
-        if (tested.size >= 5) break;
     }
 
     h2hMemoryCache.set(cacheKey, { ts: Date.now(), data: null });
@@ -410,6 +635,9 @@ module.exports = {
     enrichMatchesLogos,
     fetchSportScoreMatchDetail,
     fetchSportScoreH2H,
+    fetchSportScoreTeamRecentMatches,
     incidentsToTimelinePlays,
+    lineupsToRosters,
+    generateTeamSlugVariants,
     normalizeKey
 };

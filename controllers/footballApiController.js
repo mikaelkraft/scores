@@ -15,7 +15,9 @@ const {
     enrichMatchLogos,
     enrichMatchesLogos,
     fetchSportScoreMatchDetail,
-    incidentsToTimelinePlays
+    fetchSportScoreTeamRecentMatches,
+    incidentsToTimelinePlays,
+    lineupsToRosters
 } = require('../services/sportScoreService');
 
 const { optionalApiKeyAuth, assertLeagueAccess, getAllowedLeaguesForKey, PLAN_LIMITS, hasFeature, requireFeature, getPlanConfig } = require('../middleware/apiKeyAuth');
@@ -2706,6 +2708,18 @@ router.get('/predictions-context/:eventId', optionalApiKeyAuth, async (req, res)
 
         const totalLifetimeMeetings = Math.max(parsedSeriesTotal, allLifetimeH2h.length, homeWins + awayWins + draws);
 
+        // Enrich missing Last-5 team form from SportScore aggregator when local DB has < 5 finished games
+        if ((homeRecentMatches.length < 5 || awayRecentMatches.length < 5) && curHName && curAName) {
+            try {
+                const [ssHomeForm, ssAwayForm] = await Promise.all([
+                    homeRecentMatches.length < 5 ? fetchSportScoreTeamRecentMatches(curHName).catch(() => []) : Promise.resolve([]),
+                    awayRecentMatches.length < 5 ? fetchSportScoreTeamRecentMatches(curAName).catch(() => []) : Promise.resolve([])
+                ]);
+                if (ssHomeForm.length) homeRecentMatches = [...homeRecentMatches, ...ssHomeForm];
+                if (ssAwayForm.length) awayRecentMatches = [...awayRecentMatches, ...ssAwayForm];
+            } catch (_) {}
+        }
+
         // Recent encounters — show deeper history for accurate WDW form
         const recentH2hMeetings = allLifetimeH2h; // full available history for UI + API consumers
 
@@ -4195,6 +4209,11 @@ router.get('/matches/:eventId', optionalApiKeyAuth, async (req, res) => {
                     if (timelinePlays.length === 0) {
                         const ssPlays = incidentsToTimelinePlays(ssMatch);
                         if (ssPlays.length) timelinePlays = ssPlays;
+                    }
+                    // Populate confirmed Lineups & Rosters from SportScore when ESPN/DB lacks rosters
+                    if ((!summary.rosters || summary.rosters.length === 0) && ssMatch.lineups) {
+                        const ssRosters = lineupsToRosters(ssMatch);
+                        if (ssRosters.length) summary.rosters = ssRosters;
                     }
                     // Attach logos onto summary competitors if present
                     if (summary?.boxscore?.teams) {
