@@ -3132,6 +3132,48 @@
                 .map(e => e.event);
             if (!dedupedEvents.length) return '';
 
+            // Stable deterministic ordering within each league:
+            //  - Live games sit above scheduled/finished, and KEEP their first-seen live slot until FT (never randomly swap order)
+            //  - Scheduled and finished games sort by kickoff time with alphabetical tie-breaker
+            if (!state.liveOrderSlots) state.liveOrderSlots = new Map();
+            if (!state.liveOrderCounter) state.liveOrderCounter = 1;
+            if (!state.renderedMatchesById) state.renderedMatchesById = new Map();
+            const eventBucket = (ev) => {
+                const st = statusInfo(ev);
+                if (st.state === 'live') return 0;
+                if (st.state === 'scheduled') return 1;
+                return 2;
+            };
+            const stableSlotKey = (ev) => getEventDedupSignature(ev) || String(ev.id || '');
+            for (const ev of dedupedEvents) {
+                if (ev.id) state.renderedMatchesById.set(String(ev.id), ev);
+                const k = stableSlotKey(ev);
+                if (eventBucket(ev) === 0) {
+                    if (!state.liveOrderSlots.has(k)) {
+                        state.liveOrderSlots.set(k, state.liveOrderCounter++);
+                    }
+                } else if (state.liveOrderSlots.has(k)) {
+                    // Match finished (or reverted): release its live slot so it returns to normal finished order
+                    state.liveOrderSlots.delete(k);
+                }
+            }
+            dedupedEvents.sort((a, b) => {
+                const bA = eventBucket(a);
+                const bB = eventBucket(b);
+                if (bA !== bB) return bA - bB;
+                if (bA === 0) {
+                    const slotA = state.liveOrderSlots.get(stableSlotKey(a)) ?? Number.MAX_SAFE_INTEGER;
+                    const slotB = state.liveOrderSlots.get(stableSlotKey(b)) ?? Number.MAX_SAFE_INTEGER;
+                    if (slotA !== slotB) return slotA - slotB;
+                }
+                const tA = a.date ? new Date(a.date).getTime() : 0;
+                const tB = b.date ? new Date(b.date).getTime() : 0;
+                if (tA !== tB) return tA - tB;
+                const hA = String(a.home?.name || a.home?.displayName || '').toLowerCase();
+                const hB = String(b.home?.name || b.home?.displayName || '').toLowerCase();
+                return hA.localeCompare(hB);
+            });
+
             // Mark rendered to ensure zero cross-league match duplication
             for (const ev of dedupedEvents) {
                 const sig = getEventDedupSignature(ev);
@@ -3803,9 +3845,15 @@
     }
 
     let lastWindowScrollY = 0;
+    let modalClosedAt = 0;
+    let isDialogTouching = false;
+    let dialogTouchTimer = null;
     const matchDetailsClientCache = new Map();
 
     async function openMatch(eventId, leagueSlug = '') {
+        if (!eventId) return;
+        // Prevent duplicate rapid re-entry for the exact same open match
+        if (elements['match-dialog']?.open && String(state.currentEventId) === String(eventId)) return;
         state.currentEventId = eventId;
         lastWindowScrollY = window.scrollY || window.pageYOffset || document.documentElement.scrollTop || 0;
         if (leagueSlug) {
@@ -3819,10 +3867,11 @@
             document.body.classList.add('dialog-open');
         }
 
-        // Instant optimistic render from in-memory fixture / live match list (<50ms)
-        const liveMatch = (state.liveMatches || []).find(m => String(m.id || m.source?.event_id) === String(eventId));
+        // Instant optimistic render from in-memory rendered/live/fixture maps (<16ms)
+        const renderedMatch = state.renderedMatchesById?.get(String(eventId));
+        const liveMatch = (state.liveMatchesCache || state.liveMatches || []).find(m => String(m.id || m.source?.event_id) === String(eventId));
         const fixtureMatch = (state.fixtures || []).find(m => String(m.id || m.source?.event_id) === String(eventId));
-        const matchObj = liveMatch || fixtureMatch;
+        const matchObj = liveMatch || renderedMatch || fixtureMatch;
 
         // Instant render from client cache if available (only if fresh and not stale pre-match masking an in-play game)
         const cached = matchDetailsClientCache.get(String(eventId));
@@ -4932,7 +4981,7 @@
             }
 
             // Skip tearing down the modal DOM during silent background refreshes if user is mid-scroll/touch
-            if (silent && isUserInteracting && elements['dialog-content'].querySelector('.drawer-tabs')) {
+            if (silent && (isUserInteracting || isDialogTouching) && elements['dialog-content'].querySelector('.drawer-tabs')) {
                 return;
             }
             const nextDialogHtml = `
@@ -5384,13 +5433,22 @@
         }
     }
 
-    function closeMatchDialog() {
+    function closeMatchDialog(event) {
+        if (event) {
+            event.preventDefault?.();
+            event.stopPropagation?.();
+            event.stopImmediatePropagation?.();
+        }
+        modalClosedAt = Date.now();
+        isDialogTouching = false;
         window.clearInterval(state.matchTimer);
         state.matchTimer = null;
         state.currentEventId = null;
         state.drawerActiveTab = 'timeline';
         document.body.classList.remove('dialog-open');
-        if (elements['match-dialog']) elements['match-dialog'].close();
+        if (elements['match-dialog'] && elements['match-dialog'].open) {
+            elements['match-dialog'].close();
+        }
         window.scrollTo({ top: lastWindowScrollY, behavior: 'instant' });
     }
 
@@ -5917,6 +5975,13 @@
         if (elements['standings-tab']) elements['standings-tab'].addEventListener('click', () => switchView('standings'));
         if (elements['fixtures-list']) {
             elements['fixtures-list'].addEventListener('click', event => {
+                // Shield against mobile ghost-clicks / tap-through when closing the telemetry modal
+                if (elements['match-dialog']?.open || (Date.now() - modalClosedAt < 450)) {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    return;
+                }
+
                 const pinBtn = event.target.closest('.fs-pin-btn');
                 if (pinBtn) {
                     event.stopPropagation();
@@ -5945,15 +6010,29 @@
                 }
             });
         }
-        if (elements['close-dialog']) elements['close-dialog'].addEventListener('click', closeMatchDialog);
+        if (elements['close-dialog']) {
+            elements['close-dialog'].addEventListener('click', closeMatchDialog);
+            elements['close-dialog'].addEventListener('touchend', event => {
+                event.preventDefault();
+                event.stopPropagation();
+                closeMatchDialog(event);
+            }, { passive: false });
+        }
         if (elements['match-dialog']) {
             elements['match-dialog'].addEventListener('click', event => {
-                if (event.target === elements['match-dialog']) closeMatchDialog();
+                if (event.target === elements['match-dialog']) closeMatchDialog(event);
             });
             elements['match-dialog'].addEventListener('cancel', event => {
                 event.preventDefault();
-                closeMatchDialog();
+                closeMatchDialog(event);
             });
+            const markDialogTouch = () => {
+                isDialogTouching = true;
+                window.clearTimeout(dialogTouchTimer);
+                dialogTouchTimer = window.setTimeout(() => { isDialogTouching = false; }, 400);
+            };
+            elements['match-dialog'].addEventListener('touchstart', markDialogTouch, { passive: true });
+            elements['match-dialog'].addEventListener('touchmove', markDialogTouch, { passive: true });
         }
 
         initStatusPills();

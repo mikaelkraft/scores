@@ -2066,7 +2066,11 @@ router.get('/fixtures', optionalApiKeyAuth, async (req, res) => {
             const pA = getLeaguePriority(a.league?.slug);
             const pB = getLeaguePriority(b.league?.slug);
             if (pB !== pA) return pB - pA;
-            return new Date(a.date) - new Date(b.date);
+            const tDiff = new Date(a.date) - new Date(b.date);
+            if (tDiff !== 0) return tDiff;
+            const nameA = String(a.home?.name || a.home?.displayName || '').toLowerCase();
+            const nameB = String(b.home?.name || b.home?.displayName || '').toLowerCase();
+            return nameA.localeCompare(nameB);
         });
 
         try {

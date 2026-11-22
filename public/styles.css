@@ -1813,14 +1813,20 @@ dialog.match-dialog::backdrop {
 .close-button, .drawer-close-btn {
     background: transparent;
     border: 1px solid var(--border-subtle);
-    border-radius: 8px;
-    width: 32px;
-    height: 32px;
+    border-radius: 10px;
+    min-width: 44px;
+    min-height: 44px;
+    width: 44px;
+    height: 44px;
     display: grid;
     place-items: center;
-    font-size: 16px;
+    font-size: 18px;
     color: var(--text-muted);
     cursor: pointer;
+    touch-action: manipulation;
+    -webkit-tap-highlight-color: transparent;
+    position: relative;
+    z-index: 20;
     transition: var(--transition-smooth);
 }
 .close-button:hover, .drawer-close-btn:hover {
@@ -1896,7 +1902,7 @@ dialog.match-dialog::backdrop {
     overflow-x: auto;
     -webkit-overflow-scrolling: touch;
     touch-action: pan-x;
-    scroll-snap-type: x proximity;
+    overscroll-behavior-x: contain;
     scrollbar-width: none;
     padding-bottom: 8px;
     margin-bottom: 18px;
@@ -1913,11 +1919,10 @@ dialog.match-dialog::backdrop {
     font-size: 12px;
     font-weight: 600;
     padding: 8px 14px;
-    min-height: 36px;
+    min-height: 38px;
     cursor: pointer;
     white-space: nowrap;
     touch-action: manipulation;
-    scroll-snap-align: start;
     -webkit-tap-highlight-color: transparent;
     user-select: none;
     flex: 0 0 auto;

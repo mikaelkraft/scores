@@ -164,4 +164,7 @@ test('Frontend fixes: competitionName hoisted before H2H synthesis, unified live
     assert.doesNotMatch(indexHtml, /id="fixtures-loading"[^>]*><span class="loader"><\/span><p>Loading fixtures/, 'index.html should not show bare Loading fixtures text');
     assert.match(stylesCss, /\.drawer-tabs\s*\{[^}]*-webkit-overflow-scrolling:\s*touch/s, '.drawer-tabs must enable smooth mobile touch scrolling');
     assert.match(stylesCss, /\.drawer-tabs\s*\{[^}]*touch-action:\s*pan-x/s, '.drawer-tabs must declare touch-action: pan-x');
+    assert.match(appJs, /state\.liveOrderSlots/, 'app.js must lock live match slot order within each league until FT');
+    assert.match(appJs, /Date\.now\(\)\s*-\s*modalClosedAt\s*<\s*450/, 'fixtures-list click handler must shield against modal close ghost-clicks');
+    assert.match(appJs, /state\.renderedMatchesById/, 'openMatch must use renderedMatchesById for instant optimistic telemetry open');
 });
