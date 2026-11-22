@@ -192,8 +192,12 @@
                 if (url) {
                     a.href = url;
                     a.style.display = 'inline-flex';
-                } else if (['facebook', 'instagram', 'youtube', 'linkedin'].indexOf(key) !== -1) {
+                    a.hidden = false;
+                } else {
+                    // Only show platforms the admin actually configured
+                    a.removeAttribute('href');
                     a.style.display = 'none';
+                    a.hidden = true;
                 }
             });
         }
@@ -354,6 +358,14 @@
     function init() {
         bindThemeButtons();
         ensureMobileNavDrawer();
+        // Before config arrives, hide social icons that are not yet proven configured
+        (function hideUnsetSocialDefaults() {
+            ['discord', 'github', 'facebook', 'instagram', 'youtube', 'linkedin'].forEach(function (key) {
+                var a = document.getElementById('social-link-' + key);
+                if (a) { a.style.display = 'none'; a.hidden = true; }
+            });
+        })();
+
         function loadCfg(url) {
             return fetch(url, { headers: { Accept: 'application/json' } })
                 .then(function (r) { return r.ok ? r.json() : null; });
