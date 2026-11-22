@@ -27,12 +27,14 @@ test('middleware apiKeyAuth allows web client requests for H2H and predictions c
 
 test('controllers footballApiController has parsedSeriesTotal declared before SportScore H2H enrichment', () => {
     const controllerCode = fs.readFileSync(path.join(__dirname, '..', 'controllers', 'footballApiController.js'), 'utf8');
-    const ssEnrichIdx = controllerCode.indexOf('fetchSportScoreH2H');
+    const ssEnrichIdx = controllerCode.indexOf('fetchAggregatedH2H') > 0
+        ? controllerCode.indexOf('fetchAggregatedH2H')
+        : controllerCode.indexOf('fetchSportScoreH2H');
     const parsedTotalIdx = controllerCode.indexOf('let parsedSeriesTotal = 0;');
 
-    assert.ok(ssEnrichIdx > 0, 'fetchSportScoreH2H must be called');
+    assert.ok(ssEnrichIdx > 0, 'fetchAggregatedH2H or fetchSportScoreH2H must be called');
     assert.ok(parsedTotalIdx > 0, 'let parsedSeriesTotal must be declared');
-    assert.ok(parsedTotalIdx < ssEnrichIdx, 'let parsedSeriesTotal must be declared BEFORE fetchSportScoreH2H to prevent TDZ ReferenceError');
+    assert.ok(parsedTotalIdx < ssEnrichIdx, 'let parsedSeriesTotal must be declared BEFORE H2H enrichment to prevent TDZ ReferenceError');
 });
 
 test('controllers footballApiController pre-caches crests to local disk', () => {

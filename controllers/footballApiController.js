@@ -3409,21 +3409,26 @@ router.get('/h2h/:team1Id/:team2Id', optionalApiKeyAuth, async (req, res) => {
             };
         });
 
-        // If local DB returned no matches, query SportScore Developer H2H
-        if (!results.length && (t1Name || team1Id) && (t2Name || team2Id)) {
+        // Enrich with multi-provider historical H2H (SportScore + TheSportsDB) whenever local DB has < 8 meetings
+        // Covers both existing DB clubs and future/cross-league fixtures without duplicating DB records
+        if (results.length < 8 && (t1Name || team1Id) && (t2Name || team2Id)) {
             try {
-                const { fetchSportScoreH2H } = require('../services/sportScoreService');
+                const { fetchAggregatedH2H } = require('../services/h2hAggregatorService');
                 const ssName1 = t1Name || String(team1Id).replace(/[-_]+/g, ' ');
                 const ssName2 = t2Name || String(team2Id).replace(/[-_]+/g, ' ');
-                const ssData = await fetchSportScoreH2H({ homeName: ssName1, awayName: ssName2 });
+                const ssData = await fetchAggregatedH2H({ homeName: ssName1, awayName: ssName2 });
                 if (ssData?.matches && Array.isArray(ssData.matches) && ssData.matches.length > 0) {
+                    const existingDays = new Set(results.map(r => r.date ? new Date(r.date).toISOString().slice(0, 10) : ''));
                     for (const sm of ssData.matches) {
+                        const smDay = sm.time ? new Date(sm.time).toISOString().slice(0, 10) : '';
+                        if (smDay && existingDays.has(smDay)) continue;
+                        if (smDay) existingDays.add(smDay);
                         const hScore = Number(sm.home_score || 0);
                         const aScore = Number(sm.away_score || 0);
                         totalGoals += (hScore + aScore);
                         if (hScore === aScore) {
                             draws++;
-                        } else if (normalizeTeamName(sm.home) === normalizeTeamName(ssName1)) {
+                        } else if (areTeamNamesMatching(sm.home, ssName1) || normalizeTeamName(sm.home) === normalizeTeamName(ssName1)) {
                             if (hScore > aScore) team1Wins++; else team2Wins++;
                         } else {
                             if (aScore > hScore) team1Wins++; else team2Wins++;
@@ -3437,12 +3442,13 @@ router.get('/h2h/:team1Id/:team2Id', optionalApiKeyAuth, async (req, res) => {
                             homeLogo: sm.home_logo || '',
                             awayLogo: sm.away_logo || '',
                             score: `${hScore} - ${aScore}`,
-                            source: 'sportscore'
+                            source: sm.source || 'sportscore'
                         });
                     }
+                    results.sort((a, b) => new Date(b.date) - new Date(a.date));
                 }
             } catch (ssErr) {
-                console.warn('SportScore /h2h route enrichment failed:', ssErr.message);
+                console.warn('Aggregated /h2h route enrichment failed:', ssErr.message);
             }
         }
 
