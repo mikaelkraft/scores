@@ -383,14 +383,23 @@
 
         const fetchPromise = (async () => {
             try {
-                const response = await fetch(path, {
-                    ...options,
-                    headers: {
-                        Accept: 'application/json',
-                        'x-web-client': '1',
-                        ...(options.headers || {})
-                    }
-                });
+                const timeoutMs = options.timeoutMs || 18000;
+                const controller = new AbortController();
+                const timer = setTimeout(() => controller.abort(), timeoutMs);
+                let response;
+                try {
+                    response = await fetch(path, {
+                        ...options,
+                        signal: options.signal || controller.signal,
+                        headers: {
+                            Accept: 'application/json',
+                            'x-web-client': '1',
+                            ...(options.headers || {})
+                        }
+                    });
+                } finally {
+                    clearTimeout(timer);
+                }
                 const body = await response.json().catch(() => ({}));
                 if (!response.ok) {
                     const message = typeof body.error === 'string'
@@ -1223,7 +1232,7 @@
         'por.1': 885,
         'bra.1': 880,
         'arg.1': 875,
-        'nga.1': 870,
+        'nga.1': 888,
         'ksa.1': 865,
         'sau.1': 865,
         'mex.1': 860,
@@ -1297,11 +1306,13 @@
         if (!slug) return 200;
         const cleanSlug = String(slug).toLowerCase().trim();
         if (CLIENT_LEAGUE_PRIORITY[cleanSlug]) return CLIENT_LEAGUE_PRIORITY[cleanSlug];
+        // NPFL / Nigeria name fallback when slug is non-canonical
+        if (/\bnga\b|npfl|nigeria/.test(cleanSlug)) return 870;
         if (cleanSlug.includes('youth') || cleanSlug.includes('u21') || cleanSlug.includes('u19') || cleanSlug.includes('u23')) return 120;
         if (cleanSlug.includes('friendly') || cleanSlug === 'club.friendly') return 50;
-        // Any remaining senior top-flight (.1) league ALWAYS ranks above 2nd/lower tiers
-        if (cleanSlug.endsWith('.1') && !cleanSlug.includes('.w.')) return 650;
-        if (cleanSlug.endsWith('.w.1')) return 645;
+        // Unlisted senior top-flights sit below curated Tier-2 (not equal to Big-5 / NPFL)
+        if (cleanSlug.endsWith('.1') && !cleanSlug.includes('.w.')) return 520;
+        if (cleanSlug.endsWith('.w.1')) return 510;
         if (cleanSlug.endsWith('.2')) return 420;
         if (cleanSlug.endsWith('.3') || cleanSlug.endsWith('.4') || cleanSlug.endsWith('.5') || cleanSlug.endsWith('.lower')) return 300;
         return 350;
@@ -2942,6 +2953,8 @@
             const pA = getLeaguePriorityClient(a.league?.slug);
             const pB = getLeaguePriorityClient(b.league?.slug);
             if (pB !== pA) return pB - pA;
+            const cA = (a.league?.country || '').localeCompare(b.league?.country || '');
+            if (cA !== 0) return cA;
             return (a.league?.name || '').localeCompare(b.league?.name || '');
         });
 
@@ -3301,7 +3314,7 @@
         // Clear global feed immediately so it does not flash under the league view
         if (elements['fixtures-list']) {
             elements['fixtures-list'].style.minHeight = '';
-            elements['fixtures-list'].innerHTML = '<div class="content-state"><span class="loader"></span> Loading league fixtures…</div>';
+            elements['fixtures-list'].innerHTML = renderFixturesSkeleton();
         }
         state.currentStatus = 'all';
 
@@ -3856,6 +3869,38 @@
         await loadMatchDetails(eventId, false, leagueSlug, matchObj);
     }
 
+    
+    function renderFixturesSkeleton(rows = 8) {
+        const cards = Array.from({ length: Math.min(rows, 10) }).map(() => `
+            <div class="skel-league-card" aria-hidden="true">
+                <div class="skel-line skel-league-title"></div>
+                ${Array.from({ length: 3 }).map(() => `
+                    <div class="skel-match-row">
+                        <div class="skel-circle"></div>
+                        <div class="skel-line skel-team"></div>
+                        <div class="skel-line skel-score"></div>
+                    </div>
+                `).join('')}
+            </div>
+        `).join('');
+        return `<div class="skel-board" role="status" aria-label="Loading fixtures">${cards}<p class="skel-caption">Loading fixtures…</p></div>`;
+    }
+
+    function renderMatchSkeleton() {
+        return `<div class="skel-match-modal" role="status" aria-label="Loading match telemetry">
+            <div class="skel-line skel-wide"></div>
+            <div class="skel-line skel-mid"></div>
+            <div class="skel-stats-grid">
+                <div class="skel-line"></div><div class="skel-line"></div>
+                <div class="skel-line"></div><div class="skel-line"></div>
+            </div>
+            <div class="skel-line skel-wide"></div>
+            <div class="skel-line skel-wide"></div>
+            <div class="skel-line skel-mid"></div>
+            <p class="skel-caption">Loading match telemetry…</p>
+        </div>`;
+    }
+
     async function loadMatchDetails(eventId, silent, leagueSlug = '', matchContext = null) {
         const slug = leagueSlug || state.league?.slug || 'all';
         if (!state.league && state.leagues.length) {
@@ -3869,7 +3914,7 @@
                 elements['dialog-status'].className = 'minute-pill pre';
             }
             if (elements['dialog-date']) elements['dialog-date'].textContent = '—';
-            elements['dialog-content'].innerHTML = '<div class="content-state"><span class="loader"></span><p>Loading match telemetry…</p></div>';
+            elements['dialog-content'].innerHTML = renderMatchSkeleton();
         }
 
         const hName = matchContext?.home?.displayName || matchContext?.home?.name || '';
@@ -3899,9 +3944,26 @@
         if (state.currentEventId !== eventId) return;
 
         if (!summary) {
-            if (elements['dialog-content']) {
-                elements['dialog-content'].innerHTML = `<div class="content-state"><span class="empty-icon">!</span><p>${escapeHtml(summaryResult.reason?.message || 'Match details could not be loaded.')}</p></div>`;
+            // Last-chance: try with league slug "all" and raw match API
+            try {
+                const alt = await fetchJson(`/get/soccer/all/events/${encodeURIComponent(eventId)}`, { timeoutMs: 12000 });
+                if (alt && (alt.header || alt.boxscore || alt.competitions)) summary = alt;
+            } catch (_) {}
+            if (!summary) {
+                try {
+                    const matchApiRes = await fetchJson(`/api/v1/football/matches/${encodeURIComponent(eventId)}`, { timeoutMs: 12000 });
+                    summary = matchApiRes?.summary || matchApiRes?.match || null;
+                } catch (_) {}
             }
+        }
+        if (!summary) {
+            const errMsg = (summaryResult.status === 'rejected' && summaryResult.reason?.message)
+                || 'Match details could not be loaded. Try again in a moment.';
+            if (elements['dialog-content']) {
+                elements['dialog-content'].innerHTML = `<div class="content-state"><span class="empty-icon">!</span><p>${escapeHtml(errMsg)}</p>
+                <button type="button" class="btn-secondary" style="margin-top:12px;" onclick="window.__norraRetryMatch && window.__norraRetryMatch()">Retry</button></div>`;
+            }
+            window.__norraRetryMatch = () => loadMatchDetails(eventId, false, leagueSlug, matchContext);
             return;
         }
 
@@ -3919,7 +3981,14 @@
             ts: Date.now()
         });
 
-        renderMatchDetails(summary, plays, predictions, silent);
+        try {
+            renderMatchDetails(summary, plays, predictions, silent);
+        } catch (renderErr) {
+            console.error('renderMatchDetails failed', renderErr);
+            if (elements['dialog-content']) {
+                elements['dialog-content'].innerHTML = `<div class="content-state"><span class="empty-icon">!</span><p>Could not render match view. ${escapeHtml(renderErr.message || '')}</p></div>`;
+            }
+        }
 
         const competition = summary.header?.competitions?.[0] || {};
         const status = competition.status?.type?.state;
