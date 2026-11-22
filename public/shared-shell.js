@@ -202,6 +202,64 @@
             });
         }
 
+        // Sync editable Footer Credit, Brand Description, CTA Badge & Page Links from Admin -> Branding
+        if (cfg.footerSettings && typeof cfg.footerSettings === 'object') {
+            var fs = cfg.footerSettings;
+            var esc = function (s) {
+                return String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+            };
+            var safeHref = function (u) {
+                var s = String(u || '').trim();
+                if (!s) return '#';
+                if (s.startsWith('/') || /^https?:\/\//i.test(s) || s.startsWith('mailto:')) return esc(s);
+                return '#';
+            };
+            if (fs.brandDescription) {
+                var descEl = document.querySelector('.footer-brand-desc');
+                if (descEl) descEl.textContent = fs.brandDescription;
+            }
+            if (fs.ctaLabel || fs.ctaUrl) {
+                var ctaEl = document.querySelector('.footer-norra-badge');
+                if (ctaEl) {
+                    if (fs.ctaUrl) ctaEl.setAttribute('href', fs.ctaUrl);
+                    var span = ctaEl.querySelector('span');
+                    if (fs.ctaLabel) {
+                        if (span) span.textContent = fs.ctaLabel;
+                        else ctaEl.textContent = fs.ctaLabel;
+                    }
+                }
+            }
+            if (fs.copyrightText) {
+                var copyHost = document.querySelector('.footer-bottom > div:first-child');
+                if (copyHost) {
+                    var yr = String(new Date().getFullYear());
+                    copyHost.textContent = String(fs.copyrightText).replace(/\{year\}/gi, yr);
+                }
+            }
+            if (Array.isArray(fs.bottomLinks) && fs.bottomLinks.length > 0) {
+                var bottomLinksEl = document.querySelector('.footer-bottom-links');
+                if (bottomLinksEl) {
+                    bottomLinksEl.innerHTML = fs.bottomLinks.map(function (l) {
+                        if (!l || !l.label || !l.url) return '';
+                        var target = l.newTab ? ' target="_blank" rel="noopener noreferrer"' : '';
+                        return '<a href="' + safeHref(l.url) + '"' + target + '>' + esc(l.label) + '</a>';
+                    }).join('');
+                }
+            }
+            if (Array.isArray(fs.platformLinks) && fs.platformLinks.length > 0) {
+                var footerCols = document.querySelectorAll('.site-footer .footer-col');
+                var platformCol = footerCols.length >= 3 ? footerCols[footerCols.length - 1] : null;
+                var ul = platformCol ? platformCol.querySelector('.footer-col-links') : null;
+                if (ul) {
+                    ul.innerHTML = fs.platformLinks.map(function (l) {
+                        if (!l || !l.label || !l.url) return '';
+                        var target = l.newTab ? ' target="_blank" rel="noopener noreferrer"' : '';
+                        return '<li><a href="' + safeHref(l.url) + '"' + target + '>' + esc(l.label) + '</a></li>';
+                    }).join('');
+                }
+            }
+        }
+
         // Sync Supported & Sponsored partner bar if present in footer
         var partnersEl = document.getElementById('footer-partners');
         if (partnersEl && Array.isArray(cfg.partnerAttributions)) {

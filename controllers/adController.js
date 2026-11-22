@@ -66,7 +66,8 @@ router.get(['/api/v1/ads', '/api/ads/active', '/api/v1/settings/public'], option
                 socialLinks: settings.socialLinks || {},
                 appSettings: settings.appSettings || {},
                 partnerSectionTitle: resolvedPartnerSectionTitle,
-                partnerAttributions: resolvedPartnerAttributions
+                partnerAttributions: resolvedPartnerAttributions,
+                footerSettings: settings.footerSettings || {}
             });
         }
 
@@ -119,7 +120,8 @@ router.get(['/api/v1/ads', '/api/ads/active', '/api/v1/settings/public'], option
             socialLinks: settings.socialLinks || {},
             appSettings: settings.appSettings || {},
             partnerSectionTitle: resolvedPartnerSectionTitle,
-            partnerAttributions: resolvedPartnerAttributions
+            partnerAttributions: resolvedPartnerAttributions,
+            footerSettings: settings.footerSettings || {}
         });
     } catch (err) {
         console.error('Failed to load active settings/ads:', err.message);

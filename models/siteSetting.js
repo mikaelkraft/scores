@@ -134,6 +134,43 @@ const SiteSettingSchema = new mongoose.Schema({
      * Each item can be raw HTML and/or an image+link with optional size.
      */
     partnerSectionTitle: { type: String, default: 'Supported & Sponsored' },
+    footerSettings: {
+        brandDescription: {
+            type: String,
+            default: 'Real-time global football scores, fixtures, live tables, and high-throughput commercial sports APIs. Powered by the Norra AI analytics engine.'
+        },
+        ctaLabel: { type: String, default: 'Visit Norra AI →' },
+        ctaUrl: { type: String, default: 'https://mynorra.xyz' },
+        copyrightText: { type: String, default: '© {year} Norra AI (scores.mynorra.xyz). All rights reserved.' },
+        bottomLinks: {
+            type: [{
+                label: { type: String, default: '' },
+                url: { type: String, default: '' },
+                newTab: { type: Boolean, default: false }
+            }],
+            default: [
+                { label: 'Terms', url: '/terms', newTab: false },
+                { label: 'Privacy', url: '/privacy', newTab: false },
+                { label: 'Pricing', url: '/pricing', newTab: false },
+                { label: 'Docs', url: '/docs', newTab: false },
+                { label: 'Norra AI', url: 'https://mynorra.xyz', newTab: true }
+            ]
+        },
+        platformLinks: {
+            type: [{
+                label: { type: String, default: '' },
+                url: { type: String, default: '' },
+                newTab: { type: Boolean, default: false }
+            }],
+            default: [
+                { label: 'API Documentation', url: '/docs', newTab: false },
+                { label: 'Swagger Console ↗', url: '/api-docs/', newTab: true },
+                { label: 'Developer Portal & Keys', url: '/account', newTab: false },
+                { label: 'Terms of Service', url: '/terms', newTab: false },
+                { label: 'Privacy Policy', url: '/privacy', newTab: false }
+            ]
+        }
+    },
     partnerAttributions: [{
         active: { type: Boolean, default: true },
         category: { type: String, default: 'Supported' },

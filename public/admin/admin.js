@@ -167,6 +167,30 @@ async function loadSettings() {
         if (typeof renderPartnersEditor === 'function') {
             renderPartnersEditor(globalSettings.partnerAttributions || []);
         }
+        // Footer Credit, Brand Copy & Page Links
+        const fs = globalSettings.footerSettings || {};
+        const fDesc = document.getElementById('setting-footer-desc');
+        if (fDesc) fDesc.value = fs.brandDescription || 'Real-time global football scores, fixtures, live tables, and high-throughput commercial sports APIs. Powered by the Norra AI analytics engine.';
+        const fCtaLabel = document.getElementById('setting-footer-cta-label');
+        if (fCtaLabel) fCtaLabel.value = fs.ctaLabel || 'Visit Norra AI →';
+        const fCtaUrl = document.getElementById('setting-footer-cta-url');
+        if (fCtaUrl) fCtaUrl.value = fs.ctaUrl || 'https://mynorra.xyz';
+        const fCopy = document.getElementById('setting-footer-copyright');
+        if (fCopy) fCopy.value = fs.copyrightText || '© {year} Norra AI (scores.mynorra.xyz). All rights reserved.';
+        renderFooterLinksEditor('footer-platform-links-editor', Array.isArray(fs.platformLinks) && fs.platformLinks.length ? fs.platformLinks : [
+            { label: 'API Documentation', url: '/docs', newTab: false },
+            { label: 'Swagger Console ↗', url: '/api-docs/', newTab: true },
+            { label: 'Developer Portal & Keys', url: '/account', newTab: false },
+            { label: 'Terms of Service', url: '/terms', newTab: false },
+            { label: 'Privacy Policy', url: '/privacy', newTab: false }
+        ]);
+        renderFooterLinksEditor('footer-bottom-links-editor', Array.isArray(fs.bottomLinks) && fs.bottomLinks.length ? fs.bottomLinks : [
+            { label: 'Terms', url: '/terms', newTab: false },
+            { label: 'Privacy', url: '/privacy', newTab: false },
+            { label: 'Pricing', url: '/pricing', newTab: false },
+            { label: 'Docs', url: '/docs', newTab: false },
+            { label: 'Norra AI', url: 'https://mynorra.xyz', newTab: true }
+        ]);
         if (globalSettings.headerLogoUrl) {
             document.getElementById('preview-header-logo').src = globalSettings.headerLogoUrl;
         }
@@ -465,6 +489,43 @@ function addSportScoreRow() {
     renderPartnersEditor(current);
 }
 
+function renderFooterLinksEditor(containerId, items = []) {
+    const host = document.getElementById(containerId);
+    if (!host) return;
+    host.innerHTML = '';
+    (items || []).forEach(item => addFooterLinkRow(containerId, item));
+}
+
+function addFooterLinkRow(containerId, item = {}) {
+    const host = document.getElementById(containerId);
+    if (!host) return;
+    const row = document.createElement('div');
+    row.className = 'footer-link-editor-row';
+    row.style.cssText = 'display:grid; grid-template-columns:1fr 1.2fr auto auto; gap:8px; align-items:center; margin-bottom:8px;';
+    row.innerHTML = `
+        <input type="text" class="fl-label" placeholder="Link label (e.g. Terms)" value="${escapeHtml(item.label || '')}">
+        <input type="text" class="fl-url" placeholder="URL (e.g. /terms or https://...)" value="${escapeHtml(item.url || '')}">
+        <label style="display:inline-flex; align-items:center; gap:4px; font-size:12px; color:var(--text-muted); white-space:nowrap;">
+            <input type="checkbox" class="fl-newtab" ${item.newTab ? 'checked' : ''}> New tab
+        </label>
+        <button type="button" class="btn-secondary" style="color:#ef4444; padding:6px 10px;" onclick="this.closest('.footer-link-editor-row').remove()">✕</button>
+    `;
+    host.appendChild(row);
+}
+
+function collectFooterLinksFromEditor(containerId) {
+    const host = document.getElementById(containerId);
+    if (!host) return [];
+    const out = [];
+    host.querySelectorAll('.footer-link-editor-row').forEach(row => {
+        const label = row.querySelector('.fl-label')?.value.trim() || '';
+        const url = row.querySelector('.fl-url')?.value.trim() || '';
+        const newTab = Boolean(row.querySelector('.fl-newtab')?.checked);
+        if (label && url) out.push({ label, url, newTab });
+    });
+    return out;
+}
+
 async function saveBrandingSettings() {
     const apkUrl = document.getElementById('setting-apk-url')?.value.trim() || '';
     const payload = {
@@ -477,9 +538,17 @@ async function saveBrandingSettings() {
             pwaEnabled: true
         },
         partnerSectionTitle: document.getElementById('setting-partner-section-title')?.value.trim() || '',
-        partnerAttributions: collectPartnerAttributionsFromEditor()
+        partnerAttributions: collectPartnerAttributionsFromEditor(),
+        footerSettings: {
+            brandDescription: document.getElementById('setting-footer-desc')?.value.trim() || '',
+            ctaLabel: document.getElementById('setting-footer-cta-label')?.value.trim() || '',
+            ctaUrl: document.getElementById('setting-footer-cta-url')?.value.trim() || '',
+            copyrightText: document.getElementById('setting-footer-copyright')?.value.trim() || '',
+            platformLinks: collectFooterLinksFromEditor('footer-platform-links-editor'),
+            bottomLinks: collectFooterLinksFromEditor('footer-bottom-links-editor')
+        }
     };
-    await updateSettingsPayload(payload, 'Branding & partner settings saved!');
+    await updateSettingsPayload(payload, 'Branding, footer & partner settings saved!');
 }
 
 async function saveSocialSettings() {

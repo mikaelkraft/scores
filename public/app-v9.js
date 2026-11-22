@@ -5690,6 +5690,7 @@
             renderAdSlot('ad-slot-drawer', res.ads?.drawer);
             renderAdSlot('ad-slot-footer', res.ads?.footer);
             renderFooterPartners(res.partnerAttributions, res.partnerSectionTitle);
+            renderFooterCustomSettings(res.footerSettings);
 
             // Universal Bet Booking Code Converter visibility (respects Admin toggle)
             const bookingConverterSection = document.getElementById('booking-converter-section');
@@ -5810,6 +5811,59 @@
     }
 
     
+    function renderFooterCustomSettings(fs) {
+        if (!fs || typeof fs !== 'object') return;
+        const safeHref = (u) => {
+            const s = String(u || '').trim();
+            if (!s) return '#';
+            if (s.startsWith('/') || /^https?:\/\//i.test(s) || s.startsWith('mailto:')) return escapeHtml(s);
+            return '#';
+        };
+        if (fs.brandDescription) {
+            const descEl = document.querySelector('.footer-brand-desc');
+            if (descEl) descEl.textContent = fs.brandDescription;
+        }
+        if (fs.ctaLabel || fs.ctaUrl) {
+            const ctaEl = document.querySelector('.footer-norra-badge');
+            if (ctaEl) {
+                if (fs.ctaUrl) ctaEl.setAttribute('href', fs.ctaUrl);
+                const span = ctaEl.querySelector('span');
+                if (fs.ctaLabel) {
+                    if (span) span.textContent = fs.ctaLabel;
+                    else ctaEl.textContent = fs.ctaLabel;
+                }
+            }
+        }
+        if (fs.copyrightText) {
+            const copyHost = document.querySelector('.footer-bottom > div:first-child');
+            if (copyHost) {
+                copyHost.textContent = String(fs.copyrightText).replace(/\{year\}/gi, String(new Date().getFullYear()));
+            }
+        }
+        if (Array.isArray(fs.bottomLinks) && fs.bottomLinks.length > 0) {
+            const bottomLinksEl = document.querySelector('.footer-bottom-links');
+            if (bottomLinksEl) {
+                bottomLinksEl.innerHTML = fs.bottomLinks.map((l) => {
+                    if (!l || !l.label || !l.url) return '';
+                    const target = l.newTab ? ' target="_blank" rel="noopener noreferrer"' : '';
+                    return `<a href="${safeHref(l.url)}"${target}>${escapeHtml(l.label)}</a>`;
+                }).join('');
+            }
+        }
+        if (Array.isArray(fs.platformLinks) && fs.platformLinks.length > 0) {
+            const footerCols = document.querySelectorAll('.site-footer .footer-col');
+            const platformCol = footerCols.length >= 3 ? footerCols[footerCols.length - 1] : null;
+            const ul = platformCol ? platformCol.querySelector('.footer-col-links') : null;
+            if (ul) {
+                ul.innerHTML = fs.platformLinks.map((l) => {
+                    if (!l || !l.label || !l.url) return '';
+                    const target = l.newTab ? ' target="_blank" rel="noopener noreferrer"' : '';
+                    return `<li><a href="${safeHref(l.url)}"${target}>${escapeHtml(l.label)}</a></li>`;
+                }).join('');
+            }
+        }
+    }
+
     function renderFooterPartners(items, sectionTitle = '') {
         const host = document.getElementById('footer-partners');
         if (!host) return;
