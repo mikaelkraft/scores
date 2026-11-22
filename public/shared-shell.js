@@ -260,26 +260,45 @@
             }
         }
 
-        // Sync Supported & Sponsored partner bar if present in footer
+        // Sync Supported & Sponsored partner bar (and respect blank heading if admin cleared it)
         var partnersEl = document.getElementById('footer-partners');
-        if (partnersEl && Array.isArray(cfg.partnerAttributions)) {
-            var activePartners = cfg.partnerAttributions.filter(function (p) { return p && p.enabled !== false && p.name && p.url; });
-            if (activePartners.length > 0) {
-                var heading = partnersEl.querySelector('.footer-partners-heading');
-                if (heading && cfg.partnerSectionTitle) heading.textContent = cfg.partnerSectionTitle;
-                var row = partnersEl.querySelector('.footer-partners-row');
-                if (row) {
-                    row.innerHTML = activePartners.map(function (p) {
-                        var safeName = String(p.name).replace(/[<>&"]/g, '');
-                        var safeUrl = String(p.url).replace(/"/g, '%22');
-                        if (p.logoUrl) {
-                            var safeLogo = String(p.logoUrl).replace(/"/g, '%22');
-                            return '<span class="footer-partner-item"><a href="' + safeUrl + '" rel="dofollow" target="_blank" title="' + safeName + '" aria-label="' + safeName + '" style="display:inline-flex;align-items:center;gap:6px;padding:4px 10px;border-radius:14px;background:var(--bg-surface-elevated);border:1px solid var(--border-subtle);text-decoration:none;font:700 .76rem system-ui,sans-serif;color:var(--text-main);"><img src="' + safeLogo + '" alt="' + safeName + '" style="height:18px;width:auto;object-fit:contain;border-radius:3px;"><span>' + safeName + '</span></a></span>';
-                        }
-                        return '<span class="footer-partner-item"><a href="' + safeUrl + '" rel="dofollow" target="_blank" title="' + safeName + '" aria-label="' + safeName + '" style="display:inline-flex;align-items:center;justify-content:center;min-width:32px;height:28px;line-height:28px;padding:0 12px;background:#1e40af;color:#fff;border-radius:14px;text-decoration:none;font:700 .78rem system-ui,sans-serif;white-space:nowrap;">' + safeName + '</a></span>';
-                    }).join('');
+        if (partnersEl) {
+            var heading = partnersEl.querySelector('.footer-partners-heading');
+            if (heading && cfg.partnerSectionTitle !== undefined && cfg.partnerSectionTitle !== null) {
+                var cleanTitle = String(cfg.partnerSectionTitle).trim();
+                if (cleanTitle) {
+                    heading.textContent = cleanTitle;
+                    heading.style.display = '';
+                    heading.hidden = false;
+                } else {
+                    heading.textContent = '';
+                    heading.style.display = 'none';
+                    heading.hidden = true;
                 }
-                partnersEl.hidden = false;
+            }
+            if (Array.isArray(cfg.partnerAttributions)) {
+                var activePartners = cfg.partnerAttributions.filter(function (p) {
+                    return p && p.active !== false && p.enabled !== false && (p.html || p.label || p.name || p.imageUrl || p.logoUrl);
+                });
+                if (activePartners.length > 0) {
+                    var row = partnersEl.querySelector('.footer-partners-row');
+                    if (row) {
+                        row.innerHTML = activePartners.map(function (p) {
+                            if (p.html && String(p.html).trim()) {
+                                return '<span class="footer-partner-item">' + p.html + '</span>';
+                            }
+                            var safeName = String(p.label || p.name || p.linkTitle || 'Partner').replace(/[<>&"]/g, '');
+                            var safeUrl = String(p.linkUrl || p.url || '#').replace(/"/g, '%22');
+                            var safeLogo = String(p.imageUrl || p.logoUrl || '').replace(/"/g, '%22');
+                            var relAttr = String(p.rel || 'dofollow').replace(/"/g, '');
+                            if (safeLogo) {
+                                return '<span class="footer-partner-item"><a href="' + safeUrl + '" rel="' + relAttr + '" target="_blank" title="' + safeName + '" aria-label="' + safeName + '" style="display:inline-flex;align-items:center;gap:6px;padding:4px 10px;border-radius:14px;background:var(--bg-surface-elevated);border:1px solid var(--border-subtle);text-decoration:none;font:700 .76rem system-ui,sans-serif;color:var(--text-main);"><img src="' + safeLogo + '" alt="' + safeName + '" style="height:18px;width:auto;object-fit:contain;border-radius:3px;"><span>' + safeName + '</span></a></span>';
+                            }
+                            return '<span class="footer-partner-item"><a href="' + safeUrl + '" rel="' + relAttr + '" target="_blank" title="' + safeName + '" aria-label="' + safeName + '" style="display:inline-flex;align-items:center;justify-content:center;min-width:32px;height:28px;line-height:28px;padding:0 12px;background:#1e40af;color:#fff;border-radius:14px;text-decoration:none;font:700 .78rem system-ui,sans-serif;white-space:nowrap;">' + safeName + '</a></span>';
+                        }).join('');
+                    }
+                    partnersEl.hidden = false;
+                }
             }
         }
 

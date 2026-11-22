@@ -3886,41 +3886,7 @@
             return;
         }
 
-        if (matchObj) {
-            const compStatus = matchObj.status || {};
-            const initialSummary = {
-                header: {
-                    id: eventId,
-                    date: matchObj.date,
-                    competitions: [{
-                        id: eventId,
-                        date: matchObj.date,
-                        status: compStatus,
-                        competitors: [
-                            { homeAway: 'home', team: matchObj.home, score: matchObj.home?.score },
-                            { homeAway: 'away', team: matchObj.away, score: matchObj.away?.score }
-                        ],
-                        league: { name: cleanCompetitionName(matchObj.note || state.league?.name || '') }
-                    }]
-                },
-                gameInfo: {
-                    venue: (matchObj.venue && matchObj.venue.name && !/stadium\s*venue|unknown/i.test(matchObj.venue.name)) ? matchObj.venue : null
-                },
-                boxscore: matchObj.boxscore || {
-                    teams: [
-                        { homeAway: 'home', team: matchObj.home, statistics: [] },
-                        { homeAway: 'away', team: matchObj.away, statistics: [] }
-                    ]
-                },
-                keyEvents: matchObj.key_events || [],
-                timeline: matchObj.key_events || [],
-                rosters: matchObj.lineups || []
-            };
-            renderMatchDetails(initialSummary, initialSummary.timeline, null, false);
-            loadMatchDetails(eventId, true, leagueSlug, matchObj);
-            return;
-        }
-
+        // Show sleek telemetry skeleton immediately instead of empty "No play-by-play" shell, then hydrate fast
         await loadMatchDetails(eventId, false, leagueSlug, matchObj);
     }
 
@@ -3976,10 +3942,12 @@
         const aName = matchContext?.away?.displayName || matchContext?.away?.name || '';
         const predQuery = (hName && aName) ? `?home=${encodeURIComponent(hName)}&away=${encodeURIComponent(aName)}&league=${encodeURIComponent(slug)}` : '';
         const base = `/get/soccer/${encodeURIComponent(slug)}/events/${encodeURIComponent(eventId)}`;
-        const [summaryResult, playsResult, predResult] = await Promise.allSettled([
+
+        // Kick off predictions-context in parallel WITHOUT blocking timeline/stats/lineups rendering
+        const predPromise = fetchJson(`/api/v1/football/predictions-context/${encodeURIComponent(eventId)}${predQuery}`).catch(() => null);
+        const [summaryResult, playsResult] = await Promise.allSettled([
             fetchJson(base),
-            fetchJson(`${base}/plays?important=true&limit=300`),
-            fetchJson(`/api/v1/football/predictions-context/${encodeURIComponent(eventId)}${predQuery}`)
+            fetchJson(`${base}/plays?important=true&limit=300`)
         ]);
 
         if (state.currentEventId !== eventId) return;
@@ -4026,18 +3994,11 @@
         if (!plays.length && summary.timeline?.length) {
             plays = summary.timeline;
         }
-        const predictions = predResult.status === 'fulfilled' ? predResult.value : null;
 
-        // Cache for instant back/forth modal opening
-        matchDetailsClientCache.set(String(eventId), {
-            summary,
-            plays,
-            predictions,
-            ts: Date.now()
-        });
-
+        // Stage 1: Render Timeline, Stats, Lineups & Match Info immediately (~300ms)
+        const existingCachedPred = matchDetailsClientCache.get(String(eventId))?.predictions || null;
         try {
-            renderMatchDetails(summary, plays, predictions, silent);
+            renderMatchDetails(summary, plays, existingCachedPred, silent);
         } catch (renderErr) {
             console.error('renderMatchDetails failed', renderErr);
             if (elements['dialog-content']) {
@@ -4049,7 +4010,25 @@
         const status = competition.status?.type?.state;
         if (status === 'in') {
             window.clearInterval(state.matchTimer);
-            state.matchTimer = window.setInterval(() => loadMatchDetails(eventId, true, slug), 15000);
+            state.matchTimer = window.setInterval(() => loadMatchDetails(eventId, true, slug, matchContext), 15000);
+        }
+
+        // Stage 2: Hydrate H2H, Table Context & Norra AI Predictions as soon as predictions-context resolves
+        const predictions = await predPromise;
+        if (state.currentEventId !== eventId) return;
+
+        matchDetailsClientCache.set(String(eventId), {
+            summary,
+            plays,
+            predictions: predictions || existingCachedPred,
+            ts: Date.now()
+        });
+
+        if (predictions) {
+            try {
+                // On initial open (!silent), always apply predictions even if user switched to Predictions/Info tab
+                renderMatchDetails(summary, plays, predictions, silent);
+            } catch (_) {}
         }
     }
 
@@ -5324,6 +5303,7 @@
                             ` : ''}
                         </div>
                     ` : ''}
+                </div>
 
                 <div id="drawer-tab-predictions" class="drawer-tab-content" ${activeTab === 'predictions' ? '' : 'hidden'}>
                     <div class="prediction-card">

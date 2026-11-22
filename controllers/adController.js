@@ -38,7 +38,9 @@ router.get(['/api/v1/ads', '/api/ads/active', '/api/v1/settings/public'], option
         };
 
         const resolvedPartnerAttributions = buildPartnerAttributions();
-        const resolvedPartnerSectionTitle = settings.partnerSectionTitle || 'Supported & Sponsored';
+        const resolvedPartnerSectionTitle = (settings.partnerSectionTitle !== undefined && settings.partnerSectionTitle !== null)
+            ? String(settings.partnerSectionTitle)
+            : 'Supported & Sponsored';
 
         if (req.isAdFree) {
             return res.json({

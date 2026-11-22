@@ -161,7 +161,7 @@ async function loadSettings() {
         document.getElementById('setting-announcement-active').checked = Boolean(globalSettings.announcementActive);
         document.getElementById('setting-announcement').value = globalSettings.announcement || '';
         const partnerTitleEl = document.getElementById('setting-partner-section-title');
-        if (partnerTitleEl) partnerTitleEl.value = globalSettings.partnerSectionTitle || 'Supported & Sponsored';
+        if (partnerTitleEl) partnerTitleEl.value = (globalSettings.partnerSectionTitle !== undefined && globalSettings.partnerSectionTitle !== null) ? globalSettings.partnerSectionTitle : 'Supported & Sponsored';
         const apkUrlEl = document.getElementById('setting-apk-url');
         if (apkUrlEl) apkUrlEl.value = globalSettings.appSettings?.apkUrl || '';
         if (typeof renderPartnersEditor === 'function') {
@@ -501,14 +501,18 @@ function addFooterLinkRow(containerId, item = {}) {
     if (!host) return;
     const row = document.createElement('div');
     row.className = 'footer-link-editor-row';
-    row.style.cssText = 'display:grid; grid-template-columns:1fr 1.2fr auto auto; gap:8px; align-items:center; margin-bottom:8px;';
+    row.style.cssText = 'display:flex; flex-direction:column; gap:8px; padding:10px; border:1px solid var(--border-subtle); border-radius:8px; background:var(--bg-canvas); margin-bottom:10px; width:100%; box-sizing:border-box; max-width:100%; overflow:hidden;';
     row.innerHTML = `
-        <input type="text" class="fl-label" placeholder="Link label (e.g. Terms)" value="${escapeHtml(item.label || '')}">
-        <input type="text" class="fl-url" placeholder="URL (e.g. /terms or https://...)" value="${escapeHtml(item.url || '')}">
-        <label style="display:inline-flex; align-items:center; gap:4px; font-size:12px; color:var(--text-muted); white-space:nowrap;">
-            <input type="checkbox" class="fl-newtab" ${item.newTab ? 'checked' : ''}> New tab
-        </label>
-        <button type="button" class="btn-secondary" style="color:#ef4444; padding:6px 10px;" onclick="this.closest('.footer-link-editor-row').remove()">✕</button>
+        <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(140px, 1fr)); gap:8px; width:100%; min-width:0;">
+            <input type="text" class="fl-label" style="width:100%; min-width:0; box-sizing:border-box;" placeholder="Link label (e.g. Terms)" value="${escapeHtml(item.label || '')}">
+            <input type="text" class="fl-url" style="width:100%; min-width:0; box-sizing:border-box;" placeholder="URL (e.g. /terms or https://...)" value="${escapeHtml(item.url || '')}">
+        </div>
+        <div style="display:flex; align-items:center; justify-content:space-between; gap:8px; flex-wrap:wrap;">
+            <label style="display:inline-flex; align-items:center; gap:6px; font-size:12px; color:var(--text-muted); margin:0;">
+                <input type="checkbox" class="fl-newtab" ${item.newTab ? 'checked' : ''}> Open in new tab
+            </label>
+            <button type="button" class="btn-secondary" style="color:#ef4444; padding:4px 10px; font-size:12px;" onclick="this.closest('.footer-link-editor-row').remove()">✕ Remove</button>
+        </div>
     `;
     host.appendChild(row);
 }
