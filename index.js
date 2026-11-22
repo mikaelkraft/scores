@@ -407,8 +407,9 @@ app.listen(PORT, '0.0.0.0', () => {
         }
     }, 2000);
 
-    // Auto-sync live scores and world leagues in background
+    // Auto-sync live scores and world leagues in background (kickoff-aware + WAT UTC+1 daily schedule)
     const { syncAllLeagues, syncLiveScoreboards, syncLiveScoreInPlay, syncInGameStats, cleanupStuckMatchesAndPurgeNcaa, pruneOldTelemetryStorage } = require('./services/soccerSyncService');
+    const dailyBoardCache = require('./services/dailyBoardCache');
 
     // Initial live scoreboard and in-play ingestion on boot (5 seconds after server is accepting traffic)
     setTimeout(async () => {
@@ -436,33 +437,54 @@ app.listen(PORT, '0.0.0.0', () => {
         }
     }, 20000);
 
-    // Fast in-play scoreboard and live match infeed refresh every 60 seconds
+    // Kickoff-aware in-play scoreboard refresh: runs every 60s during active match windows, backs off to 5m when idle
+    let lastIdlePollAt = 0;
     const liveScoreInterval = setInterval(() => {
+        const nowMs = Date.now();
+        const isActiveWindow = dailyBoardCache.hasActiveMatchWindow(nowMs);
+        if (!isActiveWindow && (nowMs - lastIdlePollAt < 5 * 60 * 1000)) {
+            return;
+        }
+        if (!isActiveWindow) lastIdlePollAt = nowMs;
+
         Promise.allSettled([
             syncLiveScoreboards(),
             syncLiveScoreInPlay()
         ]).then(() => {
-            return syncInGameStats({ limit: 20, onlyLive: true });
+            return isActiveWindow ? syncInGameStats({ limit: 20, onlyLive: true }) : null;
         }).catch(e => console.warn('Live infeed sync notice:', e.message));
     }, 60 * 1000);
     if (liveScoreInterval && typeof liveScoreInterval.unref === 'function') {
         liveScoreInterval.unref();
     }
 
-    // Initial deep league schedules sync after 60 seconds of server uptime, then every 6 hours
-    setTimeout(() => {
+    // Scheduled WAT (UTC+1) daily fixture board discovery: 00:05 WAT (rollover), 09:00 WAT (morning additions), 14:00 WAT (afternoon check)
+    function scheduleNextWatDailySync() {
+        const { delayMs, label } = dailyBoardCache.getNextWatSyncDelayMs(Date.now());
+        const timer = setTimeout(async () => {
+            try {
+                console.log(`🗓️ [DailySync ${label}] Refreshing full-day fixtures & render-ready board...`);
+                dailyBoardCache.clearBoardCache();
+                await Promise.allSettled([
+                    syncLiveScoreboards(),
+                    syncAllLeagues(),
+                    syncInGameStats({ limit: 60, onlyLive: false })
+                ]);
+            } catch (e) {
+                console.warn(`[DailySync ${label}] notice:`, e.message);
+            } finally {
+                scheduleNextWatDailySync();
+            }
+        }, delayMs);
+        if (timer && typeof timer.unref === 'function') timer.unref();
+    }
+    scheduleNextWatDailySync();
+
+    // Initial deep league schedules sync after 60 seconds of server uptime
+    const initialDeepTimer = setTimeout(() => {
         syncAllLeagues().catch(e => console.warn('[LiveSync] Background league sync notice:', e.message));
     }, 60 * 1000);
-
-    const deepSyncInterval = setInterval(() => {
-        Promise.allSettled([
-            syncAllLeagues(),
-            syncInGameStats({ limit: 60, onlyLive: false })
-        ]).catch(e => console.warn('Deep sync notice:', e.message));
-    }, 6 * 60 * 60 * 1000);
-    if (deepSyncInterval && typeof deepSyncInterval.unref === 'function') {
-        deepSyncInterval.unref();
-    }
+    if (initialDeepTimer && typeof initialDeepTimer.unref === 'function') initialDeepTimer.unref();
 
     // Daily procedural Atlas storage hygiene (preserves scores, stats, key_events, H2H & Norra AI training feeds)
     if (typeof pruneOldTelemetryStorage === 'function') {

@@ -678,8 +678,30 @@
     }
 
     function setLoading(kind, loading) {
-        if (elements[`${kind}-loading`]) elements[`${kind}-loading`].hidden = !loading;
+        const el = elements[`${kind}-loading`];
+        if (el) {
+            if (loading && kind === 'fixtures' && typeof renderFixturesSkeleton === 'function') {
+                el.innerHTML = renderFixturesSkeleton(6);
+            }
+            el.hidden = !loading;
+        }
         if (loading && elements[`${kind}-empty`]) elements[`${kind}-empty`].hidden = true;
+    }
+
+    function syncAllLiveCountBadges(rawMatches) {
+        const deduped = Array.isArray(rawMatches) ? deduplicateMatchesList(rawMatches) : [];
+        const count = deduped.length;
+        state.liveMatchCount = count;
+        state.liveMatchesCache = deduped;
+
+        const ids = ['live-count-badge', 'fs-status-live-badge', 'header-live-count', 'mobile-live-count'];
+        for (const id of ids) {
+            const el = document.getElementById(id);
+            if (!el) continue;
+            el.textContent = count;
+            el.style.display = count > 0 ? 'inline-block' : 'none';
+        }
+        return deduped;
     }
 
     function cleanCompetitionName(name) {
@@ -692,7 +714,7 @@
 
     const CLIENT_TOP_FLIGHT = {
         'ita.1': ['inter','milan','juventus','napoli','roma','lazio','atalanta','fiorentina','bologna','torino','genoa','cagliari','udinese','verona','empoli','monza','lecce','frosinone','sassuolo','como','parma','venezia','cremonese','pisa','salernitana','spezia','sampdoria'],
-        'esp.1': ['real madrid','barcelona','atletico madrid','sevilla','real sociedad','villarreal','athletic bilbao','betis','osasuna','getafe','celta','levante','mallorca','girona','rayo','valencia','espanyol','alaves','elche','cadiz','granada','valladolid','leganes','las palmas','almeria'],
+        'esp.1': ['real madrid','barcelona','atletico madrid','sevilla','real sociedad','villarreal','athletic bilbao','betis','osasuna','getafe','celta','levante','mallorca','girona','rayo','valencia','espanyol','alaves','elche','cadiz','granada','valladolid','leganes','las palmas','almeria','racing santander','malaga','real oviedo','mirandes'],
         'eng.1': ['arsenal','chelsea','liverpool','manchester city','manchester united','tottenham','newcastle','aston villa','brighton','west ham','crystal palace','fulham','brentford','wolves','everton','nottingham forest','bournemouth','southampton','leicester','ipswich','burnley','leeds'],
         'ger.1': ['bayern','dortmund','leverkusen','leipzig','stuttgart','frankfurt','wolfsburg','freiburg','hoffenheim','gladbach','mainz','augsburg','bremen','union berlin','bochum','heidenheim','st pauli','koln','schalke','hamburg'],
         'fra.1': ['psg','marseille','monaco','lyon','lille','nice','rennes','lens','strasbourg','nantes','montpellier','reims','toulouse','brest','angers','auxerre','le havre','saint etienne','metz'],
@@ -1071,6 +1093,18 @@
             if (secondary.source?.livescore_id && !winner.source?.livescore_id) {
                 if (!winner.source) winner.source = {};
                 winner.source.livescore_id = secondary.source.livescore_id;
+            }
+
+            // Preserve canonical specific league slug (e.g. esp.1) over generic/empty slugs (other) during live merges
+            const isWeakSlug = (s) => {
+                const v = String(s || '').trim().toLowerCase();
+                return !v || v === 'other' || v === 'w.other' || v === 'international' || v === 'all';
+            };
+            const winSlug = winner.league?.slug || winner.league_slug || '';
+            const secSlug = secondary.league?.slug || secondary.league_slug || '';
+            if (isWeakSlug(winSlug) && !isWeakSlug(secSlug)) {
+                winner.league = { ...(winner.league || {}), ...(secondary.league || {}), slug: secSlug };
+                winner.league_slug = secSlug;
             }
 
             // Merge crest logos so neither club loses its logo
@@ -2583,26 +2617,8 @@
                 liveMatches = data.live || data.matches || [];
             }
 
-            // Deduplicate live matches globally across all feeds / providers
-            const dedupedLive = deduplicateMatchesList(liveMatches);
-            state.liveMatchCount = dedupedLive.length;
-            state.liveMatchesCache = dedupedLive;
-
-            const badge = document.getElementById('live-count-badge');
-            if (badge) {
-                badge.textContent = dedupedLive.length;
-                badge.style.display = dedupedLive.length > 0 ? 'inline-block' : 'none';
-            }
-            const fsLiveBadge = document.getElementById('fs-status-live-badge');
-            if (fsLiveBadge) {
-                fsLiveBadge.textContent = dedupedLive.length;
-                fsLiveBadge.style.display = dedupedLive.length > 0 ? 'inline-block' : 'none';
-            }
-            const headerLiveCount = document.getElementById('header-live-count');
-            if (headerLiveCount) {
-                headerLiveCount.textContent = dedupedLive.length;
-                headerLiveCount.style.display = dedupedLive.length > 0 ? 'inline-block' : 'none';
-            }
+            // Deduplicate live matches globally across all feeds / providers and sync all badges atomically
+            const dedupedLive = syncAllLiveCountBadges(liveMatches);
 
             if (!dedupedLive.length) {
                 if (elements['fixtures-empty']) {
@@ -3202,24 +3218,14 @@
             }
 
             if (background && isUserInteracting && elements['fixtures-list'].children.length > 0) {
-                setTimeout(() => {
-                    if (elements['fixtures-list']) {
-                        renderAllLeaguesGrouped(groupedData, { background: false });
-                    }
-                }, 450);
+                // Never tear down the DOM or schedule a delayed scroll-yank while the user is actively reading/tapping
                 return;
             }
 
             if (elements['fixtures-empty']) elements['fixtures-empty'].hidden = true;
             elements['fixtures-list'].innerHTML = nextHtml;
 
-            if (prevScrollY > 0 && !isUserInteracting) {
-                // Lock scroll position across live re-renders without jumping
-                try { window.scrollTo({ top: prevScrollY, left: 0, behavior: 'instant' }); } catch(_) { window.scrollTo(0, prevScrollY); }
-                requestAnimationFrame(() => {
-                    if (fixturesContainer) fixturesContainer.style.minHeight = '';
-                });
-            } else if (fixturesContainer) {
+            if (fixturesContainer) {
                 fixturesContainer.style.minHeight = '';
             }
 
@@ -4426,6 +4432,23 @@
             </div>
         `).join('');
 
+        const rawVenueCity = venue?.address?.city || '';
+        const cityIsComp = /league|cup|friendl|championship|tournament|afcon|nations/i.test(rawVenueCity);
+        const compCity = cityIsComp ? rawVenueCity : '';
+        const cleanVenueCity = !cityIsComp ? rawVenueCity : '';
+        const rawVenueName = venue?.fullName || venue?.name || '';
+        const isFakeStadium = !rawVenueName || /^(stadium(\s+venue)?|unknown|tbd|tba|null|undefined)$/i.test(rawVenueName.trim());
+        const cleanVenueName = !isFakeStadium ? (cleanVenueCity ? `${rawVenueName}, ${cleanVenueCity}` : rawVenueName) : (cleanVenueCity ? `Stadium (${cleanVenueCity})` : '');
+
+        let competitionName = competition.league?.name ||
+            summary.header?.league?.name ||
+            summary.league?.name ||
+            summary.league_name ||
+            compCity ||
+            (state.league?.slug && (state.league.slug === competition.league?.slug) ? state.league.name : '') ||
+            (summary.note || summary.header?.season?.displayName || 'Football Competition');
+        competitionName = cleanCompetitionName(competitionName);
+
         const predHints = predictions?.norraAiPredictionHints || {};
         const h2h = predictions?.h2h || {};
         let recentH2h = h2h.allMeetings || h2h.recentMeetings || [];
@@ -4908,24 +4931,7 @@
                 else if (aMomentum >= 54) momentumVerdict = `📈 ${escapeHtml(away.team?.displayName || 'Away')} Has the Attacking Edge`;
             }
 
-            const rawVenueCity = venue?.address?.city || '';
-            const cityIsComp = /league|cup|friendl|championship|tournament|afcon|nations/i.test(rawVenueCity);
-            const compCity = cityIsComp ? rawVenueCity : '';
-            const cleanVenueCity = !cityIsComp ? rawVenueCity : '';
-            const rawVenueName = venue?.fullName || venue?.name || '';
-            const isFakeStadium = !rawVenueName || /^(stadium(\s+venue)?|unknown|tbd|tba|null|undefined)$/i.test(rawVenueName.trim());
-            const cleanVenueName = !isFakeStadium ? (cleanVenueCity ? `${rawVenueName}, ${cleanVenueCity}` : rawVenueName) : (cleanVenueCity ? `Stadium (${cleanVenueCity})` : '');
-
-            let competitionName = competition.league?.name ||
-                summary.header?.league?.name ||
-                summary.league?.name ||
-                summary.league_name ||
-                compCity ||
-                (state.league?.slug && (state.league.slug === competition.league?.slug) ? state.league.name : '') ||
-                (summary.note || summary.header?.season?.displayName || 'Football Competition');
-            competitionName = cleanCompetitionName(competitionName);
-
-            // Skip tearing down the modal DOM during silent background refreshes if nothing changed or user is mid-scroll
+            // Skip tearing down the modal DOM during silent background refreshes if user is mid-scroll/touch
             if (silent && isUserInteracting && elements['dialog-content'].querySelector('.drawer-tabs')) {
                 return;
             }
@@ -6272,19 +6278,7 @@
 
             try {
                 const res = await fetchJson('/api/v1/football/live');
-                const liveMatches = res.live || res.matches || [];
-                state.liveMatchCount = liveMatches.length;
-
-                const badge = document.getElementById('live-count-badge');
-                if (badge) {
-                    badge.textContent = liveMatches.length;
-                    badge.style.display = liveMatches.length > 0 ? 'inline-block' : 'none';
-                }
-                const fsBadge = document.getElementById('fs-status-live-badge');
-                if (fsBadge) {
-                    fsBadge.textContent = liveMatches.length;
-                    fsBadge.style.display = liveMatches.length > 0 ? 'inline-block' : 'none';
-                }
+                const liveMatches = syncAllLiveCountBadges(res.live || res.matches || []);
 
                 // Compute lightweight live state fingerprint
                 const currentDigest = liveMatches.map(m =>
@@ -6339,9 +6333,15 @@
                     return;
                 }
 
-                // Only update the full visible fixture list if viewing today AND (digest changed OR >60s elapsed)
+                // While the user is actively reading/scrolling/tapping, patch rows in-place instead of replacing the DOM
+                if (isUserInteracting && liveMatches.length > 0) {
+                    patchLiveMatchRowsInDom(liveMatches);
+                    return;
+                }
+
+                // Only refresh the full board if viewing today, user isn't interacting, and live set changed or >2m elapsed
                 const isViewingToday = !state.selectedDayOffset || state.selectedDayOffset === 0;
-                if (isViewingToday && (digestChanged || timeSinceLastFullSync > 60000)) {
+                if (isViewingToday && (liveIdsChanged || timeSinceLastFullSync > 120000)) {
                     state.lastFullFixturesSync = now;
 
                     if (state.selectedLeagueSlug === 'live' || state.currentStatus === 'live') {
@@ -6522,19 +6522,7 @@
             source.addEventListener('initial', (e) => {
                 try {
                     const data = JSON.parse(e.data);
-                    const matches = data.matches || [];
-                    state.liveMatchCount = matches.length;
-                    state.liveMatchesCache = matches;
-                    const fsBadge = document.getElementById('fs-status-live-badge');
-                    if (fsBadge) {
-                        fsBadge.textContent = matches.length;
-                        fsBadge.style.display = matches.length > 0 ? 'inline-block' : 'none';
-                    }
-                    const headerLiveCount = document.getElementById('header-live-count');
-                    if (headerLiveCount) {
-                        headerLiveCount.textContent = matches.length;
-                        headerLiveCount.style.display = matches.length > 0 ? 'inline-block' : 'none';
-                    }
+                    syncAllLiveCountBadges(data.matches || []);
                 } catch {}
             });
 

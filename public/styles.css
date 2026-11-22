@@ -1891,11 +1891,19 @@ dialog.match-dialog::backdrop {
 }
 .drawer-tabs {
     display: flex;
+    flex-wrap: nowrap;
     gap: 6px;
     overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    touch-action: pan-x;
+    scroll-snap-type: x proximity;
+    scrollbar-width: none;
     padding-bottom: 8px;
     margin-bottom: 18px;
     border-bottom: 1px solid var(--border-subtle);
+}
+.drawer-tabs::-webkit-scrollbar {
+    display: none;
 }
 .drawer-tab {
     background: transparent;
@@ -1904,13 +1912,15 @@ dialog.match-dialog::backdrop {
     color: var(--text-muted);
     font-size: 12px;
     font-weight: 600;
-    padding: 8px 12px;
+    padding: 8px 14px;
+    min-height: 36px;
     cursor: pointer;
     white-space: nowrap;
     touch-action: manipulation;
+    scroll-snap-align: start;
     -webkit-tap-highlight-color: transparent;
     user-select: none;
-    flex-shrink: 0;
+    flex: 0 0 auto;
     transition: color 0.12s ease, border-color 0.12s ease;
 }
 .drawer-tab.active, .drawer-tab:hover {

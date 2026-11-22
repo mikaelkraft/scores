@@ -1891,11 +1891,19 @@ dialog.match-dialog::backdrop {
 }
 .drawer-tabs {
     display: flex;
+    flex-wrap: nowrap;
     gap: 6px;
     overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    touch-action: pan-x;
+    scroll-snap-type: x proximity;
+    scrollbar-width: none;
     padding-bottom: 8px;
     margin-bottom: 18px;
     border-bottom: 1px solid var(--border-subtle);
+}
+.drawer-tabs::-webkit-scrollbar {
+    display: none;
 }
 .drawer-tab {
     background: transparent;
@@ -1904,13 +1912,15 @@ dialog.match-dialog::backdrop {
     color: var(--text-muted);
     font-size: 12px;
     font-weight: 600;
-    padding: 8px 12px;
+    padding: 8px 14px;
+    min-height: 36px;
     cursor: pointer;
     white-space: nowrap;
     touch-action: manipulation;
+    scroll-snap-align: start;
     -webkit-tap-highlight-color: transparent;
     user-select: none;
-    flex-shrink: 0;
+    flex: 0 0 auto;
     transition: color 0.12s ease, border-color 0.12s ease;
 }
 .drawer-tab.active, .drawer-tab:hover {
@@ -3882,5 +3892,116 @@ body.theme-light .footer-logo-img,
 }
 
 
-.brand-logo-img:not([hidden]){display:block!important;height:36px;width:auto;max-width:200px;object-fit:contain;}
-.brand-text[hidden],#header-brand-fallback[hidden]{display:none!important;}
+/* Branding: uploaded logo replaces text mark site-wide */
+.brand {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    text-decoration: none;
+}
+.brand-logo-img:not([hidden]) {
+    display: block !important;
+    height: 36px;
+    width: auto;
+    max-width: 200px;
+    object-fit: contain;
+}
+.brand-text[hidden],
+#header-brand-fallback[hidden] {
+    display: none !important;
+}
+.site-header .nav.shell {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    flex-wrap: wrap;
+}
+
+.shell-mobile-nav .mobile-extra-link {
+    display: block;
+    padding: 12px 14px;
+    border-radius: 10px;
+    border: 1px solid var(--border-subtle);
+    background: var(--bg-surface-elevated);
+    color: var(--text-main);
+    text-decoration: none;
+    font-size: 14px;
+    font-weight: 600;
+}
+@media (max-width: 900px) {
+    .mobile-hamburger-btn { display: inline-flex !important; align-items: center; justify-content: center; }
+}
+@media (min-width: 901px) {
+    .mobile-hamburger-btn { display: none !important; }
+}
+
+/* Skeleton loaders — fixtures board & match modal */
+.skel-board, .skel-match-modal {
+    padding: 12px 4px 24px;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+}
+.skel-league-card {
+    background: var(--bg-surface-elevated, #f1f5f9);
+    border-radius: 14px;
+    padding: 14px 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+.skel-match-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+.skel-circle {
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    background: linear-gradient(90deg, #e2e8f0 25%, #f8fafc 50%, #e2e8f0 75%);
+    background-size: 200% 100%;
+    animation: skel-shimmer 1.2s ease-in-out infinite;
+    flex-shrink: 0;
+}
+.skel-line {
+    height: 12px;
+    border-radius: 6px;
+    background: linear-gradient(90deg, #e2e8f0 25%, #f8fafc 50%, #e2e8f0 75%);
+    background-size: 200% 100%;
+    animation: skel-shimmer 1.2s ease-in-out infinite;
+    flex: 1;
+}
+.skel-league-title { height: 14px; width: 42%; margin-bottom: 4px; }
+.skel-team { width: 55%; flex: none; }
+.skel-score { width: 28px; flex: none; height: 14px; }
+.skel-wide { width: 88%; height: 14px; }
+.skel-mid { width: 55%; height: 12px; }
+.skel-stats-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+    margin: 8px 0;
+}
+.skel-caption {
+    text-align: center;
+    color: var(--text-muted, #64748b);
+    font-size: 13px;
+    margin: 4px 0 0;
+}
+@keyframes skel-shimmer {
+    0% { background-position: 200% 0; }
+    100% { background-position: -200% 0; }
+}
+[data-theme="dark"] .skel-league-card,
+html:not([data-theme="light"]) .skel-league-card {
+    background: rgba(30, 41, 59, 0.65);
+}
+[data-theme="dark"] .skel-line,
+[data-theme="dark"] .skel-circle,
+html:not([data-theme="light"]) .skel-line,
+html:not([data-theme="light"]) .skel-circle {
+    background: linear-gradient(90deg, #1e293b 25%, #334155 50%, #1e293b 75%);
+    background-size: 200% 100%;
+}

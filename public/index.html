@@ -296,7 +296,21 @@
                     </div>
 
                     <div class="view" id="fixtures-view" role="tabpanel" aria-labelledby="fixtures-tab">
-                        <div class="content-state" id="fixtures-loading" hidden><span class="loader"></span><p>Loading fixtures…</p></div>
+                        <div class="content-state" id="fixtures-loading" hidden>
+                            <div class="skel-board" role="status" aria-label="Loading fixtures">
+                                <div class="skel-league-card" aria-hidden="true">
+                                    <div class="skel-line skel-league-title"></div>
+                                    <div class="skel-match-row"><div class="skel-circle"></div><div class="skel-line skel-team"></div><div class="skel-line skel-score"></div></div>
+                                    <div class="skel-match-row"><div class="skel-circle"></div><div class="skel-line skel-team"></div><div class="skel-line skel-score"></div></div>
+                                    <div class="skel-match-row"><div class="skel-circle"></div><div class="skel-line skel-team"></div><div class="skel-line skel-score"></div></div>
+                                </div>
+                                <div class="skel-league-card" aria-hidden="true">
+                                    <div class="skel-line skel-league-title"></div>
+                                    <div class="skel-match-row"><div class="skel-circle"></div><div class="skel-line skel-team"></div><div class="skel-line skel-score"></div></div>
+                                    <div class="skel-match-row"><div class="skel-circle"></div><div class="skel-line skel-team"></div><div class="skel-line skel-score"></div></div>
+                                </div>
+                            </div>
+                        </div>
                         <div class="content-state" id="fixtures-empty" hidden><span class="empty-icon">⚽</span><p>There's no games today in this competition.<br><small style="color:var(--text-muted); margin-top:6px; display:inline-block;">Tap "Tomorrow" or use the date picker to browse upcoming fixtures, or switch to Standings.</small></p></div>
                         <div class="matches-grid" id="fixtures-list"></div>
                         <button class="tab-btn" id="fixtures-load-more" type="button" style="display:block; margin:24px auto;" hidden>Load more matches</button>

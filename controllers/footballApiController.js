@@ -19,6 +19,7 @@ const {
 } = require('../services/sportScoreService');
 
 const { optionalApiKeyAuth, assertLeagueAccess, getAllowedLeaguesForKey, PLAN_LIMITS, hasFeature, requireFeature, getPlanConfig } = require('../middleware/apiKeyAuth');
+const dailyBoardCache = require('../services/dailyBoardCache');
 
 // On-demand per-date cache for past/future date tabs when MongoDB lacks fixtures for that date
 const onDemandDateCache = new Map();
@@ -959,6 +960,9 @@ async function fetchFreshWorldwideLiveMatches() {
         return new Date(a.date) - new Date(b.date);
     });
     try {
+        dailyBoardCache.patchLiveMatchesInBoard(dailyBoardCache.getWatDateKey(), dedupedLive);
+    } catch (_) {}
+    try {
         const enriched = enrichMatchesLogos(dedupedLive);
         setTimeout(() => preCacheMatchCrests(enriched), 200);
         return enriched;
@@ -1416,6 +1420,41 @@ router.get('/fixtures', optionalApiKeyAuth, async (req, res) => {
     const isQueryingToday = Boolean((req.query.date && parseDateParam(req.query.date) === parseDateParam('today')) || (!req.query.date && !req.query.from && !req.query.to));
     const isLiveFilter = req.query.status === 'live';
     const cacheTtlMs = (isQueryingToday || isLiveFilter) ? 10000 : 120000;
+
+    // Instant render-ready RAM board hit for single-date all-leagues queries (eliminates repeat Atlas M0 roundtrips)
+    const canUseDailyBoard = !req.query.from && !req.query.to && !req.query.team &&
+        (!req.query.league || req.query.league === 'all') &&
+        !isFreePlanRestricted(req.apiKey);
+    const dailyBoardDateKey = req.query.date ? parseDateParam(req.query.date) : dailyBoardCache.getWatDateKey();
+    if (canUseDailyBoard && dailyBoardDateKey) {
+        const ready = dailyBoardCache.getReadyBoard(dailyBoardDateKey, { status: req.query.status || 'all' });
+        if (ready && ready.matches && ready.matches.length > 0) {
+            if (ready.hasLive || isLiveFilter || isQueryingToday) {
+                res.set('Cache-Control', 'no-cache, no-store, must-revalidate');
+                res.set('Pragma', 'no-cache');
+            } else {
+                res.set('Cache-Control', 'public, max-age=30');
+            }
+            const pageNum = Math.max(1, parseInt(req.query.page, 10) || 1);
+            const limitNum = Math.min(2000, Math.max(1, parseInt(req.query.limit, 10) || 500));
+            return res.json({
+                status: 'success',
+                meta: {
+                    totalMatches: ready.matches.length,
+                    count: ready.matches.length,
+                    page: pageNum,
+                    pageSize: limitNum,
+                    totalPages: Math.ceil(ready.matches.length / limitNum) || 1,
+                    filters: { date: req.query.date, from: req.query.from, to: req.query.to, league: req.query.league || 'all', status: req.query.status || 'all', team: req.query.team },
+                    isAdFree: Boolean(req.isAdFree),
+                    cachedBoard: true,
+                    boardGeneratedAt: new Date(ready.generatedAt).toISOString()
+                },
+                matches: ready.matches,
+                fixtures: ready.matches
+            });
+        }
+    }
 
     if (cached && (now - cached.timestamp < cacheTtlMs)) {
         if (cached.hasLive || isLiveFilter || isQueryingToday) {
@@ -2111,6 +2150,11 @@ router.get('/fixtures', optionalApiKeyAuth, async (req, res) => {
         if (fixturesResponseCache.size > FIXTURES_CACHE_MAX_SIZE) {
             const oldestKey = fixturesResponseCache.keys().next().value;
             fixturesResponseCache.delete(oldestKey);
+        }
+
+        // Persist render-ready full-day board snapshot in RAM for instant subsequent visits & kickoff-window tracking
+        if (canUseDailyBoard && (!status || status === 'all') && dedupedMatches.length > 0 && dailyBoardDateKey) {
+            dailyBoardCache.setReadyBoard(dailyBoardDateKey, dedupedMatches);
         }
 
         return res.json(responsePayload);
