@@ -17,7 +17,8 @@ const {
     fetchSportScoreMatchDetail,
     fetchSportScoreTeamRecentMatches,
     incidentsToTimelinePlays,
-    lineupsToRosters
+    lineupsToRosters,
+    statisticsToBoxscore
 } = require('../services/sportScoreService');
 
 const { optionalApiKeyAuth, assertLeagueAccess, getAllowedLeaguesForKey, PLAN_LIMITS, hasFeature, requireFeature, getPlanConfig } = require('../middleware/apiKeyAuth');
@@ -770,7 +771,7 @@ async function fetchFreshWorldwideLiveMatches() {
             const isZeroClock = rawMClock === '0' || rawMClock === "0'" || rawMClock === '00' || rawMClock === '00:00' || rawMClock === 'NS';
             if (m.date) {
                 const diff = Date.now() - new Date(m.date).getTime();
-                if (diff > 135 * 60 * 1000) {
+                if (diff > 160 * 60 * 1000) {
                     SoccerMatch.updateOne({ _id: m._id }, { $set: { 'status.state': 'post', 'status.completed': true, 'status.clock': 'FT', 'status.description': 'Full Time' } }).catch(() => {});
                     continue;
                 }
@@ -1474,26 +1475,37 @@ router.get('/fixtures', optionalApiKeyAuth, async (req, res) => {
                 }
                 for (let i = 0; i < cached.body.matches.length; i++) {
                     const m = cached.body.matches[i];
-                    if (m.status?.completed || m.status?.state === 'post') continue;
                     const mid = String(m.source?.event_id || m.id || m._id || '');
                     const h = normalizeTeamName(m.home?.name || m.home?.displayName || '');
                     const a = normalizeTeamName(m.away?.name || m.away?.displayName || '');
                     const lm = liveMap.get(mid) || liveMap.get(`${h}_vs_${a}`);
-                    if (lm) {
-                        const existingClock = m.status?.clock || m.status?.detail;
-                        const incomingClock = lm.status?.clock || lm.status?.detail;
-                        const bestClock = isConcreteClock(incomingClock) ? incomingClock : (isConcreteClock(existingClock) ? existingClock : (incomingClock || 'Live'));
-                        m.status = {
-                            ...m.status,
-                            ...lm.status,
-                            clock: bestClock,
-                            detail: bestClock,
-                            displayClock: bestClock,
-                            shortDetail: bestClock
-                        };
-                        m.home = lm.home;
-                        m.away = lm.away;
+                    if (!lm) continue;
+                    if (m.status?.completed || m.status?.state === 'post') {
+                        const kickoffTs = m.date ? Date.parse(m.date) : NaN;
+                        const elapsedMs = Number.isFinite(kickoffTs) ? (Date.now() - kickoffTs) : Infinity;
+                        const isPostp = /^(Postp|Canc|Abd)/i.test(String(m.status?.detail || m.status?.clock || ''));
+                        const mGoals = (Number(m.home?.score) || 0) + (Number(m.away?.score) || 0);
+                        const lmGoals = (Number(lm.home?.score) || 0) + (Number(lm.away?.score) || 0);
+                        const hasConcreteLive = Boolean(lm.status?.isLive || isConcreteClock(lm.status?.clock || lm.status?.detail));
+                        const canRevive = Boolean(m._autoFinalized)
+                            || (!isPostp && elapsedMs >= 0 && elapsedMs < 102 * 60 * 1000 && hasConcreteLive)
+                            || (!isPostp && elapsedMs >= 0 && elapsedMs < 155 * 60 * 1000 && lmGoals > mGoals);
+                        if (!canRevive) continue;
                     }
+                    const existingClock = m.status?.clock || m.status?.detail;
+                    const incomingClock = lm.status?.clock || lm.status?.detail;
+                    const bestClock = isConcreteClock(incomingClock) ? incomingClock : (isConcreteClock(existingClock) ? existingClock : (incomingClock || 'Live'));
+                    m._autoFinalized = false;
+                    m.status = {
+                        ...m.status,
+                        ...lm.status,
+                        clock: bestClock,
+                        detail: bestClock,
+                        displayClock: bestClock,
+                        shortDetail: bestClock
+                    };
+                    m.home = lm.home;
+                    m.away = lm.away;
                 }
             }
         } else {
@@ -2192,6 +2204,413 @@ router.get('/fixtures', optionalApiKeyAuth, async (req, res) => {
  * Supplies head-to-head records, last-5 form guide, goals averages,
  * league standing comparison, and pre-match odds in one high-speed payload.
  */
+/**
+ * Compute authentic attacking pressure index (0-100) strictly from real in-game telemetry.
+ * Returns null if no real attacking metrics exist (never fabricates from scorelines).
+ */
+function computeAttackingPressureIndex(stats) {
+    if (!stats || typeof stats !== 'object') return null;
+    const num = (v) => {
+        if (v === null || v === undefined || v === '') return null;
+        const n = Number(String(v).replace('%', '').trim());
+        return Number.isFinite(n) ? n : null;
+    };
+    const shotsOn = num(stats.shotsOnTarget);
+    const totalShots = num(stats.totalShots);
+    const corners = num(stats.wonCorners);
+    const xg = num(stats.expectedGoals);
+    const bigChances = num(stats.bigChances);
+    const dangerousAttacks = num(stats.dangerousAttacks);
+    const poss = num(stats.possessionPct);
+
+    if (shotsOn == null && totalShots == null && corners == null && xg == null && dangerousAttacks == null && poss == null) {
+        return null;
+    }
+
+    const shotsOff = totalShots != null && shotsOn != null ? Math.max(0, totalShots - shotsOn) : (num(stats.shotsOffTarget) || 0);
+    const raw =
+        (shotsOn ?? 0) * 6.5 +
+        shotsOff * 2.2 +
+        (corners ?? 0) * 2.8 +
+        (xg ?? 0) * 18.0 +
+        (bigChances ?? 0) * 8.0 +
+        (dangerousAttacks ?? 0) * 0.45 +
+        (poss ?? 0) * 0.25;
+
+    return Number(Math.min(100, Math.max(0, raw)).toFixed(1));
+}
+
+function extractBoxscoreStatsMap(boxscore, side) {
+    const out = {};
+    if (!boxscore?.teams || !Array.isArray(boxscore.teams)) return out;
+    const teamObj = boxscore.teams.find(t =>
+        t.homeAway === side || t.id === side || (side === 'home' ? t.displayOrder === 1 : t.displayOrder === 2)
+    ) || (side === 'home' ? boxscore.teams[0] : boxscore.teams[1]);
+    if (!Array.isArray(teamObj?.statistics)) return out;
+    for (const s of teamObj.statistics) {
+        if (!s || !s.name) continue;
+        let val = Number(s.value);
+        if (!Number.isFinite(val)) {
+            val = parseFloat(String(s.displayValue || '').replace('%', '').trim());
+        }
+        if (Number.isFinite(val)) {
+            const key = s.name === 'foulsCommited' ? 'foulsCommitted' : s.name;
+            out[key] = val;
+        }
+    }
+    return out;
+}
+
+function parseLiveClockMinute(clockStr) {
+    const raw = String(clockStr || '').trim().toUpperCase();
+    if (!raw) return 0;
+    if (raw === 'HT' || raw === 'HALF TIME') return 45;
+    if (raw === 'FT' || raw === 'FINAL') return 90;
+    const m = raw.match(/(\d+)/);
+    return m ? Math.min(120, parseInt(m[1], 10)) : 0;
+}
+
+/**
+ * Multi-signal, live-aware Norra AI probability & telemetry quality model.
+ * Combines form PPG, goal differential, standings, H2H, odds, and LIVE in-play score/clock/stats.
+ */
+function computeEnrichedPredictionModel({
+    homeAnalytics = {},
+    awayAnalytics = {},
+    homeStanding = null,
+    awayStanding = null,
+    h2h = {},
+    matchStatus = {},
+    liveScore = null,
+    liveStats = null,
+    homeName = 'Home',
+    awayName = 'Away',
+    odds = [],
+    providersUsed = []
+} = {}) {
+    const hMatches = Number(homeAnalytics.matchesAnalyzed) || 0;
+    const aMatches = Number(awayAnalytics.matchesAnalyzed) || 0;
+    const hFormWeight = Math.min(1, hMatches / 5);
+    const aFormWeight = Math.min(1, aMatches / 5);
+
+    const hPpg = homeAnalytics.pointsPerGame != null ? Number(homeAnalytics.pointsPerGame) : ((Number(homeAnalytics.winRate) || 0) * 0.03);
+    const aPpg = awayAnalytics.pointsPerGame != null ? Number(awayAnalytics.pointsPerGame) : ((Number(awayAnalytics.winRate) || 0) * 0.03);
+    const hGdAvg = (Number(homeAnalytics.goalsScoredAvg) || 0) - (Number(homeAnalytics.goalsConcededAvg) || 0);
+    const aGdAvg = (Number(awayAnalytics.goalsScoredAvg) || 0) - (Number(awayAnalytics.goalsConcededAvg) || 0);
+
+    // Pre-match strength components (balanced baseline of 28 so cold-start matches stay neutral instead of extreme 1X)
+    const hFormScore = (hFormWeight * (hPpg * 14 + hGdAvg * 5)) + ((1 - hFormWeight) * 18);
+    const aFormScore = (aFormWeight * (aPpg * 14 + aGdAvg * 5)) + ((1 - aFormWeight) * 18);
+
+    const hRankScore = homeStanding?.rank ? (22 - Math.min(21, Number(homeStanding.rank))) * 2.2 : 20;
+    const aRankScore = awayStanding?.rank ? (22 - Math.min(21, Number(awayStanding.rank))) * 2.2 : 20;
+
+    const totalH2h = Number(h2h.totalMeetings) || 0;
+    let hH2hBonus = 0;
+    let aH2hBonus = 0;
+    if (totalH2h >= 2) {
+        const h2hWeight = Math.min(1, totalH2h / 6);
+        hH2hBonus = ((Number(h2h.homeWins) || 0) / totalH2h) * 14 * h2hWeight;
+        aH2hBonus = ((Number(h2h.awayWins) || 0) / totalH2h) * 14 * h2hWeight;
+    }
+
+    let homeStrength = Math.max(8, hFormScore + hRankScore + hH2hBonus + 5.5); // Modest home advantage
+    let awayStrength = Math.max(8, aFormScore + aRankScore + aH2hBonus);
+    let drawFactor = 26;
+
+    // Live in-play adjustment when match is currently live (prevents recommending 1X when home team is 0-2 down late!)
+    const isLive = matchStatus?.state === 'in' || Boolean(matchStatus?.isLive);
+    let isLiveAdjusted = false;
+    let liveMinute = 0;
+    let liveGoalsTotal = 0;
+    if (isLive && liveScore && Number.isFinite(Number(liveScore.home)) && Number.isFinite(Number(liveScore.away))) {
+        const hSc = Number(liveScore.home);
+        const aSc = Number(liveScore.away);
+        liveGoalsTotal = hSc + aSc;
+        liveMinute = parseLiveClockMinute(matchStatus.clock || matchStatus.detail);
+        const goalDiff = hSc - aSc;
+        const timeProgress = Math.min(1, Math.max(0.12, liveMinute / 90));
+
+        if (goalDiff !== 0) {
+            isLiveAdjusted = true;
+            const absDiff = Math.abs(goalDiff);
+            // Exponentially strengthen leading side as goal margin and elapsed minutes grow
+            const multiplier = 1 + (absDiff * (1.25 + 4.8 * Math.pow(timeProgress, 1.45)));
+            const trailingDampener = Math.max(0.05, 1 / (1 + absDiff * (0.9 + 3.2 * Math.pow(timeProgress, 1.35))));
+            if (goalDiff > 0) {
+                homeStrength *= multiplier;
+                awayStrength *= trailingDampener;
+            } else {
+                awayStrength *= multiplier;
+                homeStrength *= trailingDampener;
+            }
+            // Draw probability shrinks sharply when 2+ goals separate teams late in match
+            drawFactor *= Math.max(0.06, 1 / (1 + absDiff * (0.85 + 2.6 * Math.pow(timeProgress, 1.4))));
+        } else if (liveMinute >= 55) {
+            isLiveAdjusted = true;
+            // Tied late in the match boosts draw weight
+            drawFactor *= (1 + 0.9 * ((liveMinute - 50) / 40));
+        }
+
+        // Factor in live red cards & attacking pressure / xG when present
+        const hStats = liveStats?.home || {};
+        const aStats = liveStats?.away || {};
+        const hReds = Number(hStats.redCards) || 0;
+        const aReds = Number(aStats.redCards) || 0;
+        if (hReds !== aReds) {
+            isLiveAdjusted = true;
+            if (hReds > aReds) {
+                homeStrength *= Math.pow(0.72, hReds - aReds);
+                awayStrength *= Math.pow(1.22, hReds - aReds);
+            } else {
+                awayStrength *= Math.pow(0.72, aReds - hReds);
+                homeStrength *= Math.pow(1.22, aReds - hReds);
+            }
+        }
+        const hPress = computeAttackingPressureIndex(hStats);
+        const aPress = computeAttackingPressureIndex(aStats);
+        if (hPress != null && aPress != null && (hPress + aPress) > 10) {
+            isLiveAdjusted = true;
+            const pressShareDiff = (hPress - aPress) / (hPress + aPress);
+            homeStrength *= (1 + pressShareDiff * 0.28);
+            awayStrength *= (1 - pressShareDiff * 0.28);
+        }
+    }
+
+    const totalWeight = homeStrength + awayStrength + drawFactor;
+    const homeWinProb = Number(((homeStrength / totalWeight) * 100).toFixed(1));
+    const awayWinProb = Number(((awayStrength / totalWeight) * 100).toFixed(1));
+    const drawProb = Number(Math.max(0, 100 - homeWinProb - awayWinProb).toFixed(1));
+
+    // Expected goals & scoring markets (live-aware Poisson remaining-goal probabilities)
+    const hasGoalAvgs = (hMatches > 0 || aMatches > 0);
+    const preMatchHomeXg = hasGoalAvgs
+        ? Number((((Number(homeAnalytics.goalsScoredAvg) || 1.2) + (Number(awayAnalytics.goalsConcededAvg) || 1.2)) / 2).toFixed(2))
+        : (h2h.averageGoalsPerMatch > 0 ? Number((Number(h2h.averageGoalsPerMatch) * 0.54).toFixed(2)) : 1.32);
+    const preMatchAwayXg = hasGoalAvgs
+        ? Number((((Number(awayAnalytics.goalsScoredAvg) || 1.0) + (Number(homeAnalytics.goalsConcededAvg) || 1.1)) / 2).toFixed(2))
+        : (h2h.averageGoalsPerMatch > 0 ? Number((Number(h2h.averageGoalsPerMatch) * 0.46).toFixed(2)) : 1.13);
+    const preMatchXg = Number((preMatchHomeXg + preMatchAwayXg).toFixed(2));
+    const remainingFraction = isLive ? Math.max(0.04, (90 - Math.min(89, liveMinute)) / 90) : 1;
+    const remTotalXg = Math.max(0.04, preMatchXg * remainingFraction);
+    const remHomeXg = Math.max(0.02, preMatchHomeXg * remainingFraction);
+    const remAwayXg = Math.max(0.02, preMatchAwayXg * remainingFraction);
+    const expectedGoals = isLive
+        ? Number((liveGoalsTotal + preMatchXg * remainingFraction).toFixed(2))
+        : preMatchXg;
+
+    const bttsAlreadyHit = isLive && liveScore && Number(liveScore.home) > 0 && Number(liveScore.away) > 0;
+    let bttsProbability;
+    if (bttsAlreadyHit) {
+        bttsProbability = 99;
+    } else if (isLive && liveScore && Number.isFinite(Number(liveScore.home)) && Number.isFinite(Number(liveScore.away))) {
+        const hSc = Number(liveScore.home);
+        const aSc = Number(liveScore.away);
+        const pHomeScores = 1 - Math.exp(-remHomeXg);
+        const pAwayScores = 1 - Math.exp(-remAwayXg);
+        let pBtts;
+        if (hSc === 0 && aSc > 0) pBtts = pHomeScores;
+        else if (aSc === 0 && hSc > 0) pBtts = pAwayScores;
+        else pBtts = pHomeScores * pAwayScores;
+        bttsProbability = Math.min(88, Math.max(2, Math.round(pBtts * 100)));
+    } else {
+        const hBttsComponent = (Number(homeAnalytics.bttsRate) || 0) > 0 ? (Number(homeAnalytics.bttsRate) * 0.35) : ((Number(homeAnalytics.goalsScoredAvg) || 0) > 0.95 ? 28 : 16);
+        const aBttsComponent = (Number(awayAnalytics.bttsRate) || 0) > 0 ? (Number(awayAnalytics.bttsRate) * 0.35) : ((Number(awayAnalytics.goalsScoredAvg) || 0) > 0.85 ? 28 : 16);
+        const h2hBttsComponent = totalH2h > 0 ? ((Number(h2h.bttsPercentage) || 0) * 0.3) : 18;
+        bttsProbability = Math.min(88, Math.max(18, Math.round(hBttsComponent + aBttsComponent + h2hBttsComponent)));
+    }
+
+    const over25AlreadyHit = isLive && liveGoalsTotal >= 3;
+    let over25Probability;
+    if (over25AlreadyHit) {
+        over25Probability = 99;
+    } else if (isLive && liveScore && Number.isFinite(Number(liveScore.home)) && Number.isFinite(Number(liveScore.away))) {
+        const needed = Math.max(1, 3 - liveGoalsTotal);
+        let pOver25;
+        if (needed === 1) pOver25 = 1 - Math.exp(-remTotalXg);
+        else if (needed === 2) pOver25 = 1 - Math.exp(-remTotalXg) * (1 + remTotalXg);
+        else pOver25 = 1 - Math.exp(-remTotalXg) * (1 + remTotalXg + (remTotalXg * remTotalXg) / 2);
+        over25Probability = Math.min(92, Math.max(2, Math.round(pOver25 * 100)));
+    } else {
+        over25Probability = Math.min(92, Math.max(12, Math.round(expectedGoals * 24)));
+    }
+
+    // Telemetry quality & signal richness score (0-100) for Norra AI model gating
+    const hStatKeys = Object.keys(liveStats?.home || {}).length;
+    const aStatKeys = Object.keys(liveStats?.away || {}).length;
+    const statMetricsCount = Math.max(hStatKeys, aStatKeys);
+    const hasStandings = Boolean(homeStanding || awayStanding);
+    const hasHomeForm = hMatches >= 3;
+    const hasAwayForm = aMatches >= 3;
+    const hasH2H = totalH2h >= 2;
+    const hasInPlayStats = statMetricsCount >= 4;
+    const hasOdds = Array.isArray(odds) && odds.length > 0;
+
+    let qualityScore = 15; // Base fixture metadata
+    if (hasHomeForm) qualityScore += 20;
+    else if (hMatches > 0) qualityScore += 8;
+    if (hasAwayForm) qualityScore += 20;
+    else if (aMatches > 0) qualityScore += 8;
+    if (hasStandings) qualityScore += 15;
+    if (hasH2H) qualityScore += 15;
+    if (hasInPlayStats) qualityScore += 15;
+    if (hasOdds) qualityScore += 5;
+    qualityScore = Math.min(100, qualityScore);
+
+    const qualityTier = qualityScore >= 75 ? 'rich' : (qualityScore >= 45 ? 'moderate' : 'limited');
+    const maxProb = Math.max(homeWinProb, awayWinProb, drawProb);
+    const confidenceRating = (qualityTier === 'limited' && !isLiveAdjusted)
+        ? 'Low Data'
+        : (maxProb > 60 && (qualityScore >= 55 || isLiveAdjusted) ? 'High' : (maxProb > 44 ? 'Moderate' : 'Balanced'));
+
+    return {
+        norraAiPredictionHints: {
+            homeWinProb: homeWinProb,
+            drawProb: drawProb,
+            awayWinProb: awayWinProb,
+            expectedGoals: expectedGoals,
+            bttsRecommendation: bttsProbability >= 52 ? 'Yes' : 'No',
+            bttsProbability: bttsProbability,
+            over25Probability: over25Probability,
+            under25Probability: 100 - over25Probability,
+            doubleChance: {
+                '1X': Number((homeWinProb + drawProb).toFixed(1)),
+                '12': Number((homeWinProb + awayWinProb).toFixed(1)),
+                'X2': Number((drawProb + awayWinProb).toFixed(1))
+            },
+            firstTeamToScore: (homeWinProb >= awayWinProb + 12)
+                ? homeName
+                : ((awayWinProb >= homeWinProb + 12) ? awayName : 'Balanced'),
+            confidenceRating: confidenceRating,
+            isLiveAdjusted: isLiveAdjusted
+        },
+        telemetryQuality: {
+            score: qualityScore,
+            tier: qualityTier,
+            hasStandings,
+            hasHomeForm,
+            hasAwayForm,
+            hasH2H,
+            hasInPlayStats,
+            hasOdds,
+            statMetricsCount,
+            providersUsed: Array.from(new Set(providersUsed.filter(Boolean)))
+        }
+    };
+}
+
+/**
+ * Recompute full team analytics (PPG, goals averages, BTTS/Over rates, clean sheets, streak, venue splits)
+ * from a formatted recent-matches array (e.g. ESPN lastFiveGames) so downstream prediction models and UI
+ * never receive stale 0 PPG / 0.0 goals averages when ESPN enriches team form.
+ */
+function recomputeAnalyticsFromFormattedRecent(formattedList, baseAnalytics = {}) {
+    if (!Array.isArray(formattedList) || formattedList.length === 0) return baseAnalytics;
+
+    let wins = 0;
+    let draws = 0;
+    let losses = 0;
+    let scored = 0;
+    let conceded = 0;
+    let scoredCount = 0;
+    let cleanSheets = 0;
+    let failedToScore = 0;
+    let bttsCount = 0;
+    let over15Count = 0;
+    let over25Count = 0;
+    const homeSplit = { played: 0, wins: 0, draws: 0, losses: 0, scored: 0, conceded: 0, scoredCount: 0 };
+    const awaySplit = { played: 0, wins: 0, draws: 0, losses: 0, scored: 0, conceded: 0, scoredCount: 0 };
+    const formGuide = [];
+
+    for (const item of formattedList) {
+        const resChar = String(item.result || 'D').toUpperCase();
+        const result = (resChar === 'W' || resChar === 'L' || resChar === 'D') ? resChar : 'D';
+        formGuide.push(result);
+        const isAway = item.venue === 'Away' || item.atVs === '@';
+        const split = isAway ? awaySplit : homeSplit;
+        split.played++;
+
+        if (result === 'W') { wins++; split.wins++; }
+        else if (result === 'L') { losses++; split.losses++; }
+        else { draws++; split.draws++; }
+
+        const scoreMatch = String(item.score || '').match(/(\d+)\s*[-:]\s*(\d+)/);
+        if (scoreMatch) {
+            const s1 = parseInt(scoreMatch[1], 10);
+            const s2 = parseInt(scoreMatch[2], 10);
+            let teamScore = s1;
+            let oppScore = s2;
+            if (result === 'W') {
+                teamScore = Math.max(s1, s2);
+                oppScore = Math.min(s1, s2);
+            } else if (result === 'L') {
+                teamScore = Math.min(s1, s2);
+                oppScore = Math.max(s1, s2);
+            }
+            scored += teamScore;
+            conceded += oppScore;
+            scoredCount++;
+            split.scored += teamScore;
+            split.conceded += oppScore;
+            split.scoredCount++;
+            if (oppScore === 0) cleanSheets++;
+            if (teamScore === 0) failedToScore++;
+            if (teamScore > 0 && oppScore > 0) bttsCount++;
+            if ((teamScore + oppScore) >= 2) over15Count++;
+            if ((teamScore + oppScore) >= 3) over25Count++;
+        }
+    }
+
+    const count = formattedList.length;
+    const points = (wins * 3) + draws;
+    const goalsScoredAvg = scoredCount > 0 ? Number((scored / scoredCount).toFixed(2)) : (baseAnalytics.goalsScoredAvg ?? 0);
+    const goalsConcededAvg = scoredCount > 0 ? Number((conceded / scoredCount).toFixed(2)) : (baseAnalytics.goalsConcededAvg ?? 0);
+    const finalizeSplit = (s) => ({
+        played: s.played,
+        wins: s.wins,
+        draws: s.draws,
+        losses: s.losses,
+        pointsPerGame: s.played > 0 ? Number((((s.wins * 3) + s.draws) / s.played).toFixed(2)) : 0,
+        goalsScoredAvg: s.scoredCount > 0 ? Number((s.scored / s.scoredCount).toFixed(2)) : 0,
+        goalsConcededAvg: s.scoredCount > 0 ? Number((s.conceded / s.scoredCount).toFixed(2)) : 0
+    });
+
+    let recentStreak = '';
+    if (formGuide.length > 0) {
+        const first = formGuide[0];
+        let len = 0;
+        for (const r of formGuide) {
+            if (r === first) len++;
+            else break;
+        }
+        recentStreak = `${first}${len}`;
+    }
+
+    return {
+        ...baseAnalytics,
+        recentMatches: formattedList,
+        matchesAnalyzed: count,
+        formGuide,
+        formString: formGuide.join('-'),
+        wins,
+        draws,
+        losses,
+        pointsPerGame: Number((points / count).toFixed(2)),
+        winRate: Number(((wins / count) * 100).toFixed(1)),
+        goalsScoredAvg,
+        goalsConcededAvg,
+        goalDiffAvg: Number((goalsScoredAvg - goalsConcededAvg).toFixed(2)),
+        cleanSheetRate: scoredCount > 0 ? Number(((cleanSheets / scoredCount) * 100).toFixed(1)) : (baseAnalytics.cleanSheetRate ?? 0),
+        failedToScoreRate: scoredCount > 0 ? Number(((failedToScore / scoredCount) * 100).toFixed(1)) : (baseAnalytics.failedToScoreRate ?? 0),
+        bttsRate: scoredCount > 0 ? Number(((bttsCount / scoredCount) * 100).toFixed(1)) : (baseAnalytics.bttsRate ?? 0),
+        over15Rate: scoredCount > 0 ? Number(((over15Count / scoredCount) * 100).toFixed(1)) : (baseAnalytics.over15Rate ?? 0),
+        over25Rate: scoredCount > 0 ? Number(((over25Count / scoredCount) * 100).toFixed(1)) : (baseAnalytics.over25Rate ?? 0),
+        recentStreak,
+        homeVenueSplit: finalizeSplit(homeSplit),
+        awayVenueSplit: finalizeSplit(awaySplit)
+    };
+}
+
 router.get('/predictions-context/:eventId', optionalApiKeyAuth, async (req, res) => {
     if (!requireFeature(req, res, 'predictions', 'Predictions context')) return;
     try {
@@ -2244,6 +2663,45 @@ router.get('/predictions-context/:eventId', optionalApiKeyAuth, async (req, res)
 
         if (!match) {
             return res.status(404).json({ error: 'Match not found for ID: ' + eventId });
+        }
+
+        // Overlay freshest live in-play score/clock from memory cache so Norra AI never receives stale DB 0-0 / pre state
+        if (Array.isArray(liveFeedMemoryCache?.matches) && liveFeedMemoryCache.matches.length > 0) {
+            const mId = String(match.source?.event_id || eventId);
+            const mLsId = String(match.source?.livescore_id || '');
+            const mH = normalizeTeamName(match.home?.display_name || match.home?.name || '');
+            const mA = normalizeTeamName(match.away?.display_name || match.away?.name || '');
+            const liveHit = liveFeedMemoryCache.matches.find(lm => {
+                const lid = String(lm.id || lm.source?.event_id || '');
+                const lls = String(lm.source?.livescore_id || '');
+                if ((lid && (lid === mId || (mLsId && lid === mLsId))) || (lls && (lls === mId || (mLsId && lls === mLsId)))) return true;
+                if (mH && mA) {
+                    const lh = normalizeTeamName(lm.home?.displayName || lm.home?.name || '');
+                    const la = normalizeTeamName(lm.away?.displayName || lm.away?.name || '');
+                    return lh === mH && la === mA;
+                }
+                return false;
+            });
+            if (liveHit && (liveHit.status?.isLive || liveHit.status?.state === 'in')) {
+                match = {
+                    ...match,
+                    status: {
+                        ...(match.status || {}),
+                        ...(liveHit.status || {}),
+                        state: 'in',
+                        isLive: true,
+                        completed: false
+                    },
+                    home: {
+                        ...(match.home || {}),
+                        score: liveHit.home?.score ?? match.home?.score
+                    },
+                    away: {
+                        ...(match.away || {}),
+                        score: liveHit.away?.score ?? match.away?.score
+                    }
+                };
+            }
         }
 
         const targetEspnId = await resolveMatchEspnId(match, eventId);
@@ -2772,7 +3230,7 @@ router.get('/predictions-context/:eventId', optionalApiKeyAuth, async (req, res)
             return result;
         }
 
-        // Process team form guide helper
+        // Process team form guide helper (enriched with PPG, BTTS, Over 2.5, FTS, streak & Home/Away splits)
         function extractTeamForm(matchesList, teamId, targetTeamName) {
             let wins = 0;
             let losses = 0;
@@ -2780,6 +3238,12 @@ router.get('/predictions-context/:eventId', optionalApiKeyAuth, async (req, res)
             let scored = 0;
             let conceded = 0;
             let cleanSheets = 0;
+            let failedToScore = 0;
+            let bttsCount = 0;
+            let over15Count = 0;
+            let over25Count = 0;
+            const homeSplit = { played: 0, wins: 0, draws: 0, losses: 0, scored: 0, conceded: 0 };
+            const awaySplit = { played: 0, wins: 0, draws: 0, losses: 0, scored: 0, conceded: 0 };
             const formGuide = [];
 
             const dedupedEntries = deduplicateRecentMatches(matchesList, teamId, targetTeamName);
@@ -2790,16 +3254,28 @@ router.get('/predictions-context/:eventId', optionalApiKeyAuth, async (req, res)
                 scored += teamScore;
                 conceded += oppScore;
                 if (oppScore === 0) cleanSheets++;
+                if (teamScore === 0) failedToScore++;
+                if (teamScore > 0 && oppScore > 0) bttsCount++;
+                if ((teamScore + oppScore) >= 2) over15Count++;
+                if ((teamScore + oppScore) >= 3) over25Count++;
+
+                const split = isHome ? homeSplit : awaySplit;
+                split.played++;
+                split.scored += teamScore;
+                split.conceded += oppScore;
 
                 let result = 'D';
                 if (teamScore > oppScore) {
                     result = 'W';
                     wins++;
+                    split.wins++;
                 } else if (teamScore < oppScore) {
                     result = 'L';
                     losses++;
+                    split.losses++;
                 } else {
                     draws++;
+                    split.draws++;
                 }
                 formGuide.push(result);
 
@@ -2814,6 +3290,29 @@ router.get('/predictions-context/:eventId', optionalApiKeyAuth, async (req, res)
             });
 
             const count = formattedRecent.length;
+            const points = (wins * 3) + draws;
+            const goalsScoredAvg = count > 0 ? Number((scored / count).toFixed(2)) : 0;
+            const goalsConcededAvg = count > 0 ? Number((conceded / count).toFixed(2)) : 0;
+            const finalizeSplit = (s) => ({
+                played: s.played,
+                wins: s.wins,
+                draws: s.draws,
+                losses: s.losses,
+                pointsPerGame: s.played > 0 ? Number((((s.wins * 3) + s.draws) / s.played).toFixed(2)) : 0,
+                goalsScoredAvg: s.played > 0 ? Number((s.scored / s.played).toFixed(2)) : 0,
+                goalsConcededAvg: s.played > 0 ? Number((s.conceded / s.played).toFixed(2)) : 0
+            });
+            let recentStreak = '';
+            if (formGuide.length > 0) {
+                const first = formGuide[0];
+                let len = 0;
+                for (const r of formGuide) {
+                    if (r === first) len++;
+                    else break;
+                }
+                recentStreak = `${first}${len}`;
+            }
+
             return {
                 formString: formGuide.join('-'),
                 formGuide,
@@ -2821,16 +3320,28 @@ router.get('/predictions-context/:eventId', optionalApiKeyAuth, async (req, res)
                 wins,
                 draws,
                 losses,
+                pointsPerGame: count > 0 ? Number((points / count).toFixed(2)) : 0,
                 winRate: count > 0 ? Number(((wins / count) * 100).toFixed(1)) : 0,
-                goalsScoredAvg: count > 0 ? Number((scored / count).toFixed(2)) : 0,
-                goalsConcededAvg: count > 0 ? Number((conceded / count).toFixed(2)) : 0,
+                goalsScoredAvg,
+                goalsConcededAvg,
+                goalDiffAvg: Number((goalsScoredAvg - goalsConcededAvg).toFixed(2)),
                 cleanSheetRate: count > 0 ? Number(((cleanSheets / count) * 100).toFixed(1)) : 0,
+                failedToScoreRate: count > 0 ? Number(((failedToScore / count) * 100).toFixed(1)) : 0,
+                bttsRate: count > 0 ? Number(((bttsCount / count) * 100).toFixed(1)) : 0,
+                over15Rate: count > 0 ? Number(((over15Count / count) * 100).toFixed(1)) : 0,
+                over25Rate: count > 0 ? Number(((over25Count / count) * 100).toFixed(1)) : 0,
+                recentStreak,
+                homeVenueSplit: finalizeSplit(homeSplit),
+                awayVenueSplit: finalizeSplit(awaySplit),
                 recentMatches: formattedRecent
             };
         }
 
-        const homeAnalytics = extractTeamForm(homeRecentMatches, homeId, hName);
-        const awayAnalytics = extractTeamForm(awayRecentMatches, awayId, aName);
+        let homeAnalytics = extractTeamForm(homeRecentMatches, homeId, hName);
+        let awayAnalytics = extractTeamForm(awayRecentMatches, awayId, aName);
+        const providersUsed = [];
+        if (match.source?.provider) providersUsed.push(match.source.provider);
+        if (espnSummary) providersUsed.push('espn');
 
         // Enrich team form with ESPN lastFiveGames if available
         if (Array.isArray(espnSummary?.lastFiveGames) && espnSummary.lastFiveGames.length >= 2) {
@@ -2883,14 +3394,9 @@ router.get('/predictions-context/:eventId', optionalApiKeyAuth, async (req, res)
                     result: ev.gameResult || 'D',
                     competition: ev.leagueName || ev.competitionName || ''
                 }));
-                homeAnalytics.recentMatches = formattedL5;
-                homeAnalytics.matchesAnalyzed = formattedL5.length;
-                homeAnalytics.formGuide = formattedL5.map(e => e.result);
-                homeAnalytics.formString = homeAnalytics.formGuide.join('-');
-                homeAnalytics.wins = formattedL5.filter(e => e.result === 'W').length;
-                homeAnalytics.draws = formattedL5.filter(e => e.result === 'D').length;
-                homeAnalytics.losses = formattedL5.filter(e => e.result === 'L').length;
-                homeAnalytics.winRate = Number(((homeAnalytics.wins / formattedL5.length) * 100).toFixed(1));
+                if (formattedL5.length > 0) {
+                    homeAnalytics = recomputeAnalyticsFromFormattedRecent(formattedL5, homeAnalytics);
+                }
             }
 
             if (aL5?.events?.length) {
@@ -2905,34 +3411,68 @@ router.get('/predictions-context/:eventId', optionalApiKeyAuth, async (req, res)
                     result: ev.gameResult || 'D',
                     competition: ev.leagueName || ev.competitionName || ''
                 }));
-                awayAnalytics.recentMatches = formattedL5;
-                awayAnalytics.matchesAnalyzed = formattedL5.length;
-                awayAnalytics.formGuide = formattedL5.map(e => e.result);
-                awayAnalytics.formString = awayAnalytics.formGuide.join('-');
-                awayAnalytics.wins = formattedL5.filter(e => e.result === 'W').length;
-                awayAnalytics.draws = formattedL5.filter(e => e.result === 'D').length;
-                awayAnalytics.losses = formattedL5.filter(e => e.result === 'L').length;
-                awayAnalytics.winRate = Number(((awayAnalytics.wins / formattedL5.length) * 100).toFixed(1));
+                if (formattedL5.length > 0) {
+                    awayAnalytics = recomputeAnalyticsFromFormattedRecent(formattedL5, awayAnalytics);
+                }
             }
         }
 
+        // Multi-provider recent form enrichment (SportScore) when DB + ESPN yielded fewer than 5 recent matches
+        // Crucial for Turkish Süper Lig, Turkish Cup, African, Asian, South American & domestic cup competitions
+        if ((homeAnalytics.matchesAnalyzed < 5 && hName) || (awayAnalytics.matchesAnalyzed < 5 && aName)) {
+            try {
+                const withTimeout = (p, ms = 3500) => Promise.race([p, new Promise(r => setTimeout(() => r([]), ms))]);
+                const [ssHomeRec, ssAwayRec] = await Promise.all([
+                    (homeAnalytics.matchesAnalyzed < 5 && hName) ? withTimeout(fetchSportScoreTeamRecentMatches(hName)) : Promise.resolve([]),
+                    (awayAnalytics.matchesAnalyzed < 5 && aName) ? withTimeout(fetchSportScoreTeamRecentMatches(aName)) : Promise.resolve([])
+                ]);
+                if (Array.isArray(ssHomeRec) && ssHomeRec.length > 0) {
+                    const mergedHome = [...(homeRecentMatches || []), ...ssHomeRec];
+                    const enrichedH = extractTeamForm(mergedHome, homeId, hName);
+                    if (enrichedH.matchesAnalyzed > homeAnalytics.matchesAnalyzed) {
+                        homeAnalytics = enrichedH;
+                        providersUsed.push('sportscore');
+                    }
+                }
+                if (Array.isArray(ssAwayRec) && ssAwayRec.length > 0) {
+                    const mergedAway = [...(awayRecentMatches || []), ...ssAwayRec];
+                    const enrichedA = extractTeamForm(mergedAway, awayId, aName);
+                    if (enrichedA.matchesAnalyzed > awayAnalytics.matchesAnalyzed) {
+                        awayAnalytics = enrichedA;
+                        providersUsed.push('sportscore');
+                    }
+                }
+            } catch (_) {}
+        }
+
         // Fallback to match document form string if fewer than 3 matches recorded locally
-        if (homeAnalytics.formGuide.length < 3 && match.home?.form) {
-            const formLetters = String(match.home.form).replace(/[^WDLwdl]/g, '').toUpperCase().split('');
-            if (formLetters.length > 0) {
-                homeAnalytics.formGuide = formLetters;
-                homeAnalytics.formString = formLetters.join('-');
-                homeAnalytics.matchesAnalyzed = Math.max(homeAnalytics.matchesAnalyzed, formLetters.length);
+        const applyFormStringFallback = (analytics, rawForm) => {
+            if (analytics.formGuide.length >= 3 || !rawForm) return analytics;
+            const formLetters = String(rawForm).replace(/[^WDLwdl]/g, '').toUpperCase().split('');
+            if (formLetters.length === 0) return analytics;
+            const wins = formLetters.filter(c => c === 'W').length;
+            const draws = formLetters.filter(c => c === 'D').length;
+            const losses = formLetters.filter(c => c === 'L').length;
+            let streakLen = 0;
+            for (const c of formLetters) {
+                if (c === formLetters[0]) streakLen++;
+                else break;
             }
-        }
-        if (awayAnalytics.formGuide.length < 3 && match.away?.form) {
-            const formLetters = String(match.away.form).replace(/[^WDLwdl]/g, '').toUpperCase().split('');
-            if (formLetters.length > 0) {
-                awayAnalytics.formGuide = formLetters;
-                awayAnalytics.formString = formLetters.join('-');
-                awayAnalytics.matchesAnalyzed = Math.max(awayAnalytics.matchesAnalyzed, formLetters.length);
-            }
-        }
+            return {
+                ...analytics,
+                formGuide: formLetters,
+                formString: formLetters.join('-'),
+                matchesAnalyzed: Math.max(analytics.matchesAnalyzed, formLetters.length),
+                wins,
+                draws,
+                losses,
+                pointsPerGame: Number((((wins * 3) + draws) / formLetters.length).toFixed(2)),
+                winRate: Number(((wins / formLetters.length) * 100).toFixed(1)),
+                recentStreak: `${formLetters[0]}${streakLen}`
+            };
+        };
+        homeAnalytics = applyFormStringFallback(homeAnalytics, match.home?.form);
+        awayAnalytics = applyFormStringFallback(awayAnalytics, match.away?.form);
 
         // Standing comparison (matches by source_id first, then flexible team name fallback + already-fetched ESPN standings — ZERO extra polling!)
         let homeStanding = null;
@@ -3004,17 +3544,93 @@ router.get('/predictions-context/:eventId', optionalApiKeyAuth, async (req, res)
             if (!awayStanding) awayStanding = pickFromEspn(aName);
         }
 
-        // Norra AI Baseline Probabilities (Heuristic calculation for seamless model feeding)
-        const homeStrength = (homeAnalytics.winRate * 0.4) + (homeStanding ? (21 - Math.min(20, homeStanding.rank)) * 2.5 : 25) + 10; // Home advantage
-        const awayStrength = (awayAnalytics.winRate * 0.4) + (awayStanding ? (21 - Math.min(20, awayStanding.rank)) * 2.5 : 25);
-        const drawFactor = 28;
-        const totalWeight = homeStrength + awayStrength + drawFactor;
+        // Hydrate multi-provider in-play / full-time match stats (ESPN -> DB -> LiveScore -> SportScore)
+        const isLiveOrPost = match.status?.state === 'in' || match.status?.state === 'post' || Boolean(match.status?.isLive) || Boolean(match.status?.completed);
+        let hydratedHomeStats = match.home?.stats instanceof Map ? Object.fromEntries(match.home.stats) : { ...(match.home?.stats || {}) };
+        let hydratedAwayStats = match.away?.stats instanceof Map ? Object.fromEntries(match.away.stats) : { ...(match.away?.stats || {}) };
 
-        const homeWinPct = Number(((homeStrength / totalWeight) * 100).toFixed(1));
-        const awayWinPct = Number(((awayStrength / totalWeight) * 100).toFixed(1));
-        const drawPct = Number((100 - homeWinPct - awayWinPct).toFixed(1));
+        if (espnSummary?.boxscore?.teams?.length) {
+            const eH = extractBoxscoreStatsMap(espnSummary.boxscore, 'home');
+            const eA = extractBoxscoreStatsMap(espnSummary.boxscore, 'away');
+            if (Object.keys(eH).length >= Object.keys(hydratedHomeStats).length) hydratedHomeStats = { ...hydratedHomeStats, ...eH };
+            if (Object.keys(eA).length >= Object.keys(hydratedAwayStats).length) hydratedAwayStats = { ...hydratedAwayStats, ...eA };
+        }
 
-        const avgGoalsCombined = Number(((homeAnalytics.goalsScoredAvg + awayAnalytics.goalsScoredAvg + homeAnalytics.goalsConcededAvg + awayAnalytics.goalsConcededAvg) / 2).toFixed(2)) || 2.5;
+        if (isLiveOrPost && Object.keys(hydratedHomeStats).length < 4) {
+            try {
+                const { fetchLiveScoreMatchDetails } = require('../services/soccerSyncService');
+                const lsId = match.source?.livescore_id || (String(match.source?.provider || '').toLowerCase() === 'livescore' ? match.source?.event_id : null) || (/^\d{5,8}$/.test(eventId) ? eventId : null);
+                if (lsId) {
+                    const lsDetails = await Promise.race([
+                        fetchLiveScoreMatchDetails(lsId),
+                        new Promise(r => setTimeout(() => r(null), 3000))
+                    ]);
+                    if (lsDetails?.boxscore?.teams?.length) {
+                        hydratedHomeStats = { ...hydratedHomeStats, ...extractBoxscoreStatsMap(lsDetails.boxscore, 'home') };
+                        hydratedAwayStats = { ...hydratedAwayStats, ...extractBoxscoreStatsMap(lsDetails.boxscore, 'away') };
+                        providersUsed.push('livescore');
+                    }
+                }
+            } catch (_) {}
+        }
+
+        if (isLiveOrPost && Object.keys(hydratedHomeStats).length < 4 && hName && aName) {
+            try {
+                const ssMatch = await Promise.race([
+                    fetchSportScoreMatchDetail({ homeName: hName, awayName: aName }),
+                    new Promise(r => setTimeout(() => r(null), 3000))
+                ]);
+                const ssBox = ssMatch ? statisticsToBoxscore(ssMatch) : null;
+                if (ssBox?.teams?.length) {
+                    hydratedHomeStats = { ...hydratedHomeStats, ...extractBoxscoreStatsMap(ssBox, 'home') };
+                    hydratedAwayStats = { ...hydratedAwayStats, ...extractBoxscoreStatsMap(ssBox, 'away') };
+                    providersUsed.push('sportscore');
+                }
+            } catch (_) {}
+        }
+
+        const homePressure = computeAttackingPressureIndex(hydratedHomeStats);
+        const awayPressure = computeAttackingPressureIndex(hydratedAwayStats);
+        const h2hSummaryObj = {
+            totalMeetings: totalLifetimeMeetings,
+            homeWins,
+            awayWins,
+            draws,
+            averageGoalsPerMatch: totalLifetimeMeetings > 0 ? Number((totalGoals / totalLifetimeMeetings).toFixed(2)) : 0,
+            bttsPercentage: totalLifetimeMeetings > 0 ? Number(((bttsCount / totalLifetimeMeetings) * 100).toFixed(1)) : 0,
+            over25Percentage: totalLifetimeMeetings > 0 ? Number(((over25Count / totalLifetimeMeetings) * 100).toFixed(1)) : 0
+        };
+
+        const { norraAiPredictionHints, telemetryQuality } = computeEnrichedPredictionModel({
+            homeAnalytics,
+            awayAnalytics,
+            homeStanding,
+            awayStanding,
+            h2h: h2hSummaryObj,
+            matchStatus: match.status || {},
+            liveScore: isLiveOrPost ? { home: match.home?.score, away: match.away?.score } : null,
+            liveStats: { home: hydratedHomeStats, away: hydratedAwayStats },
+            homeName: match.home?.display_name || match.home?.name || 'Home',
+            awayName: match.away?.display_name || match.away?.name || 'Away',
+            odds: match.odds || [],
+            providersUsed
+        });
+
+        const inPlayTelemetryObj = isLiveOrPost ? {
+            clock: match.status?.clock || match.status?.detail || '',
+            period: match.status?.period || 0,
+            state: match.status?.state || 'in',
+            homeScore: match.home?.score ?? 0,
+            awayScore: match.away?.score ?? 0,
+            homeStats: hydratedHomeStats,
+            awayStats: hydratedAwayStats,
+            attackingPressureHome: homePressure,
+            attackingPressureAway: awayPressure,
+            dominanceLeader: (homePressure != null && awayPressure != null)
+                ? (homePressure > awayPressure + 4 ? 'home' : (awayPressure > homePressure + 4 ? 'away' : 'balanced'))
+                : null,
+            statMetricsCount: Math.max(Object.keys(hydratedHomeStats).length, Object.keys(hydratedAwayStats).length)
+        } : null;
 
         res.set('Cache-Control', 'public, max-age=15');
         return res.json({
@@ -3030,6 +3646,8 @@ router.get('/predictions-context/:eventId', optionalApiKeyAuth, async (req, res)
                 },
                 status: match.status?.state || 'pre',
                 statusDescription: match.status?.description || 'Scheduled',
+                clock: match.status?.clock || match.status?.detail || '',
+                score: isLiveOrPost ? { home: match.home?.score ?? 0, away: match.away?.score ?? 0 } : null,
                 venue: match.venue || null
             },
             teams: {
@@ -3051,49 +3669,19 @@ router.get('/predictions-context/:eventId', optionalApiKeyAuth, async (req, res)
                 }
             },
             h2h: {
-                totalMeetings: totalLifetimeMeetings,
+                ...h2hSummaryObj,
                 neverMetBefore: totalLifetimeMeetings === 0,
-                homeWins,
-                awayWins,
-                draws,
                 seriesSummary,
                 seriesScore,
                 h2hFormHome,
                 h2hFormAway,
-                averageGoalsPerMatch: totalLifetimeMeetings > 0 ? Number((totalGoals / totalLifetimeMeetings).toFixed(2)) : 0,
-                bttsPercentage: totalLifetimeMeetings > 0 ? Number(((bttsCount / totalLifetimeMeetings) * 100).toFixed(1)) : 0,
-                over25Percentage: totalLifetimeMeetings > 0 ? Number(((over25Count / totalLifetimeMeetings) * 100).toFixed(1)) : 0,
                 recentMeetings: recentH2hMeetings,
                 allMeetings: allLifetimeH2h
             },
             odds: match.odds || [],
-            inPlayTelemetry: match.status?.state === 'in' ? {
-                clock: match.status?.clock,
-                period: match.status?.period,
-                homeScore: match.home?.score,
-                awayScore: match.away?.score,
-                homeStats: match.home?.stats || {},
-                awayStats: match.away?.stats || {}
-            } : null,
-            norraAiPredictionHints: {
-                homeWinProb: homeWinPct,
-                drawProb: drawPct,
-                awayWinProb: awayWinPct,
-                expectedGoals: avgGoalsCombined,
-                bttsRecommendation: ((homeAnalytics.goalsScoredAvg > 0.95 && awayAnalytics.goalsScoredAvg > 0.85) || (totalLifetimeMeetings > 0 && (bttsCount / totalLifetimeMeetings) >= 0.5)) ? 'Yes' : 'No',
-                bttsProbability: Math.min(88, Math.max(22, Math.round(((homeAnalytics.goalsScoredAvg > 0.95 ? 30 : 15) + (awayAnalytics.goalsScoredAvg > 0.85 ? 30 : 15) + ((totalLifetimeMeetings > 0 ? (bttsCount / totalLifetimeMeetings) * 35 : 20)))))),
-                over25Probability: Math.min(85, Math.max(18, Math.round(avgGoalsCombined * 24))),
-                under25Probability: 100 - Math.min(85, Math.max(18, Math.round(avgGoalsCombined * 24))),
-                doubleChance: {
-                    '1X': Number((homeWinPct + drawPct).toFixed(1)),
-                    '12': Number((homeWinPct + awayWinPct).toFixed(1)),
-                    'X2': Number((drawPct + awayWinPct).toFixed(1))
-                },
-                firstTeamToScore: (homeWinPct >= awayWinPct + 12)
-                    ? (match.home?.display_name || match.home?.name || 'Home')
-                    : ((awayWinPct >= homeWinPct + 12) ? (match.away?.display_name || match.away?.name || 'Away') : 'Balanced'),
-                confidenceRating: Math.max(homeWinPct, awayWinPct) > 55 ? 'High' : (Math.max(homeWinPct, awayWinPct) > 42 ? 'Moderate' : 'Balanced')
-            }
+            inPlayTelemetry: inPlayTelemetryObj,
+            telemetryQuality,
+            norraAiPredictionHints
         });
     } catch (err) {
         console.error('Error compiling prediction context:', err.message);
@@ -3153,7 +3741,7 @@ router.get(['/training-data', '/analytics/training-data'], optionalApiKeyAuth, a
         if (mongoose.connection && mongoose.connection.readyState === 1) {
             try {
                 matches = await SoccerMatch.find(filter)
-                    .select('source league_slug date scoreboard_date home away status key_events')
+                    .select('source league_slug date scoreboard_date home away status key_events odds venue')
                     .sort({ date: -1 })
                     .limit(limit)
                     .maxTimeMS(6000)
@@ -3162,7 +3750,7 @@ router.get(['/training-data', '/analytics/training-data'], optionalApiKeyAuth, a
                 if (matches.length === 0 && minStats) {
                     delete filter['home.stats'];
                     matches = await SoccerMatch.find(filter)
-                        .select('source league_slug date scoreboard_date home away status key_events')
+                        .select('source league_slug date scoreboard_date home away status key_events odds venue')
                         .sort({ date: -1 })
                         .limit(limit)
                         .maxTimeMS(6000)
@@ -3206,29 +3794,69 @@ router.get(['/training-data', '/analytics/training-data'], optionalApiKeyAuth, a
 
             // Real stats only — never invent possession / shots / corners from scoreline
             const numOrNull = (v) => {
+                if (v === null || v === undefined || v === '') return null;
                 const n = Number(v);
                 return Number.isFinite(n) ? n : null;
             };
-            let hShotsOn = numOrNull(hStats.shotsOnTarget);
-            let aShotsOn = numOrNull(aStats.shotsOnTarget);
-            let hShots = numOrNull(hStats.totalShots);
-            let aShots = numOrNull(aStats.totalShots);
-            let hPoss = numOrNull(hStats.possessionPct);
-            let aPoss = numOrNull(aStats.possessionPct);
-            let hCorners = numOrNull(hStats.wonCorners);
-            let aCorners = numOrNull(aStats.wonCorners);
-            let hFouls = numOrNull(hStats.foulsCommitted ?? hStats.foulsCommited);
-            let aFouls = numOrNull(aStats.foulsCommitted ?? aStats.foulsCommited);
-            let hYellows = numOrNull(hStats.yellowCards) ?? 0;
-            let aYellows = numOrNull(aStats.yellowCards) ?? 0;
-            let hReds = numOrNull(hStats.redCards) ?? redCardEvents.filter(r => r.side === 'home').length;
-            let aReds = numOrNull(aStats.redCards) ?? redCardEvents.filter(r => r.side === 'away').length;
-            let hSaves = numOrNull(hStats.saves);
-            let aSaves = numOrNull(aStats.saves);
+            const diffOrNull = (a, b, decimals = 2) => {
+                if (a == null || b == null) return null;
+                return Number((a - b).toFixed(decimals));
+            };
+            const hShotsOn = numOrNull(hStats.shotsOnTarget);
+            const aShotsOn = numOrNull(aStats.shotsOnTarget);
+            const hShots = numOrNull(hStats.totalShots);
+            const aShots = numOrNull(aStats.totalShots);
+            const hShotsOff = numOrNull(hStats.shotsOffTarget) ?? ((hShots != null && hShotsOn != null) ? Math.max(0, hShots - hShotsOn) : null);
+            const aShotsOff = numOrNull(aStats.shotsOffTarget) ?? ((aShots != null && aShotsOn != null) ? Math.max(0, aShots - aShotsOn) : null);
+            const hBlocked = numOrNull(hStats.blockedShots);
+            const aBlocked = numOrNull(aStats.blockedShots);
+            const hPoss = numOrNull(hStats.possessionPct);
+            const aPoss = numOrNull(aStats.possessionPct);
+            const hCorners = numOrNull(hStats.wonCorners);
+            const aCorners = numOrNull(aStats.wonCorners);
+            const hFouls = numOrNull(hStats.foulsCommitted ?? hStats.foulsCommited);
+            const aFouls = numOrNull(aStats.foulsCommitted ?? aStats.foulsCommited);
+            const hOffsides = numOrNull(hStats.offsides);
+            const aOffsides = numOrNull(aStats.offsides);
+            const hYellows = numOrNull(hStats.yellowCards) ?? 0;
+            const aYellows = numOrNull(aStats.yellowCards) ?? 0;
+            const hReds = numOrNull(hStats.redCards) ?? redCardEvents.filter(r => r.side === 'home').length;
+            const aReds = numOrNull(aStats.redCards) ?? redCardEvents.filter(r => r.side === 'away').length;
+            const hSaves = numOrNull(hStats.saves);
+            const aSaves = numOrNull(aStats.saves);
             const hXg = numOrNull(hStats.expectedGoals);
             const aXg = numOrNull(aStats.expectedGoals);
-            const hPressure = null;
-            const aPressure = null;
+            const hBigChances = numOrNull(hStats.bigChances);
+            const aBigChances = numOrNull(aStats.bigChances);
+            const hAttacks = numOrNull(hStats.attacks);
+            const aAttacks = numOrNull(aStats.attacks);
+            const hDangerousAttacks = numOrNull(hStats.dangerousAttacks);
+            const aDangerousAttacks = numOrNull(aStats.dangerousAttacks);
+            const hPasses = numOrNull(hStats.passes);
+            const aPasses = numOrNull(aStats.passes);
+            const hPassAcc = numOrNull(hStats.passAccuracyPct);
+            const aPassAcc = numOrNull(aStats.passAccuracyPct);
+            const hTackles = numOrNull(hStats.tackles);
+            const aTackles = numOrNull(aStats.tackles);
+            const hInterceptions = numOrNull(hStats.interceptions);
+            const aInterceptions = numOrNull(aStats.interceptions);
+            const hClearances = numOrNull(hStats.clearances);
+            const aClearances = numOrNull(aStats.clearances);
+            const hWoodwork = numOrNull(hStats.hitWoodwork);
+            const aWoodwork = numOrNull(aStats.hitWoodwork);
+
+            const hPressure = computeAttackingPressureIndex(hStats);
+            const aPressure = computeAttackingPressureIndex(aStats);
+
+            const coreSignals = [hPoss, hShots, hShotsOn, hCorners, hFouls, hSaves, hXg, hDangerousAttacks, hPasses];
+            const populatedCore = coreSignals.filter(v => v != null).length;
+            const populatedMetricCount = Math.max(Object.keys(hStats).length, Object.keys(aStats).length);
+
+            const firstHalfGoalsHome = goalEvents.filter(g => g.side === 'home' && g.minute > 0 && g.minute <= 45).length;
+            const firstHalfGoalsAway = goalEvents.filter(g => g.side === 'away' && g.minute > 0 && g.minute <= 45).length;
+            const secondHalfGoalsHome = goalEvents.filter(g => g.side === 'home' && g.minute > 45).length;
+            const secondHalfGoalsAway = goalEvents.filter(g => g.side === 'away' && g.minute > 45).length;
+            const lateGoalsAfter75 = goalEvents.filter(g => g.minute >= 75).length;
 
             return {
                 eventId: m.source?.event_id,
@@ -3236,6 +3864,8 @@ router.get(['/training-data', '/analytics/training-data'], optionalApiKeyAuth, a
                 leagueSlug: m.league_slug,
                 date: m.date,
                 scoreboardDate: m.scoreboard_date,
+                venue: m.venue || null,
+                odds: Array.isArray(m.odds) ? m.odds : [],
                 homeTeam: {
                     id: m.home?.source_id,
                     name: m.home?.name || m.home?.display_name,
@@ -3266,25 +3896,29 @@ router.get(['/training-data', '/analytics/training-data'], optionalApiKeyAuth, a
                 features: {
                     possessionPctHome: hPoss,
                     possessionPctAway: aPoss,
-                    possessionDifferential: hPoss - aPoss,
+                    possessionDifferential: diffOrNull(hPoss, aPoss, 1),
                     shotsHome: hShots,
                     shotsAway: aShots,
-                    shotsDifferential: hShots - aShots,
+                    shotsDifferential: diffOrNull(hShots, aShots, 0),
                     shotsOnTargetHome: hShotsOn,
                     shotsOnTargetAway: aShotsOn,
-                    shotsOnTargetDifferential: hShotsOn - aShotsOn,
-                    shotsOffTargetHome: Math.max(0, hShots - hShotsOn),
-                    shotsOffTargetAway: Math.max(0, aShots - aShotsOn),
-                    shotAccuracyHome: hShots > 0 ? parseFloat((hShotsOn / hShots).toFixed(3)) : 0,
-                    shotAccuracyAway: aShots > 0 ? parseFloat((aShotsOn / aShots).toFixed(3)) : 0,
-                    shotConversionRateHome: hShots > 0 ? parseFloat((hScore / hShots).toFixed(3)) : 0,
-                    shotConversionRateAway: aShots > 0 ? parseFloat((aScore / aShots).toFixed(3)) : 0,
+                    shotsOnTargetDifferential: diffOrNull(hShotsOn, aShotsOn, 0),
+                    shotsOffTargetHome: hShotsOff,
+                    shotsOffTargetAway: aShotsOff,
+                    blockedShotsHome: hBlocked,
+                    blockedShotsAway: aBlocked,
+                    shotAccuracyHome: (hShots != null && hShots > 0 && hShotsOn != null) ? parseFloat((hShotsOn / hShots).toFixed(3)) : null,
+                    shotAccuracyAway: (aShots != null && aShots > 0 && aShotsOn != null) ? parseFloat((aShotsOn / aShots).toFixed(3)) : null,
+                    shotConversionRateHome: (hShots != null && hShots > 0) ? parseFloat((hScore / hShots).toFixed(3)) : null,
+                    shotConversionRateAway: (aShots != null && aShots > 0) ? parseFloat((aScore / aShots).toFixed(3)) : null,
                     cornersHome: hCorners,
                     cornersAway: aCorners,
-                    cornersDifferential: hCorners - aCorners,
+                    cornersDifferential: diffOrNull(hCorners, aCorners, 0),
                     foulsHome: hFouls,
                     foulsAway: aFouls,
-                    foulsDifferential: hFouls - aFouls,
+                    foulsDifferential: diffOrNull(hFouls, aFouls, 0),
+                    offsidesHome: hOffsides,
+                    offsidesAway: aOffsides,
                     yellowCardsHome: hYellows,
                     yellowCardsAway: aYellows,
                     redCardsHome: hReds,
@@ -3295,10 +3929,33 @@ router.get(['/training-data', '/analytics/training-data'], optionalApiKeyAuth, a
                     goalkeeperSavesAway: aSaves,
                     expectedGoalsHome: hXg,
                     expectedGoalsAway: aXg,
-                    expectedGoalsDifferential: parseFloat((hXg - aXg).toFixed(2)),
+                    expectedGoalsDifferential: diffOrNull(hXg, aXg, 2),
+                    bigChancesHome: hBigChances,
+                    bigChancesAway: aBigChances,
+                    attacksHome: hAttacks,
+                    attacksAway: aAttacks,
+                    dangerousAttacksHome: hDangerousAttacks,
+                    dangerousAttacksAway: aDangerousAttacks,
+                    passesHome: hPasses,
+                    passesAway: aPasses,
+                    passAccuracyHome: hPassAcc,
+                    passAccuracyAway: aPassAcc,
+                    tacklesHome: hTackles,
+                    tacklesAway: aTackles,
+                    interceptionsHome: hInterceptions,
+                    interceptionsAway: aInterceptions,
+                    clearancesHome: hClearances,
+                    clearancesAway: aClearances,
+                    hitWoodworkHome: hWoodwork,
+                    hitWoodworkAway: aWoodwork,
                     attackingPressureIndexHome: hPressure,
                     attackingPressureIndexAway: aPressure,
-                    pressureDifferential: parseFloat((hPressure - aPressure).toFixed(2))
+                    pressureDifferential: diffOrNull(hPressure, aPressure, 2)
+                },
+                telemetryCompleteness: {
+                    score: Number((populatedCore / coreSignals.length).toFixed(2)),
+                    populatedMetricCount,
+                    hasInGameStats: populatedMetricCount >= 3
                 },
                 rawStats: {
                     home: hStats,
@@ -3309,7 +3966,14 @@ router.get(['/training-data', '/analytics/training-data'], optionalApiKeyAuth, a
                     goals: goalEvents,
                     redCards: redCardEvents,
                     firstGoalSide: goalEvents.length > 0 ? goalEvents[0].side : null,
-                    firstGoalMinute: goalEvents.length > 0 ? goalEvents[0].minute : null
+                    firstGoalMinute: goalEvents.length > 0 ? goalEvents[0].minute : null,
+                    goalTiming: {
+                        firstHalfGoalsHome,
+                        firstHalfGoalsAway,
+                        secondHalfGoalsHome,
+                        secondHalfGoalsAway,
+                        lateGoalsAfter75
+                    }
                 }
             };
         });
@@ -4267,6 +4931,36 @@ router.get('/matches/:eventId', optionalApiKeyAuth, async (req, res) => {
                         const ssRosters = lineupsToRosters(ssMatch);
                         if (ssRosters.length) summary.rosters = ssRosters;
                     }
+                    // Populate or enrich boxscore statistics from SportScore when ESPN/LiveScore lacks deep stats
+                    const ssBox = statisticsToBoxscore(ssMatch);
+                    if (ssBox?.teams?.length) {
+                        const existingCount = Math.max(
+                            summary?.boxscore?.teams?.[0]?.statistics?.length || 0,
+                            summary?.boxscore?.teams?.[1]?.statistics?.length || 0
+                        );
+                        const ssCount = Math.max(
+                            ssBox.teams[0]?.statistics?.length || 0,
+                            ssBox.teams[1]?.statistics?.length || 0
+                        );
+                        if (existingCount === 0) {
+                            summary.boxscore = ssBox;
+                        } else if (ssCount > existingCount && Array.isArray(summary.boxscore?.teams)) {
+                            for (const side of ['home', 'away']) {
+                                const targetTm = summary.boxscore.teams.find(t => t.homeAway === side || t.id === side);
+                                const srcTm = ssBox.teams.find(t => t.homeAway === side || t.id === side);
+                                if (targetTm && srcTm && Array.isArray(srcTm.statistics)) {
+                                    if (!Array.isArray(targetTm.statistics)) targetTm.statistics = [];
+                                    const seen = new Set(targetTm.statistics.map(s => s.name));
+                                    for (const st of srcTm.statistics) {
+                                        if (!seen.has(st.name)) {
+                                            targetTm.statistics.push(st);
+                                            seen.add(st.name);
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
                     // Attach logos onto summary competitors if present
                     if (summary?.boxscore?.teams) {
                         for (const tm of summary.boxscore.teams) {
@@ -4282,6 +4976,15 @@ router.get('/matches/:eventId', optionalApiKeyAuth, async (req, res) => {
             console.warn('SportScore enrich failed:', e.message);
         }
 
+        const homeBoxMap = extractBoxscoreStatsMap(summary.boxscore, 'home');
+        const awayBoxMap = extractBoxscoreStatsMap(summary.boxscore, 'away');
+        const telemetrySummary = {
+            metricsCount: Math.max(Object.keys(homeBoxMap).length, Object.keys(awayBoxMap).length),
+            attackingPressureHome: computeAttackingPressureIndex(homeBoxMap),
+            attackingPressureAway: computeAttackingPressureIndex(awayBoxMap),
+            hasExpectedGoals: homeBoxMap.expectedGoals != null || awayBoxMap.expectedGoals != null,
+            provider: summary.boxscore?.provider || match.source?.provider || 'upstream'
+        };
 
         const isLive = match.status?.state === 'in';
         const ttl = isLive ? 5 : 60;
@@ -4289,7 +4992,8 @@ router.get('/matches/:eventId', optionalApiKeyAuth, async (req, res) => {
             status: 'success',
             match: summary,
             summary: summary,
-            timeline: timelinePlays
+            timeline: timelinePlays,
+            telemetrySummary
         };
         apiMatchDetailsCache.set(eventId, {
             data: responsePayload,
@@ -4680,3 +5384,7 @@ module.exports = app => {
 };
 module.exports.getLeagueLeaders = getLeagueLeaders;
 module.exports.getLeagueBracket = getLeagueBracket;
+module.exports.computeAttackingPressureIndex = computeAttackingPressureIndex;
+module.exports.extractBoxscoreStatsMap = extractBoxscoreStatsMap;
+module.exports.computeEnrichedPredictionModel = computeEnrichedPredictionModel;
+module.exports.recomputeAnalyticsFromFormattedRecent = recomputeAnalyticsFromFormattedRecent;

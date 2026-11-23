@@ -722,6 +722,145 @@ async function fetchSportScoreH2H({ homeName, awayName } = {}) {
     return null;
 }
 
+/**
+ * Normalize SportScore match statistics into our canonical summary.boxscore shape.
+ * Supports flat arrays ([{ name/label/type, home, away }]), grouped arrays ([{ group, items }]),
+ * or keyed objects ({ 'Ball possession': { home, away } }).
+ */
+function statisticsToBoxscore(ssMatch) {
+    const raw = ssMatch?.statistics || ssMatch?.stats || ssMatch?.match_statistics;
+    if (!raw) return null;
+
+    const rows = [];
+    if (Array.isArray(raw)) {
+        for (const entry of raw) {
+            if (!entry || typeof entry !== 'object') continue;
+            if (Array.isArray(entry.items)) {
+                for (const sub of entry.items) {
+                    if (sub && typeof sub === 'object') rows.push(sub);
+                }
+            } else if (Array.isArray(entry.statisticsItems)) {
+                for (const sub of entry.statisticsItems) {
+                    if (sub && typeof sub === 'object') rows.push(sub);
+                }
+            } else {
+                rows.push(entry);
+            }
+        }
+    } else if (typeof raw === 'object') {
+        for (const [label, val] of Object.entries(raw)) {
+            if (val && typeof val === 'object') {
+                rows.push({ name: label, home: val.home ?? val.homeValue ?? val[0], away: val.away ?? val.awayValue ?? val[1] });
+            }
+        }
+    }
+
+    if (!rows.length) return null;
+
+    const LABEL_TO_KEY = [
+        [/ball\s*possession|possession/i, 'possessionPct', 'Possession'],
+        [/expected\s*goals\s*on\s*target|\bxgot\b/i, 'expectedGoalsOnTarget', 'xG on Target'],
+        [/expected\s*goals|\bxg\b/i, 'expectedGoals', 'Expected Goals (xG)'],
+        [/shots?\s*on\s*target|on\s*target/i, 'shotsOnTarget', 'Shots on Target'],
+        [/shots?\s*off\s*target|off\s*target/i, 'shotsOffTarget', 'Shots off Target'],
+        [/blocked\s*shots?/i, 'blockedShots', 'Blocked Shots'],
+        [/shots?\s*inside\s*box/i, 'shotsInsideBox', 'Shots Inside Box'],
+        [/shots?\s*outside\s*box/i, 'shotsOutsideBox', 'Shots Outside Box'],
+        [/total\s*shots?|shots?\s*total|\bshots\b/i, 'totalShots', 'Total Shots'],
+        [/big\s*chances?\s*missed/i, 'bigChancesMissed', 'Big Chances Missed'],
+        [/big\s*chances?/i, 'bigChances', 'Big Chances'],
+        [/hit\s*woodwork|woodwork/i, 'hitWoodwork', 'Hit Woodwork'],
+        [/dangerous\s*attacks?/i, 'dangerousAttacks', 'Dangerous Attacks'],
+        [/\battacks?\b/i, 'attacks', 'Attacks'],
+        [/corner\s*kicks?|corners?/i, 'wonCorners', 'Corner Kicks'],
+        [/fouls?/i, 'foulsCommitted', 'Fouls'],
+        [/offsides?/i, 'offsides', 'Offsides'],
+        [/yellow\s*cards?/i, 'yellowCards', 'Yellow Cards'],
+        [/red\s*cards?/i, 'redCards', 'Red Cards'],
+        [/goalkeeper\s*saves?|saves?/i, 'saves', 'Goalkeeper Saves'],
+        [/accurate\s*passes?/i, 'accuratePasses', 'Accurate Passes'],
+        [/pass\s*accuracy|passes?\s*%/i, 'passAccuracyPct', 'Pass Accuracy'],
+        [/total\s*passes?|\bpasses?\b/i, 'passes', 'Total Passes'],
+        [/tackles?/i, 'tackles', 'Tackles'],
+        [/interceptions?/i, 'interceptions', 'Interceptions'],
+        [/clearances?/i, 'clearances', 'Clearances'],
+        [/free\s*kicks?/i, 'freeKicks', 'Free Kicks'],
+        [/crosses?/i, 'crosses', 'Crosses'],
+        [/throw[- ]?ins?/i, 'throwIns', 'Throw-ins']
+    ];
+
+    const parseNumeric = (val) => {
+        if (val == null || val === '') return null;
+        if (typeof val === 'number') return Number.isFinite(val) ? val : null;
+        const m = String(val).trim().match(/-?\d+(?:\.\d+)?/);
+        return m ? parseFloat(m[0]) : null;
+    };
+
+    const homeStats = [];
+    const awayStats = [];
+    const seenKeys = new Set();
+
+    for (const r of rows) {
+        const rawLabel = String(r.name || r.label || r.type || r.title || '').trim();
+        if (!rawLabel) continue;
+        const hRaw = r.home ?? r.homeValue ?? r.home_value ?? r.h;
+        const aRaw = r.away ?? r.awayValue ?? r.away_value ?? r.a;
+        if (hRaw == null && aRaw == null) continue;
+
+        let canonicalKey = null;
+        let displayName = rawLabel;
+        for (const [regex, key, label] of LABEL_TO_KEY) {
+            if (regex.test(rawLabel)) {
+                canonicalKey = key;
+                displayName = label;
+                break;
+            }
+        }
+        if (!canonicalKey) {
+            canonicalKey = rawLabel.toLowerCase().replace(/[^a-z0-9]+(.)/g, (_, c) => c.toUpperCase()).replace(/[^a-zA-Z0-9]/g, '');
+        }
+        if (!canonicalKey || seenKeys.has(canonicalKey)) continue;
+        seenKeys.add(canonicalKey);
+
+        const hNum = parseNumeric(hRaw);
+        const aNum = parseNumeric(aRaw);
+        if (hNum == null && aNum == null) continue;
+
+        const isPct = canonicalKey === 'possessionPct' || canonicalKey === 'passAccuracyPct' || String(hRaw).includes('%');
+        const fmt = (rawVal, numVal) => {
+            if (rawVal != null && String(rawVal).trim() !== '') {
+                const s = String(rawVal).trim();
+                return (isPct && !s.includes('%')) ? `${s}%` : s;
+            }
+            return isPct ? `${numVal ?? 0}%` : String(numVal ?? 0);
+        };
+
+        homeStats.push({ name: canonicalKey, displayName, displayValue: fmt(hRaw, hNum), value: hNum ?? 0 });
+        awayStats.push({ name: canonicalKey, displayName, displayValue: fmt(aRaw, aNum), value: aNum ?? 0 });
+    }
+
+    if (!homeStats.length) return null;
+
+    return {
+        isDerivedTelemetry: false,
+        provider: 'sportscore',
+        teams: [
+            {
+                id: 'home',
+                homeAway: 'home',
+                team: { displayName: ssMatch.home || 'Home', logo: ssMatch.home_logo || '' },
+                statistics: homeStats
+            },
+            {
+                id: 'away',
+                homeAway: 'away',
+                team: { displayName: ssMatch.away || 'Away', logo: ssMatch.away_logo || '' },
+                statistics: awayStats
+            }
+        ]
+    };
+}
+
 module.exports = {
     ensureSportScoreCache,
     refreshSportScoreMatches,
@@ -733,6 +872,7 @@ module.exports = {
     fetchSportScoreTeamRecentMatches,
     incidentsToTimelinePlays,
     lineupsToRosters,
+    statisticsToBoxscore,
     generateTeamSlugVariants,
     normalizeKey
 };

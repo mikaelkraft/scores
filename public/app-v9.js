@@ -43,9 +43,16 @@
         gamesPlayed: 'Played', wins: 'Wins', ties: 'Draws', losses: 'Losses',
         points: 'Points', pointDifferential: 'Goal difference', goalDifference: 'Goal difference',
         pointsFor: 'Goals for', pointsAgainst: 'Goals against', possessionPct: 'Possession %',
-        totalShots: 'Total shots', shotsOnTarget: 'Shots on target', wonCorners: 'Corners',
-        foulsCommitted: 'Fouls', yellowCards: 'Yellow cards', redCards: 'Red cards',
-        offsides: 'Offsides', saves: 'Saves'
+        expectedGoals: 'Expected Goals (xG)', expectedGoalsOnTarget: 'xG on Target', totalShots: 'Total Shots', shotsOnTarget: 'Shots on Target',
+        shotsOffTarget: 'Shots off Target', blockedShots: 'Blocked Shots', shotsInsideBox: 'Shots Inside Box',
+        shotsOutsideBox: 'Shots Outside Box', bigChances: 'Big Chances', bigChancesMissed: 'Big Chances Missed',
+        hitWoodwork: 'Hit Woodwork', dangerousAttacks: 'Dangerous Attacks', attacks: 'Attacks',
+        wonCorners: 'Corners', foulsCommitted: 'Fouls', foulsCommited: 'Fouls',
+        yellowCards: 'Yellow Cards', redCards: 'Red Cards', offsides: 'Offsides', saves: 'Goalkeeper Saves',
+        passes: 'Total Passes', accuratePasses: 'Accurate Passes', passAccuracyPct: 'Pass Accuracy %',
+        tackles: 'Tackles', interceptions: 'Interceptions', clearances: 'Clearances',
+        freeKicks: 'Free Kicks', crosses: 'Crosses', throwIns: 'Throw-ins',
+        counterAttacks: 'Counter Attacks', goalKicks: 'Goal Kicks'
     };
 
     const LEAGUE_FLAGS = {
@@ -4298,7 +4305,26 @@
             elements['dialog-date'].textContent = `${formatDate(competition.date, { year: true })} · ${formatTime(competition.date)}`;
         }
 
-        const statNames = [...new Set([...homeStats, ...awayStats].map(item => item.name))].slice(0, 14);
+        const STAT_PRIORITY_ORDER = [
+            'expectedGoals', 'possessionPct', 'totalShots', 'shotsOnTarget', 'shotsOffTarget',
+            'blockedShots', 'bigChances', 'dangerousAttacks', 'attacks', 'wonCorners',
+            'passes', 'accuratePasses', 'passAccuracyPct', 'tackles', 'interceptions',
+            'clearances', 'saves', 'offsides', 'foulsCommitted', 'yellowCards', 'redCards',
+            'hitWoodwork', 'freeKicks', 'crosses', 'throwIns', 'counterAttacks'
+        ];
+        const rawStatNames = [...new Set([...homeStats, ...awayStats].map(item => item.name))];
+        const hasCanonicalFouls = rawStatNames.includes('foulsCommitted');
+        const statNames = rawStatNames
+            .filter(name => !(hasCanonicalFouls && name === 'foulsCommited'))
+            .sort((a, b) => {
+                const ia = STAT_PRIORITY_ORDER.indexOf(a);
+                const ib = STAT_PRIORITY_ORDER.indexOf(b);
+                if (ia >= 0 && ib >= 0) return ia - ib;
+                if (ia >= 0) return -1;
+                if (ib >= 0) return 1;
+                return a.localeCompare(b);
+            })
+            .slice(0, 24);
         const statRows = statNames.map(name => {
             const homeItem = homeStats.find(item => item.name === name);
             const awayItem = awayStats.find(item => item.name === name);
@@ -4939,16 +4965,24 @@
             const aShots = getStatVal(awayStats, 'totalShots') || (aShotsOn + getStatVal(awayStats, 'shotsOffTarget'));
             const hCorners = getStatVal(homeStats, 'wonCorners');
             const aCorners = getStatVal(awayStats, 'wonCorners');
+            const hXgStat = homeStats.find(s => s.name === 'expectedGoals');
+            const aXgStat = awayStats.find(s => s.name === 'expectedGoals');
+            const hasXg = Boolean(hXgStat || aXgStat);
+            const hXg = hXgStat ? Number(hXgStat.value ?? hXgStat.displayValue ?? 0) : 0;
+            const aXg = aXgStat ? Number(aXgStat.value ?? aXgStat.displayValue ?? 0) : 0;
+            const telemetryQuality = predictions?.telemetryQuality || null;
+            const homePredAnalytics = predictions?.teams?.home?.analytics || null;
+            const awayPredAnalytics = predictions?.teams?.away?.analytics || null;
 
-            const hasRealStats = (homeStats.length + awayStats.length) > 0 && [hPoss, aPoss, hShotsOn, aShotsOn, hShots, aShots, hCorners, aCorners]
+            const hasRealStats = (homeStats.length + awayStats.length) > 0 && [hPoss, aPoss, hShotsOn, aShotsOn, hShots, aShots, hCorners, aCorners, hXg, aXg]
                 .some(v => Number(v) > 0);
             let hMomentum = 50;
             let aMomentum = 50;
             let momentumVerdict = '';
             let momentumHtml = '';
             if (hasRealStats) {
-                const hWeight = ((hPoss || 0) * 0.35) + ((hShotsOn || 0) * 5) + ((hShots || 0) * 2) + ((hCorners || 0) * 2.5);
-                const aWeight = ((aPoss || 0) * 0.35) + ((aShotsOn || 0) * 5) + ((aShots || 0) * 2) + ((aCorners || 0) * 2.5);
+                const hWeight = ((hPoss || 0) * 0.35) + ((hShotsOn || 0) * 5.5) + ((hShots || 0) * 2) + ((hCorners || 0) * 2.5) + ((hXg || 0) * 16);
+                const aWeight = ((aPoss || 0) * 0.35) + ((aShotsOn || 0) * 5.5) + ((aShots || 0) * 2) + ((aCorners || 0) * 2.5) + ((aXg || 0) * 16);
                 const totalWeight = (hWeight + aWeight) || 1;
                 hMomentum = Math.min(92, Math.max(8, Math.round((hWeight / totalWeight) * 100)));
                 aMomentum = 100 - hMomentum;
@@ -5066,6 +5100,24 @@
                                     </div>
                                 </div>
                                 <div class="momentum-stat-cell">
+                                    <span class="momentum-stat-label">On Target</span>
+                                    <div class="momentum-stat-values">
+                                        <strong class="is-home">${hShotsOn}</strong>
+                                        <span class="momentum-stat-sep">vs</span>
+                                        <strong class="is-away">${aShotsOn}</strong>
+                                    </div>
+                                </div>
+                                ${hasXg ? `
+                                <div class="momentum-stat-cell">
+                                    <span class="momentum-stat-label">xG</span>
+                                    <div class="momentum-stat-values">
+                                        <strong class="is-home">${hXg.toFixed(2)}</strong>
+                                        <span class="momentum-stat-sep">vs</span>
+                                        <strong class="is-away">${aXg.toFixed(2)}</strong>
+                                    </div>
+                                </div>
+                                ` : `
+                                <div class="momentum-stat-cell">
                                     <span class="momentum-stat-label">Corners</span>
                                     <div class="momentum-stat-values">
                                         <strong class="is-home">${hCorners}</strong>
@@ -5073,12 +5125,13 @@
                                         <strong class="is-away">${aCorners}</strong>
                                     </div>
                                 </div>
+                                `}
                             </div>
                         </div>
 
                         <h4 style="margin:0 0 14px; font-size:14px; color:var(--text-main); display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">
                             <span>In-Play Match Statistics (${escapeHtml(home.team?.displayName || 'Home')} vs ${escapeHtml(away.team?.displayName || 'Away')})</span>
-                            ${summary.boxscore?.isDerivedTelemetry ? `<span style="font-size:10.5px; font-weight:700; color:var(--color-primary); background:var(--color-primary-subtle); padding:2px 8px; border-radius:12px;">⚡ Live Analytics Telemetry</span>` : ''}
+                            ${statNames.length ? `<span style="font-size:10.5px; font-weight:700; color:var(--color-primary); background:var(--color-primary-subtle); padding:2px 8px; border-radius:12px;">📡 ${statNames.length} Telemetry Metrics</span>` : ''}
                         </h4>
                         <div>${statRows || `
                             <div style="text-align:center; padding:24px 16px; background:var(--bg-canvas); border:1px solid var(--border-subtle); border-radius:8px;">
@@ -5309,9 +5362,13 @@
                     <div class="prediction-card">
                         <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">
                             <h4 style="margin:0; font-size:14px; color:var(--text-main);">🔮 Norra AI Outcome Probability</h4>
-                            <span style="font-size:11px; background:var(--color-primary-subtle); color:var(--color-primary); padding:3px 8px; border-radius:4px; font-weight:700;">${escapeHtml(predHints.confidenceRating || 'LIVE MODEL')}</span>
+                            <div style="display:flex; gap:6px; align-items:center; flex-wrap:wrap;">
+                                ${predHints.isLiveAdjusted ? `<span style="font-size:10.5px; background:rgba(239,68,68,0.14); color:#ef4444; padding:3px 8px; border-radius:4px; font-weight:700;">● LIVE-ADJUSTED</span>` : ''}
+                                ${telemetryQuality ? `<span style="font-size:10.5px; background:var(--bg-canvas); border:1px solid var(--border-subtle); color:var(--text-muted); padding:3px 8px; border-radius:4px; font-weight:700;">📡 ${escapeHtml(String(telemetryQuality.tier || 'standard').toUpperCase())} DATA · ${telemetryQuality.score}%</span>` : ''}
+                                <span style="font-size:11px; background:var(--color-primary-subtle); color:var(--color-primary); padding:3px 8px; border-radius:4px; font-weight:700;">${escapeHtml(predHints.confidenceRating || 'LIVE MODEL')}</span>
+                            </div>
                         </div>
-                        <p style="color:var(--text-muted); font-size:12px; margin:6px 0 16px;">Calculated from historical encounters, team form averages, goals differential, and standings context.</p>
+                        <p style="color:var(--text-muted); font-size:12px; margin:6px 0 16px;">Calculated from multi-provider recent form, PPG, goal averages, standings, H2H, and live in-play telemetry.</p>
 
                         <!-- Market 1: Match Winner 1X2 Probabilities -->
                         <div style="font-size:11.5px; font-weight:700; text-transform:uppercase; color:var(--text-muted); margin-bottom:8px; letter-spacing:0.5px;">Match Winner (1X2 Probabilities)</div>
@@ -5366,6 +5423,34 @@
                                 <div style="font-size:11px; color:var(--text-muted); margin-top:2px;">Based on early opening tempo</div>
                             </div>
                         </div>
+
+                        ${(homePredAnalytics?.matchesAnalyzed > 0 || awayPredAnalytics?.matchesAnalyzed > 0) ? `
+                        <!-- Market 4: Deep Team Telemetry Signals -->
+                        <div style="font-size:11.5px; font-weight:700; text-transform:uppercase; color:var(--text-muted); margin:16px 0 8px; letter-spacing:0.5px;">Deep Telemetry Feed (Norra AI Signals)</div>
+                        <div style="background:var(--bg-canvas); border:1px solid var(--border-subtle); border-radius:8px; padding:10px 12px; margin-bottom:14px; font-size:12px;">
+                            <div style="display:grid; grid-template-columns:1fr auto 1fr; gap:6px 10px; align-items:center;">
+                                <strong style="color:#10b981; text-align:left;">${homePredAnalytics?.matchesAnalyzed > 0 && homePredAnalytics.pointsPerGame != null ? homePredAnalytics.pointsPerGame : '—'}</strong>
+                                <span style="font-size:10.5px; text-transform:uppercase; color:var(--text-muted); text-align:center;">Points / Game</span>
+                                <strong style="color:#3b82f6; text-align:right;">${awayPredAnalytics?.matchesAnalyzed > 0 && awayPredAnalytics.pointsPerGame != null ? awayPredAnalytics.pointsPerGame : '—'}</strong>
+
+                                <strong style="color:#10b981; text-align:left;">${homePredAnalytics?.matchesAnalyzed > 0 ? `${homePredAnalytics.goalsScoredAvg ?? '—'} / ${homePredAnalytics.goalsConcededAvg ?? '—'}` : '—'}</strong>
+                                <span style="font-size:10.5px; text-transform:uppercase; color:var(--text-muted); text-align:center;">Scored / Conceded</span>
+                                <strong style="color:#3b82f6; text-align:right;">${awayPredAnalytics?.matchesAnalyzed > 0 ? `${awayPredAnalytics.goalsScoredAvg ?? '—'} / ${awayPredAnalytics.goalsConcededAvg ?? '—'}` : '—'}</strong>
+
+                                <strong style="color:#10b981; text-align:left;">${homePredAnalytics?.matchesAnalyzed > 0 && homePredAnalytics.bttsRate != null ? homePredAnalytics.bttsRate + '%' : '—'}</strong>
+                                <span style="font-size:10.5px; text-transform:uppercase; color:var(--text-muted); text-align:center;">BTTS Rate</span>
+                                <strong style="color:#3b82f6; text-align:right;">${awayPredAnalytics?.matchesAnalyzed > 0 && awayPredAnalytics.bttsRate != null ? awayPredAnalytics.bttsRate + '%' : '—'}</strong>
+
+                                <strong style="color:#10b981; text-align:left;">${homePredAnalytics?.matchesAnalyzed > 0 && homePredAnalytics.over25Rate != null ? homePredAnalytics.over25Rate + '%' : '—'}</strong>
+                                <span style="font-size:10.5px; text-transform:uppercase; color:var(--text-muted); text-align:center;">Over 2.5 Rate</span>
+                                <strong style="color:#3b82f6; text-align:right;">${awayPredAnalytics?.matchesAnalyzed > 0 && awayPredAnalytics.over25Rate != null ? awayPredAnalytics.over25Rate + '%' : '—'}</strong>
+
+                                <strong style="color:#10b981; text-align:left;">${homePredAnalytics?.matchesAnalyzed > 0 && homePredAnalytics.cleanSheetRate != null ? homePredAnalytics.cleanSheetRate + '%' : '—'}</strong>
+                                <span style="font-size:10.5px; text-transform:uppercase; color:var(--text-muted); text-align:center;">Clean Sheet %</span>
+                                <strong style="color:#3b82f6; text-align:right;">${awayPredAnalytics?.matchesAnalyzed > 0 && awayPredAnalytics.cleanSheetRate != null ? awayPredAnalytics.cleanSheetRate + '%' : '—'}</strong>
+                            </div>
+                        </div>
+                        ` : ''}
 
                         <div style="text-align:center; margin-top:20px;">
                             <a href="https://mynorra.xyz" target="_blank" rel="noopener" class="btn-primary" style="display:inline-block; padding:10px 20px; text-decoration:none; border-radius:8px; font-weight:700; font-size:13px;">

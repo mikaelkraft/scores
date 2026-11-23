@@ -2179,32 +2179,69 @@ async function fetchLiveScoreMatchDetails(eventId) {
 
         const result = {};
 
-        // 1. In-play boxscore statistics
+        // 1. In-play boxscore statistics (full telemetry extraction — authentic fields only)
         if (statsData?.Stat?.length) {
             const hStat = statsData.Stat.find(s => s.Tnb === 1) || statsData.Stat[0] || {};
             const aStat = statsData.Stat.find(s => s.Tnb === 2) || statsData.Stat[1] || {};
 
-            const mapStats = (s) => [
-                { name: 'possessionPct', displayName: 'Possession', displayValue: `${s.Pss ?? 50}%`, value: s.Pss ?? 50 },
-                { name: 'shotsOnTarget', displayName: 'Shots on Target', displayValue: `${s.Shon ?? 0}`, value: s.Shon ?? 0 },
-                { name: 'shotsOffTarget', displayName: 'Shots off Target', displayValue: `${s.Shof ?? 0}`, value: s.Shof ?? 0 },
-                { name: 'totalShots', displayName: 'Total Shots', displayValue: `${(s.Shon || 0) + (s.Shof || 0) + (s.Shbl || 0)}`, value: (s.Shon || 0) + (s.Shof || 0) + (s.Shbl || 0) },
-                { name: 'wonCorners', displayName: 'Corner Kicks', displayValue: `${s.Cos ?? 0}`, value: s.Cos ?? 0 },
-                { name: 'foulsCommitted', displayName: 'Fouls', displayValue: `${s.Fls ?? 0}`, value: s.Fls ?? 0 },
-                { name: 'foulsCommited', displayName: 'Fouls', displayValue: `${s.Fls ?? 0}`, value: s.Fls ?? 0 },
-                { name: 'offsides', displayName: 'Offsides', displayValue: `${s.Ofs ?? 0}`, value: s.Ofs ?? 0 },
-                { name: 'yellowCards', displayName: 'Yellow Cards', displayValue: `${s.Ycs ?? 0}`, value: s.Ycs ?? 0 },
-                { name: 'redCards', displayName: 'Red Cards', displayValue: `${s.Rcs ?? 0}`, value: s.Rcs ?? 0 },
-                { name: 'saves', displayName: 'Goalkeeper Saves', displayValue: `${s.Gks ?? 0}`, value: s.Gks ?? 0 },
-                { name: 'expectedGoals', displayName: 'Expected Goals (xG)', displayValue: `${s.Xg ?? 0}`, value: s.Xg ?? 0 }
-            ];
+            const mapStats = (s) => {
+                const list = [];
+                const pushIf = (name, displayName, rawVal, suffix = '') => {
+                    if (rawVal === undefined || rawVal === null || rawVal === '') return;
+                    const n = Number(rawVal);
+                    if (!Number.isFinite(n)) return;
+                    list.push({ name, displayName, displayValue: `${n}${suffix}`, value: n });
+                };
 
-            result.boxscore = {
-                teams: [
-                    { id: 'home', homeAway: 'home', statistics: mapStats(hStat) },
-                    { id: 'away', homeAway: 'away', statistics: mapStats(aStat) }
-                ]
+                pushIf('possessionPct', 'Possession', s.Pss, '%');
+                pushIf('expectedGoals', 'Expected Goals (xG)', s.Xg);
+                pushIf('shotsOnTarget', 'Shots on Target', s.Shon);
+                pushIf('shotsOffTarget', 'Shots off Target', s.Shof);
+                pushIf('blockedShots', 'Blocked Shots', s.Shbl);
+                if (s.Shon != null || s.Shof != null || s.Shbl != null) {
+                    const tot = (Number(s.Shon) || 0) + (Number(s.Shof) || 0) + (Number(s.Shbl) || 0);
+                    list.push({ name: 'totalShots', displayName: 'Total Shots', displayValue: `${tot}`, value: tot });
+                }
+                pushIf('bigChances', 'Big Chances', s.Bch);
+                pushIf('hitWoodwork', 'Hit Woodwork', s.Wd ?? s.Wdw);
+                pushIf('dangerousAttacks', 'Dangerous Attacks', s.Datt);
+                pushIf('attacks', 'Attacks', s.Att);
+                pushIf('wonCorners', 'Corner Kicks', s.Cos);
+                pushIf('foulsCommitted', 'Fouls', s.Fls);
+                pushIf('offsides', 'Offsides', s.Ofs);
+                pushIf('yellowCards', 'Yellow Cards', s.Ycs);
+                pushIf('redCards', 'Red Cards', s.Rcs);
+                pushIf('saves', 'Goalkeeper Saves', s.Gks);
+                pushIf('passes', 'Total Passes', s.Pass ?? s.PssT);
+                pushIf('accuratePasses', 'Accurate Passes', s.PassA ?? s.PssA);
+                if (s.PassP != null) {
+                    pushIf('passAccuracyPct', 'Pass Accuracy', s.PassP, '%');
+                } else if ((s.Pass ?? s.PssT) > 0 && (s.PassA ?? s.PssA) != null) {
+                    const pct = Math.round((Number(s.PassA ?? s.PssA) / Number(s.Pass ?? s.PssT)) * 100);
+                    pushIf('passAccuracyPct', 'Pass Accuracy', pct, '%');
+                }
+                pushIf('tackles', 'Tackles', s.Tkl);
+                pushIf('interceptions', 'Interceptions', s.Int);
+                pushIf('clearances', 'Clearances', s.Clr);
+                pushIf('freeKicks', 'Free Kicks', s.Fks);
+                pushIf('crosses', 'Crosses', s.Crs);
+                pushIf('throwIns', 'Throw-ins', s.Thrs);
+                pushIf('counterAttacks', 'Counter Attacks', s.Cntr);
+                pushIf('goalKicks', 'Goal Kicks', s.Gkc);
+                return list;
             };
+
+            const hMapped = mapStats(hStat);
+            const aMapped = mapStats(aStat);
+            if (hMapped.length || aMapped.length) {
+                result.boxscore = {
+                    provider: 'livescore',
+                    teams: [
+                        { id: 'home', homeAway: 'home', statistics: hMapped },
+                        { id: 'away', homeAway: 'away', statistics: aMapped }
+                    ]
+                };
+            }
         }
 
         // 2. Key events / match timeline (goals, cards, substitutions)
@@ -2456,6 +2493,40 @@ async function syncInGameStats({ limit = 150, onlyLive = false, forceAll = false
                             }
                         }
                     }
+                }
+
+                // Multi-provider fallback: SportScore boxscore/incidents/lineups when ESPN & LiveScore lack telemetry
+                const hasRealBoxscore = Boolean(
+                    details?.boxscore?.teams?.[0]?.statistics?.length ||
+                    details?.boxscore?.teams?.[1]?.statistics?.length
+                );
+                if (!hasRealBoxscore && (m.status?.state === 'in' || m.status?.state === 'post')) {
+                    try {
+                        const {
+                            fetchSportScoreMatchDetail,
+                            statisticsToBoxscore,
+                            incidentsToTimelinePlays,
+                            lineupsToRosters
+                        } = require('./sportScoreService');
+                        const hName = m.home?.display_name || m.home?.name || '';
+                        const aName = m.away?.display_name || m.away?.name || '';
+                        if (hName && aName) {
+                            const ssMatch = await fetchSportScoreMatchDetail({ homeName: hName, awayName: aName });
+                            if (ssMatch) {
+                                if (!details) details = {};
+                                const ssBox = statisticsToBoxscore(ssMatch);
+                                if (ssBox?.teams?.length) details.boxscore = ssBox;
+                                if (!details.keyEvents?.length) {
+                                    const ssPlays = incidentsToTimelinePlays(ssMatch);
+                                    if (ssPlays.length) details.keyEvents = ssPlays;
+                                }
+                                if (!details.rosters?.length && ssMatch.lineups) {
+                                    const ssRosters = lineupsToRosters(ssMatch);
+                                    if (ssRosters.length) details.rosters = ssRosters;
+                                }
+                            }
+                        }
+                    } catch (_) {}
                 }
 
                 if (!details || (!details.boxscore?.teams?.length && !details.keyEvents?.length)) {

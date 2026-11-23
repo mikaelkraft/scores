@@ -115,6 +115,8 @@ function finalizeMatchToFt(m) {
     return {
         ...m,
         _missedLivePolls: 0,
+        _autoFinalized: true,
+        _autoFinalizedAt: Date.now(),
         status: {
             ...(m.status || {}),
             state: 'post',
@@ -143,7 +145,7 @@ function getReadyBoard(dateKey, { status = 'all', maxAgeMs = 12 * 60 * 60 * 1000
     if (!entry) return null;
     if (maxAgeMs > 0 && (Date.now() - entry.generatedAt > maxAgeMs)) return null;
 
-    // Auto-finalize any match stuck in live state well past full-time (e.g., 90+ games after kickoff + 115m)
+    // Auto-finalize any match stuck in live state well past full-time (e.g., 90+ games after kickoff + 120m, or 155m hard cap)
     const nowMs = Date.now();
     for (let i = 0; i < entry.matches.length; i++) {
         const m = entry.matches[i];
@@ -152,7 +154,7 @@ function getReadyBoard(dateKey, { status = 'all', maxAgeMs = 12 * 60 * 60 * 1000
         if (!Number.isFinite(kickoffTs)) continue;
         const elapsedMs = nowMs - kickoffTs;
         const mins = parseClockMinutes(m);
-        if (elapsedMs > 135 * 60 * 1000 || (mins >= 88 && elapsedMs > 115 * 60 * 1000)) {
+        if (elapsedMs > 155 * 60 * 1000 || (mins >= 90 && elapsedMs > 120 * 60 * 1000)) {
             entry.matches[i] = finalizeMatchToFt(m);
         }
     }
@@ -199,8 +201,24 @@ function patchLiveMatchesInBoard(dateKey, liveMatches, { isFullSnapshot = true }
 
         if (existingIdx >= 0) {
             const existing = entry.matches[existingIdx];
-            // Never revert a completed match back to live unless explicit non-completed live score
-            if (isMatchFinished(existing) && !isMatchFinished(live)) continue;
+            // Protect legitimately finished matches from reverting to live,
+            // EXCEPT when heuristically auto-finalized, when within an impossible-FT window (< 102m) with an active live clock,
+            // or when within a plausible live window with new goals scored.
+            if (isMatchFinished(existing) && !isMatchFinished(live)) {
+                const kickoffTs = existing.date ? Date.parse(existing.date) : NaN;
+                const elapsedMs = Number.isFinite(kickoffTs) ? (nowMs - kickoffTs) : Infinity;
+                const isPostpOrCanc = /^(Postp|Canc|Abd)/i.test(String(existing.status?.detail || existing.status?.clock || ''));
+                const existingGoals = (Number(existing.home?.score) || 0) + (Number(existing.away?.score) || 0);
+                const liveGoals = (Number(live.home?.score) || 0) + (Number(live.away?.score) || 0);
+                const hasConcreteLiveClock = Boolean(
+                    live.status?.isLive ||
+                    /^(HT|\d{1,3}(?:\+\d{1,2})?'?)$/i.test(String(live.status?.clock || live.status?.detail || '').trim())
+                );
+                const canRevive = Boolean(existing._autoFinalized)
+                    || (!isPostpOrCanc && elapsedMs >= 0 && elapsedMs < 102 * 60 * 1000 && hasConcreteLiveClock)
+                    || (!isPostpOrCanc && elapsedMs >= 0 && elapsedMs < 155 * 60 * 1000 && liveGoals > existingGoals);
+                if (!canRevive) continue;
+            }
 
             // Preserve canonical specific league metadata (e.g., esp.1) over generic live slugs (other/.lower)
             const existingSlug = existing.league?.slug || existing.league_slug || '';
@@ -210,6 +228,7 @@ function patchLiveMatchesInBoard(dateKey, liveMatches, { isFullSnapshot = true }
             const merged = {
                 ...existing,
                 _missedLivePolls: 0,
+                _autoFinalized: false,
                 _lastSeenLiveAt: nowMs,
                 status: {
                     ...(existing.status || {}),
@@ -233,7 +252,7 @@ function patchLiveMatchesInBoard(dateKey, liveMatches, { isFullSnapshot = true }
         } else {
             // Newly detected live match not yet in board: append and index
             const idx = entry.matches.length;
-            const copy = { ...live, _missedLivePolls: 0, _lastSeenLiveAt: nowMs };
+            const copy = { ...live, _missedLivePolls: 0, _autoFinalized: false, _lastSeenLiveAt: nowMs };
             entry.matches.push(copy);
             for (const k of keys) {
                 if (!entry.indexByKey.has(k)) entry.indexByKey.set(k, idx);
@@ -247,6 +266,7 @@ function patchLiveMatchesInBoard(dateKey, liveMatches, { isFullSnapshot = true }
     }
 
     // Reconcile matches that were live in the cached board but dropped out of the latest full live snapshot -> FT
+    // Guard against premature FT during 1st half / HT / mid-2nd half provider hiccups (a 90m+HT match needs >= 105m).
     if (isFullSnapshot) {
         for (let i = 0; i < entry.matches.length; i++) {
             const m = entry.matches[i];
@@ -258,9 +278,19 @@ function patchLiveMatchesInBoard(dateKey, liveMatches, { isFullSnapshot = true }
             const missed = (m._missedLivePolls || 0) + 1;
             const mins = parseClockMinutes(m);
             const kickoffTs = m.date ? Date.parse(m.date) : NaN;
-            const elapsedMs = Number.isFinite(kickoffTs) ? (nowMs - kickoffTs) : 0;
+            const hasKickoff = Number.isFinite(kickoffTs);
+            const elapsedMs = hasKickoff ? (nowMs - kickoffTs) : 0;
 
-            if (mins >= 85 || missed >= 2 || elapsedMs >= 115 * 60 * 1000) {
+            const shouldFinalize = hasKickoff
+                ? (
+                    (mins >= 90 && elapsedMs >= 115 * 60 * 1000) ||
+                    (mins >= 88 && missed >= 2 && elapsedMs >= 115 * 60 * 1000) ||
+                    (elapsedMs >= 135 * 60 * 1000 && missed >= 2) ||
+                    (elapsedMs >= 160 * 60 * 1000)
+                )
+                : ((mins >= 90 && missed >= 2) || missed >= 6);
+
+            if (shouldFinalize) {
                 entry.matches[i] = finalizeMatchToFt(m);
                 patchedCount++;
             } else {
