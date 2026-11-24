@@ -4017,7 +4017,10 @@
         const status = competition.status?.type?.state;
         if (status === 'in') {
             window.clearInterval(state.matchTimer);
-            state.matchTimer = window.setInterval(() => loadMatchDetails(eventId, true, slug, matchContext), 15000);
+            state.matchTimer = window.setInterval(() => {
+                if (document.hidden) return;
+                loadMatchDetails(eventId, true, slug, matchContext);
+            }, 15000);
         }
 
         // Stage 2: Hydrate H2H, Table Context & Norra AI Predictions as soon as predictions-context resolves
@@ -6469,10 +6472,19 @@
         }
 
         let isPolling = false;
-        async function syncLiveScores() {
+        let lastLiveHttpPollAt = 0;
+        async function syncLiveScores(options = {}) {
+            const force = Boolean(options && options.force);
             // Guard against background tab waste: halt polling if document is hidden to conserve bandwidth
             if (document.hidden || isPolling) return;
+            // When SSE stream is healthy, skip redundant 15s HTTP polls and only reconcile every 60s
+            const nowCheck = Date.now();
+            const sseHealthy = Boolean(state.sseConnected && state.lastSseEventAt && (nowCheck - state.lastSseEventAt < 45000));
+            if (!force && sseHealthy && (nowCheck - lastLiveHttpPollAt < 60000)) {
+                return;
+            }
             isPolling = true;
+            lastLiveHttpPollAt = nowCheck;
 
             try {
                 const res = await fetchJson('/api/v1/football/live');
@@ -6564,12 +6576,12 @@
         // Resume sync immediately when user switches back to this tab
         document.addEventListener('visibilitychange', () => {
             if (!document.hidden) {
-                syncLiveScores();
+                syncLiveScores({ force: true });
             }
         });
 
         // Immediate check
-        syncLiveScores();
+        syncLiveScores({ force: true });
     }
 
     let audioCtx = null;
@@ -6718,13 +6730,22 @@
             state.liveEventSource = source;
 
             source.addEventListener('initial', (e) => {
+                state.sseConnected = true;
+                state.lastSseEventAt = Date.now();
                 try {
                     const data = JSON.parse(e.data);
                     syncAllLiveCountBadges(data.matches || []);
                 } catch {}
             });
 
+            source.addEventListener('heartbeat', () => {
+                state.sseConnected = true;
+                state.lastSseEventAt = Date.now();
+            });
+
             source.addEventListener('score_update', (e) => {
+                state.sseConnected = true;
+                state.lastSseEventAt = Date.now();
                 try {
                     const data = JSON.parse(e.data);
                     const updates = data.deltas || data.updates || [];
@@ -6737,7 +6758,8 @@
             });
 
             source.onerror = () => {
-                // EventSource standard auto-reconnects
+                state.sseConnected = false;
+                // EventSource standard auto-reconnects; 15s HTTP polling resumes automatically
             };
 
             // Mobile battery and data saver: pause stream when tab is backgrounded
@@ -6746,6 +6768,7 @@
                 document.addEventListener('visibilitychange', () => {
                     if (document.hidden) {
                         // User left the tab or locked screen: close SSE to save mobile battery & data
+                        state.sseConnected = false;
                         if (state.liveEventSource) {
                             state.liveEventSource.close();
                             state.liveEventSource = null;

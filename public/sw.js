@@ -9,6 +9,7 @@ const STATIC_ASSETS = [
     '/',
     '/assets/styles.css?v=1.0.0',
     '/assets/app.js?v=1.0.0',
+    '/assets/shared-shell.js',
     '/favicon.svg',
     '/favicon.ico',
     '/apple-touch-icon.png',

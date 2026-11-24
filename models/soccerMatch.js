@@ -143,6 +143,10 @@ SoccerMatchSchema.index(
     { name: 'soccer_match_source_unique', unique: true }
 );
 SoccerMatchSchema.index(
+    { 'source.event_id': 1 },
+    { name: 'soccer_match_event_id' }
+);
+SoccerMatchSchema.index(
     { league_slug: 1, scoreboard_date: 1, date: 1 },
     { name: 'soccer_match_scoreboard' }
 );
@@ -155,10 +159,6 @@ SoccerMatchSchema.index(
     { name: 'soccer_match_status_date' }
 );
 SoccerMatchSchema.index(
-    { league_slug: 1 },
-    { name: 'soccer_match_league_slug' }
-);
-SoccerMatchSchema.index(
     { date: -1 },
     { name: 'soccer_match_date_desc' }
 );
@@ -167,8 +167,12 @@ SoccerMatchSchema.index(
     { name: 'soccer_match_status_date_desc' }
 );
 SoccerMatchSchema.index(
-    { 'home.stats': 1, date: -1 },
-    { name: 'soccer_match_stats_date_desc' }
+    { 'home.source_id': 1, date: -1 },
+    { name: 'soccer_match_home_team_date' }
+);
+SoccerMatchSchema.index(
+    { 'away.source_id': 1, date: -1 },
+    { name: 'soccer_match_away_team_date' }
 );
 SoccerMatchSchema.index(
     { league_slug: 1, 'status.state': 1, date: 1 },

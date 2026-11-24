@@ -195,7 +195,10 @@ app.use('/assets', express.static(path.join(__dirname, 'public'), {
     index: false,
     maxAge: 0,
     setHeaders: (res, filePath) => {
-        if (filePath.endsWith('.js') || filePath.endsWith('.css')) {
+        const normalized = String(filePath || '').replace(/\\/g, '/');
+        if (normalized.includes('/public/crests/')) {
+            res.set('Cache-Control', 'public, max-age=31536000, immutable');
+        } else if (normalized.endsWith('.js') || normalized.endsWith('.css')) {
             res.set('Cache-Control', 'public, max-age=0, must-revalidate');
         }
     }
@@ -389,7 +392,7 @@ app.use((error, req, res, next) => {
     })
 });
 
-app.listen(PORT, '0.0.0.0', () => {
+const server = app.listen(PORT, '0.0.0.0', () => {
     console.log(`Server started on port ${PORT}`);
 
     // Seed / Ensure Norra AI Master Admin Key exists in database
@@ -449,7 +452,9 @@ app.listen(PORT, '0.0.0.0', () => {
 
     // Kickoff-aware in-play scoreboard refresh: runs every 60s during active match windows, backs off to 5m when idle
     let lastIdlePollAt = 0;
+    let liveSyncInFlight = false;
     const liveScoreInterval = setInterval(() => {
+        if (liveSyncInFlight) return;
         const nowMs = Date.now();
         const isActiveWindow = dailyBoardCache.hasActiveMatchWindow(nowMs);
         if (!isActiveWindow && (nowMs - lastIdlePollAt < 5 * 60 * 1000)) {
@@ -457,12 +462,17 @@ app.listen(PORT, '0.0.0.0', () => {
         }
         if (!isActiveWindow) lastIdlePollAt = nowMs;
 
+        liveSyncInFlight = true;
         Promise.allSettled([
             syncLiveScoreboards(),
             syncLiveScoreInPlay()
         ]).then(() => {
             return isActiveWindow ? syncInGameStats({ limit: 20, onlyLive: true }) : null;
-        }).catch(e => console.warn('Live infeed sync notice:', e.message));
+        }).catch(e => {
+            console.warn('Live infeed sync notice:', e.message);
+        }).finally(() => {
+            liveSyncInFlight = false;
+        });
     }, 60 * 1000);
     if (liveScoreInterval && typeof liveScoreInterval.unref === 'function') {
         liveScoreInterval.unref();
@@ -497,17 +507,44 @@ app.listen(PORT, '0.0.0.0', () => {
     if (initialDeepTimer && typeof initialDeepTimer.unref === 'function') initialDeepTimer.unref();
 
     // Daily procedural Atlas storage hygiene (preserves scores, stats, key_events, H2H & Norra AI training feeds)
+    let dailyPruneInterval = null;
     if (typeof pruneOldTelemetryStorage === 'function') {
         const initialPruneTimer = setTimeout(() => {
             pruneOldTelemetryStorage().catch(() => {});
         }, 10 * 60 * 1000);
         if (initialPruneTimer && typeof initialPruneTimer.unref === 'function') initialPruneTimer.unref();
 
-        const dailyPruneInterval = setInterval(() => {
+        dailyPruneInterval = setInterval(() => {
             pruneOldTelemetryStorage().catch(() => {});
         }, 24 * 60 * 60 * 1000);
         if (dailyPruneInterval && typeof dailyPruneInterval.unref === 'function') dailyPruneInterval.unref();
     }
+
+    // Graceful shutdown: flush buffered ApiKey usage, clear timers, close HTTP & MongoDB cleanly
+    let shuttingDown = false;
+    async function gracefulShutdown(signal) {
+        if (shuttingDown) return;
+        shuttingDown = true;
+        console.log(`🛑 Received ${signal}. Shutting down gracefully...`);
+        clearInterval(liveScoreInterval);
+        if (dailyPruneInterval) clearInterval(dailyPruneInterval);
+        try {
+            const { flushApiKeyUsage } = require('./middleware/apiKeyAuth');
+            await flushApiKeyUsage();
+        } catch (_) {}
+        try {
+            server.close(() => {});
+        } catch (_) {}
+        try {
+            const mongoose = require('mongoose');
+            if (mongoose.connection.readyState !== 0) {
+                await mongoose.disconnect();
+            }
+        } catch (_) {}
+        process.exit(0);
+    }
+    process.once('SIGTERM', () => gracefulShutdown('SIGTERM'));
+    process.once('SIGINT', () => gracefulShutdown('SIGINT'));
 });
 
 module.exports = app;

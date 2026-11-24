@@ -243,6 +243,50 @@ const CACHE_TTL_MS = 60 * 1000; // 60 seconds
 // Simple per-minute sliding window rate limiter per API key
 const requestCounters = new Map();
 
+// Batched ApiKey usage buffer (flushed via bulkWrite every 30s to save Atlas M0 write IOPS)
+const usageBuffer = new Map();
+const USAGE_FLUSH_INTERVAL_MS = 30 * 1000;
+
+function recordApiKeyUsage(keyId) {
+    if (!keyId || keyId === 'norra_master_internal_key') return;
+    const idStr = String(keyId);
+    const existing = usageBuffer.get(idStr);
+    if (existing) {
+        existing.count += 1;
+        existing.lastUsedAt = new Date();
+    } else {
+        usageBuffer.set(idStr, { id: keyId, count: 1, lastUsedAt: new Date() });
+    }
+}
+
+async function flushApiKeyUsage() {
+    if (usageBuffer.size === 0) return 0;
+    const entries = Array.from(usageBuffer.values());
+    usageBuffer.clear();
+    const ops = entries.map((entry) => ({
+        updateOne: {
+            filter: { _id: entry.id },
+            update: {
+                $inc: { totalRequests: entry.count },
+                $set: { lastUsedAt: entry.lastUsedAt }
+            }
+        }
+    }));
+    try {
+        await ApiKey.bulkWrite(ops, { ordered: false });
+        return ops.length;
+    } catch (_) {
+        return 0;
+    }
+}
+
+const usageFlushTimer = setInterval(() => {
+    flushApiKeyUsage().catch(() => {});
+}, USAGE_FLUSH_INTERVAL_MS);
+if (usageFlushTimer && typeof usageFlushTimer.unref === 'function') {
+    usageFlushTimer.unref();
+}
+
 function isMasterAdminKey(rawKey) {
     if (!rawKey) return false;
     const cleanKey = String(rawKey).trim();
@@ -385,13 +429,8 @@ async function optionalApiKeyAuth(req, res, next) {
         req.apiKey = keyDoc;
         req.isAdFree = Boolean(keyDoc.isAdFree);
 
-        // Asynchronously record usage without awaiting (skip virtual master key ID)
-        if (keyDoc._id && keyDoc._id !== 'norra_master_internal_key') {
-            ApiKey.updateOne({ _id: keyDoc._id }, {
-                $inc: { totalRequests: 1 },
-                $set: { lastUsedAt: new Date() }
-            }).catch(() => {});
-        }
+        // Buffer usage increment in memory (flushed via bulkWrite every 30s)
+        recordApiKeyUsage(keyDoc._id);
     } else {
         req.isAdFree = false;
     }
@@ -435,13 +474,8 @@ async function requireApiKey(req, res, next) {
     req.apiKey = keyDoc;
     req.isAdFree = true; // Admin/internal or paying tiers get ad-free
 
-    // Asynchronously record usage without awaiting
-    if (keyDoc._id && keyDoc._id !== 'norra_master_internal_key') {
-        ApiKey.updateOne({ _id: keyDoc._id }, {
-            $inc: { totalRequests: 1 },
-            $set: { lastUsedAt: new Date() }
-        }).catch(() => {});
-    }
+    // Buffer usage increment in memory (flushed via bulkWrite every 30s)
+    recordApiKeyUsage(keyDoc._id);
 
     return next();
 }
@@ -452,6 +486,9 @@ module.exports = {
     optionalApiKeyAuth,
     requireApiKey,
     keyCache,
+    usageBuffer,
+    recordApiKeyUsage,
+    flushApiKeyUsage,
     PLAN_LIMITS,
     getPlanConfig,
     getAllowedLeaguesForKey,

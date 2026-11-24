@@ -1281,13 +1281,227 @@ router.get(['/live', '/livescores'], optionalApiKeyAuth, async (req, res) => {
 });
 
 /**
+ * Shared SSE Fan-Out Hub
+ * Replaces per-client 4s polling loops with a single shared poller, bounded state map,
+ * match_finished (FT) delta emission, and concurrent client cap.
+ */
+const MAX_SSE_CLIENTS = 250;
+const MAX_SSE_STATE_ENTRIES = 1000;
+
+const liveStreamHub = {
+    clients: new Set(),
+    previousStateMap: new Map(),
+    timer: null,
+    tickInFlight: false,
+
+    addClient(client) {
+        if (this.clients.size >= MAX_SSE_CLIENTS) {
+            return false;
+        }
+        this.clients.add(client);
+        if (!this.timer) {
+            this.timer = setInterval(() => {
+                this.tick().catch(() => {});
+            }, 4000);
+            if (this.timer && typeof this.timer.unref === 'function') {
+                this.timer.unref();
+            }
+        }
+        return true;
+    },
+
+    removeClient(client) {
+        this.clients.delete(client);
+        if (this.clients.size === 0 && this.timer) {
+            clearInterval(this.timer);
+            this.timer = null;
+        }
+    },
+
+    seedMatches(matches) {
+        if (!Array.isArray(matches)) return;
+        for (const m of matches) {
+            if (!m || !m.id || this.previousStateMap.has(m.id)) continue;
+            this.previousStateMap.set(m.id, {
+                scoreSig: `${m.home?.score ?? 0}-${m.away?.score ?? 0}-${m.status?.clock || m.status?.detail || ''}`,
+                homeScore: Number(m.home?.score ?? 0),
+                awayScore: Number(m.away?.score ?? 0),
+                leagueSlug: m.league_slug || m.league?.slug || '',
+                homeName: m.home?.displayName || m.home?.name || 'Home',
+                awayName: m.away?.displayName || m.away?.name || 'Away',
+                homeLogo: m.home?.logo || '',
+                awayLogo: m.away?.logo || ''
+            });
+        }
+    },
+
+    computeDeltas(currentLive) {
+        const updates = [];
+        const currentIds = new Set();
+
+        for (const m of currentLive) {
+            if (!m || !m.id) continue;
+            currentIds.add(m.id);
+            const curHomeScore = Number(m.home?.score ?? 0);
+            const curAwayScore = Number(m.away?.score ?? 0);
+            const curClock = m.status?.clock || m.status?.detail || (m.status?.type?.detail) || '';
+            const curState = m.status?.state || (m.status?.type?.state) || 'in';
+            const leagueSlug = m.league_slug || m.league?.slug || '';
+            const sig = `${curHomeScore}-${curAwayScore}-${curClock}`;
+
+            const prev = this.previousStateMap.get(m.id);
+            if (!prev || prev.scoreSig !== sig) {
+                const prevH = prev ? prev.homeScore : curHomeScore;
+                const prevA = prev ? prev.awayScore : curAwayScore;
+                const isGoal = (curHomeScore > prevH) || (curAwayScore > prevA);
+                const scoringTeam = (curHomeScore > prevH)
+                    ? (m.home?.displayName || m.home?.name || 'Home')
+                    : (curAwayScore > prevA ? (m.away?.displayName || m.away?.name || 'Away') : null);
+
+                updates.push({
+                    id: m.id,
+                    eventId: m.id,
+                    leagueSlug,
+                    homeScore: curHomeScore,
+                    awayScore: curAwayScore,
+                    clock: curClock,
+                    state: curState,
+                    status: {
+                        clock: curClock,
+                        detail: curClock,
+                        displayClock: curClock,
+                        state: curState,
+                        type: m.status?.type || { state: curState, detail: curClock }
+                    },
+                    home: {
+                        score: curHomeScore,
+                        displayName: m.home?.displayName || m.home?.name || 'Home',
+                        logo: m.home?.logo || ''
+                    },
+                    away: {
+                        score: curAwayScore,
+                        displayName: m.away?.displayName || m.away?.name || 'Away',
+                        logo: m.away?.logo || ''
+                    },
+                    isGoal,
+                    scoringTeam,
+                    timestamp: Date.now()
+                });
+
+                this.previousStateMap.set(m.id, {
+                    scoreSig: sig,
+                    homeScore: curHomeScore,
+                    awayScore: curAwayScore,
+                    leagueSlug,
+                    homeName: m.home?.displayName || m.home?.name || 'Home',
+                    awayName: m.away?.displayName || m.away?.name || 'Away',
+                    homeLogo: m.home?.logo || '',
+                    awayLogo: m.away?.logo || ''
+                });
+            }
+        }
+
+        // Emit FT / match_finished deltas for matches that left the live feed and prune state map
+        for (const [id, prev] of this.previousStateMap.entries()) {
+            if (!currentIds.has(id)) {
+                updates.push({
+                    id,
+                    eventId: id,
+                    leagueSlug: prev.leagueSlug || '',
+                    homeScore: prev.homeScore,
+                    awayScore: prev.awayScore,
+                    clock: 'FT',
+                    state: 'post',
+                    matchFinished: true,
+                    status: {
+                        clock: 'FT',
+                        detail: 'FT',
+                        displayClock: 'FT',
+                        state: 'post',
+                        type: { state: 'post', detail: 'FT', completed: true }
+                    },
+                    home: { score: prev.homeScore, displayName: prev.homeName, logo: prev.homeLogo },
+                    away: { score: prev.awayScore, displayName: prev.awayName, logo: prev.awayLogo },
+                    isGoal: false,
+                    scoringTeam: null,
+                    timestamp: Date.now()
+                });
+                this.previousStateMap.delete(id);
+            }
+        }
+
+        // Hard cap safety bound on previousStateMap
+        if (this.previousStateMap.size > MAX_SSE_STATE_ENTRIES) {
+            const overflow = this.previousStateMap.size - MAX_SSE_STATE_ENTRIES;
+            let removed = 0;
+            for (const key of this.previousStateMap.keys()) {
+                this.previousStateMap.delete(key);
+                if (++removed >= overflow) break;
+            }
+        }
+
+        return updates;
+    },
+
+    async tick() {
+        if (this.tickInFlight || this.clients.size === 0) return;
+        this.tickInFlight = true;
+        try {
+            const currentResult = await getFormattedLiveMatches(null, false);
+            const currentLive = currentResult.matches || [];
+            const allUpdates = this.computeDeltas(currentLive);
+            const ts = new Date().toISOString();
+
+            for (const client of Array.from(this.clients)) {
+                if (!client.isAlive) {
+                    this.removeClient(client);
+                    continue;
+                }
+                const updates = allUpdates.filter((u) => {
+                    if (client.league && u.leagueSlug && u.leagueSlug !== client.league) return false;
+                    if (client.freeRestricted && client.allowedLeagues && u.leagueSlug && !client.allowedLeagues.includes(u.leagueSlug)) return false;
+                    return true;
+                });
+
+                try {
+                    if (updates.length > 0) {
+                        client.sendEvent('score_update', {
+                            timestamp: ts,
+                            updatesCount: updates.length,
+                            deltas: updates,
+                            updates
+                        });
+                    } else {
+                        client.sendEvent('heartbeat', { timestamp: ts });
+                    }
+                } catch {
+                    client.isAlive = false;
+                    this.removeClient(client);
+                }
+            }
+        } catch (_) {
+            // Transient upstream error: keep hub alive
+        } finally {
+            this.tickInFlight = false;
+        }
+    }
+};
+
+/**
  * GET /api/v1/football/live/stream
  * Sub-second Server-Sent Events (SSE) live score & minute updates stream.
- * Pushes live match score changes and minute clock ticks directly to clients.
+ * Pushes live match score changes and minute clock ticks directly to clients via shared hub.
  */
 router.get('/live/stream', optionalApiKeyAuth, async (req, res) => {
     const { league } = req.query;
     if (!enforceLeaguePlan(req, res, league)) return;
+
+    if (liveStreamHub.clients.size >= MAX_SSE_CLIENTS) {
+        return res.status(503).json({
+            error: 'Live stream capacity reached. Please retry shortly.',
+            retryAfter: '10 seconds'
+        });
+    }
 
     res.setHeader('Content-Type', 'text/event-stream');
     res.setHeader('Cache-Control', 'no-cache, no-transform');
@@ -1295,113 +1509,39 @@ router.get('/live/stream', optionalApiKeyAuth, async (req, res) => {
     res.setHeader('X-Accel-Buffering', 'no');
     if (typeof res.flushHeaders === 'function') res.flushHeaders();
 
-    let isAlive = true;
-    let streamTimer = null;
-
-    req.on('close', () => {
-        isAlive = false;
-        if (streamTimer) clearInterval(streamTimer);
-    });
-
-    const sendEvent = (event, data) => {
-        if (!isAlive) return;
-        res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
+    const freeRestricted = isFreePlanRestricted(req.apiKey);
+    const client = {
+        isAlive: true,
+        league: league ? String(league).trim().toLowerCase() : null,
+        freeRestricted,
+        allowedLeagues: freeRestricted ? (req.apiKey?.allowedLeagues || null) : null,
+        sendEvent(event, data) {
+            if (!this.isAlive) return;
+            res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
+        }
     };
 
+    req.on('close', () => {
+        client.isAlive = false;
+        liveStreamHub.removeClient(client);
+    });
+
     try {
-        const initialResult = await getFormattedLiveMatches(league, isFreePlanRestricted(req.apiKey));
+        const initialResult = await getFormattedLiveMatches(league, freeRestricted);
         const initial = initialResult.matches || [];
 
-        sendEvent('initial', {
+        client.sendEvent('initial', {
             timestamp: new Date().toISOString(),
             liveCount: initial.length,
             matches: initial
         });
 
-        const previousStateMap = new Map(initial.map(m => [m.id, {
-            scoreSig: `${m.home?.score ?? 0}-${m.away?.score ?? 0}-${m.status?.clock}`,
-            homeScore: Number(m.home?.score ?? 0),
-            awayScore: Number(m.away?.score ?? 0)
-        }]));
-
-        streamTimer = setInterval(async () => {
-            if (!isAlive) {
-                clearInterval(streamTimer);
-                return;
-            }
-            try {
-                const currentResult = await getFormattedLiveMatches(league, isFreePlanRestricted(req.apiKey));
-                const currentLive = currentResult.matches || [];
-                const updates = [];
-
-                for (const m of currentLive) {
-                    const curHomeScore = Number(m.home?.score ?? 0);
-                    const curAwayScore = Number(m.away?.score ?? 0);
-                    const curClock = m.status?.clock || m.status?.detail || (m.status?.type?.detail) || '';
-                    const curState = m.status?.state || (m.status?.type?.state) || 'in';
-                    const sig = `${curHomeScore}-${curAwayScore}-${curClock}`;
-
-                    const prev = previousStateMap.get(m.id);
-                    if (!prev || prev.scoreSig !== sig) {
-                        const prevH = prev ? prev.homeScore : curHomeScore;
-                        const prevA = prev ? prev.awayScore : curAwayScore;
-                        const isGoal = (curHomeScore > prevH) || (curAwayScore > prevA);
-                        const scoringTeam = (curHomeScore > prevH)
-                            ? (m.home?.displayName || m.home?.name || 'Home')
-                            : (curAwayScore > prevA ? (m.away?.displayName || m.away?.name || 'Away') : null);
-
-                        const delta = {
-                            id: m.id,
-                            eventId: m.id,
-                            homeScore: curHomeScore,
-                            awayScore: curAwayScore,
-                            clock: curClock,
-                            state: curState,
-                            status: {
-                                clock: curClock,
-                                detail: curClock,
-                                displayClock: curClock,
-                                state: curState,
-                                type: m.status?.type || { state: curState, detail: curClock }
-                            },
-                            home: {
-                                score: curHomeScore,
-                                displayName: m.home?.displayName || m.home?.name || 'Home',
-                                logo: m.home?.logo || ''
-                            },
-                            away: {
-                                score: curAwayScore,
-                                displayName: m.away?.displayName || m.away?.name || 'Away',
-                                logo: m.away?.logo || ''
-                            },
-                            isGoal,
-                            scoringTeam,
-                            timestamp: Date.now()
-                        };
-
-                        updates.push(delta);
-                        previousStateMap.set(m.id, {
-                            scoreSig: sig,
-                            homeScore: curHomeScore,
-                            awayScore: curAwayScore
-                        });
-                    }
-                }
-
-                if (updates.length > 0) {
-                    sendEvent('score_update', {
-                        timestamp: new Date().toISOString(),
-                        updatesCount: updates.length,
-                        deltas: updates,
-                        updates
-                    });
-                } else {
-                    sendEvent('heartbeat', { timestamp: new Date().toISOString() });
-                }
-            } catch {}
-        }, 4000);
+        liveStreamHub.seedMatches(initial);
+        liveStreamHub.addClient(client);
     } catch (err) {
-        sendEvent('error', { error: err.message });
+        client.sendEvent('error', { error: err.message });
+        client.isAlive = false;
+        liveStreamHub.removeClient(client);
         res.end();
     }
 });
@@ -5495,3 +5635,5 @@ module.exports.recomputeAnalyticsFromFormattedRecent = recomputeAnalyticsFromFor
 module.exports.isPrivateOrLoopbackHost = isPrivateOrLoopbackHost;
 module.exports.isAllowedCrestUrl = isAllowedCrestUrl;
 module.exports.handleCrestProxy = handleCrestProxy;
+module.exports.liveStreamHub = liveStreamHub;
+module.exports.MAX_SSE_CLIENTS = MAX_SSE_CLIENTS;
