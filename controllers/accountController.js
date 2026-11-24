@@ -1007,6 +1007,147 @@ router.get('/api/account/whitelabel-snippet', requireUser, async (req, res) => {
 });
 
 /**
+ * POST /api/account/forgot-password
+ * Initiates a secure time-limited password reset email (non-enumerating response).
+ */
+router.post('/api/account/forgot-password', async (req, res) => {
+    try {
+        const rawEmail = String(req.body?.email || '').trim().toLowerCase();
+        if (!rawEmail || !rawEmail.includes('@')) {
+            return res.status(400).json({ error: 'Valid email address is required.' });
+        }
+
+        const genericResponse = {
+            status: 'success',
+            message: 'If an account with that email exists, a password reset link has been sent.'
+        };
+
+        const user = await User.findOne({ email: rawEmail });
+        if (!user || user.active === false) {
+            return res.json(genericResponse);
+        }
+
+        const rawToken = crypto.randomBytes(32).toString('hex');
+        const tokenHash = crypto.createHash('sha256').update(rawToken).digest('hex');
+        user.passwordResetToken = tokenHash;
+        user.passwordResetExpires = new Date(Date.now() + 60 * 60 * 1000); // 1 hour
+        await user.save();
+
+        const resetUrl = `${config.PUBLIC_SITE_URL}/account?reset_token=${encodeURIComponent(rawToken)}`;
+        emailService.sendEmail({
+            to: user.email,
+            subject: 'Reset Your NorraScore Password',
+            html: `<p>You requested a password reset for your NorraScore account.</p><p><a href="${resetUrl}">Reset Password</a> (valid for 1 hour)</p><p>If you did not request this, you can safely ignore this email.</p>`,
+            text: `Reset your NorraScore password (valid for 1 hour): ${resetUrl}`
+        }).catch((err) => {
+            console.warn('Password reset email dispatch notice:', err?.message || err);
+        });
+
+        return res.json(genericResponse);
+    } catch (err) {
+        console.error('Forgot password error:', err.message);
+        return res.status(500).json({ error: 'Failed to process password reset request.' });
+    }
+});
+
+/**
+ * POST /api/account/reset-password
+ * Completes a password reset using a valid, unexpired token.
+ */
+router.post('/api/account/reset-password', async (req, res) => {
+    try {
+        const rawToken = String(req.body?.token || '').trim();
+        const newPassword = String(req.body?.password || '');
+
+        if (!rawToken || rawToken.length < 32) {
+            return res.status(400).json({ error: 'Valid reset token is required.' });
+        }
+        if (newPassword.length < 8) {
+            return res.status(400).json({ error: 'Password must be at least 8 characters long.' });
+        }
+
+        const tokenHash = crypto.createHash('sha256').update(rawToken).digest('hex');
+        const user = await User.findOne({
+            passwordResetToken: tokenHash,
+            passwordResetExpires: { $gt: new Date() }
+        });
+
+        if (!user) {
+            return res.status(400).json({ error: 'Password reset token is invalid or has expired.' });
+        }
+
+        user.passwordHash = await User.hashPassword(newPassword);
+        user.passwordResetToken = null;
+        user.passwordResetExpires = null;
+        await user.save();
+
+        return res.json({
+            status: 'success',
+            message: 'Password updated successfully. You can now sign in with your new password.'
+        });
+    } catch (err) {
+        console.error('Reset password error:', err.message);
+        return res.status(500).json({ error: 'Failed to reset password.' });
+    }
+});
+
+/**
+ * GET & PUT /api/account/favorites
+ * Cross-device account-synced favorite teams, leagues, and matches.
+ */
+function sanitizeFavoriteList(input) {
+    if (!Array.isArray(input)) return [];
+    const unique = new Set();
+    for (const item of input) {
+        const clean = String(item || '').trim().slice(0, 80);
+        if (clean) unique.add(clean);
+        if (unique.size >= 100) break;
+    }
+    return Array.from(unique);
+}
+
+router.get('/api/account/favorites', requireUser, async (req, res) => {
+    try {
+        const user = await User.findById(req.user._id)
+            .select('favoriteTeams favoriteLeagues favoriteMatches')
+            .lean();
+        if (!user) return res.status(404).json({ error: 'User not found.' });
+        return res.json({
+            favoriteTeams: user.favoriteTeams || [],
+            favoriteLeagues: user.favoriteLeagues || [],
+            favoriteMatches: user.favoriteMatches || []
+        });
+    } catch (err) {
+        return res.status(500).json({ error: 'Failed to load favorites.' });
+    }
+});
+
+router.put('/api/account/favorites', requireUser, async (req, res) => {
+    try {
+        const update = {};
+        if (req.body?.favoriteTeams !== undefined) update.favoriteTeams = sanitizeFavoriteList(req.body.favoriteTeams);
+        if (req.body?.favoriteLeagues !== undefined) update.favoriteLeagues = sanitizeFavoriteList(req.body.favoriteLeagues);
+        if (req.body?.favoriteMatches !== undefined) update.favoriteMatches = sanitizeFavoriteList(req.body.favoriteMatches);
+
+        const user = await User.findByIdAndUpdate(
+            req.user._id,
+            { $set: update },
+            { new: true }
+        ).select('favoriteTeams favoriteLeagues favoriteMatches').lean();
+
+        if (!user) return res.status(404).json({ error: 'User not found.' });
+        return res.json({
+            status: 'success',
+            favoriteTeams: user.favoriteTeams || [],
+            favoriteLeagues: user.favoriteLeagues || [],
+            favoriteMatches: user.favoriteMatches || []
+        });
+    } catch (err) {
+        return res.status(500).json({ error: 'Failed to save favorites.' });
+    }
+});
+
+/**
  * GET /api/account/invoices
  */
 router.get('/api/account/invoices', requireUser, async (req, res) => {

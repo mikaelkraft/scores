@@ -78,9 +78,30 @@ const UserSchema = new mongoose.Schema({
         type: Date,
         default: null
     },
+    passwordResetToken: {
+        type: String,
+        default: null,
+        index: true
+    },
+    passwordResetExpires: {
+        type: Date,
+        default: null
+    },
+    favoriteTeams: {
+        type: [String],
+        default: []
+    },
+    favoriteLeagues: {
+        type: [String],
+        default: []
+    },
+    favoriteMatches: {
+        type: [String],
+        default: []
+    },
     plan: {
         type: String,
-        enum: ['free', 'starter', 'pro', 'whitelabel'],
+        enum: ['free', 'starter', 'pro', 'whitelabel', 'enterprise'],
         default: 'free'
     },
     planExpiresAt: {

@@ -43,14 +43,18 @@ aapt package -f -M "${ANDROID_DIR}/AndroidManifest.xml" -S "${ANDROID_DIR}/res" 
 # 6. Align APK
 zipalign -f -p 4 "${ANDROID_DIR}/bin/norrascore-unaligned.apk" "${ANDROID_DIR}/bin/norrascore-aligned.apk"
 
-# 7. Sign APK
-KEYSTORE="${ANDROID_DIR}/norrascore.keystore"
+# 7. Sign APK (supports CI/prod secrets via ANDROID_KEYSTORE_PASS / ANDROID_KEY_PASS env vars)
+KEYSTORE="${ANDROID_KEYSTORE_PATH:-${ANDROID_DIR}/norrascore.keystore}"
+KEYSTORE_PASS="${ANDROID_KEYSTORE_PASS:-norrascore2026}"
+KEY_PASS="${ANDROID_KEY_PASS:-${KEYSTORE_PASS}}"
+KEY_ALIAS="${ANDROID_KEY_ALIAS:-norrascore}"
+
 if [[ ! -f "${KEYSTORE}" ]]; then
-    keytool -genkeypair -v -keystore "${KEYSTORE}" -storepass norrascore2026 -alias norrascore -keypass norrascore2026 -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=NorraScore, OU=Engineering, O=Norra AI, L=Lagos, ST=Lagos, C=NG"
+    keytool -genkeypair -v -keystore "${KEYSTORE}" -storepass "${KEYSTORE_PASS}" -alias "${KEY_ALIAS}" -keypass "${KEY_PASS}" -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=NorraScore, OU=Engineering, O=Norra AI, L=Lagos, ST=Lagos, C=NG"
 fi
 
 OUTPUT_APK="${PROJECT_DIR}/public/download/norrascore.apk"
-apksigner sign --ks "${KEYSTORE}" --ks-pass pass:norrascore2026 --out "${OUTPUT_APK}" "${ANDROID_DIR}/bin/norrascore-aligned.apk"
+apksigner sign --ks "${KEYSTORE}" --ks-pass "pass:${KEYSTORE_PASS}" --key-pass "pass:${KEY_PASS}" --out "${OUTPUT_APK}" "${ANDROID_DIR}/bin/norrascore-aligned.apk"
 apksigner verify --verbose "${OUTPUT_APK}"
 
 echo "NorraScore v1.0.0 APK successfully generated at ${OUTPUT_APK} ($(wc -c < "${OUTPUT_APK}") bytes)"

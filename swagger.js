@@ -231,6 +231,111 @@ const options = {
           in: 'header',
           name: 'x-api-key',
           description: 'Norra AI Master API key or commercial client key'
+        },
+        BearerAuth: {
+          type: 'http',
+          scheme: 'bearer',
+          bearerFormat: 'JWT',
+          description: 'Account or Admin JWT Bearer token'
+        }
+      }
+    },
+    paths: {
+      '/api/v1/football/live': {
+        get: {
+          tags: ['Commercial Football API'],
+          summary: 'Get all live football matches',
+          security: [{ ApiKeyAuth: [] }],
+          parameters: [
+            { name: 'league', in: 'query', schema: { type: 'string' }, description: 'Optional league slug filter (e.g. eng.1)' }
+          ],
+          responses: { '200': { description: 'Live matches snapshot' }, '429': { description: 'Tier rate limit exceeded' } }
+        }
+      },
+      '/api/v1/football/live/stream': {
+        get: {
+          tags: ['Commercial Football API'],
+          summary: 'Server-Sent Events (SSE) real-time live score & FT delta stream',
+          security: [{ ApiKeyAuth: [] }],
+          responses: { '200': { description: 'text/event-stream live delta feed' }, '503': { description: 'Stream capacity reached' } }
+        }
+      },
+      '/api/v1/football/fixtures': {
+        get: {
+          tags: ['Commercial Football API'],
+          summary: 'Query multi-league fixtures by date, league, team, or status',
+          security: [{ ApiKeyAuth: [] }],
+          parameters: [
+            { name: 'date', in: 'query', schema: { type: 'string' }, description: 'YYYY-MM-DD or today/yesterday/tomorrow' },
+            { name: 'league', in: 'query', schema: { type: 'string' } },
+            { name: 'status', in: 'query', schema: { type: 'string', enum: ['all', 'live', 'upcoming', 'finished'] } }
+          ],
+          responses: { '200': { description: 'Fixtures board' } }
+        }
+      },
+      '/api/v1/football/standings': {
+        get: {
+          tags: ['Commercial Football API'],
+          summary: 'Get competition league table and standings',
+          security: [{ ApiKeyAuth: [] }],
+          parameters: [
+            { name: 'league', in: 'query', required: true, schema: { type: 'string' } }
+          ],
+          responses: { '200': { description: 'Standings groups' } }
+        }
+      },
+      '/api/v1/football/match/{eventId}/predictions-context': {
+        get: {
+          tags: ['Commercial Football API'],
+          summary: 'Get H2H, recent form, table context, and Norra AI Poisson predictions',
+          security: [{ ApiKeyAuth: [] }],
+          parameters: [
+            { name: 'eventId', in: 'path', required: true, schema: { type: 'string' } }
+          ],
+          responses: { '200': { description: 'Predictions and H2H analytics context' } }
+        }
+      },
+      '/api/v1/booking/convert': {
+        post: {
+          tags: ['Booking Code Converter'],
+          summary: 'Convert a bookmaker booking code across supported providers',
+          security: [{ ApiKeyAuth: [] }],
+          responses: { '200': { description: 'Converted booking selections and code' } }
+        }
+      },
+      '/api/payments/flutterwave/webhook': {
+        post: {
+          tags: ['Payments'],
+          summary: 'Signed Flutterwave server-to-server webhook receiver (verif-hash)',
+          responses: { '200': { description: 'Webhook acknowledged' }, '401': { description: 'Invalid signature' } }
+        }
+      },
+      '/api/account/forgot-password': {
+        post: {
+          tags: ['Account'],
+          summary: 'Request a time-limited password reset email',
+          responses: { '200': { description: 'Generic non-enumerating confirmation' } }
+        }
+      },
+      '/api/account/reset-password': {
+        post: {
+          tags: ['Account'],
+          summary: 'Complete password reset using emailed token',
+          responses: { '200': { description: 'Password updated' }, '400': { description: 'Invalid or expired token' } }
+        }
+      },
+      '/api/account/favorites': {
+        get: {
+          tags: ['Account'],
+          summary: 'Get cross-device synced favorite teams, leagues, and matches',
+          security: [{ BearerAuth: [] }],
+          responses: { '200': { description: 'User favorites lists' } }
+        },
+        put: {
+          tags: ['Account'],
+          summary: 'Update cross-device synced favorite teams, leagues, and matches',
+          security: [{ BearerAuth: [] }],
+          responses: { '200': { description: 'Updated favorites lists' } }
         }
       }
     }

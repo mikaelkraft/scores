@@ -15,7 +15,7 @@
         android:roundIcon="@drawable/ic_launcher"
         android:supportsRtl="true"
         android:theme="@android:style/Theme.NoTitleBar"
-        android:usesCleartextTraffic="true">
+        android:usesCleartextTraffic="false">
         <activity
             android:name="xyz.mynorra.scores.MainActivity"
             android:configChanges="orientation|screenSize|keyboardHidden"
