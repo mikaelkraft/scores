@@ -3239,7 +3239,7 @@ router.get('/predictions-context/:eventId', optionalApiKeyAuth, async (req, res)
         {
             const seen = new Set();
             const deduped = [];
-            for (const m of allRecentH2h) {
+            for (const m of allLifetimeH2h) {
                 const d = m.date ? new Date(m.date).toISOString().slice(0, 10) : '';
                 const h = normalizeTeamName(m.homeTeam || '');
                 const a = normalizeTeamName(m.awayTeam || '');
@@ -3249,8 +3249,8 @@ router.get('/predictions-context/:eventId', optionalApiKeyAuth, async (req, res)
                 seen.add(key);
                 deduped.push(m);
             }
-            allRecentH2h.length = 0;
-            deduped.forEach(m => allRecentH2h.push(m));
+            allLifetimeH2h.length = 0;
+            deduped.forEach(m => allLifetimeH2h.push(m));
         }
 
         let homeWins = 0;
