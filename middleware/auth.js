@@ -39,8 +39,8 @@ async function requireAdmin(req, res, next) {
         return res.status(401).json({ error: 'Invalid or expired authentication token.' });
     }
 
-    // Verify admin role or env fallback
-    if (decoded.role === 'admin' || decoded.username === config.ADMIN_USERNAME) {
+    // Verify admin role strictly (never trust mutable username claims)
+    if (decoded.role === 'admin') {
         req.admin = decoded;
         return next();
     }

@@ -13,12 +13,16 @@ class FlutterwaveService {
 
     async initializePayment({ tx_ref, amount, currency = 'USD', customer, redirect_url, meta }) {
         if (!this.isConfigured()) {
-            // Mock sandbox link when real keys are not yet configured in admin
+            if (config.isProd) {
+                throw new Error('Flutterwave is not configured for production payments.');
+            }
+            const sep = String(redirect_url || '').includes('?') ? '&' : '?';
+            // Mock sandbox link when real keys are not yet configured in non-production
             return {
                 status: 'success',
                 message: 'Flutterwave sandbox session initialized (Mock Mode)',
                 data: {
-                    link: `${redirect_url}?status=successful&tx_ref=${tx_ref}&transaction_id=mock_flw_${Date.now()}`
+                    link: `${redirect_url}${sep}status=successful&tx_ref=${encodeURIComponent(tx_ref)}&transaction_id=mock_flw_${Date.now()}`
                 }
             };
         }
@@ -68,9 +72,13 @@ class FlutterwaveService {
     }
 
     async verifyTransaction(transactionId) {
-        if (!this.isConfigured() || String(transactionId).startsWith('mock_flw_')) {
+        if (!this.isConfigured()) {
+            if (config.isProd) {
+                throw new Error('Flutterwave is not configured for production verification.');
+            }
             return {
                 status: 'success',
+                mock: true,
                 data: {
                     status: 'successful',
                     id: transactionId,
@@ -78,6 +86,9 @@ class FlutterwaveService {
                     currency: 'USD'
                 }
             };
+        }
+        if (String(transactionId).startsWith('mock_flw_')) {
+            throw new Error('Mock transaction references are rejected when live Flutterwave credentials are active.');
         }
 
         return new Promise((resolve, reject) => {

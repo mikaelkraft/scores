@@ -12,16 +12,8 @@ const SiteSetting = require('../models/siteSetting');
 const emailService = require('../services/emailService');
 const googleAuthService = require('../services/googleAuthService');
 const { requireUser, JWT_SECRET } = require('../middleware/auth');
-const { keyCache } = require('../middleware/apiKeyAuth');
+const { keyCache, PLAN_LIMITS } = require('../middleware/apiKeyAuth');
 const { config } = require('../config/env');
-
-const PLAN_LIMITS = {
-    free: { rateLimit: 120, isAdFree: false },
-    starter: { rateLimit: 600, isAdFree: true },
-    pro: { rateLimit: 1500, isAdFree: true },
-    whitelabel: { rateLimit: 3000, isAdFree: true },
-    admin: { rateLimit: 0, isAdFree: true }
-};
 
 function maskApiKey(key) {
     if (!key || typeof key !== 'string') return '';
@@ -49,11 +41,13 @@ const avatarUpload = multer({
     storage: avatarStorage,
     limits: { fileSize: 4 * 1024 * 1024 }, // 4MB
     fileFilter: (req, file, cb) => {
-        const allowedTypes = /jpeg|jpg|png|webp|gif|svg\+xml|svg/;
-        const mimeValid = allowedTypes.test(file.mimetype);
-        const extValid = allowedTypes.test(path.extname(file.originalname).toLowerCase().replace('.', ''));
-        if (mimeValid || extValid) return cb(null, true);
-        cb(new Error('Only image files (PNG, JPG, WebP, SVG, GIF) are allowed.'));
+        // Disallow SVG/HTML to prevent same-origin stored XSS; require BOTH valid MIME and extension
+        const allowedMime = /^image\/(jpeg|jpg|png|webp|gif)$/i;
+        const allowedExt = /^(jpeg|jpg|png|webp|gif)$/i;
+        const mimeValid = allowedMime.test(String(file.mimetype || ''));
+        const extValid = allowedExt.test(path.extname(file.originalname || '').toLowerCase().replace('.', ''));
+        if (mimeValid && extValid) return cb(null, true);
+        cb(new Error('Only raster image files (PNG, JPG, WebP, GIF) are allowed.'));
     }
 });
 
@@ -394,9 +388,10 @@ function renderGoogleAuthBridge(res, token, redirectUrl = '/account', isAdmin = 
                 }
             } catch(e) {}
             var finalUrl = redirectUrl + (redirectUrl.indexOf('?') === -1 ? '?token=' : '&token=') + encodeURIComponent(token);
+            var targetOrigin = window.location.origin;
             if (window.opener && !window.opener.closed) {
                 try {
-                    window.opener.postMessage({ type: 'GOOGLE_AUTH_SUCCESS', token: token, redirectUrl: redirectUrl }, '*');
+                    window.opener.postMessage({ type: 'GOOGLE_AUTH_SUCCESS', token: token, redirectUrl: redirectUrl }, targetOrigin);
                 } catch(e) {}
                 setTimeout(function() {
                     try { window.close(); } catch(e) {}
@@ -692,6 +687,13 @@ async function handleProfileUpdate(req, res) {
                 if (!/^[a-z0-9_.-]{3,30}$/.test(cleanUser)) {
                     return res.status(400).json({ error: 'Username must be 3-30 characters long and can only contain letters, numbers, underscores, and hyphens.' });
                 }
+                const reservedUsernames = new Set([
+                    'admin', 'administrator', 'root', 'system', 'norra', 'norrascore',
+                    String(config.ADMIN_USERNAME || 'admin').trim().toLowerCase()
+                ]);
+                if (user.role !== 'admin' && reservedUsernames.has(cleanUser)) {
+                    return res.status(400).json({ error: 'This username is reserved.' });
+                }
                 const existing = await User.findOne({ username: cleanUser, _id: { $ne: user._id } });
                 if (existing) {
                     return res.status(400).json({ error: 'This username is already taken by another developer.' });
@@ -813,8 +815,8 @@ router.get('/api/account/keys', requireUser, async (req, res) => {
             active: true
         }).sort({ createdAt: -1 }).lean();
 
-        const isNorraAdmin = req.user.role === 'admin' || req.user.email.includes('norra') || req.user.email.includes('admin');
-        const norraMasterKey = isNorraAdmin ? (config.NORRA_INTERNAL_API_KEY || 'norra_live_master_internal_access_2026') : null;
+        const isNorraAdmin = req.user.role === 'admin';
+        const norraMasterKey = isNorraAdmin ? (config.NORRA_INTERNAL_API_KEY || (!config.isProd ? 'norra_live_master_internal_access_2026' : null)) : null;
 
         const sanitizedKeys = keys.map(k => ({
             _id: k._id,
@@ -870,7 +872,7 @@ router.post('/api/account/keys/generate', requireUser, async (req, res) => {
             name: `${user.companyName || user.fullName || user.username || 'Developer'} ${plan.toUpperCase()} Key`,
             email: user.email,
             plan: plan,
-            rateLimitPerMinute: limits.rateLimit,
+            rateLimitPerMinute: limits.rateLimitPerMinute,
             isAdFree: limits.isAdFree,
             active: true,
             expiresAt: user.planExpiresAt || null
@@ -926,7 +928,7 @@ router.post('/api/account/keys/regenerate', requireUser, async (req, res) => {
             name: `${user.companyName || user.fullName || user.username || 'Developer'} ${plan.toUpperCase()} Key`,
             email: user.email,
             plan: plan,
-            rateLimitPerMinute: limits.rateLimit,
+            rateLimitPerMinute: limits.rateLimitPerMinute,
             isAdFree: limits.isAdFree,
             active: true,
             expiresAt: user.planExpiresAt || null

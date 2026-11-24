@@ -8,7 +8,7 @@ const flutterwaveService = require('../services/flutterwaveService');
 const paypalService = require('../services/paypalService');
 const { config } = require('../config/env');
 
-const { PLAN_LIMITS } = require('../middleware/apiKeyAuth');
+const { PLAN_LIMITS, keyCache } = require('../middleware/apiKeyAuth');
 
 /**
  * GET /api/plans or /api/v1/payments/plans
@@ -113,10 +113,11 @@ router.get(['/api/plans', '/api/v1/payments/plans'], async (req, res) => {
 // Helper: Provision or upgrade an API key on successful payment
 async function provisionPaidKey({ email, name, plan, txRef }) {
     const limits = PLAN_LIMITS[plan] || PLAN_LIMITS.starter;
+    const rateLimit = Number(limits.rateLimitPerMinute ?? 500);
     const expiresAt = new Date();
     expiresAt.setDate(expiresAt.getDate() + 30); // 30 days subscription
 
-    // Find or create customer account
+    // Find or update customer account
     let user = await User.findOne({ email });
     if (user) {
         user.plan = plan;
@@ -128,10 +129,12 @@ async function provisionPaidKey({ email, name, plan, txRef }) {
     let apiKey = await ApiKey.findOne({ email, active: true });
     if (apiKey) {
         apiKey.plan = plan;
-        apiKey.rateLimitPerMinute = limits.rateLimit;
-        apiKey.isAdFree = limits.isAdFree;
+        apiKey.rateLimitPerMinute = rateLimit;
+        apiKey.isAdFree = Boolean(limits.isAdFree);
+        apiKey.allowedLeagues = []; // Clear any legacy free-tier league locks on upgrade
         apiKey.expiresAt = expiresAt;
         await apiKey.save();
+        if (keyCache && apiKey.key) keyCache.delete(apiKey.key);
     } else {
         const keyString = ApiKey.generateKey();
         apiKey = await ApiKey.create({
@@ -140,8 +143,9 @@ async function provisionPaidKey({ email, name, plan, txRef }) {
             name: name || `${plan} API Key`,
             email,
             plan,
-            rateLimitPerMinute: limits.rateLimit,
-            isAdFree: limits.isAdFree,
+            rateLimitPerMinute: rateLimit,
+            isAdFree: Boolean(limits.isAdFree),
+            allowedLeagues: [],
             expiresAt
         });
     }
@@ -154,7 +158,7 @@ async function provisionPaidKey({ email, name, plan, txRef }) {
  */
 router.post(['/api/payments/flutterwave/initialize', '/api/v1/payments/flutterwave/initialize'], async (req, res) => {
     try {
-        const { plan, email, name, currency = 'USD' } = req.body;
+        const { plan, email, name } = req.body;
         if (!plan || !email) {
             return res.status(400).json({ error: 'Plan and customer email are required.' });
         }
@@ -165,7 +169,9 @@ router.post(['/api/payments/flutterwave/initialize', '/api/v1/payments/flutterwa
             return res.status(400).json({ error: 'Invalid plan selected.' });
         }
 
-        const amount = planConfig.priceUsd;
+        // Lock checkout currency strictly to USD matching planConfig.priceUsd (prevents currency arbitrage)
+        const currency = 'USD';
+        const amount = Number(planConfig.priceUsd);
         const tx_ref = `norra_flw_${Date.now()}_${Math.floor(Math.random() * 1000)}`;
 
         // Record pending transaction
@@ -217,13 +223,28 @@ router.post(['/api/payments/flutterwave/verify', '/api/v1/payments/flutterwave/v
 
         const verification = await flutterwaveService.verifyTransaction(transaction_id || tx_ref);
         if (verification.status === 'success' && verification.data?.status === 'successful') {
-            const queryRef = tx_ref || verification.data.tx_ref;
+            const verifiedRef = verification.data.tx_ref;
+            if (!verification.mock && tx_ref && verifiedRef && verifiedRef !== tx_ref) {
+                return res.status(400).json({ error: 'Transaction reference mismatch.' });
+            }
+            const queryRef = verifiedRef || tx_ref;
             const tx = await Transaction.findOne({ tx_ref: queryRef });
+            if (!tx) {
+                return res.status(404).json({ error: 'Transaction record not found.' });
+            }
 
-            if (tx && tx.status !== 'successful') {
+            if (!verification.mock) {
+                const paidAmount = Number(verification.data.amount || 0);
+                const paidCurrency = String(verification.data.currency || '').toUpperCase();
+                if (paidAmount < Number(tx.amount) || paidCurrency !== String(tx.currency || 'USD').toUpperCase()) {
+                    return res.status(400).json({ error: 'Verified payment amount or currency does not match order.' });
+                }
+            }
+
+            if (tx.status !== 'successful') {
                 tx.status = 'successful';
                 tx.gateway_ref = String(verification.data.id || transaction_id);
-                
+
                 // Provision key
                 const apiKey = await provisionPaidKey({
                     email: tx.customer_email,
@@ -241,11 +262,11 @@ router.post(['/api/payments/flutterwave/verify', '/api/v1/payments/flutterwave/v
                     plan: tx.plan,
                     expiresAt: apiKey.expiresAt
                 });
-            } else if (tx && tx.status === 'successful') {
+            } else {
+                // Never disclose plaintext API key on unauthenticated replay
                 return res.json({
                     status: 'success',
-                    message: 'Payment already processed.',
-                    apiKey: tx.api_key_issued,
+                    message: 'Payment already processed. View or rotate your API key in your Account portal.',
                     plan: tx.plan
                 });
             }
@@ -255,6 +276,45 @@ router.post(['/api/payments/flutterwave/verify', '/api/v1/payments/flutterwave/v
     } catch (err) {
         console.error('Flutterwave verify error:', err.message);
         return res.status(500).json({ error: 'Failed to verify transaction.' });
+    }
+});
+
+/**
+ * POST /api/payments/flutterwave/webhook
+ * Signed server-to-server Flutterwave webhook (verif-hash) so paid keys provision even if browser closes early.
+ */
+router.post(['/api/payments/flutterwave/webhook', '/api/v1/payments/flutterwave/webhook'], async (req, res) => {
+    try {
+        const expectedHash = process.env.FLUTTERWAVE_WEBHOOK_HASH;
+        const incomingHash = req.headers['verif-hash'];
+        if (!expectedHash || !incomingHash || String(incomingHash) !== String(expectedHash)) {
+            return res.status(401).json({ error: 'Invalid webhook signature.' });
+        }
+        const evData = req.body?.data || {};
+        if (req.body?.event === 'charge.completed' && evData.status === 'successful' && evData.tx_ref && evData.id) {
+            const verification = await flutterwaveService.verifyTransaction(evData.id);
+            const tx = await Transaction.findOne({ tx_ref: evData.tx_ref });
+            if (tx && tx.status !== 'successful' && verification?.status === 'success' && verification?.data?.status === 'successful') {
+                const paidAmount = Number(verification.data.amount || 0);
+                const paidCurrency = String(verification.data.currency || '').toUpperCase();
+                if (paidAmount >= Number(tx.amount) && paidCurrency === String(tx.currency || 'USD').toUpperCase()) {
+                    tx.status = 'successful';
+                    tx.gateway_ref = String(verification.data.id);
+                    const apiKey = await provisionPaidKey({
+                        email: tx.customer_email,
+                        name: tx.customer_name,
+                        plan: tx.plan,
+                        txRef: tx.tx_ref
+                    });
+                    tx.api_key_issued = apiKey.key;
+                    await tx.save();
+                }
+            }
+        }
+        return res.status(200).json({ status: 'received' });
+    } catch (err) {
+        console.error('Flutterwave webhook error:', err.message);
+        return res.status(500).json({ error: 'Webhook processing error.' });
     }
 });
 
@@ -321,10 +381,24 @@ router.post(['/api/payments/paypal/capture-order', '/api/v1/payments/paypal/capt
 
         const capture = await paypalService.captureOrder(orderId);
         if (capture && (capture.status === 'COMPLETED' || capture.mock)) {
-            const tx = await Transaction.findOne({ gateway_ref: orderId }) || await Transaction.findOne({ tx_ref });
-            if (tx && tx.status !== 'successful') {
+            // Strictly match by gateway_ref: orderId (prevents cross-transaction replay via arbitrary tx_ref)
+            const tx = await Transaction.findOne({ gateway_ref: orderId });
+            if (!tx) {
+                return res.status(404).json({ error: 'PayPal order transaction not found.' });
+            }
+            if (!capture.mock) {
+                const capAmt = capture.purchase_units?.[0]?.payments?.captures?.[0]?.amount;
+                if (capAmt) {
+                    const paidVal = Number(capAmt.value || 0);
+                    const paidCurr = String(capAmt.currency_code || '').toUpperCase();
+                    if (paidVal < Number(tx.amount) || paidCurr !== String(tx.currency || 'USD').toUpperCase()) {
+                        return res.status(400).json({ error: 'Captured PayPal amount or currency does not match order.' });
+                    }
+                }
+            }
+            if (tx.status !== 'successful') {
                 tx.status = 'successful';
-                
+
                 const apiKey = await provisionPaidKey({
                     email: tx.customer_email,
                     name: tx.customer_name,
@@ -342,6 +416,11 @@ router.post(['/api/payments/paypal/capture-order', '/api/v1/payments/paypal/capt
                     expiresAt: apiKey.expiresAt
                 });
             }
+            return res.json({
+                status: 'success',
+                message: 'PayPal payment already processed. Manage your API key in your Account portal.',
+                plan: tx.plan
+            });
         }
 
         return res.status(400).json({ error: 'Could not capture PayPal order.' });

@@ -50,6 +50,9 @@ class PayPalService {
 
     async createOrder({ amount, currency = 'USD', description = 'Norra AI Sports API' }) {
         if (!this.isConfigured()) {
+            if (config.isProd) {
+                throw new Error('PayPal is not configured for production payments.');
+            }
             return {
                 id: `mock_pp_order_${Date.now()}`,
                 status: 'CREATED',
@@ -96,12 +99,18 @@ class PayPalService {
     }
 
     async captureOrder(orderId) {
-        if (!this.isConfigured() || String(orderId).startsWith('mock_pp_order_')) {
+        if (!this.isConfigured()) {
+            if (config.isProd) {
+                throw new Error('PayPal is not configured for production capture.');
+            }
             return {
                 id: orderId,
                 status: 'COMPLETED',
                 mock: true
             };
+        }
+        if (String(orderId).startsWith('mock_pp_order_')) {
+            throw new Error('Mock PayPal order IDs are rejected when live PayPal credentials are active.');
         }
 
         const token = await this.getAccessToken();

@@ -47,12 +47,12 @@ try {
     console.error('❌ OpenAPI failed to load:', err.message);
 }
 
-// CORS - public read endpoints must be reachable from browsers on other origins
+// CORS - public read & commercial API endpoints must be reachable from browsers on other origins
 const corsOrigins = config.getCorsOrigins();
 const publicCorsOptions = {
     origin: corsOrigins,
-    methods: ['GET', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Accept'],
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Accept', 'Authorization', 'x-api-key', 'x-norra-internal-key', 'x-web-client'],
     credentials: false
 };
 app.use(cors(publicCorsOptions));
@@ -71,7 +71,12 @@ const { extractApiKey, isMasterAdminKey } = require('./middleware/apiKeyAuth');
 
 const shouldSkipRateLimit = (req) => {
     const rawKey = extractApiKey(req);
-    return isMasterAdminKey(rawKey);
+    if (isMasterAdminKey(rawKey)) return true;
+    // Commercial API v1 requests carrying an API key are rate-limited per-tier inside
+    // optionalApiKeyAuth / requireApiKey so Pro (1,500/m) and Whitelabel (5,000/m)
+    // are not prematurely throttled by the global anonymous IP limiter.
+    if (rawKey && req.path.startsWith('/api/v1/')) return true;
+    return false;
 };
 
 const baseLimiter = rateLimit({
@@ -155,10 +160,10 @@ let cachedFaviconUrl = { url: '', ts: 0 };
 async function resolveCustomFavicon(req, res, next) {
     try {
         if (Date.now() - cachedFaviconUrl.ts > 60000) {
-            const SiteSettings = require('./models/siteSettings');
-            const doc = await SiteSettings.findOne().select('branding.faviconUrl branding.headerLogoUrl').lean().catch(() => null);
-            const url = String(doc?.branding?.faviconUrl || '').trim()
-                || String(doc?.branding?.headerLogoUrl || '').trim();
+            const SiteSetting = require('./models/siteSetting');
+            const doc = await SiteSetting.findOne().select('faviconUrl headerLogoUrl').lean().catch(() => null);
+            const url = String(doc?.faviconUrl || '').trim()
+                || String(doc?.headerLogoUrl || '').trim();
             cachedFaviconUrl = { url, ts: Date.now() };
         }
         if (cachedFaviconUrl.url && !cachedFaviconUrl.url.startsWith(req.path)) {
@@ -197,7 +202,11 @@ app.use('/assets', express.static(path.join(__dirname, 'public'), {
 }));
 
 app.use('/uploads', express.static(path.join(__dirname, 'public', 'uploads'), {
-    maxAge: config.isProd ? '30d' : 0
+    maxAge: config.isProd ? '30d' : 0,
+    setHeaders: (res) => {
+        res.set('X-Content-Type-Options', 'nosniff');
+        res.set('Content-Security-Policy', "default-src 'none'; sandbox");
+    }
 }));
 
 // Commercial Pricing Page
@@ -230,15 +239,7 @@ app.get('/privacy', (req, res) => {
 });
 
 // Standalone APK and Android App Package Download
-app.use('/download', express.static(path.join(__dirname, 'public', 'download'), {
-    setHeaders: (res, filePath) => {
-        if (filePath.endsWith('.apk')) {
-            res.set('Content-Type', 'application/vnd.android.package-archive');
-            res.set('Content-Disposition', 'attachment; filename="norrascore.apk"');
-        }
-    }
-}));
-
+// Mount dynamic handler BEFORE static /download so Admin's custom apkUrl redirect takes precedence.
 app.get(['/download/norrascore.apk', '/downloads/norrascore.apk', '/download/app.apk', '/download', '/downloads'], async (req, res) => {
     try {
         const SiteSetting = require('./models/siteSetting');
@@ -282,6 +283,15 @@ app.get(['/download/norrascore.apk', '/downloads/norrascore.apk', '/download/app
         return res.status(500).type('text/plain').send('Download error');
     }
 });
+
+app.use('/download', express.static(path.join(__dirname, 'public', 'download'), {
+    setHeaders: (res, filePath) => {
+        if (filePath.endsWith('.apk')) {
+            res.set('Content-Type', 'application/vnd.android.package-archive');
+            res.set('Content-Disposition', 'attachment; filename="norrascore.apk"');
+        }
+    }
+}));
 
 // OpenAPI is a bounded discovery document for API clients and answer engines.
 if (specs) {

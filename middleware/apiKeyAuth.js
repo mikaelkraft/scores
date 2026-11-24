@@ -246,14 +246,20 @@ const requestCounters = new Map();
 function isMasterAdminKey(rawKey) {
     if (!rawKey) return false;
     const cleanKey = String(rawKey).trim();
-    const masterKey = config?.NORRA_INTERNAL_API_KEY || 'norra_live_master_internal_access_2026';
+    const configuredMaster = process.env.NORRA_INTERNAL_API_KEY || (config?.isProd ? '' : config?.NORRA_INTERNAL_API_KEY);
     const cronToken = process.env.CRON_TOKEN;
-    const cronSecret = process.env.CRON_SECRET || 'norra_cron_secret_token_2026';
-    return cleanKey === masterKey ||
-           cleanKey === 'norra_live_master_internal_access_2026' ||
+    const cronSecret = process.env.CRON_SECRET;
+
+    if (configuredMaster && cleanKey === configuredMaster) return true;
+    if (cronToken && cleanKey === cronToken) return true;
+    if (cronSecret && cleanKey === cronSecret) return true;
+
+    // Never allow hardcoded fallback master/cron keys in production
+    if (config?.isProd) return false;
+
+    return cleanKey === 'norra_live_master_internal_access_2026' ||
            cleanKey === 'norra_master_admin_internal_sync' ||
-           (Boolean(cronToken) && cleanKey === cronToken) ||
-           cleanKey === cronSecret;
+           cleanKey === 'norra_cron_secret_token_2026';
 }
 
 function extractApiKey(req) {
@@ -362,14 +368,30 @@ async function optionalApiKeyAuth(req, res, next) {
 
     const keyDoc = await resolveApiKey(rawKey);
     if (keyDoc) {
+        const isUnlimited = keyDoc.plan === 'admin' || keyDoc.plan === 'internal' || !keyDoc.rateLimitPerMinute || keyDoc.rateLimitPerMinute <= 0;
+        const limit = isUnlimited ? 0 : (keyDoc.rateLimitPerMinute || 120);
+        const { allowed, remaining } = checkRateLimit(keyDoc.key, limit);
+        res.set('X-RateLimit-Limit', isUnlimited ? 'unlimited' : String(limit));
+        res.set('X-RateLimit-Remaining', isUnlimited ? '999999' : String(Math.max(0, remaining)));
+        if (!allowed && !isUnlimited) {
+            return res.status(429).json({
+                error: 'Rate limit exceeded for this API key tier. Please upgrade for higher throughput.',
+                limit,
+                retryAfter: '60 seconds',
+                upgradeUrl: '/pricing'
+            });
+        }
+
         req.apiKey = keyDoc;
         req.isAdFree = Boolean(keyDoc.isAdFree);
-        
-        // Asynchronously record usage without awaiting
-        ApiKey.updateOne({ _id: keyDoc._id }, {
-            $inc: { totalRequests: 1 },
-            $set: { lastUsedAt: new Date() }
-        }).catch(() => {});
+
+        // Asynchronously record usage without awaiting (skip virtual master key ID)
+        if (keyDoc._id && keyDoc._id !== 'norra_master_internal_key') {
+            ApiKey.updateOne({ _id: keyDoc._id }, {
+                $inc: { totalRequests: 1 },
+                $set: { lastUsedAt: new Date() }
+            }).catch(() => {});
+        }
     } else {
         req.isAdFree = false;
     }

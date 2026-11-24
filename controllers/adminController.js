@@ -393,7 +393,8 @@ router.get('/api/admin/transactions', requireAdmin, async (req, res) => {
             filter.status = status;
         }
         if (search) {
-            const rx = new RegExp(search, 'i');
+            const escaped = search.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+            const rx = new RegExp(escaped, 'i');
             filter.$or = [
                 { tx_ref: rx },
                 { customer_email: rx },

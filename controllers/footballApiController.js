@@ -5173,9 +5173,91 @@ function preCacheMatchCrests(matches) {
     }
 }
 
-function fetchStreamWithRedirects(targetUrl, maxRedirects = 3) {
+const ALLOWED_CREST_HOST_SUFFIXES = [
+    'espncdn.com',
+    'espn.com',
+    'livescore.com',
+    'thesports.com',
+    'thesportsdb.com',
+    'sportscore.com',
+    'flagcdn.com',
+    'wikimedia.org',
+    'sportmonks.com',
+    'api-sports.io',
+    'flashscore.com',
+    'sofascore.com',
+    'sofascore.app',
+    'fotmob.com',
+    'transfermarkt.com',
+    'transfermarkt.technology',
+    'bbc.co.uk',
+    'bbci.co.uk',
+    'goal.com',
+    'uefa.com',
+    'fifa.com',
+    'premierleague.com'
+];
+
+const MAX_CREST_BYTES = 2 * 1024 * 1024; // 2 MB cap
+
+function isPrivateOrLoopbackHost(rawHostname) {
+    if (!rawHostname) return true;
+    const h = String(rawHostname).trim().toLowerCase().replace(/^\[|\]$/g, '');
+    if (!h) return true;
+    if (
+        h === 'localhost' ||
+        h === '0.0.0.0' ||
+        h === '::1' ||
+        h === '::' ||
+        h.endsWith('.local') ||
+        h.endsWith('.internal') ||
+        h.endsWith('.localhost')
+    ) {
+        return true;
+    }
+    // IPv4 loopback, RFC1918, link-local / cloud metadata (169.254.0.0/16), CGNAT (100.64.0.0/10)
+    if (
+        /^127\./.test(h) ||
+        /^10\./.test(h) ||
+        /^192\.168\./.test(h) ||
+        /^169\.254\./.test(h) ||
+        /^172\.(1[6-9]|2\d|3[01])\./.test(h) ||
+        /^100\.(6[4-9]|[7-9]\d|1[01]\d|12[0-7])\./.test(h) ||
+        /^0\./.test(h)
+    ) {
+        return true;
+    }
+    // IPv6 private (fc00::/7), link-local (fe80::/10), and IPv4-mapped private addresses
+    if (
+        /^f[cd][0-9a-f]{2}:/.test(h) ||
+        /^fe[89ab][0-9a-f]:/.test(h) ||
+        /^::ffff:(127\.|10\.|192\.168\.|169\.254\.|172\.(1[6-9]|2\d|3[01])\.|0\.)/.test(h)
+    ) {
+        return true;
+    }
+    return false;
+}
+
+function isAllowedCrestUrl(rawUrl) {
+    if (!rawUrl || typeof rawUrl !== 'string' || rawUrl.length > 1024) return false;
+    let parsed;
+    try {
+        parsed = new URL(rawUrl);
+    } catch {
+        return false;
+    }
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return false;
+    const host = parsed.hostname.toLowerCase();
+    if (isPrivateOrLoopbackHost(host)) return false;
+    return ALLOWED_CREST_HOST_SUFFIXES.some((suffix) => host === suffix || host.endsWith(`.${suffix}`));
+}
+
+function fetchStreamWithRedirects(targetUrl, maxRedirects = 3, enforceCrestAllowlist = false) {
     return new Promise((resolve, reject) => {
         if (maxRedirects <= 0) return reject(new Error('Too many redirects'));
+        if (enforceCrestAllowlist && !isAllowedCrestUrl(targetUrl)) {
+            return reject(new Error('Disallowed crest host'));
+        }
         const client = targetUrl.startsWith('https') ? require('https') : require('http');
         const req = client.get(targetUrl, {
             headers: {
@@ -5185,14 +5267,16 @@ function fetchStreamWithRedirects(targetUrl, maxRedirects = 3) {
             timeout: 6000
         }, (res) => {
             if ([301, 302, 307, 308].includes(res.statusCode) && res.headers.location) {
+                res.resume();
                 let redirectUrl = res.headers.location;
                 if (!redirectUrl.startsWith('http')) {
                     const parsed = new URL(targetUrl);
                     redirectUrl = new URL(redirectUrl, parsed.origin).toString();
                 }
-                return resolve(fetchStreamWithRedirects(redirectUrl, maxRedirects - 1));
+                return resolve(fetchStreamWithRedirects(redirectUrl, maxRedirects - 1, enforceCrestAllowlist));
             }
             if (res.statusCode !== 200) {
+                res.resume();
                 return reject(new Error(`Upstream returned HTTP ${res.statusCode}`));
             }
             resolve(res);
@@ -5209,6 +5293,9 @@ async function handleCrestProxy(req, res) {
     if (!rawUrl || typeof rawUrl !== 'string' || !rawUrl.startsWith('http')) {
         return res.status(400).send('Valid url parameter required');
     }
+    if (!isAllowedCrestUrl(rawUrl)) {
+        return res.status(403).send('Crest host not permitted');
+    }
     try {
         const hash = crypto.createHash('md5').update(rawUrl).digest('hex');
         const extMatch = rawUrl.match(/\.(png|jpg|jpeg|svg|webp)/i);
@@ -5220,6 +5307,7 @@ async function handleCrestProxy(req, res) {
             const stats = fs.statSync(localPath);
             if (stats.size > 0) {
                 res.set('Cache-Control', 'public, max-age=31536000, immutable');
+                res.set('X-Content-Type-Options', 'nosniff');
                 return res.sendFile(localPath);
             }
         }
@@ -5228,6 +5316,7 @@ async function handleCrestProxy(req, res) {
             await crestInFlightMap.get(filename);
             if (fs.existsSync(localPath) && fs.statSync(localPath).size > 0) {
                 res.set('Cache-Control', 'public, max-age=31536000, immutable');
+                res.set('X-Content-Type-Options', 'nosniff');
                 return res.sendFile(localPath);
             }
         }
@@ -5235,9 +5324,23 @@ async function handleCrestProxy(req, res) {
         const downloadPromise = (async () => {
             const tmpPath = `${localPath}.tmp.${Date.now()}`;
             try {
-                const stream = await fetchStreamWithRedirects(rawUrl);
+                const stream = await fetchStreamWithRedirects(rawUrl, 3, true);
+                const contentLength = Number(stream.headers?.['content-length'] || 0);
+                if (contentLength > MAX_CREST_BYTES) {
+                    stream.destroy();
+                    throw new Error('Crest exceeds maximum allowed size');
+                }
                 await new Promise((resolve, reject) => {
+                    let received = 0;
                     const fileStream = fs.createWriteStream(tmpPath);
+                    stream.on('data', (chunk) => {
+                        received += chunk.length;
+                        if (received > MAX_CREST_BYTES) {
+                            stream.destroy();
+                            fileStream.destroy();
+                            reject(new Error('Crest exceeds maximum allowed size'));
+                        }
+                    });
                     stream.pipe(fileStream);
                     fileStream.on('finish', resolve);
                     fileStream.on('error', reject);
@@ -5263,6 +5366,7 @@ async function handleCrestProxy(req, res) {
 
         if (fs.existsSync(localPath) && fs.statSync(localPath).size > 0) {
             res.set('Cache-Control', 'public, max-age=31536000, immutable');
+            res.set('X-Content-Type-Options', 'nosniff');
             return res.sendFile(localPath);
         }
         res.set('Cache-Control', 'no-cache, no-store, must-revalidate');
@@ -5296,10 +5400,9 @@ router.post('/webhooks/test', optionalApiKeyAuth, async (req, res) => {
         return res.status(400).json({ error: 'targetUrl protocol must be HTTP or HTTPS' });
     }
 
-    // SSRF protection: reject private/local hostnames
-    const hostname = parsed.hostname.toLowerCase();
-    if (['localhost', '127.0.0.1', '0.0.0.0', '::1'].includes(hostname) || hostname.endsWith('.local') || hostname.startsWith('192.168.') || hostname.startsWith('10.')) {
-        return res.status(400).json({ error: 'Loopback and private RFC1918 destination IP addresses are not permitted' });
+    // SSRF protection: reject private, loopback, link-local/metadata, and internal hostnames
+    if (isPrivateOrLoopbackHost(parsed.hostname)) {
+        return res.status(400).json({ error: 'Loopback, link-local, and private network destination addresses are not permitted' });
     }
 
     const deliveryId = `dlv_${crypto.randomBytes(8).toString('hex')}`;
@@ -5346,6 +5449,7 @@ router.post('/webhooks/test', optionalApiKeyAuth, async (req, res) => {
             method: 'POST',
             headers,
             body: payloadJson,
+            redirect: 'manual',
             signal: AbortSignal.timeout(6000)
         });
         const latencyMs = Date.now() - startTs;
@@ -5388,3 +5492,6 @@ module.exports.computeAttackingPressureIndex = computeAttackingPressureIndex;
 module.exports.extractBoxscoreStatsMap = extractBoxscoreStatsMap;
 module.exports.computeEnrichedPredictionModel = computeEnrichedPredictionModel;
 module.exports.recomputeAnalyticsFromFormattedRecent = recomputeAnalyticsFromFormattedRecent;
+module.exports.isPrivateOrLoopbackHost = isPrivateOrLoopbackHost;
+module.exports.isAllowedCrestUrl = isAllowedCrestUrl;
+module.exports.handleCrestProxy = handleCrestProxy;
