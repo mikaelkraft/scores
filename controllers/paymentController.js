@@ -282,6 +282,8 @@ router.post(['/api/payments/flutterwave/verify', '/api/v1/payments/flutterwave/v
 /**
  * POST /api/payments/flutterwave/webhook
  * Signed server-to-server Flutterwave webhook (verif-hash) so paid keys provision even if browser closes early.
+ * Multi-app aware: handles `norra_flw_*` transactions locally and optionally forwards other apps' events
+ * to comma-separated URLs in `FLUTTERWAVE_WEBHOOK_FORWARD_URL` without requiring an external worker.
  */
 router.post(['/api/payments/flutterwave/webhook', '/api/v1/payments/flutterwave/webhook'], async (req, res) => {
     try {
@@ -291,9 +293,36 @@ router.post(['/api/payments/flutterwave/webhook', '/api/v1/payments/flutterwave/
             return res.status(401).json({ error: 'Invalid webhook signature.' });
         }
         const evData = req.body?.data || {};
-        if (req.body?.event === 'charge.completed' && evData.status === 'successful' && evData.tx_ref && evData.id) {
+        const txRef = String(evData.tx_ref || '');
+
+        // Multi-app routing: non-NorraScore transactions are ignored cleanly (or forwarded if configured)
+        if (txRef && !txRef.startsWith('norra_flw_')) {
+            const forwardUrls = String(process.env.FLUTTERWAVE_WEBHOOK_FORWARD_URL || '')
+                .split(',')
+                .map(u => u.trim())
+                .filter(u => /^https?:\/\//i.test(u));
+
+            if (forwardUrls.length > 0) {
+                const payloadStr = JSON.stringify(req.body || {});
+                await Promise.allSettled(forwardUrls.map((url) =>
+                    fetch(url, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'verif-hash': String(incomingHash)
+                        },
+                        body: payloadStr,
+                        signal: AbortSignal.timeout(5000)
+                    })
+                ));
+                return res.status(200).json({ status: 'forwarded', targets: forwardUrls.length });
+            }
+            return res.status(200).json({ status: 'ignored_other_app' });
+        }
+
+        if (req.body?.event === 'charge.completed' && evData.status === 'successful' && txRef && evData.id) {
             const verification = await flutterwaveService.verifyTransaction(evData.id);
-            const tx = await Transaction.findOne({ tx_ref: evData.tx_ref });
+            const tx = await Transaction.findOne({ tx_ref: txRef });
             if (tx && tx.status !== 'successful' && verification?.status === 'success' && verification?.data?.status === 'successful') {
                 const paidAmount = Number(verification.data.amount || 0);
                 const paidCurrency = String(verification.data.currency || '').toUpperCase();
