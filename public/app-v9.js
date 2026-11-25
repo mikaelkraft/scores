@@ -466,17 +466,59 @@
     let crestMemory = {};
     try { crestMemory = JSON.parse(localStorage.getItem(crestCacheKey) || '{}'); } catch (_) { crestMemory = {}; }
 
-    function rememberCrest(teamId, url) {
-        if (!teamId || !url) return;
-        crestMemory[String(teamId)] = { url, ts: Date.now() };
+    function rememberCrest(teamId, url, teamName = '') {
+        if (!url || (!teamId && !teamName)) return;
+        if (String(url).includes('data:image')) return;
+        const ts = Date.now();
+        if (teamId) crestMemory['id:' + String(teamId)] = { url, ts };
+        if (teamName) {
+            const nk = 'nm:' + String(teamName).toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 32);
+            if (nk.length > 5) crestMemory[nk] = { url, ts };
+        }
+        // legacy key
+        if (teamId) crestMemory[String(teamId)] = { url, ts };
         try {
-            // Cap cache size
             const keys = Object.keys(crestMemory);
-            if (keys.length > 400) {
-                keys.slice(0, 80).forEach(k => delete crestMemory[k]);
+            if (keys.length > 900) {
+                keys.slice(0, 200).forEach(k => delete crestMemory[k]);
             }
             localStorage.setItem(crestCacheKey, JSON.stringify(crestMemory));
         } catch (_) { /* quota */ }
+    }
+
+    function warmCrestsFromMatches(matches) {
+        if (!Array.isArray(matches)) return;
+        for (const m of matches) {
+            const h = m.home || {};
+            const a = m.away || {};
+            if (h.logo) rememberCrest(h.id || h.source_id, h.logo, h.displayName || h.name);
+            if (a.logo) rememberCrest(a.id || a.source_id, a.logo, a.displayName || a.name);
+        }
+    }
+
+    function teamCrestSrc(team = {}) {
+        const direct = team.logo || team.logoUrl || team.crest || '';
+        if (direct) {
+            rememberCrest(team.id || team.source_id, direct, team.displayName || team.name);
+            return direct;
+        }
+        return recallCrest(team.id || team.source_id, team.displayName || team.name) || '';
+    }
+
+    function recallCrest(teamId, teamName = '') {
+        const tryKeys = [];
+        if (teamId) {
+            tryKeys.push('id:' + String(teamId), String(teamId));
+        }
+        if (teamName) {
+            tryKeys.push('nm:' + String(teamName).toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 32));
+        }
+        const maxAge = 1000 * 60 * 60 * 24 * 30; // 30 days
+        for (const k of tryKeys) {
+            const hit = crestMemory[k];
+            if (hit && hit.url && (!hit.ts || (Date.now() - hit.ts) < maxAge)) return hit.url;
+        }
+        return '';
     }
 
     function getTeamInitials(name = '', abbr = '') {
@@ -3449,6 +3491,7 @@
                 ? [...state.fixtures, ...(data.events || [])]
                 : (data.events || []);
             if (elements['fixture-count']) elements['fixture-count'].textContent = formatNumber(data.count);
+            warmCrestsFromMatches(state.fixtures || fixtures);
             renderFixtures(state.fixtures);
         } catch (error) {
             if (elements['fixtures-empty']) elements['fixtures-empty'].hidden = false;
@@ -3761,7 +3804,7 @@
                                                 <td style="font-weight:700; color:var(--text-main);">${escapeHtml(p.name)}</td>
                                                 <td>
                                                     <div class="club-cell" style="cursor:pointer;" onclick="openClubHub('${escapeHtml(p.team)}', '${escapeHtml(p.teamLogo || '')}', '${escapeHtml(leagueSlug)}')">
-                                                        ${p.teamLogo ? `<img src="${escapeHtml(p.teamLogo)}" class="club-crest-small" alt="${escapeHtml(p.team)}" onerror="this.src='/crests/fallback-shield.svg'">` : ''}
+                                                        ${p.teamLogo ? `<img loading="lazy" decoding="async" src="${escapeHtml(p.teamLogo)}" class="club-crest-small" alt="${escapeHtml(p.team)}" onerror="this.src='/crests/fallback-shield.svg'">` : ''}
                                                         <span>${escapeHtml(p.team)}</span>
                                                     </div>
                                                 </td>
@@ -3794,7 +3837,7 @@
                                                     <td style="font-weight:700; color:var(--text-main);">${escapeHtml(p.name)}</td>
                                                     <td>
                                                         <div class="club-cell" style="cursor:pointer;" onclick="openClubHub('${escapeHtml(p.team)}', '${escapeHtml(p.teamLogo || '')}', '${escapeHtml(leagueSlug)}')">
-                                                            ${p.teamLogo ? `<img src="${escapeHtml(p.teamLogo)}" class="club-crest-small" alt="${escapeHtml(p.team)}" onerror="this.src='/crests/fallback-shield.svg'">` : ''}
+                                                            ${p.teamLogo ? `<img loading="lazy" decoding="async" src="${escapeHtml(p.teamLogo)}" class="club-crest-small" alt="${escapeHtml(p.team)}" onerror="this.src='/crests/fallback-shield.svg'">` : ''}
                                                             <span>${escapeHtml(p.team)}</span>
                                                         </div>
                                                     </td>
@@ -4990,8 +5033,12 @@
                 }
             }
             if (!uniqueMeetings.length) return '';
-            const displayed = uniqueMeetings.slice(0, 5);
-            const remaining = uniqueMeetings.slice(5);
+            const leagueSlugH2h = String(summary?.header?.league?.slug || summary?.header?.competitions?.[0]?.league?.slug || state.league?.slug || '').toLowerCase();
+            const isAfricanH2h = /^(nga|gha|ken|tza|egy|rsa|mar|civ|sen|cmr|uga|rwa|eth|zam|zim|ang|bwa|tun|alg|caf)\b|caf\./.test(leagueSlugH2h)
+                || /nigeria|ghana|kenya|egypt|npfl|premier football league/i.test(String(summary?.header?.league?.name || summary?.header?.competitions?.[0]?.league?.name || ''));
+            const h2hShow = isAfricanH2h ? 12 : 8;
+            const displayed = uniqueMeetings.slice(0, h2hShow);
+            const remaining = uniqueMeetings.slice(h2hShow);
 
             const renderH2hItem = (m) => {
                 const dateLabel = formatDate(m.date, { year: true, weekday: false });
@@ -5476,7 +5523,7 @@
                             <div style="background:var(--bg-canvas); border:1px solid var(--border-subtle); border-radius:8px; padding:14px;">
                                 <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:10px;">
                                     <div style="display:flex; align-items:center; gap:8px;">
-                                        ${home.team?.logo ? `<img src="${home.team.logo}" alt="" style="width:20px; height:20px; object-fit:contain;">` : ''}
+                                        ${(home.team?.logo || teamCrestSrc(home.team || home || {})) ? `<img loading="lazy" decoding="async" src="${home.team?.logo || teamCrestSrc(home.team || home || {})}" alt="" style="width:20px; height:20px; object-fit:contain;">` : ''}
                                         <strong style="font-size:13.5px; color:var(--text-main);">${escapeHtml(home.team?.displayName || 'Home Team')}</strong>
                                     </div>
                                     <span style="font-size:11px; color:#10b981; font-weight:600;">${homeAnalytics.winRate ?? 0}% Win Rate</span>
@@ -5490,7 +5537,7 @@
                             <div style="background:var(--bg-canvas); border:1px solid var(--border-subtle); border-radius:8px; padding:14px;">
                                 <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:10px;">
                                     <div style="display:flex; align-items:center; gap:8px;">
-                                        ${away.team?.logo ? `<img src="${away.team.logo}" alt="" style="width:20px; height:20px; object-fit:contain;">` : ''}
+                                        ${(away.team?.logo || teamCrestSrc(away.team || away || {})) ? `<img loading="lazy" decoding="async" src="${away.team?.logo || teamCrestSrc(away.team || away || {})}" alt="" style="width:20px; height:20px; object-fit:contain;">` : ''}
                                         <strong style="font-size:13.5px; color:var(--text-main);">${escapeHtml(away.team?.displayName || 'Away Team')}</strong>
                                     </div>
                                     <span style="font-size:11px; color:#3b82f6; font-weight:600;">${awayAnalytics.winRate ?? 0}% Win Rate</span>
@@ -5569,6 +5616,10 @@
                                             <div style="font-size:10px; color:var(--text-muted); margin-top:4px; text-transform:uppercase; letter-spacing:0.04em;">Pts</div>
                                         </div>
                                         <div style="flex:1; text-align:center;">
+                                            <div style="font-size:18px; font-weight:700; color:var(--text-main); line-height:1;">${homeStanding.matchday ?? homeStanding.played ?? homeStanding.gamesPlayed ?? '—'}</div>
+                                            <div style="font-size:10px; color:var(--text-muted); margin-top:4px; text-transform:uppercase; letter-spacing:0.04em;">MD</div>
+                                        </div>
+                                        <div style="flex:1; text-align:center;">
                                             <div style="font-size:18px; font-weight:700; color:var(--text-main); line-height:1;">${homeStanding.goalDifferential ?? '—'}</div>
                                             <div style="font-size:10px; color:var(--text-muted); margin-top:4px; text-transform:uppercase; letter-spacing:0.04em;">GD</div>
                                         </div>
@@ -5586,6 +5637,10 @@
                                         <div style="flex:1; text-align:center;">
                                             <div style="font-size:18px; font-weight:700; color:var(--text-main); line-height:1;">${awayStanding.points ?? '—'}</div>
                                             <div style="font-size:10px; color:var(--text-muted); margin-top:4px; text-transform:uppercase; letter-spacing:0.04em;">Pts</div>
+                                        </div>
+                                        <div style="flex:1; text-align:center;">
+                                            <div style="font-size:18px; font-weight:700; color:var(--text-main); line-height:1;">${awayStanding.matchday ?? awayStanding.played ?? awayStanding.gamesPlayed ?? '—'}</div>
+                                            <div style="font-size:10px; color:var(--text-muted); margin-top:4px; text-transform:uppercase; letter-spacing:0.04em;">MD</div>
                                         </div>
                                         <div style="flex:1; text-align:center;">
                                             <div style="font-size:18px; font-weight:700; color:var(--text-main); line-height:1;">${awayStanding.goalDifferential ?? '—'}</div>
@@ -5868,7 +5923,8 @@
             currentTimezone = e.target.value;
             localStorage.setItem('norra_timezone', currentTimezone);
             if (state.fixtures && state.fixtures.length) {
-                renderFixtures(state.fixtures);
+                warmCrestsFromMatches(state.fixtures || fixtures);
+            renderFixtures(state.fixtures);
             }
             if (state.currentEventId) {
                 loadMatchDetails(state.currentEventId, true);
@@ -6544,6 +6600,7 @@
         } else if (state.selectedLeagueSlug === 'live') {
             loadLiveMatches();
         } else if (state.league) {
+            warmCrestsFromMatches(state.fixtures || fixtures);
             renderFixtures(state.fixtures);
         }
     }
