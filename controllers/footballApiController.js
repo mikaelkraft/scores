@@ -3764,22 +3764,33 @@ router.get('/predictions-context/:eventId', optionalApiKeyAuth, async (req, res)
             const aEntry = findStanding(awayId, aName);
 
             const extractStat = (entry, key) => entry?.stats?.get ? entry.stats.get(key) : entry?.stats?.[key] ?? null;
-            if (hEntry) {
-                homeStanding = {
-                    rank: hEntry.rank,
-                    points: extractStat(hEntry, 'points'),
-                    played: extractStat(hEntry, 'gamesPlayed'),
-                    goalDifferential: extractStat(hEntry, 'pointDifferential')
-                };
+            // League-wide matchday ≈ max games played in the group (fallback: this team's GP)
+            let leagueMatchday = null;
+            try {
+                const gps = standingsGroup.entries.map(e => {
+                    const v = extractStat(e, 'gamesPlayed');
+                    return v != null ? Number(v) : null;
+                }).filter(v => Number.isFinite(v));
+                if (gps.length) leagueMatchday = Math.max(...gps);
+            } catch (_) {}
+            if (standingsGroup.season?.type?.abbreviation && /MD|GW|WK/i.test(String(standingsGroup.season.type.abbreviation))) {
+                /* keep numeric max */
             }
-            if (aEntry) {
-                awayStanding = {
-                    rank: aEntry.rank,
-                    points: extractStat(aEntry, 'points'),
-                    played: extractStat(aEntry, 'gamesPlayed'),
-                    goalDifferential: extractStat(aEntry, 'pointDifferential')
+            const packStanding = (entry) => {
+                const played = extractStat(entry, 'gamesPlayed');
+                const playedN = played != null ? Number(played) : null;
+                return {
+                    rank: entry.rank,
+                    points: extractStat(entry, 'points'),
+                    played: playedN,
+                    goalDifferential: extractStat(entry, 'pointDifferential') ?? extractStat(entry, 'goalDifferential'),
+                    matchday: leagueMatchday != null ? leagueMatchday : playedN,
+                    matchweek: leagueMatchday != null ? leagueMatchday : playedN,
+                    gamesPlayed: playedN
                 };
-            }
+            };
+            if (hEntry) homeStanding = packStanding(hEntry);
+            if (aEntry) awayStanding = packStanding(aEntry);
         }
         // Fallback: extract table position from already-fetched ESPN summary standings (zero extra HTTP calls)
         if ((!homeStanding || !awayStanding) && espnSummary?.standings?.groups?.length) {
@@ -3802,15 +3813,29 @@ router.get('/predictions-context/:eventId', optionalApiKeyAuth, async (req, res)
                     const st = statsArr.find(s => s.name === name || s.type === name || s.abbreviation === name);
                     return st?.value ?? st?.displayValue ?? null;
                 };
+                const played = getS('gamesPlayed') != null ? Number(getS('gamesPlayed')) : null;
                 return {
                     rank: Number(getS('rank') || found.fallbackRank),
                     points: getS('points') != null ? Number(getS('points')) : null,
-                    played: getS('gamesPlayed') != null ? Number(getS('gamesPlayed')) : null,
+                    played,
+                    gamesPlayed: played,
+                    matchday: played,
+                    matchweek: played,
                     goalDifferential: getS('pointDifferential') != null ? Number(getS('pointDifferential')) : null
                 };
             };
             if (!homeStanding) homeStanding = pickFromEspn(hName);
             if (!awayStanding) awayStanding = pickFromEspn(aName);
+            // Align MD to league max GP when both sides known
+            try {
+                const mds = [homeStanding?.matchday, awayStanding?.matchday, homeStanding?.played, awayStanding?.played]
+                    .map(Number).filter(n => Number.isFinite(n));
+                if (mds.length) {
+                    const md = Math.max(...mds);
+                    if (homeStanding) { homeStanding.matchday = md; homeStanding.matchweek = md; }
+                    if (awayStanding) { awayStanding.matchday = md; awayStanding.matchweek = md; }
+                }
+            } catch (_) {}
         }
 
         // Hydrate multi-provider in-play / full-time match stats (ESPN -> DB -> LiveScore -> SportScore)
