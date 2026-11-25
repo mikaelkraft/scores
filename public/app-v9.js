@@ -2701,6 +2701,23 @@
                 const data = await fetchJson('/api/v1/football/live');
                 liveMatches = data.live || data.matches || [];
             }
+            // Fallback: /live can lag behind the day board (UCL in-play still on fixtures)
+            if (!liveMatches || liveMatches.length === 0) {
+                try {
+                    const fx = await fetchJson('/api/v1/football/fixtures?date=today&status=live&limit=200');
+                    const fromFx = fx.matches || fx.live || [];
+                    if (fromFx.length) liveMatches = fromFx;
+                } catch (_) {}
+            }
+            if (!liveMatches || liveMatches.length === 0) {
+                try {
+                    const fxAll = await fetchJson('/api/v1/football/fixtures?date=today&limit=300');
+                    liveMatches = (fxAll.matches || []).filter(m => {
+                        const st = m.status || {};
+                        return st.state === 'in' || st.isLive;
+                    });
+                } catch (_) {}
+            }
 
             // Deduplicate live matches globally across all feeds / providers and sync all badges atomically
             const dedupedLive = syncAllLiveCountBadges(liveMatches);

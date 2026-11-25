@@ -903,6 +903,65 @@ async function fetchFreshWorldwideLiveMatches() {
         return winner;
     };
 
+
+    // CRITICAL: day board / fixtures often know about in-play UCL etc. before LiveScore's /live endpoint does
+    try {
+        const boardKey = dailyBoardCache.getWatDateKey();
+        const board = dailyBoardCache.getReadyBoard(boardKey, { status: 'all' });
+        const boardMatches = board?.matches || [];
+        for (const m of boardMatches) {
+            const st = m?.status || {};
+            if (st.state === 'in' || st.isLive) {
+                candidateMatches.push(m);
+            }
+        }
+    } catch (_) {}
+    try {
+        const boardLiveFromDb = await SoccerMatch.find({
+            'status.state': 'in',
+            date: { $gte: liveCutoff, $lte: futureCutoff }
+        }).maxTimeMS(2000).sort({ date: 1 }).lean().catch(() => []);
+        for (const m of boardLiveFromDb || []) {
+            candidateMatches.push({
+                id: String(m.source?.event_id || m.source?.livescore_id || m.source?.espn_id || m._id),
+                uid: m.source?.uid || String(m._id),
+                league: {
+                    slug: m.league_slug,
+                    name: m.league_name || m.league_slug,
+                    abbreviation: m.league_abbreviation || '',
+                    country: (typeof normalizeCountryName === 'function' ? normalizeCountryName(m.league_country || '') : (m.league_country || '')) || 'International',
+                    logo: m.league_logo || ''
+                },
+                date: m.date,
+                status: {
+                    state: 'in',
+                    name: m.status?.name || 'STATUS_IN_PROGRESS',
+                    description: m.status?.description || 'In Progress',
+                    clock: m.status?.clock || m.status?.detail || "45'",
+                    detail: m.status?.detail || m.status?.clock || '',
+                    period: m.status?.period || 1,
+                    completed: false,
+                    isLive: true
+                },
+                home: {
+                    id: m.home?.source_id,
+                    name: m.home?.display_name || m.home?.name,
+                    displayName: m.home?.display_name || m.home?.name,
+                    logo: m.home?.logo || '',
+                    score: m.home?.score
+                },
+                away: {
+                    id: m.away?.source_id,
+                    name: m.away?.display_name || m.away?.name,
+                    displayName: m.away?.display_name || m.away?.name,
+                    logo: m.away?.logo || '',
+                    score: m.away?.score
+                },
+                source: m.source || { provider: 'mongo', event_id: String(m.source?.event_id || m._id) }
+            });
+        }
+    } catch (_) {}
+
     for (const m of candidateMatches) {
         if (!m) continue;
         const id = String(m.id || m.uid || m.source?.event_id || m.source?.livescore_id || '').trim();
@@ -1271,7 +1330,9 @@ async function getFormattedLiveMatches(league, isFreeRestricted) {
 
     // Stale-While-Revalidate: If we have live matches (or empty result) cached in memory, return immediately (< 5ms)
     // and trigger background refresh if cache is older than TTL
-    if (liveFeedMemoryCache.timestamp > 0 && (now - liveFeedMemoryCache.timestamp < CACHE_TTL_MS || liveFeedMemoryCache.matches.length > 0)) {
+    // Never treat an empty live cache as authoritative for long — board may have in-play UCL etc.
+    if (liveFeedMemoryCache.timestamp > 0 && (now - liveFeedMemoryCache.timestamp < CACHE_TTL_MS || liveFeedMemoryCache.matches.length > 0)
+        && !(liveFeedMemoryCache.matches.length === 0 && now - liveFeedMemoryCache.timestamp > 3000)) {
         if (now - liveFeedMemoryCache.timestamp >= CACHE_TTL_MS && !liveFeedMemoryCache.inFlightPromise) {
             liveFeedMemoryCache.inFlightPromise = (async () => {
                 try {
