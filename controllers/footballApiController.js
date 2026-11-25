@@ -235,7 +235,7 @@ const {
     isConcreteClock,
     formatMatchClock
 } = require('../services/soccerSerializer');
-const { normalizeTeamName, areTeamNamesMatching, getTeamCategory, getMatchTier, resolveMatchEspnId, resolveLeagueSlug, enforceCountryOnSlug, isReserveOrBTeamName, formatLiveScoreLogo, TARGET_LEAGUES, inferCountryFromTeamNames, demoteToJuniorOrLowerTier, syncLiveScoreStandingsForLeague, syncEspnStandingsForLeague, ensureFreshStandings, LIVESCORE_STAGE_TABLE_MAP } = require('../services/soccerSyncService');
+const { normalizeTeamName, areTeamNamesMatching, getTeamCategory, getMatchTier, resolveMatchEspnId, resolveLeagueSlug, enforceCountryOnSlug, isReserveOrBTeamName, formatLiveScoreLogo, TARGET_LEAGUES, inferCountryFromTeamNames, demoteToJuniorOrLowerTier, isSeniorTopLeagueSlug, syncLiveScoreStandingsForLeague, syncEspnStandingsForLeague, ensureFreshStandings, LIVESCORE_STAGE_TABLE_MAP } = require('../services/soccerSyncService');
 
 function formatDateKey(d = new Date()) {
     const y = d.getUTCFullYear();
@@ -593,10 +593,9 @@ async function fetchFreshWorldwideLiveMatches() {
                 const a = ev.T2?.[0] || {};
                 let matchSlug = slug;
 
-                // Demote B/reserve/youth sides off senior top-flight boards (.1) to dedicated junior or lower tier
+                // Demote B/reserve/youth sides off senior top-flight & continental boards to dedicated junior or lower tier
                 const seniorSlug = String(matchSlug || '').toLowerCase();
-                const isSeniorTop = /\.[1]$/.test(seniorSlug) && !seniorSlug.includes('.w.') && !seniorSlug.includes('youth') && !seniorSlug.includes('u19') && !seniorSlug.includes('u21');
-                if (isSeniorTop && (isReserveOrBTeamName(h.Nm) || isReserveOrBTeamName(a.Nm))) {
+                if (isSeniorTopLeagueSlug(seniorSlug) && (isReserveOrBTeamName(h.Nm) || isReserveOrBTeamName(a.Nm))) {
                     matchSlug = demoteToJuniorOrLowerTier(matchSlug, h.Nm, a.Nm);
                 }
                 const hScore = parseInt(ev.Tr1 || 0, 10);
@@ -987,9 +986,12 @@ function filterLiveMatchesResponse(matches, league, isFreeRestricted) {
         const pairSeen = new Set();
         result = result.filter((m) => {
             const id = String(m?.id || m?.uid || '').trim();
-            const h = normalizeTeamName(m?.home?.name || m?.home?.displayName || '');
-            const a = normalizeTeamName(m?.away?.name || m?.away?.displayName || '');
-            const pair = [h, a].filter(Boolean).sort().join('_vs_');
+            const hRaw = m?.home?.name || m?.home?.displayName || '';
+            const aRaw = m?.away?.name || m?.away?.displayName || '';
+            const h = normalizeTeamName(hRaw);
+            const a = normalizeTeamName(aRaw);
+            const tier = getMatchTier(hRaw, aRaw, m?.league?.slug || m?.league_slug || '');
+            const pair = (h && a) ? `${[h, a].sort().join('_vs_')}_${tier}` : '';
             if (id) {
                 if (seen.has(id)) return false;
                 seen.add(id);
@@ -1062,8 +1064,7 @@ async function fetchLiveScoreDayMatches(dateKey) {
             }
 
             const seniorSlug = String(matchSlug || '').toLowerCase();
-            const isSeniorTop = /\.[1]$/.test(seniorSlug) && !seniorSlug.includes('.w.') && !seniorSlug.includes('youth') && !seniorSlug.includes('u19') && !seniorSlug.includes('u21');
-            if (isSeniorTop && (isReserveOrBTeamName(hName) || isReserveOrBTeamName(aName))) {
+            if (isSeniorTopLeagueSlug(seniorSlug) && (isReserveOrBTeamName(hName) || isReserveOrBTeamName(aName))) {
                 matchSlug = demoteToJuniorOrLowerTier(matchSlug, hName, aName);
             }
 
@@ -1264,10 +1265,13 @@ router.get(['/live', '/livescores'], optionalApiKeyAuth, async (req, res) => {
         // Zero-latency live cache headers: prevent edge/proxy caching during in-play matches
         res.set('Cache-Control', 'no-cache, no-store, must-revalidate');
         res.set('Pragma', 'no-cache');
+        const todayBoard = dailyBoardCache.getReadyBoard(dailyBoardCache.getWatDateKey(), { status: 'all' });
+        const dailyFixtureCount = Array.isArray(todayBoard?.matches) ? todayBoard.matches.length : 0;
         return res.json({
             status: 'success',
             meta: {
                 liveCount: result.matches.length,
+                dailyFixtureCount,
                 timestamp: new Date().toISOString(),
                 isAdFree: Boolean(req.isAdFree)
             },
@@ -1580,11 +1584,13 @@ router.get('/fixtures', optionalApiKeyAuth, async (req, res) => {
             }
             const pageNum = Math.max(1, parseInt(req.query.page, 10) || 1);
             const limitNum = Math.min(2000, Math.max(1, parseInt(req.query.limit, 10) || 500));
+            const startIdx = (pageNum - 1) * limitNum;
+            const pagedMatches = ready.matches.slice(startIdx, startIdx + limitNum);
             return res.json({
                 status: 'success',
                 meta: {
                     totalMatches: ready.matches.length,
-                    count: ready.matches.length,
+                    count: pagedMatches.length,
                     page: pageNum,
                     pageSize: limitNum,
                     totalPages: Math.ceil(ready.matches.length / limitNum) || 1,
@@ -1593,8 +1599,8 @@ router.get('/fixtures', optionalApiKeyAuth, async (req, res) => {
                     cachedBoard: true,
                     boardGeneratedAt: new Date(ready.generatedAt).toISOString()
                 },
-                matches: ready.matches,
-                fixtures: ready.matches
+                matches: pagedMatches,
+                fixtures: pagedMatches
             });
         }
     }
@@ -1611,14 +1617,16 @@ router.get('/fixtures', optionalApiKeyAuth, async (req, res) => {
                     if (id) liveMap.set(id, lm);
                     const h = normalizeTeamName(lm.home?.name || lm.home?.displayName || '');
                     const a = normalizeTeamName(lm.away?.name || lm.away?.displayName || '');
-                    if (h && a) liveMap.set(`${h}_vs_${a}`, lm);
+                    const lTier = getMatchTier(lm.home?.name || lm.home?.displayName || '', lm.away?.name || lm.away?.displayName || '', lm.league?.slug || lm.league_slug || '');
+                    if (h && a) liveMap.set(`${h}_vs_${a}_${lTier}`, lm);
                 }
                 for (let i = 0; i < cached.body.matches.length; i++) {
                     const m = cached.body.matches[i];
                     const mid = String(m.source?.event_id || m.id || m._id || '');
                     const h = normalizeTeamName(m.home?.name || m.home?.displayName || '');
                     const a = normalizeTeamName(m.away?.name || m.away?.displayName || '');
-                    const lm = liveMap.get(mid) || liveMap.get(`${h}_vs_${a}`);
+                    const mTier = getMatchTier(m.home?.name || m.home?.displayName || '', m.away?.name || m.away?.displayName || '', m.league?.slug || m.league_slug || '');
+                    const lm = liveMap.get(mid) || liveMap.get(`${h}_vs_${a}_${mTier}`);
                     if (!lm) continue;
                     if (m.status?.completed || m.status?.state === 'post') {
                         const kickoffTs = m.date ? Date.parse(m.date) : NaN;
@@ -1842,7 +1850,6 @@ router.get('/fixtures', optionalApiKeyAuth, async (req, res) => {
                         const tier = getMatchTier(m.home?.name || m.home?.displayName || '', m.away?.name || m.away?.displayName || '', slug);
                         if (id) seenSignatures.add(id);
                         if (h && a) {
-                            seenSignatures.add(`${h}_vs_${a}`);
                             seenSignatures.add(`${h}_vs_${a}_${tier}`);
                         }
                     });
@@ -1855,15 +1862,15 @@ router.get('/fixtures', optionalApiKeyAuth, async (req, res) => {
                         const slug = lm.league?.slug || lm.league_slug || '';
                         const tier = getMatchTier(lm.home?.name || lm.home?.displayName || '', lm.away?.name || lm.away?.displayName || '', slug);
                         const sig = `${h}_vs_${a}_${tier}`;
-                        const baseSig = `${h}_vs_${a}`;
 
-                        if ((id && seenSignatures.has(id)) || (h && a && (seenSignatures.has(sig) || seenSignatures.has(baseSig)))) {
+                        if ((id && seenSignatures.has(id)) || (h && a && seenSignatures.has(sig))) {
                             // Update existing match in array if it was found as scheduled but is now live
                             const idx = matches.findIndex(m => {
                                 const mh = normalizeTeamName(m.home?.name || m.home?.displayName || '');
                                 const ma = normalizeTeamName(m.away?.name || m.away?.displayName || '');
                                 const mid = String(m.source?.event_id || m.id || m._id || '');
-                                return (id && mid === id) || (h && a && mh === h && ma === a);
+                                const mTier = getMatchTier(m.home?.name || m.home?.displayName || '', m.away?.name || m.away?.displayName || '', m.league?.slug || m.league_slug || '');
+                                return (id && mid === id) || (h && a && mh === h && ma === a && mTier === tier);
                             });
                             if (idx !== -1) {
                                 // Never overwrite a completed match with an in-play candidate!
@@ -2085,17 +2092,23 @@ router.get('/fixtures', optionalApiKeyAuth, async (req, res) => {
                     if (status === 'finished' && m.status?.state !== 'post') continue;
                     if (status === 'scheduled' && m.status?.state !== 'pre') continue;
                     const id = String(m.id || m.source?.event_id || '');
-                    const h = normalizeTeamName(m.home?.name || m.home?.displayName || '');
-                    const a = normalizeTeamName(m.away?.name || m.away?.displayName || '');
-                    // Prefer event id; also pair-key so LiveScore fills gaps Mongo missed
-                    const sig = id || `${h}_vs_${a}`;
-                    const pairSig = (h && a) ? `${h}_vs_${a}` : '';
+                    const hRaw = m.home?.name || m.home?.displayName || '';
+                    const aRaw = m.away?.name || m.away?.displayName || '';
+                    const h = normalizeTeamName(hRaw);
+                    const a = normalizeTeamName(aRaw);
+                    const mTier = getMatchTier(hRaw, aRaw, m.league?.slug || m.league_slug || '');
+                    // Prefer event id; also tier-qualified pair-key so LiveScore fills gaps Mongo missed without U19/Senior collision
+                    const sig = id || `${h}_vs_${a}_${mTier}`;
+                    const pairSig = (h && a) ? `${[h, a].sort().join('_vs_')}_${mTier}` : '';
                     let already = seenFixturesMap.has(sig);
                     if (!already && pairSig) {
                         for (const [k, v] of seenFixturesMap) {
-                            const mh = normalizeTeamName(v.match?.home?.name || v.match?.home?.displayName || '');
-                            const ma = normalizeTeamName(v.match?.away?.name || v.match?.away?.displayName || '');
-                            if ([mh, ma].sort().join('_vs_') === [h, a].sort().join('_vs_')) {
+                            const mhRaw = v.match?.home?.name || v.match?.home?.displayName || '';
+                            const maRaw = v.match?.away?.name || v.match?.away?.displayName || '';
+                            const mh = normalizeTeamName(mhRaw);
+                            const ma = normalizeTeamName(maRaw);
+                            const vTier = getMatchTier(mhRaw, maRaw, v.match?.league?.slug || v.match?.league_slug || '');
+                            if (vTier === mTier && [mh, ma].sort().join('_vs_') === [h, a].sort().join('_vs_')) {
                                 already = true;
                                 // Prefer LiveScore if Mongo row lacks logo/score
                                 const cur = v.match;
@@ -2119,9 +2132,12 @@ router.get('/fixtures', optionalApiKeyAuth, async (req, res) => {
                     const liveList = Array.isArray(freshLive) ? freshLive : (freshLive?.matches || []);
                     for (const m of liveList) {
                         const id = String(m.id || m.source?.event_id || '');
-                        const h = normalizeTeamName(m.home?.name || m.home?.displayName || '');
-                        const a = normalizeTeamName(m.away?.name || m.away?.displayName || '');
-                        const sig = id || `${h}_vs_${a}`;
+                        const hRaw = m.home?.name || m.home?.displayName || '';
+                        const aRaw = m.away?.name || m.away?.displayName || '';
+                        const h = normalizeTeamName(hRaw);
+                        const a = normalizeTeamName(aRaw);
+                        const mTier = getMatchTier(hRaw, aRaw, m.league?.slug || m.league_slug || '');
+                        const sig = id || `${h}_vs_${a}_${mTier}`;
                         if (!seenFixturesMap.has(sig)) {
                             seenFixturesMap.set(sig, { match: m, score: 10 });
                         }
@@ -2158,7 +2174,8 @@ router.get('/fixtures', optionalApiKeyAuth, async (req, res) => {
             }
             const slug = String(m.league?.slug || m.league_slug || '');
             const women = /\.w\./.test(slug) || looksWomenBlob(hRaw) || looksWomenBlob(aRaw) || looksWomenBlob(m.league?.name);
-            return `${pair}_${d}_${leagueFamily(slug)}_${women ? 'w' : 'm'}`;
+            const tier = getMatchTier(hRaw, aRaw, slug);
+            return `${pair}_${d}_${leagueFamily(slug)}_${women ? 'w' : 'm'}_${tier}`;
         };
         const softScore = (m) => {
             const hLogo = m.home?.logo || '';
@@ -2208,6 +2225,24 @@ router.get('/fixtures', optionalApiKeyAuth, async (req, res) => {
                             m.league.country = 'Brazil';
                             if (/ita\.|italian/i.test(m.league.name || '')) m.league.name = slug.endsWith('.2') ? 'Brasileirão Série B' : 'Brasileirão';
                         }
+                    }
+                }
+                // Guard senior top-flight & continental boards against stale DB U19/U21/reserve rows on read
+                if (isSeniorTopLeagueSlug(slug) && (isReserveOrBTeamName(hName) || isReserveOrBTeamName(aName))) {
+                    const demoted = demoteToJuniorOrLowerTier(slug, hName, aName, m.league?.name || m.note || '');
+                    if (demoted && demoted !== slug) {
+                        slug = demoted;
+                        if (m.league) {
+                            m.league.slug = slug;
+                            if (slug === 'uefa.youth') {
+                                m.league.name = 'UEFA Youth League';
+                                m.league.country = 'Europe';
+                            } else if (slug === 'conmebol.u20') {
+                                m.league.name = 'CONMEBOL U20 Libertadores';
+                                m.league.country = 'South America';
+                            }
+                        }
+                        m.league_slug = slug;
                     }
                 }
             } catch (_) {}
@@ -2811,6 +2846,7 @@ router.get('/predictions-context/:eventId', optionalApiKeyAuth, async (req, res)
             const mLsId = String(match.source?.livescore_id || '');
             const mH = normalizeTeamName(match.home?.display_name || match.home?.name || '');
             const mA = normalizeTeamName(match.away?.display_name || match.away?.name || '');
+            const mTier = getMatchTier(match.home?.display_name || match.home?.name || '', match.away?.display_name || match.away?.name || '', match.league_slug || '');
             const liveHit = liveFeedMemoryCache.matches.find(lm => {
                 const lid = String(lm.id || lm.source?.event_id || '');
                 const lls = String(lm.source?.livescore_id || '');
@@ -2818,7 +2854,8 @@ router.get('/predictions-context/:eventId', optionalApiKeyAuth, async (req, res)
                 if (mH && mA) {
                     const lh = normalizeTeamName(lm.home?.displayName || lm.home?.name || '');
                     const la = normalizeTeamName(lm.away?.displayName || lm.away?.name || '');
-                    return lh === mH && la === mA;
+                    const lTier = getMatchTier(lm.home?.displayName || lm.home?.name || '', lm.away?.displayName || lm.away?.name || '', lm.league?.slug || lm.league_slug || '');
+                    return lh === mH && la === mA && lTier === mTier;
                 }
                 return false;
             });
@@ -3843,6 +3880,10 @@ router.get('/predictions-context/:eventId', optionalApiKeyAuth, async (req, res)
  * Tier-aware: Norra AI Master & Pro/Enterprise keys receive full batch streaming (up to 1,000 samples, JSON/JSONL).
  * Public/Free users receive 100 sample JSON schema preview.
  */
+const trainingDataResponseCache = new Map();
+const TRAINING_DATA_CACHE_TTL_MS = 60 * 1000;
+const TRAINING_DATA_PROJECTION = 'source.event_id source.provider league_slug date scoreboard_date home.source_id home.name home.display_name home.score home.stats away.source_id away.name away.display_name away.score away.stats status.state status.detail status.clock status.completed venue.name venue.city venue.country odds key_events.scoringPlay key_events.redCard key_events.clockValue key_events.clock key_events.side key_events.homeAway key_events.team.side key_events.type.text key_events.text';
+
 router.get(['/training-data', '/analytics/training-data'], optionalApiKeyAuth, async (req, res) => {
     try {
         const keyDoc = req.apiKey || null;
@@ -3863,6 +3904,38 @@ router.get(['/training-data', '/analytics/training-data'], optionalApiKeyAuth, a
 
         const minStats = req.query.minStats === 'true';
 
+        const todayBoardForMeta = dailyBoardCache.getReadyBoard(dailyBoardCache.getWatDateKey(), { status: 'all' });
+        const dailyFixtureCount = Array.isArray(todayBoardForMeta?.matches) ? todayBoardForMeta.matches.length : 0;
+
+        // Fast 60s RAM cache so burst/repeated ML ingestion calls never stall on Atlas M0
+        const tdCacheKey = `${leagueSlug}:${stateParam}:${limit}:${minStats}:${isProOrEnterprise ? 'pro' : 'free'}`;
+        const cachedTd = trainingDataResponseCache.get(tdCacheKey);
+        if (cachedTd && (Date.now() - cachedTd.ts < TRAINING_DATA_CACHE_TTL_MS)) {
+            res.set('Cache-Control', 'public, max-age=60');
+            if (format === 'jsonl' || format === 'ndjson') {
+                res.setHeader('Content-Type', 'application/x-ndjson; charset=utf-8');
+                for (const sample of cachedTd.samples) {
+                    res.write(JSON.stringify(sample) + '\n');
+                }
+                return res.end();
+            }
+            return res.json({
+                status: 'success',
+                meta: {
+                    totalSamples: cachedTd.samples.length,
+                    dailyFixtureCount,
+                    league: leagueSlug,
+                    state: stateParam,
+                    tier: keyDoc?.plan || 'public_free',
+                    hasFullStreamingAccess: isProOrEnterprise,
+                    cached: true,
+                    notice: !isProOrEnterprise ? 'Public/Free tier preview (max 100 samples). Upgrade to Pro or Enterprise for JSONL streaming up to 1,000 samples per call.' : undefined,
+                    generatedAt: new Date(cachedTd.ts).toISOString()
+                },
+                samples: cachedTd.samples
+            });
+        }
+
         const filter = {};
         if (leagueSlug && leagueSlug !== 'all') {
             filter.league_slug = leagueSlug;
@@ -3873,38 +3946,90 @@ router.get(['/training-data', '/analytics/training-data'], optionalApiKeyAuth, a
             filter['status.state'] = { $in: ['post', 'in'] };
         }
 
-        if (minStats) {
-            filter['home.stats'] = { $exists: true, $ne: null };
+        // Exclude postponed / cancelled / abandoned matches and future-dated fixtures from completed training feeds
+        const maxCompletedDate = new Date(Date.now() + 2 * 3600 * 1000);
+        if (stateParam === 'post' || stateParam === 'all') {
+            filter['status.detail'] = { $not: /^(postp|canc|aban|susp|delay)/i };
+            filter.date = { $lte: maxCompletedDate };
         }
+
+        const richStatsCriteria = {
+            $or: [
+                { 'home.stats.possessionPct': { $exists: true, $ne: null } },
+                { 'home.stats.totalShots': { $exists: true, $ne: null } },
+                { 'home.stats.shotsOnTarget': { $exists: true, $ne: null } },
+                { 'home.stats.wonCorners': { $exists: true, $ne: null } },
+                { 'home.stats.expectedGoals': { $exists: true, $ne: null } }
+            ]
+        };
 
         let matches = [];
         if (mongoose.connection && mongoose.connection.readyState === 1) {
             try {
-                matches = await SoccerMatch.find(filter)
-                    .select('source league_slug date scoreboard_date home away status key_events odds venue')
-                    .sort({ date: -1 })
-                    .limit(limit)
-                    .maxTimeMS(6000)
-                    .lean();
-
-                if (matches.length === 0 && minStats) {
-                    delete filter['home.stats'];
-                    matches = await SoccerMatch.find(filter)
-                        .select('source league_slug date scoreboard_date home away status key_events odds venue')
+                // Prioritize matches with genuine boxscore stats so ML pipelines (e.g. Norra AI) aren't starved by sparse rows
+                if (stateParam === 'post' || minStats) {
+                    matches = await SoccerMatch.find({ ...filter, ...richStatsCriteria })
+                        .select(TRAINING_DATA_PROJECTION)
                         .sort({ date: -1 })
                         .limit(limit)
-                        .maxTimeMS(6000)
+                        .maxTimeMS(15000)
                         .lean();
+                }
+
+                // Top up with remaining recent matches if under limit (or if minStats yielded 0 rich-stat rows)
+                if (matches.length === 0 || (matches.length < limit && !minStats)) {
+                    try {
+                        const remaining = limit - matches.length;
+                        const seenIds = new Set(matches.map(m => String(m._id || m.source?.event_id || '')));
+                        const extra = await SoccerMatch.find(filter)
+                            .select(TRAINING_DATA_PROJECTION)
+                            .sort({ date: -1 })
+                            .limit(Math.min(limit, remaining + matches.length))
+                            .maxTimeMS(15000)
+                            .lean();
+                        for (const m of extra) {
+                            const key = String(m._id || m.source?.event_id || '');
+                            if (seenIds.has(key)) continue;
+                            seenIds.add(key);
+                            matches.push(m);
+                            if (matches.length >= limit) break;
+                        }
+                    } catch (topUpErr) {
+                        console.warn('Training data top-up query warning:', topUpErr.message);
+                    }
                 }
             } catch (dbErr) {
                 console.warn('Training data query warning:', dbErr.message);
-                matches = [];
+                if (matches.length === 0) matches = [];
             }
         }
 
-        // Memory cache fallback: ensure non-empty dataset even on cold starts
-        if (matches.length === 0 && Array.isArray(liveFeedMemoryCache?.matches) && liveFeedMemoryCache.matches.length > 0) {
-            matches = liveFeedMemoryCache.matches.slice(0, limit);
+        // State-aware memory cache fallback: never serve live ('in') matches when caller explicitly asked for completed ('post')
+        if (matches.length === 0) {
+            const matchesLeagueFilter = (m) => {
+                if (!leagueSlug || leagueSlug === 'all') return true;
+                const slug = String(m.league_slug || m.league?.slug || '').trim().toLowerCase();
+                return slug === leagueSlug;
+            };
+            if (stateParam === 'post') {
+                const todayBoard = dailyBoardCache.getReadyBoard(dailyBoardCache.getWatDateKey(), { status: 'finished' });
+                if (Array.isArray(todayBoard?.matches) && todayBoard.matches.length > 0) {
+                    const maxCompletedMs = maxCompletedDate.getTime();
+                    matches = todayBoard.matches
+                        .filter(matchesLeagueFilter)
+                        .filter(m => !/^(postp|canc|aban|susp|delay)/i.test(String(m.status?.detail || m.status?.clock || '')))
+                        .filter(m => {
+                            if (!m.date) return true;
+                            const ms = new Date(m.date).getTime();
+                            return !Number.isFinite(ms) || ms <= maxCompletedMs;
+                        })
+                        .slice(0, limit);
+                }
+            } else if (Array.isArray(liveFeedMemoryCache?.matches) && liveFeedMemoryCache.matches.length > 0) {
+                matches = liveFeedMemoryCache.matches
+                    .filter(matchesLeagueFilter)
+                    .slice(0, limit);
+            }
         }
 
         const samples = matches.map(m => {
@@ -3918,7 +4043,13 @@ router.get(['/training-data', '/analytics/training-data'], optionalApiKeyAuth, a
             else if (aScore > hScore) outcome = 'away_win';
 
             const keyEvents = Array.isArray(m.key_events) ? m.key_events : [];
-            const goalEvents = keyEvents.filter(k => k.scoringPlay || String(k.type?.text || k.text || '').toLowerCase().includes('goal')).map(k => ({
+            const nonScoringEventRegex = /\b(miss|missed|saved|disallowed|cancelled|canceled|overturned|no goal|awarded)\b/i;
+            const goalEvents = keyEvents.filter(k => {
+                if (k.scoringPlay) return true;
+                const combinedText = `${k.type?.text || ''} ${k.text || ''}`.toLowerCase();
+                if (!combinedText.includes('goal')) return false;
+                return !nonScoringEventRegex.test(combinedText);
+            }).map(k => ({
                 minute: k.clockValue || (parseInt(k.clock, 10) || 0),
                 clock: String(k.clock || ''),
                 side: k.team?.side || (k.homeAway === 'home' || k.side === 'home' ? 'home' : 'away'),
@@ -3958,10 +4089,10 @@ router.get(['/training-data', '/analytics/training-data'], optionalApiKeyAuth, a
             const aFouls = numOrNull(aStats.foulsCommitted ?? aStats.foulsCommited);
             const hOffsides = numOrNull(hStats.offsides);
             const aOffsides = numOrNull(aStats.offsides);
-            const hYellows = numOrNull(hStats.yellowCards) ?? 0;
-            const aYellows = numOrNull(aStats.yellowCards) ?? 0;
-            const hReds = numOrNull(hStats.redCards) ?? redCardEvents.filter(r => r.side === 'home').length;
-            const aReds = numOrNull(aStats.redCards) ?? redCardEvents.filter(r => r.side === 'away').length;
+            const hYellows = numOrNull(hStats.yellowCards);
+            const aYellows = numOrNull(aStats.yellowCards);
+            const hReds = numOrNull(hStats.redCards) ?? (keyEvents.length > 0 ? redCardEvents.filter(r => r.side === 'home').length : null);
+            const aReds = numOrNull(aStats.redCards) ?? (keyEvents.length > 0 ? redCardEvents.filter(r => r.side === 'away').length : null);
             const hSaves = numOrNull(hStats.saves);
             const aSaves = numOrNull(aStats.saves);
             const hXg = numOrNull(hStats.expectedGoals);
@@ -3999,21 +4130,21 @@ router.get(['/training-data', '/analytics/training-data'], optionalApiKeyAuth, a
             const lateGoalsAfter75 = goalEvents.filter(g => g.minute >= 75).length;
 
             return {
-                eventId: m.source?.event_id,
+                eventId: m.source?.event_id || m.id || m.uid || null,
                 provider: m.source?.provider || 'upstream',
-                leagueSlug: m.league_slug,
+                leagueSlug: m.league_slug || m.league?.slug || null,
                 date: m.date,
-                scoreboardDate: m.scoreboard_date,
+                scoreboardDate: m.scoreboard_date || m.scoreboardDate || null,
                 venue: m.venue || null,
                 odds: Array.isArray(m.odds) ? m.odds : [],
                 homeTeam: {
-                    id: m.home?.source_id,
-                    name: m.home?.name || m.home?.display_name,
+                    id: m.home?.source_id || m.home?.id || null,
+                    name: m.home?.name || m.home?.display_name || m.home?.displayName || null,
                     score: hScore
                 },
                 awayTeam: {
-                    id: m.away?.source_id,
-                    name: m.away?.name || m.away?.display_name,
+                    id: m.away?.source_id || m.away?.id || null,
+                    name: m.away?.name || m.away?.display_name || m.away?.displayName || null,
                     score: aScore
                 },
                 status: {
@@ -4063,8 +4194,8 @@ router.get(['/training-data', '/analytics/training-data'], optionalApiKeyAuth, a
                     yellowCardsAway: aYellows,
                     redCardsHome: hReds,
                     redCardsAway: aReds,
-                    disciplinaryScoreHome: (hYellows * 10) + (hReds * 25),
-                    disciplinaryScoreAway: (aYellows * 10) + (aReds * 25),
+                    disciplinaryScoreHome: (hYellows != null || hReds != null) ? ((hYellows || 0) * 10) + ((hReds || 0) * 25) : null,
+                    disciplinaryScoreAway: (aYellows != null || aReds != null) ? ((aYellows || 0) * 10) + ((aReds || 0) * 25) : null,
                     goalkeeperSavesHome: hSaves,
                     goalkeeperSavesAway: aSaves,
                     expectedGoalsHome: hXg,
@@ -4118,6 +4249,14 @@ router.get(['/training-data', '/analytics/training-data'], optionalApiKeyAuth, a
             };
         });
 
+        if (samples.length > 0) {
+            if (trainingDataResponseCache.size >= 20) {
+                const oldestKey = trainingDataResponseCache.keys().next().value;
+                if (oldestKey) trainingDataResponseCache.delete(oldestKey);
+            }
+            trainingDataResponseCache.set(tdCacheKey, { ts: Date.now(), samples });
+        }
+
         res.set('Cache-Control', 'public, max-age=60');
 
         if (format === 'jsonl' || format === 'ndjson') {
@@ -4132,6 +4271,7 @@ router.get(['/training-data', '/analytics/training-data'], optionalApiKeyAuth, a
             status: 'success',
             meta: {
                 totalSamples: samples.length,
+                dailyFixtureCount,
                 league: leagueSlug,
                 state: stateParam,
                 tier: keyDoc?.plan || 'public_free',
@@ -4863,12 +5003,28 @@ router.get('/matches/:eventId', optionalApiKeyAuth, async (req, res) => {
                 const { fetchLiveScoreMatchDetails } = require('../services/soccerSyncService');
                 const lsData = await fetchLiveScoreMatchDetails(eventId);
                 if (lsData && (lsData.boxscore || lsData.keyEvents?.length || lsData.rosters?.length)) {
+                    const boardMatch = dailyBoardCache.findMatchInBoards(eventId);
+                    const fbStatus = lsData.status || boardMatch?.status || { state: 'post', completed: true, isLive: false, clock: 'FT', detail: 'FT' };
+                    const fbState = fbStatus.completed ? 'post' : (fbStatus.isLive || fbStatus.state === 'in' ? 'in' : (fbStatus.state || 'post'));
+                    const fbDetail = fbStatus.detail || fbStatus.clock || (fbState === 'post' ? 'FT' : (fbState === 'in' ? 'Live' : 'Scheduled'));
                     const summary = {
                         id: eventId,
                         header: {
                             competitions: [{
                                 id: eventId,
-                                status: { type: { state: 'in', description: 'Live' } },
+                                date: boardMatch?.date || undefined,
+                                competitors: boardMatch ? [
+                                    { homeAway: 'home', score: String(lsData.score?.home ?? boardMatch.home?.score ?? 0), team: boardMatch.home || {} },
+                                    { homeAway: 'away', score: String(lsData.score?.away ?? boardMatch.away?.score ?? 0), team: boardMatch.away || {} }
+                                ] : [],
+                                status: {
+                                    state: fbState,
+                                    completed: fbState === 'post',
+                                    isLive: fbState === 'in',
+                                    clock: fbDetail,
+                                    detail: fbDetail,
+                                    type: { state: fbState, completed: fbState === 'post', shortDetail: fbDetail, description: fbState === 'post' ? 'Full Time' : (fbState === 'in' ? 'In Progress' : 'Scheduled') }
+                                },
                                 details: lsData.keyEvents || []
                             }]
                         },
@@ -4876,8 +5032,9 @@ router.get('/matches/:eventId', optionalApiKeyAuth, async (req, res) => {
                         keyEvents: lsData.keyEvents || [],
                         rosters: lsData.rosters || [],
                         gameInfo: lsData.gameInfo || {},
-                        status: { state: 'in' }
+                        status: { state: fbState, completed: fbState === 'post', isLive: fbState === 'in', clock: fbDetail, detail: fbDetail }
                     };
+                    dailyBoardCache.reconcileSummaryWithBoardAndEvents(summary, { boardMatch, lsData });
                     res.set('Cache-Control', 'public, max-age=10');
                     return res.json({
                         status: 'success',
@@ -4963,11 +5120,12 @@ router.get('/matches/:eventId', optionalApiKeyAuth, async (req, res) => {
             || Boolean(match.source?.livescore_id)
             || String(match.source?.event_id || eventId).length <= 8;
 
+        let lsData = null;
         if (!hasStats || isLiveScoreEvent || !summary.keyEvents?.length) {
             try {
                 const { fetchLiveScoreMatchDetails } = require('../services/soccerSyncService');
                 const lsId = match.source?.livescore_id || (String(match.source?.provider || '').toLowerCase() === 'livescore' ? match.source?.event_id : null) || eventId;
-                const lsData = await fetchLiveScoreMatchDetails(lsId);
+                lsData = await fetchLiveScoreMatchDetails(lsId);
                     if (lsData) {
                         if (lsData.boxscore && !hasStats) {
                             summary.boxscore = lsData.boxscore;
@@ -4986,6 +5144,23 @@ router.get('/matches/:eventId', optionalApiKeyAuth, async (req, res) => {
                         }
                     }
                 } catch {}
+            }
+
+            // Reconcile summary header score & status with dailyBoardCache, LiveScore details, and goal timeline
+            const boardMatch = dailyBoardCache.findMatchInBoards(match) || dailyBoardCache.findMatchInBoards(eventId);
+            const { boardNeedsHeal, reconciled } = dailyBoardCache.reconcileSummaryWithBoardAndEvents(summary, {
+                boardMatch,
+                lsData
+            });
+            if (boardNeedsHeal && reconciled && reconciled.homeScore !== null && reconciled.awayScore !== null) {
+                dailyBoardCache.patchMatchInBoards({
+                    id: eventId,
+                    source: match.source,
+                    league_slug: match.league_slug,
+                    home: { ...(match.home || {}), score: reconciled.homeScore },
+                    away: { ...(match.away || {}), score: reconciled.awayScore },
+                    status: reconciled.status
+                });
             }
 
             // If neither provider broadcasted granular boxscore telemetry (e.g. youth matches, U17 WC, or lower domestic divisions),

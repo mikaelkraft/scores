@@ -605,10 +605,9 @@ async function syncLeagueFromLiveScoreStages(leagueDef, stages, now = new Date()
             eventSlug = demoteIfNotTopFlight(eventSlug, homeName, awayName, leagueName);
             // Fix cross-country pollution (Romanian clubs under Indonesia, Serbian under EPL, etc.)
             eventSlug = inferCountryFromTeamNames(homeName, awayName, eventSlug);
-            // Keep senior top-flight boards clean — no B/II/U21 sides mixed in
+            // Keep senior top-flight & continental boards clean — no B/II/U19/U21 sides mixed in
             const seniorSlug = String(eventSlug || '').toLowerCase();
-            const isSeniorTop = /\.[1]$/.test(seniorSlug) && !seniorSlug.includes('.w.') && !seniorSlug.includes('youth') && !seniorSlug.includes('u19') && !seniorSlug.includes('u21');
-            if (isSeniorTop && (isReserveOrBTeamName(homeName) || isReserveOrBTeamName(awayName))) {
+            if (isSeniorTopLeagueSlug(seniorSlug) && (isReserveOrBTeamName(homeName) || isReserveOrBTeamName(awayName))) {
                 eventSlug = demoteToJuniorOrLowerTier(eventSlug, homeName, awayName, leagueName);
             }
             // Final gate: still on .1 with no known club → demote rather than drop
@@ -1535,12 +1534,39 @@ function demoteIfNotTopFlight(slug, homeName, awayName, leagueName = '') {
     return slug.replace(/\.1$/, '.lower');
 }
 
+const SENIOR_CONTINENTAL_SLUGS = new Set([
+    'uefa.champions', 'uefa.europa', 'uefa.europa.conf', 'uefa.super_cup',
+    'caf.champions', 'caf.confed', 'afc.champions', 'afc.cup',
+    'conmebol.libertadores', 'conmebol.sudamericana', 'concacaf.champions',
+    'intl.friendly'
+]);
+
+function isSeniorTopLeagueSlug(slug = '') {
+    const s = String(slug || '').trim().toLowerCase();
+    if (!s || s.includes('.w.') || s.includes('youth') || s.includes('u19') || s.includes('u21') || s.includes('u23') || s.includes('u18') || s.includes('u17')) {
+        return false;
+    }
+    return /\.[1]$/.test(s) || SENIOR_CONTINENTAL_SLUGS.has(s);
+}
+
 function demoteToJuniorOrLowerTier(slug, homeName = '', awayName = '', compName = '') {
     const text = `${homeName} ${awayName} ${compName} ${slug}`.toLowerCase();
     const isYouth = /\b(u-?2[0-3]|u-?1[5-9]|youth|primavera|reserves?|development|academy|juvenil|nachwuchs|junioren)\b/i.test(text);
     const isBTeam = isReserveOrBTeamName(homeName) || isReserveOrBTeamName(awayName);
 
     if (!isYouth && !isBTeam) return slug;
+
+    // UEFA Continental youth match (prevents UEFA Youth League U19 leaking into senior UCL/UEL/UECL)
+    if (slug.startsWith('uefa.')) {
+        if (isYouth) return 'uefa.youth';
+        return slug;
+    }
+
+    // CONMEBOL Continental youth match
+    if (slug.startsWith('conmebol.')) {
+        if (isYouth) return 'conmebol.u20';
+        return slug;
+    }
 
     // International youth match
     if (slug === 'intl.friendly' || slug === 'intl.u21' || text.includes('international') || text.includes('friendlies')) {
@@ -1619,8 +1645,9 @@ function resolveLeagueSlug(altGameNote = '', compDesc = '', uid = '') {
         return null;
     }
 
-    // Direct explicit canonical slug matches in uid
-    if (scd === 'eng.1' || scd === 'esp.1' || scd === 'ita.1' || scd === 'ger.1' || scd === 'fra.1' || scd === 'bra.1' || scd === 'mex.1' || scd === 'nga.1' || scd === 'uefa.champions') {
+    // Direct explicit canonical slug matches in uid (never bypass women/youth discriminators when text signals them)
+    const hasWomenOrYouthHint = /\b(women|woman|ladies|femenin|frauen|damen|vrouwen|wsl|nwsl|uwcl|u-?2[0-3]|u-?1[5-9]|youth|primavera|pl2|reserves?)\b|\.w\./i.test(text);
+    if (!hasWomenOrYouthHint && (scd === 'eng.1' || scd === 'esp.1' || scd === 'ita.1' || scd === 'ger.1' || scd === 'fra.1' || scd === 'bra.1' || scd === 'mex.1' || scd === 'nga.1' || scd === 'uefa.champions')) {
         return scd;
     }
 
@@ -2309,6 +2336,7 @@ async function fetchLiveScoreMatchDetails(eventId) {
                         yellowCard,
                         redCard,
                         substitution,
+                        Sc: Array.isArray(inc.Sc) ? inc.Sc : undefined,
                         text,
                         type: { text: type, type },
                         team: { side: isHome ? 'home' : 'away' },
@@ -2317,6 +2345,47 @@ async function fetchLiveScoreMatchDetails(eventId) {
                 }
             }
             if (keyEvents.length) result.keyEvents = keyEvents;
+        }
+
+        // 2b. Extract authentic score & status from LiveScore incidents/info payloads (or latest goal Sc)
+        const rawTr1 = incsData?.Tr1 ?? infoData?.Tr1;
+        const rawTr2 = incsData?.Tr2 ?? infoData?.Tr2;
+        if (rawTr1 !== undefined && rawTr1 !== null && rawTr1 !== '' && rawTr2 !== undefined && rawTr2 !== null && rawTr2 !== '') {
+            const hNum = Number(rawTr1);
+            const aNum = Number(rawTr2);
+            if (Number.isFinite(hNum) && Number.isFinite(aNum)) {
+                result.score = { home: hNum, away: aNum };
+            }
+        } else if (Array.isArray(result.keyEvents) && result.keyEvents.length) {
+            let bestH = -1;
+            let bestA = -1;
+            for (const ke of result.keyEvents) {
+                if (ke.scoringPlay && Array.isArray(ke.Sc) && ke.Sc.length >= 2) {
+                    const hNum = Number(ke.Sc[0]);
+                    const aNum = Number(ke.Sc[1]);
+                    if (Number.isFinite(hNum) && Number.isFinite(aNum) && (hNum + aNum) >= (bestH + bestA)) {
+                        bestH = hNum;
+                        bestA = aNum;
+                    }
+                }
+            }
+            if (bestH >= 0 && bestA >= 0) {
+                result.score = { home: bestH, away: bestA };
+            }
+        }
+
+        const rawEps = String(incsData?.Eps || infoData?.Eps || '').trim();
+        if (rawEps) {
+            const isFin = /^(FT|AET|AP|Final|Postp|Canc|Abd)/i.test(rawEps);
+            const isPre = /^(NS|Sched|TBD)$/i.test(rawEps);
+            const isLiveEps = !isFin && !isPre && /^(HT|\d{1,3}(?:\+\d{1,2})?'?|Live)$/i.test(rawEps);
+            result.status = {
+                state: isFin ? 'post' : (isLiveEps ? 'in' : (isPre ? 'pre' : 'unknown')),
+                completed: isFin,
+                isLive: isLiveEps,
+                clock: rawEps,
+                detail: rawEps
+            };
         }
 
         // 3. Lineups and rosters
@@ -2820,7 +2889,13 @@ function normalizeTeamName(name = '') {
         .replace(/\bbosnia\s*(?:and|-|&)\s*herzegovina\b/g, 'bosniaherzegovina')
         .replace(/\bbosnia\s+herzegovina\b/g, 'bosniaherzegovina')
         .replace(/\bcyc\b/gi, ' ')
-        // Specific French & Spanish club aliases for cross-provider dedup
+        // Specific French, Spanish & AFC/Asian club aliases for cross-provider dedup
+        .replace(/\bda(?:e)?jeon\s+(?:hana\s+)?citizen\b/g, 'daejeoncitizen')
+        .replace(/\bjeonbuk\s+(?:hyundai\s+)?motors\b/g, 'jeonbukmotors')
+        .replace(/\bulsan\s+(?:hd|hyundai)(?:\s+fc)?\b/g, 'ulsanhd')
+        .replace(/\bbeijing\s+(?:sinobo\s+)?guoan\b/g, 'beijingguoan')
+        .replace(/\bshanghai\s+(?:port|sipg)\b/g, 'shanghaiport')
+        .replace(/\bshandong\s+(?:taishan|luneng)\b/g, 'shandongtaishan')
         .replace(/\bdijon\s+(fco|football\s+cote-d.or)\b/g, 'dijon')
         .replace(/\borleans\s+(us|loiret)?\b/g, 'orleans')
         .replace(/\bla\s+roche(-sur-yon)?(\s+vf)?\b/g, 'laroche')
@@ -2876,8 +2951,17 @@ function areTeamNamesMatching(nameA = '', nameB = '', leagueSlugA = '', leagueSl
     // Substantial containment / prefix (Herediano ⊂ ClubSportHerediano after strip, Alianza ⊂ AlianzaValledupar)
     if (shorter.length >= 5 && (longer === shorter || longer.startsWith(shorter) || longer.includes(shorter))) return true;
 
-    const tokensA = a.split(/\s+/).filter(t => t.length > 2);
-    const tokensB = b.split(/\s+/).filter(t => t.length > 2);
+    // Token-subset overlap BEFORE space removal (handles sponsor/middle-word insertions like "Daejeon Citizen" vs "Daejeon Hana Citizen FC")
+    const extractTokens = (raw) => String(raw || '')
+        .toLowerCase()
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .replace(/\([^)]*\)/g, ' ')
+        .replace(/[^a-z0-9\s]/g, ' ')
+        .split(/\s+/)
+        .filter((t) => t.length >= 3 && !/^(club|clube|fc|cf|sc|ac|cd|afc|fk|sk|sv|ssc|as|rc|ud|rb|us|cs|ca|de|la|el|the|and|for|city|united|sporting|athletic|atletico|real|inter|dynamo|spartak|olympique|racing)$/.test(t));
+    const tokensA = extractTokens(nameA);
+    const tokensB = extractTokens(nameB);
     if (tokensA.length >= 2 && tokensB.length >= 2) {
         const setB = new Set(tokensB);
         const overlap = tokensA.filter(t => setB.has(t)).length;
@@ -3112,6 +3196,19 @@ async function cleanupStuckMatchesAndPurgeNcaa() {
         // 4c. Re-classify matches mistakenly categorized under 'fifa.youth'
         await SoccerMatch.updateMany(
             { league_slug: 'fifa.youth' },
+            { $set: { league_slug: 'uefa.youth' } }
+        );
+        // 4c-2. Re-classify UEFA Youth League (U19/Youth) matches that leaked into senior 'uefa.champions'
+        await SoccerMatch.updateMany(
+            {
+                league_slug: 'uefa.champions',
+                $or: [
+                    { name: /\b(u-?19|u-?21|youth)\b/i },
+                    { note: /\b(u-?19|u-?21|youth)\b/i },
+                    { 'home.name': /\b(u-?19|u-?21|youth)\b/i },
+                    { 'away.name': /\b(u-?19|u-?21|youth)\b/i }
+                ]
+            },
             { $set: { league_slug: 'uefa.youth' } }
         );
         await SoccerLeague.updateOne(
@@ -3671,10 +3768,9 @@ async function syncLiveScoreInPlay() {
                 let matchSlug = targetSlug;
                 matchSlug = inferCountryFromTeamNames(homeName, awayName, matchSlug) || matchSlug;
 
-                // Keep senior top-flight boards clean — no B/II/U21 sides mixed in
+                // Keep senior top-flight & continental boards clean — no B/II/U19/U21 sides mixed in
                 const seniorSlug = String(matchSlug || '').toLowerCase();
-                const isSeniorTop = /\.[1]$/.test(seniorSlug) && !seniorSlug.includes('.w.') && !seniorSlug.includes('youth') && !seniorSlug.includes('u19') && !seniorSlug.includes('u21');
-                if (isSeniorTop && (isReserveOrBTeamName(homeName) || isReserveOrBTeamName(awayName))) {
+                if (isSeniorTopLeagueSlug(seniorSlug) && (isReserveOrBTeamName(homeName) || isReserveOrBTeamName(awayName))) {
                     matchSlug = demoteToJuniorOrLowerTier(matchSlug, homeName, awayName);
                 }
                 const homeScore = parseInt(ev.Tr1 || 0, 10);
@@ -3963,8 +4059,6 @@ async function syncLiveScoreboards() {
                 const tier = getMatchTier(m.home?.name || m.home?.display_name, m.away?.name || m.away?.display_name, m.league_slug);
                 byNormSig.set(`${h}_vs_${a}_${tier}`, m);
                 byNormSig.set(`${a}_vs_${h}_${tier}`, m);
-                byNormSig.set(`${h}_vs_${a}`, m);
-                byNormSig.set(`${a}_vs_${h}`, m);
             }
         }
 
@@ -3999,7 +4093,7 @@ async function syncLiveScoreboards() {
             const aNorm = normalizeTeamName(awayCompName);
             const tier = getMatchTier(homeCompName, awayCompName, targetSlug);
             const sig = `${hNorm}_vs_${aNorm}_${tier}`;
-            const existingMatch = byEvId.get(String(ev.id)) || byNormSig.get(sig) || byNormSig.get(`${hNorm}_vs_${aNorm}`);
+            const existingMatch = byEvId.get(String(ev.id)) || byNormSig.get(sig);
 
             // Never overwrite a completed match with an in-play or scheduled state
             if (existingMatch?.status?.completed && (state === 'pre' || state === 'in')) {
@@ -4136,7 +4230,7 @@ async function syncLiveScoreboards() {
                 });
                 byEvId.set(String(ev.id), matchDoc);
                 byNormSig.set(sig, matchDoc);
-                byNormSig.set(`${hNorm}_vs_${aNorm}`, matchDoc);
+                byNormSig.set(`${aNorm}_vs_${hNorm}_${tier}`, matchDoc);
             }
             updatedCount++;
         }
@@ -4268,6 +4362,7 @@ module.exports = {
     hasTopFlightClub,
     demoteIfNotTopFlight,
     demoteToJuniorOrLowerTier,
+    isSeniorTopLeagueSlug,
     syncLiveScoreStandingsForLeague,
     syncEspnStandingsForLeague,
     ensureFreshStandings,

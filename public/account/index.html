@@ -443,7 +443,7 @@
                 </div>
 
                 <div class="key-box" style="margin-top: 18px;">
-                    <span id="display-norra-master-key">norra_live_master_internal_access_2026</span>
+                    <span id="display-norra-master-key">Configured via NORRA_INTERNAL_API_KEY</span>
                     <button class="btn-secondary" onclick="copyMasterApiKey()">Copy Master Key</button>
                 </div>
 
@@ -466,7 +466,7 @@
                     <h4 style="margin: 0 0 8px; font-size: 13px;">Quick Norra AI Client Integration Snippet</h4>
                     <div class="snippet-box" id="norra-integration-snippet" style="font-family: monospace; font-size: 12px; padding: 12px; background: var(--bg-canvas); border-radius: 6px; border: 1px solid var(--border-subtle); overflow-x: auto;">// Norra AI Livescore Decoupled Sync Service
 const response = await fetch('https://scores.mynorra.xyz/api/v1/football/live', {
-  headers: { 'x-api-key': 'norra_live_master_internal_access_2026' }
+  headers: { 'x-api-key': '&lt;NORRA_INTERNAL_API_KEY&gt;' }
 });
 const { live } = await response.json();
 console.log(`Synced ${live.length} live matches into Norra prediction engine.`);</div>

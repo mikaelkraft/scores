@@ -207,9 +207,9 @@ ADMIN_PASSWORD=SetAStrongPasswordHere2026!
 ADMIN_JWT_SECRET=super-secret-random-jwt-key-minimum-32-chars-long
 
 # Payment Gateways (Leave empty or set to test keys; mock mode engages automatically if blank)
-FLUTTERWAVE_PUBLIC_KEY=FLWPUBK-xxxxxxxxxxxxxxxxxxxx-X
-FLUTTERWAVE_SECRET_KEY=FLWSECK-xxxxxxxxxxxxxxxxxxxx-X
-FLUTTERWAVE_ENCRYPTION_KEY=FLWSECK_APxxxxxxxxxx
+FLUTTERWAVE_PUBLIC_KEY=<your_flutterwave_public_key>
+FLUTTERWAVE_SECRET_KEY=<your_flutterwave_secret_key>
+FLUTTERWAVE_ENCRYPTION_KEY=<your_flutterwave_encryption_key>
 
 PAYPAL_CLIENT_ID=xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 PAYPAL_CLIENT_SECRET=xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx

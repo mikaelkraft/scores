@@ -35,15 +35,39 @@ class EmailService {
                     tls: { rejectUnauthorized: false }
                 }),
                 from,
+                user,
                 isMock: false
             };
         }
 
         return {
             transporter: null,
-            from: 'Norra AI <support@mynorra.xyz>',
+            from: user ? `Norra AI <${user}>` : 'Norra AI <support@mynorra.xyz>',
+            user,
             isMock: true
         };
+    }
+
+    /**
+     * Generic email dispatch (used by password reset & system notifications)
+     */
+    async sendEmail({ to, subject, text, html }) {
+        const recipient = String(to || '').trim();
+        if (!recipient || !recipient.includes('@')) {
+            return { success: false, error: 'Valid recipient email address is required.' };
+        }
+        const { transporter, from, isMock } = await this.getTransporter();
+        if (isMock || !transporter) {
+            console.log(`📧 [MOCK EMAIL SERVICE] Email to: ${recipient} | Subject: ${subject}`);
+            return { success: true, mock: true, message: 'Mock email generated (configure SMTP in admin to send live emails).' };
+        }
+        try {
+            const info = await transporter.sendMail({ from, to: recipient, subject, text, html });
+            return { success: true, messageId: info.messageId };
+        } catch (err) {
+            console.error('SMTP sendEmail error:', err.message);
+            return { success: false, error: err.message };
+        }
     }
 
     /**

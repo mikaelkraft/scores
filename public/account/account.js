@@ -656,6 +656,10 @@ async function loadKeys() {
         if (data.norraMasterKey) {
             const masterKeyEl = document.getElementById('display-norra-master-key');
             if (masterKeyEl) masterKeyEl.textContent = data.norraMasterKey;
+            const snippetEl = document.getElementById('norra-integration-snippet');
+            if (snippetEl && snippetEl.textContent.includes('<NORRA_INTERNAL_API_KEY>')) {
+                snippetEl.textContent = snippetEl.textContent.replace('<NORRA_INTERNAL_API_KEY>', data.norraMasterKey);
+            }
         }
     } catch (err) {
         console.error('Failed to load keys:', err);
@@ -761,7 +765,11 @@ function copyApiKey() {
 
 function copyMasterApiKey() {
     const masterKeyEl = document.getElementById('display-norra-master-key');
-    const key = masterKeyEl ? masterKeyEl.textContent.trim() : 'norra_live_master_internal_access_2026';
+    const key = masterKeyEl ? masterKeyEl.textContent.trim() : '';
+    if (!key || key.startsWith('Configured via')) {
+        alert('Norra AI Master API Key is not configured on this account.');
+        return;
+    }
     navigator.clipboard.writeText(key).then(() => {
         alert('Norra AI Master API Key copied to clipboard!');
     });

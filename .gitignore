@@ -21,11 +21,13 @@ public/crests/*
 # MongoDB user creation script (contains passwords)
 create-mongodb-user.js
 
-# Android Build Artifacts
+# Android Build Artifacts & Signing Keystores
 android/bin/
 android/obj/
 android/gen/
 *.idsig
+*.keystore
+*.jks
 
 
 # Local MongoDB archive exports (move to 5TB drive)

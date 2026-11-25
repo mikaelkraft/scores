@@ -152,16 +152,54 @@ router.post('/api/admin/test-smtp', requireAdmin, async (req, res) => {
     try {
         const emailService = require('../services/emailService');
         const SiteSetting = require('../models/siteSetting');
+        const { config } = require('../config/env');
         const settings = await SiteSetting.getGlobalSettings().catch(() => null);
-        const smtpUser = String(settings?.smtpSettings?.user || '').trim();
-        const { toEmail } = req.body || {};
-        // Prefer explicit target, then SMTP mailbox (Gmail delivers reliably to self), then admin email
-        const target = toEmail || smtpUser || req.admin?.email || 'admin@mynorra.xyz';
-        const { transporter, from, isMock } = await emailService.getTransporter();
+        const { transporter, from, user: resolvedSmtpUser, isMock } = await emailService.getTransporter();
 
         if (isMock || !transporter) {
             return res.status(400).json({
                 error: 'Live SMTP is not enabled or credentials (host, username, password) are missing. Re-save SMTP with the Gmail App Password filled in.'
+            });
+        }
+
+        const isUsableEmail = (val) => {
+            const s = String(val || '').trim();
+            return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(s);
+        };
+        const extractEmailAddr = (val) => {
+            const s = String(val || '').trim();
+            const m = s.match(/<([^>]+)>/);
+            return (m ? m[1] : s).trim();
+        };
+        const isUnroutablePlaceholder = (val) => {
+            const lower = String(val || '').trim().toLowerCase();
+            return lower === 'admin@mynorra.xyz' || lower === 'support@mynorra.xyz';
+        };
+
+        const explicitTo = String(req.body?.toEmail || '').trim();
+        const dbSmtpUser = String(settings?.smtpSettings?.user || '').trim();
+        const envSmtpUser = String(config.SMTP_USER || '').trim();
+        const activeSmtpUser = String(resolvedSmtpUser || '').trim();
+        const fromAddr = extractEmailAddr(from);
+        const configuredAdminEmail = String(config.ADMIN_EMAIL || '').trim();
+        const sessionAdminEmail = String(req.admin?.email || '').trim();
+
+        // Priority: explicit recipient -> non-placeholder SMTP mailbox -> non-placeholder From -> non-placeholder Admin email
+        // Never silently fire test mail to hardcoded unroutable 'admin@mynorra.xyz' or 'support@mynorra.xyz'
+        const candidates = [
+            explicitTo,
+            !isUnroutablePlaceholder(dbSmtpUser) ? dbSmtpUser : '',
+            !isUnroutablePlaceholder(envSmtpUser) ? envSmtpUser : '',
+            !isUnroutablePlaceholder(activeSmtpUser) ? activeSmtpUser : '',
+            !isUnroutablePlaceholder(fromAddr) ? fromAddr : '',
+            !isUnroutablePlaceholder(configuredAdminEmail) ? configuredAdminEmail : '',
+            !isUnroutablePlaceholder(sessionAdminEmail) ? sessionAdminEmail : ''
+        ];
+        const target = candidates.find(isUsableEmail) || '';
+
+        if (!target) {
+            return res.status(400).json({
+                error: 'No valid test recipient email found. Enter a Test Recipient Email or set SMTP Username to your mailbox address.'
             });
         }
 
@@ -187,7 +225,7 @@ router.post('/api/admin/test-smtp', requireAdmin, async (req, res) => {
             `
         });
 
-        return res.json({ status: 'success', success: true, message: `Test email delivered to ${target}` });
+        return res.json({ status: 'success', success: true, to: target, message: `Test email delivered to ${target}` });
     } catch (err) {
         const msg = err.response || err.message || String(err);
         return res.status(500).json({ error: 'SMTP send failed: ' + msg });

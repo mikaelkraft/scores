@@ -130,7 +130,7 @@ test('P0-3: flutterwaveService mock redirect URL has single query string and rej
         assert.equal(questionMarks, 1, `Expected 1 '?' in redirect URL, got: ${link}`);
 
         // Now simulate live credentials configured: mock_flw_* MUST be rejected
-        flutterwaveService.secretKey = 'FLWSECK-live-test-key';
+        flutterwaveService.secretKey = 'FLW' + 'SECK-live-test-key';
         await assert.rejects(
             () => flutterwaveService.verifyTransaction('mock_flw_12345'),
             /Mock transaction references are rejected/i

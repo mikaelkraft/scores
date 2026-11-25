@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const https = require('https');
 const zlib = require('zlib');
+const dailyBoardCache = require('../services/dailyBoardCache');
 
 function fetchJson(url) {
     return new Promise((resolve, reject) => {
@@ -530,7 +531,32 @@ async function sendSummary(req, res) {
     try {
         const cached = summaryServerCache.get(req.eventId);
         if (cached && Date.now() < cached.expiresAt) {
-            res.set('Cache-Control', `public, max-age=${cached.ttl}`);
+            const cComp = cached.data?.header?.competitions?.[0];
+            const cComps = Array.isArray(cComp?.competitors) ? cComp.competitors : [];
+            const cHome = cComps.find(c => c.homeAway === 'home') || cComps[0];
+            const cAway = cComps.find(c => c.homeAway === 'away') || cComps[1];
+            const lookupObj = (cHome && cAway) ? {
+                id: req.eventId,
+                league_slug: cached.data?.header?.league?.slug || req.params.league,
+                home: { name: cHome.team?.displayName || cHome.team?.name || '' },
+                away: { name: cAway.team?.displayName || cAway.team?.name || '' }
+            } : null;
+            const cachedBoardMatch = dailyBoardCache.findMatchInBoards(req.eventId)
+                || (lookupObj ? dailyBoardCache.findMatchInBoards(lookupObj) : null);
+            const cachedRecon = dailyBoardCache.reconcileSummaryWithBoardAndEvents(cached.data, {
+                boardMatch: cachedBoardMatch || undefined
+            });
+            if (cachedRecon.boardNeedsHeal && cachedRecon.reconciled && cachedRecon.reconciled.homeScore !== null && cachedRecon.reconciled.awayScore !== null && lookupObj) {
+                dailyBoardCache.patchMatchInBoards({
+                    ...lookupObj,
+                    home: { ...lookupObj.home, score: cachedRecon.reconciled.homeScore },
+                    away: { ...lookupObj.away, score: cachedRecon.reconciled.awayScore },
+                    status: cachedRecon.reconciled.status
+                });
+            }
+            const cachedState = cached.data?.header?.competitions?.[0]?.status?.type?.state;
+            const effectiveTtl = cachedState === 'in' ? 5 : cached.ttl;
+            res.set('Cache-Control', `public, max-age=${effectiveTtl}`);
             return res.json(cached.data);
         }
 
@@ -561,6 +587,8 @@ async function sendSummary(req, res) {
                     const espnUrl = `https://site.api.espn.com/apis/site/v2/sports/soccer/all/summary?event=${encodeURIComponent(req.eventId)}`;
                     const liveEspnData = await fetchJson(espnUrl);
                     if (liveEspnData && liveEspnData.header) {
+                        const fbBoardMatch = dailyBoardCache.findMatchInBoards(req.eventId);
+                        dailyBoardCache.reconcileSummaryWithBoardAndEvents(liveEspnData, { boardMatch: fbBoardMatch || undefined });
                         res.set('Cache-Control', 'public, max-age=10');
                         return res.json(liveEspnData);
                     }
@@ -624,11 +652,12 @@ async function sendSummary(req, res) {
             || Boolean(match.source?.livescore_id)
             || String(match.source?.event_id || req.eventId).length <= 8;
 
+        let lsData = null;
         if (!hasStats || isLiveScoreEvent || !summary.keyEvents?.length || !summary.rosters?.length) {
             try {
                 const { fetchLiveScoreMatchDetails } = require('../services/soccerSyncService');
                 const lsId = match.source?.livescore_id || (String(match.source?.provider || '').toLowerCase() === 'livescore' ? match.source?.event_id : null) || req.eventId;
-                const lsData = await fetchLiveScoreMatchDetails(lsId);
+                lsData = await fetchLiveScoreMatchDetails(lsId);
                     if (lsData) {
                         if (lsData.boxscore && !hasStats) {
                             summary.boxscore = lsData.boxscore;
@@ -661,8 +690,28 @@ async function sendSummary(req, res) {
                 };
             }
 
-        const isLive = match.status?.state === 'in';
-        const ttl = isLive ? 5 : 600;
+        // Reconcile summary header score & status with dailyBoardCache, LiveScore details, and goal timeline
+        // so Home Display and Match Detail/Telemetry never disagree or stay stuck in stale "Live" / "0-0".
+        const boardMatch = dailyBoardCache.findMatchInBoards(match) || dailyBoardCache.findMatchInBoards(req.eventId);
+        const { boardNeedsHeal, reconciled } = dailyBoardCache.reconcileSummaryWithBoardAndEvents(summary, {
+            boardMatch,
+            lsData
+        });
+        if (boardNeedsHeal && reconciled && reconciled.homeScore !== null && reconciled.awayScore !== null) {
+            dailyBoardCache.patchMatchInBoards({
+                id: req.eventId,
+                source: match.source,
+                league_slug: match.league_slug,
+                home: { ...(match.home || {}), score: reconciled.homeScore },
+                away: { ...(match.away || {}), score: reconciled.awayScore },
+                status: reconciled.status
+            });
+        }
+
+        const finalState = summary.header?.competitions?.[0]?.status?.type?.state || match.status?.state;
+        const isLive = finalState === 'in';
+        const isFinished = finalState === 'post' || Boolean(summary.header?.competitions?.[0]?.status?.completed);
+        const ttl = isLive ? 5 : (isFinished ? 600 : 30);
         if (summaryServerCache.size >= 150) {
             const oldestKey = summaryServerCache.keys().next().value;
             summaryServerCache.delete(oldestKey);

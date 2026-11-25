@@ -1066,12 +1066,14 @@ async function saveAuthAndEmailSettings() {
         requireEmailVerification: document.getElementById('setting-require-verification').checked
     };
 
+    const smtpUserVal = document.getElementById('setting-smtp-user').value.trim();
+    const smtpFromInput = document.getElementById('setting-smtp-from').value.trim();
     const smtpSettings = {
         enabled: document.getElementById('setting-smtp-enabled').checked,
         host: document.getElementById('setting-smtp-host').value.trim(),
         port: parseInt(document.getElementById('setting-smtp-port').value) || 587,
-        user: document.getElementById('setting-smtp-user').value.trim(),
-        fromEmail: document.getElementById('setting-smtp-from').value.trim() || 'Norra AI <support@mynorra.xyz>'
+        user: smtpUserVal,
+        fromEmail: smtpFromInput || (smtpUserVal.includes('@') ? `Norra AI <${smtpUserVal}>` : '')
     };
     // Only send password when the field was edited — empty would wipe stored app password
     const passVal = document.getElementById('setting-smtp-pass').value;
@@ -1100,6 +1102,9 @@ async function saveAuthAndEmailSettings() {
 async function sendTestSmtpEmail() {
     const resEl = document.getElementById('test-smtp-result');
     const btn = document.getElementById('btn-test-smtp');
+    const testToInput = document.getElementById('setting-smtp-test-to')?.value?.trim() || '';
+    const smtpUserInput = document.getElementById('setting-smtp-user')?.value?.trim() || '';
+    const toEmail = testToInput || (smtpUserInput.includes('@') ? smtpUserInput : '');
     if (resEl) resEl.innerHTML = '<span style="color:var(--text-muted);">Dispatching test email...</span>';
     if (btn) btn.disabled = true;
 
@@ -1109,7 +1114,8 @@ async function sendTestSmtpEmail() {
             headers: {
                 Authorization: `Bearer ${adminToken}`,
                 'Content-Type': 'application/json'
-            }
+            },
+            body: JSON.stringify(toEmail ? { toEmail } : {})
         });
         const data = await res.json();
         if (res.ok && data.success) {

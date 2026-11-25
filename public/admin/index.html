@@ -937,9 +937,15 @@
                         <input type="password" id="setting-smtp-pass" placeholder="••••••••">
                     </div>
                 </div>
-                <div class="form-group" style="margin-top: 15px;">
-                    <label>Sender Address (From)</label>
-                    <input type="text" id="setting-smtp-from" placeholder="Norra AI &lt;support@mynorra.xyz&gt;">
+                <div class="form-grid" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 15px; margin-top: 15px;">
+                    <div class="form-group">
+                        <label>Sender Address (From)</label>
+                        <input type="text" id="setting-smtp-from" placeholder="Leave blank to use SMTP Username">
+                    </div>
+                    <div class="form-group">
+                        <label>Test Recipient Email (Optional)</label>
+                        <input type="email" id="setting-smtp-test-to" placeholder="Defaults to SMTP Username">
+                    </div>
                 </div>
                 <div style="display: flex; align-items: center; gap: 12px; margin-top: 20px; flex-wrap: wrap;">
                     <button class="btn-primary" onclick="saveAuthAndEmailSettings()">Save Auth &amp; Email Settings</button>

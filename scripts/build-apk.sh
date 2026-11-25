@@ -43,18 +43,40 @@ aapt package -f -M "${ANDROID_DIR}/AndroidManifest.xml" -S "${ANDROID_DIR}/res" 
 # 6. Align APK
 zipalign -f -p 4 "${ANDROID_DIR}/bin/norrascore-unaligned.apk" "${ANDROID_DIR}/bin/norrascore-aligned.apk"
 
-# 7. Sign APK (supports CI/prod secrets via ANDROID_KEYSTORE_PASS / ANDROID_KEY_PASS env vars)
+# 7. Sign APK (strictly requires env/CI secrets; never hardcode keystore passwords in source)
+if [[ -z "${ANDROID_KEYSTORE_PASS:-}" && -f "${PROJECT_DIR}/.env" ]]; then
+    while IFS='=' read -r k v; do
+        case "$k" in
+            ANDROID_KEYSTORE_PATH|ANDROID_KEYSTORE_PASS|ANDROID_KEY_PASS|ANDROID_KEY_ALIAS)
+                v="${v%$'\r'}"
+                v="${v#\"}"
+                v="${v%\"}"
+                v="${v#\'}"
+                v="${v%\'}"
+                if [[ -z "${!k:-}" && -n "$v" ]]; then
+                    export "${k}=${v}"
+                fi
+                ;;
+        esac
+    done < "${PROJECT_DIR}/.env"
+fi
+
 KEYSTORE="${ANDROID_KEYSTORE_PATH:-${ANDROID_DIR}/norrascore.keystore}"
-KEYSTORE_PASS="${ANDROID_KEYSTORE_PASS:-norrascore2026}"
-KEY_PASS="${ANDROID_KEY_PASS:-${KEYSTORE_PASS}}"
 KEY_ALIAS="${ANDROID_KEY_ALIAS:-norrascore}"
 
+if [[ -z "${ANDROID_KEYSTORE_PASS:-}" ]]; then
+    echo "Error: ANDROID_KEYSTORE_PASS is required (set it in your environment or .env)." >&2
+    exit 1
+fi
+export ANDROID_KEYSTORE_PASS
+export ANDROID_KEY_PASS="${ANDROID_KEY_PASS:-${ANDROID_KEYSTORE_PASS}}"
+
 if [[ ! -f "${KEYSTORE}" ]]; then
-    keytool -genkeypair -v -keystore "${KEYSTORE}" -storepass "${KEYSTORE_PASS}" -alias "${KEY_ALIAS}" -keypass "${KEY_PASS}" -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=NorraScore, OU=Engineering, O=Norra AI, L=Lagos, ST=Lagos, C=NG"
+    keytool -genkeypair -v -keystore "${KEYSTORE}" -storepass:env ANDROID_KEYSTORE_PASS -alias "${KEY_ALIAS}" -keypass:env ANDROID_KEY_PASS -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=NorraScore, OU=Engineering, O=Norra AI, L=Lagos, ST=Lagos, C=NG"
 fi
 
 OUTPUT_APK="${PROJECT_DIR}/public/download/norrascore.apk"
-apksigner sign --ks "${KEYSTORE}" --ks-pass "pass:${KEYSTORE_PASS}" --key-pass "pass:${KEY_PASS}" --out "${OUTPUT_APK}" "${ANDROID_DIR}/bin/norrascore-aligned.apk"
+apksigner sign --ks "${KEYSTORE}" --ks-pass env:ANDROID_KEYSTORE_PASS --key-pass env:ANDROID_KEY_PASS --out "${OUTPUT_APK}" "${ANDROID_DIR}/bin/norrascore-aligned.apk"
 apksigner verify --verbose "${OUTPUT_APK}"
 
 echo "NorraScore v1.0.0 APK successfully generated at ${OUTPUT_APK} ($(wc -c < "${OUTPUT_APK}") bytes)"

@@ -904,6 +904,12 @@
             .replace(/sc\s+paderborn(\s+07)?|\bpaderborn\b/g, 'paderborn')
             .replace(/tsg\s+hoffenheim|\bhoffenheim\b/g, 'hoffenheim')
             .replace(/\bamed\s+(sportif|sfk)\b/g, 'amed')
+            .replace(/\bda(?:e)?jeon\s+(?:hana\s+)?citizen\b/g, 'daejeoncitizen')
+            .replace(/\bjeonbuk\s+(?:hyundai\s+)?motors\b/g, 'jeonbukmotors')
+            .replace(/\bulsan\s+(?:hd|hyundai)(?:\s+fc)?\b/g, 'ulsanhd')
+            .replace(/\bbeijing\s+(?:sinobo\s+)?guoan\b/g, 'beijingguoan')
+            .replace(/\bshanghai\s+(?:port|sipg)\b/g, 'shanghaiport')
+            .replace(/\bshandong\s+(?:taishan|luneng)\b/g, 'shandongtaishan')
             .replace(/\bdijon\s+(fco|football\s+cote-d.or)\b/g, 'dijon')
             .replace(/\borleans\s+(us|loiret)?\b/g, 'orleans')
             .replace(/\bla\s+roche(-sur-yon)?(\s+vf)?\b/g, 'laroche')
@@ -954,6 +960,11 @@
         if (shorter.length >= 4 && (longer.startsWith(shorter) || longer.includes(shorter))) return true;
         if (shorter.length >= 6 && longer.length >= 6 && Math.abs(longer.length - shorter.length) <= 2) {
             if (longer.includes(shorter.slice(0, 6)) || shorter.includes(longer.slice(0, 6))) return true;
+        }
+        // Sponsor / middle-word insertion (e.g. "Suwon Bluewings" vs "Suwon Samsung Bluewings")
+        // Require >=5-char prefix & suffix and block generic club suffixes ("united", "city", etc.) to prevent false collisions like "Western United" vs "West Ham United"
+        if (shorter.length >= 10 && longer.length <= shorter.length + 8 && !/(united|city|athletic|sporting|rovers|wanderers|albion|county|town|fc)$/.test(shorter)) {
+            if (longer.startsWith(shorter.slice(0, 5)) && longer.endsWith(shorter.slice(-5))) return true;
         }
         return false;
     }
@@ -1677,15 +1688,24 @@
             }
         }
 
-        // 1i. Separate junior / reserve / youth tiers from senior top flights (.1)
-        const isSeniorTop = /\.[1]$/.test(slug) && !slug.includes('.w.') && !slug.includes('youth') && !slug.includes('u19') && !slug.includes('u21');
+        // 1i. Separate junior / reserve / youth tiers from senior top flights (.1) and continental senior cups
+        const isSeniorContinental = ['uefa.champions', 'uefa.europa', 'uefa.europa.conf', 'caf.champions', 'afc.champions', 'conmebol.libertadores', 'concacaf.champions', 'intl.friendly'].includes(slug);
+        const isSeniorTop = (/\.[1]$/.test(slug) || isSeniorContinental) && !slug.includes('.w.') && !slug.includes('youth') && !slug.includes('u19') && !slug.includes('u21');
         const teamReserveCheck = /\b(u-?2[0-3]|u-?1[5-9]|youth|primavera|reserves?|development|academy|castilla|atl[eè]tic|promesas|fabril|vetusta|filial)\b|\s+[bB]$|\s+II$/i;
         if (isSeniorTop && (teamReserveCheck.test(ev?.home?.name || '') || teamReserveCheck.test(ev?.away?.name || '') || teamReserveCheck.test(name))) {
             const hN = ev?.home?.name || '';
             const aN = ev?.away?.name || '';
             const tText = `${hN} ${aN} ${name}`.toLowerCase();
             const isYouth = /\b(u-?2[0-3]|u-?1[5-9]|youth|primavera|reserves?|development|academy|juvenil|nachwuchs|junioren)\b/i.test(tText);
-            if (slug.startsWith('eng.')) {
+            if (slug.startsWith('uefa.') && isYouth) {
+                slug = 'uefa.youth';
+                name = 'UEFA Youth League';
+                country = 'Europe';
+            } else if (slug.startsWith('conmebol.') && isYouth) {
+                slug = 'conmebol.u20';
+                name = 'CONMEBOL U20 Libertadores';
+                country = 'South America';
+            } else if (slug.startsWith('eng.')) {
                 slug = isYouth ? 'eng.u21' : 'eng.5';
                 name = isYouth ? 'Premier League 2' : 'National League';
                 country = 'England';
@@ -3887,6 +3907,7 @@
         const isCurrentlyLive = Boolean(liveMatch || (matchObj?.status?.state === 'in') || (matchObj?.status?.isLive));
 
         if (cached && (Date.now() - cached.ts < 60000) && (!isCurrentlyLive || !cachedIsPrematch)) {
+            reconcileClientSummaryWithBoard(cached.summary, cached.plays, matchObj, eventId);
             renderMatchDetails(cached.summary, cached.plays, cached.predictions, false);
             // Re-fetch in background silently to ensure fresh clock/incidents
             loadMatchDetails(eventId, true, leagueSlug, matchObj);
@@ -4002,6 +4023,8 @@
             plays = summary.timeline;
         }
 
+        reconcileClientSummaryWithBoard(summary, plays, matchContext, eventId);
+
         // Stage 1: Render Timeline, Stats, Lineups & Match Info immediately (~300ms)
         const existingCachedPred = matchDetailsClientCache.get(String(eventId))?.predictions || null;
         try {
@@ -4064,6 +4087,194 @@
         if (event.team?.side === 'away') return away.team;
         if (event.team?.displayName || event.team?.name) return event.team;
         return event.team || null;
+    }
+
+    function reconcileClientSummaryWithBoard(summary, plays, matchContext, eventId) {
+        const comp = summary?.header?.competitions?.[0];
+        if (!comp) return;
+        const competitors = Array.isArray(comp.competitors) ? comp.competitors : [];
+        const homeComp = competitors.find(c => c.homeAway === 'home') || competitors[0];
+        const awayComp = competitors.find(c => c.homeAway === 'away') || competitors[1];
+        if (!homeComp || !awayComp) return;
+
+        const parseScore = (v) => {
+            if (v === null || v === undefined || v === '' || v === '—' || v === '-') return null;
+            const n = Number(v);
+            return Number.isFinite(n) && n >= 0 ? n : null;
+        };
+
+        const sumStatus = comp.status || {};
+        const sumType = sumStatus.type || {};
+        const sumState = String(sumStatus.state || sumType.state || '').toLowerCase();
+        const sumDetail = String(sumStatus.detail || sumStatus.clock || sumType.shortDetail || sumType.detail || '').trim();
+        let bestCompleted = Boolean(sumStatus.completed || sumType.completed || sumState === 'post' || /^(FT|AET|AP|Final|Postp|Canc|Abd)/i.test(sumDetail));
+        let bestLive = !bestCompleted && Boolean(sumStatus.isLive || sumState === 'in');
+        let bestDetail = sumDetail;
+
+        const ctxComp = matchContext?.competitions?.[0] || null;
+        const ctxComps = Array.isArray(ctxComp?.competitors) ? ctxComp.competitors : [];
+        const ctxHomeComp = ctxComps.find(c => c.homeAway === 'home') || ctxComps[0] || null;
+        const ctxAwayComp = ctxComps.find(c => c.homeAway === 'away') || ctxComps[1] || null;
+
+        const ctxStatus = matchContext?.status || ctxComp?.status || {};
+        const ctxState = String(ctxStatus.state || ctxStatus.type?.state || '').toLowerCase();
+        const ctxDetail = String(ctxStatus.detail || ctxStatus.clock || ctxStatus.type?.shortDetail || ctxStatus.type?.detail || '').trim();
+        const ctxCompleted = Boolean(ctxStatus.completed || ctxStatus.type?.completed || ctxState === 'post' || /^(FT|AET|AP|Final|Postp|Canc|Abd)/i.test(ctxDetail));
+
+        const kickoffTs = comp.date ? Date.parse(comp.date) : (matchContext?.date ? Date.parse(matchContext.date) : (ctxComp?.date ? Date.parse(ctxComp.date) : NaN));
+        const elapsedMs = Number.isFinite(kickoffTs) ? (Date.now() - kickoffTs) : NaN;
+
+        // If home board already knows match is FT and we're not inside the impossible-FT window with a concrete active clock, honor FT
+        const sumHasConcreteClock = bestLive && /^(HT|\d{1,3}(?:\+\d{1,2})?'?)$/i.test(sumDetail);
+        if (ctxCompleted && !bestCompleted) {
+            const insideImpossibleFt = Number.isFinite(elapsedMs) && elapsedMs >= 0 && elapsedMs < 102 * 60 * 1000;
+            if (!insideImpossibleFt || !sumHasConcreteClock) {
+                bestCompleted = true;
+                bestLive = false;
+                bestDetail = /^(FT|AET|AP|Final|Postp|Canc|Abd)/i.test(ctxDetail) ? ctxDetail : 'FT';
+            }
+        }
+
+        // Auto-finalize stale "Live" (> 155m past kickoff with no concrete clock)
+        if (bestLive && Number.isFinite(elapsedMs) && elapsedMs > 155 * 60 * 1000 && !sumHasConcreteClock) {
+            bestCompleted = true;
+            bestLive = false;
+            bestDetail = 'FT';
+        }
+
+        // Reconcile score across summary header, home board matchContext (both flat & ESPN-shaped), and goal timeline score tags
+        let bestH = parseScore(homeComp.score);
+        let bestA = parseScore(awayComp.score);
+        const ctxH = parseScore(matchContext?.home?.score ?? ctxHomeComp?.score);
+        const ctxA = parseScore(matchContext?.away?.score ?? ctxAwayComp?.score);
+
+        if (ctxH !== null && ctxA !== null && (bestH === null || bestA === null || (ctxH + ctxA) > (bestH + bestA))) {
+            bestH = ctxH;
+            bestA = ctxA;
+        }
+
+        const allEvs = [...(summary.keyEvents || []), ...(comp.details || []), ...(plays || [])];
+        for (const ev of allEvs) {
+            const typeStr = String(ev?.type?.text || ev?.type || '');
+            const evText = String(ev?.text || '');
+            const isNonScoring = /\b(miss|missed|saved|disallowed|cancelled|canceled|overturned|no goal|awarded)\b/i.test(`${typeStr} ${evText}`);
+            const isGoal = !isNonScoring && (
+                Boolean(ev?.scoringPlay) ||
+                /\b(goal|own goal|penalty\s*-\s*scored|penalty\s+goal)\b/i.test(typeStr)
+            );
+            if (!isGoal) continue;
+            if (Array.isArray(ev.Sc) && ev.Sc.length >= 2) {
+                const gh = parseScore(ev.Sc[0]);
+                const ga = parseScore(ev.Sc[1]);
+                if (gh !== null && ga !== null && (bestH === null || bestA === null || (gh + ga) > (bestH + bestA))) {
+                    bestH = gh;
+                    bestA = ga;
+                }
+            }
+            const mTag = evText.match(/\((\d+)\s*[-–:]\s*(\d+)\)\s*$/);
+            if (mTag) {
+                const gh = parseScore(mTag[1]);
+                const ga = parseScore(mTag[2]);
+                if (gh !== null && ga !== null && (bestH === null || bestA === null || (gh + ga) > (bestH + bestA))) {
+                    bestH = gh;
+                    bestA = ga;
+                }
+            }
+        }
+
+        const finalState = bestCompleted ? 'post' : (bestLive ? 'in' : (sumState || 'pre'));
+        if (bestH !== null && bestA !== null && finalState !== 'pre') {
+            homeComp.score = String(bestH);
+            awayComp.score = String(bestA);
+            if (bestCompleted) {
+                homeComp.winner = bestH > bestA;
+                awayComp.winner = bestA > bestH;
+            }
+        }
+        const finalDetail = bestCompleted
+            ? (/^(FT|AET|AP|Final|Postp|Canc|Abd)/i.test(bestDetail) ? bestDetail : 'FT')
+            : (bestLive ? (bestDetail || 'Live') : (bestDetail || 'Scheduled'));
+
+        comp.status = {
+            ...sumStatus,
+            state: finalState,
+            completed: bestCompleted,
+            isLive: bestLive,
+            clock: finalDetail,
+            displayClock: finalDetail,
+            detail: finalDetail,
+            type: {
+                ...sumType,
+                state: finalState,
+                completed: bestCompleted,
+                shortDetail: finalDetail,
+                detail: finalDetail,
+                description: bestCompleted ? 'Full Time' : (bestLive ? 'In Progress' : 'Scheduled')
+            }
+        };
+
+        // Heal Home Display row in DOM (.fs-match-row) + in-memory matchContext if reconciled summary has fresher score or FT status
+        if (eventId && bestH !== null && bestA !== null && finalState !== 'pre') {
+            const ctxTot = (ctxH ?? 0) + (ctxA ?? 0);
+            const bestTot = bestH + bestA;
+            if (bestTot > ctxTot || (bestCompleted && !ctxCompleted)) {
+                if (matchContext) {
+                    if (matchContext.home) matchContext.home.score = bestH;
+                    if (matchContext.away) matchContext.away.score = bestA;
+                    if (ctxHomeComp) ctxHomeComp.score = String(bestH);
+                    if (ctxAwayComp) ctxAwayComp.score = String(bestA);
+                    if (bestCompleted) {
+                        if (matchContext.home) matchContext.home.winner = bestH > bestA;
+                        if (matchContext.away) matchContext.away.winner = bestA > bestH;
+                        if (ctxHomeComp) ctxHomeComp.winner = bestH > bestA;
+                        if (ctxAwayComp) ctxAwayComp.winner = bestA > bestH;
+                        const targetStatuses = [matchContext.status, ctxComp?.status].filter(Boolean);
+                        for (const st of targetStatuses) {
+                            st.state = 'post';
+                            st.completed = true;
+                            st.isLive = false;
+                            st.clock = finalDetail;
+                            st.detail = finalDetail;
+                            if (st.type) {
+                                st.type.state = 'post';
+                                st.type.completed = true;
+                                st.type.shortDetail = finalDetail;
+                                st.type.detail = finalDetail;
+                            }
+                        }
+                    }
+                }
+                const escId = (typeof CSS !== 'undefined' && typeof CSS.escape === 'function')
+                    ? CSS.escape(String(eventId))
+                    : String(eventId).replace(/["\\]/g, '\\$&');
+                const row = document.querySelector(`.fs-match-row[data-event-id="${escId}"]`);
+                if (row) {
+                    const scores = row.querySelectorAll('.fs-score-digit');
+                    if (scores.length >= 2) {
+                        scores[0].textContent = String(bestH);
+                        scores[1].textContent = String(bestA);
+                        if (bestCompleted) {
+                            scores[0].classList.remove('score-live');
+                            scores[1].classList.remove('score-live');
+                        }
+                    }
+                    if (bestCompleted) {
+                        row.classList.remove('is-live-row');
+                        const teamLines = row.querySelectorAll('.fs-team-line');
+                        if (teamLines.length >= 2) {
+                            teamLines[0].classList.toggle('team-winner', bestH > bestA);
+                            teamLines[1].classList.toggle('team-winner', bestA > bestH);
+                        }
+                        const statusCol = row.querySelector('.fs-col-status');
+                        if (statusCol) {
+                            const existingSub = statusCol.querySelector('.fs-status-time-sub, .fs-status-time');
+                            const subTime = existingSub ? existingSub.textContent : (Number.isFinite(kickoffTs) ? formatTime(new Date(kickoffTs).toISOString()) : '');
+                            statusCol.innerHTML = `<div class="fs-status-finished-col"><span class="fs-status-ft">${escapeHtml(finalDetail)}</span>${subTime ? `<span class="fs-status-time-sub">${escapeHtml(subTime)}</span>` : ''}</div>`;
+                        }
+                    }
+                }
+            }
+        }
     }
 
     function parseTimelineClockMinute(raw, text = '') {
@@ -4154,9 +4365,13 @@
             clockDisplay = 'HT';
         }
 
-        const clockValue = typeof event.clockValue === 'number' && event.clockValue > 0
+        let clockValue = typeof event.clockValue === 'number' && event.clockValue > 0
             ? event.clockValue
             : parseTimelineClockMinute(clockDisplay, cleanText);
+        // Substitutions never occur at minute 0' before kickoff; a clockless substitution is almost always a halftime change
+        if (kind === 'substitution' && !clockDisplay && clockValue === 0) {
+            clockValue = 45.99;
+        }
 
         return {
             id: event.id || `${source}-${index}`,
@@ -4212,6 +4427,12 @@
         const seenIncidents = new Map();
 
         for (const event of [...keyEvents, ...playEvents]) {
+            // Filter out noisy technical stop-clock markers ("Start Delay", "End Delay")
+            const rawEvText = String(event.text || '').trim();
+            const rawTypeText = String(event.typeText || '').trim();
+            if (/^(start|end)\s+delay$/i.test(rawEvText) || /^(start|end)\s+delay$/i.test(rawTypeText)) {
+                continue;
+            }
             const teamSide = event.team?.side || (event.team?.id && String(event.team.id) === String(home.team?.id) ? 'home' : (event.team?.id && String(event.team.id) === String(away.team?.id) ? 'away' : ''));
             const teamId = teamSide || String(event.team?.id || event.team?.source_id || event.team?.displayName || event.team?.name || '').toLowerCase();
             const minute = event.clockValue || parseTimelineClockMinute(event.clock, event.text) || 0;
@@ -4441,8 +4662,8 @@
             }
 
             dedupedEvents.sort((x, y) => {
-                const ma = parseTimelineClockMinute(x.clock || x.minute || x.clockValue, x.text);
-                const mb = parseTimelineClockMinute(y.clock || y.minute || y.clockValue, y.text);
+                const ma = (typeof x.clockValue === 'number' && x.clockValue > 0) ? x.clockValue : parseTimelineClockMinute(x.clock || x.minute || x.clockValue, x.text);
+                const mb = (typeof y.clockValue === 'number' && y.clockValue > 0) ? y.clockValue : parseTimelineClockMinute(y.clock || y.minute || y.clockValue, y.text);
                 return ma - mb;
             });
             return dedupedEvents.map(event => {
@@ -4461,7 +4682,7 @@
                     else if (kind.includes('end') || kind.includes('ft')) text = 'Full-time';
                     else text = player ? `Match incident — ${player}` : 'Match incident';
                 }
-                const displayMinute = String(event.clock || '').trim() || (event.clockValue > 0 ? `${Math.round(event.clockValue)}'` : '—');
+                const displayMinute = String(event.clock || '').trim() || (event.clockValue === 45.99 ? 'HT' : (event.clockValue > 0 ? `${Math.round(event.clockValue)}'` : '—'));
                 return `<div class="timeline-item">
                 <span class="timeline-minute">${escapeHtml(displayMinute)}</span>
                 ${eventBadge(event.kind)}
