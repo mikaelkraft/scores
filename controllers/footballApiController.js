@@ -23,6 +23,8 @@ const {
 
 const { optionalApiKeyAuth, assertLeagueAccess, getAllowedLeaguesForKey, PLAN_LIMITS, hasFeature, requireFeature, getPlanConfig } = require('../middleware/apiKeyAuth');
 const dailyBoardCache = require('../services/dailyBoardCache');
+const { normalizeCountryName: normalizeCountryNameFn } = require('../services/soccerSyncService');
+const normalizeCountryName = normalizeCountryNameFn || ((x) => x);
 
 // On-demand per-date cache for past/future date tabs when MongoDB lacks fixtures for that date
 const onDemandDateCache = new Map();
@@ -35,7 +37,7 @@ async function fetchOnDemandDateMatches(dateKey) {
         return cached.matches;
     }
     try {
-        const { resolveLeagueSlug } = require('../services/soccerSyncService');
+        const { normalizeCountryName,  resolveLeagueSlug } = require('../services/soccerSyncService');
         const ctrl = new AbortController();
         const timer = setTimeout(() => ctrl.abort(), 6500);
         const res = await fetch(`https://prod-public-api.livescore.com/v1/api/app/date/soccer/${dateKey}/0`, {
@@ -52,7 +54,7 @@ async function fetchOnDemandDateMatches(dateKey) {
 
         const out = [];
         for (const stage of data.Stages) {
-            const rawCountry = stage.Cnm || stage.Sdn || 'International';
+            const rawCountry = (typeof normalizeCountryName === 'function' ? normalizeCountryName(stage.Cnm || stage.Sdn || 'International') : (stage.Cnm || stage.Sdn || 'International'));
             const stageName = stage.Snm || 'Football Competition';
             const leagueSlug = resolveLeagueSlug(stageName, rawCountry, stage.Scd || '') || 'other';
             for (const ev of (stage.Events || [])) {
@@ -288,6 +290,7 @@ function isFreePlanRestricted(apiKey) {
 
 function inferMatchCountry(m) {
     if (!m) return 'International';
+    const _normC = (typeof normalizeCountryName === 'function') ? normalizeCountryName : (x) => x;
     const slug = String(m.league_slug || m.league?.slug || '').toLowerCase();
     const lgName = m.league?.name || m.league?.displayName || m.competition?.name || '';
     const lgCountry = m.league?.country || '';
@@ -563,9 +566,10 @@ async function fetchFreshWorldwideLiveMatches() {
     };
 
     // Parallel fetch from upstream LiveScore worldwide feed, ESPN scoreboard, and MongoDB
-    const [liveScoreData, espnScoreboard, dbLiveMatches, storedLeagues] = await Promise.all([
+    const [liveScoreData, espnScoreboard, espnTopBoards, dbLiveMatches, storedLeagues] = await Promise.all([
         fetchUpstreamJsonFast('https://prod-public-api.livescore.com/v1/api/app/live/soccer/0', 3200),
         fetchUpstreamJsonFast('https://site.api.espn.com/apis/site/v2/sports/soccer/all/scoreboard', 3200),
+        fetchEspnDayBoardExtras().catch(() => []),
         SoccerMatch.find(liveFilter).maxTimeMS(2500).sort({ date: 1 }).lean().catch(() => []),
         SoccerLeague.find({ active: true }).maxTimeMS(2500).lean().catch(() => [])
     ]);
@@ -574,6 +578,11 @@ async function fetchFreshWorldwideLiveMatches() {
 
     const leagueMap = new Map((storedLeagues || []).map(l => [l.slug, l]));
     const candidateMatches = [];
+    if (Array.isArray(espnTopBoards)) {
+        for (const m of espnTopBoards) {
+            if (m?.status?.state === 'in' || m?.status?.isLive) candidateMatches.push(m);
+        }
+    }
 
     // 1. Ingest all in-play matches from LiveScore worldwide in-play feed
     if (liveScoreData && Array.isArray(liveScoreData.Stages)) {
@@ -627,7 +636,7 @@ async function fetchFreshWorldwideLiveMatches() {
                         slug: matchSlug,
                         name: matchLg.name || leagueName,
                         abbreviation: matchLg.abbreviation || leagueName.slice(0, 16),
-                        country: matchLg.country || country,
+                        country: (typeof normalizeCountryName === 'function' ? normalizeCountryName(matchLg.country || country) : (matchLg.country || country)),
                         logo: matchLg.logo || ''
                     },
                     date: ev.Esd ? new Date(ev.Esd) : new Date(),
@@ -725,7 +734,7 @@ async function fetchFreshWorldwideLiveMatches() {
                     slug: targetSlug,
                     name: lg.name || (targetLg?.name) || comp.altGameNote || targetSlug,
                     abbreviation: lg.abbreviation || (targetLg?.abbreviation) || targetSlug,
-                    country: lg.country || (targetLg?.country) || 'International',
+                    country: (typeof normalizeCountryName === 'function' ? normalizeCountryName : (x)=>x)(lg.country || targetLg?.country || 'International'),
                     logo: lg.logo || (targetLg?.logo) || ''
                 },
                 date: ev.date ? new Date(ev.date) : new Date(),
@@ -1025,6 +1034,85 @@ function filterLiveMatchesResponse(matches, league, isFreeRestricted) {
  * Fetch LiveScore date scoreboard (scheduled + live + finished) and map to UI match shape.
  * Used when Mongo has no rows for the day so the board is never falsely empty.
  */
+
+/** ESPN scoreboard for one league — includes pre + in + post for the day */
+async function fetchEspnLeagueScoreboard(leagueSlug) {
+    const slug = String(leagueSlug || '').trim();
+    if (!slug) return [];
+    const url = `https://site.api.espn.com/apis/site/v2/sports/soccer/${encodeURIComponent(slug)}/scoreboard`;
+    const data = await fetchUpstreamJsonFast(url, 4500).catch(() => null);
+    if (!data || !Array.isArray(data.events)) return [];
+    const out = [];
+    for (const ev of data.events) {
+        try {
+            const comp = (ev.competitions || [])[0] || {};
+            const statusType = ev.status?.type || comp.status?.type || {};
+            const stateRaw = String(statusType.state || '').toLowerCase();
+            let state = 'pre';
+            if (stateRaw === 'in') state = 'in';
+            else if (stateRaw === 'post') state = 'post';
+            const competitors = comp.competitors || [];
+            const homeComp = competitors.find(c => c.homeAway === 'home') || competitors[0] || {};
+            const awayComp = competitors.find(c => c.homeAway === 'away') || competitors[1] || {};
+            const hName = homeComp.team?.displayName || homeComp.team?.name || 'Home';
+            const aName = awayComp.team?.displayName || awayComp.team?.name || 'Away';
+            const clock = ev.status?.displayClock || statusType.detail || statusType.shortDetail || '';
+            out.push({
+                id: String(ev.id),
+                uid: ev.uid || `espn:${ev.id}`,
+                league: {
+                    slug,
+                    name: data.leagues?.[0]?.name || slug,
+                    abbreviation: data.leagues?.[0]?.abbreviation || slug,
+                    country: (typeof normalizeCountryName === 'function' ? normalizeCountryName : (x)=>x)(
+                        data.leagues?.[0]?.countryCode === 'INT' ? 'International' : (data.leagues?.[0]?.name?.includes('UEFA') ? 'Europe' : '')
+                    ) || (slug.startsWith('uefa.') ? 'Europe' : 'International'),
+                    logo: data.leagues?.[0]?.logos?.[0]?.href || ''
+                },
+                date: ev.date ? new Date(ev.date) : new Date(),
+                status: {
+                    state,
+                    name: statusType.name || '',
+                    description: statusType.description || '',
+                    clock: state === 'in' ? (clock || "45'") : (state === 'post' ? 'FT' : clock || "0'"),
+                    detail: statusType.detail || clock || '',
+                    period: ev.status?.period || 0,
+                    completed: state === 'post',
+                    isLive: state === 'in'
+                },
+                home: {
+                    id: homeComp.team?.id,
+                    name: hName,
+                    displayName: hName,
+                    logo: homeComp.team?.logos?.[0]?.href || (homeComp.team?.id ? `https://a.espncdn.com/i/teamlogos/soccer/500/${homeComp.team.id}.png` : ''),
+                    score: homeComp.score != null ? parseInt(homeComp.score, 10) : null
+                },
+                away: {
+                    id: awayComp.team?.id,
+                    name: aName,
+                    displayName: aName,
+                    logo: awayComp.team?.logos?.[0]?.href || (awayComp.team?.id ? `https://a.espncdn.com/i/teamlogos/soccer/500/${awayComp.team.id}.png` : ''),
+                    score: awayComp.score != null ? parseInt(awayComp.score, 10) : null
+                },
+                source: { provider: 'espn', event_id: String(ev.id), espn_id: String(ev.id) }
+            });
+        } catch (_) {}
+    }
+    return out;
+}
+
+const ESPN_BOARD_LEAGUES = [
+    'uefa.champions', 'uefa.europa', 'uefa.europa.conf',
+    'eng.1', 'esp.1', 'ita.1', 'ger.1', 'fra.1',
+    'ned.1', 'por.1', 'tur.1', 'bel.1', 'nga.1',
+    'bra.1', 'arg.1', 'mex.1', 'usa.1', 'ksa.1'
+];
+
+async function fetchEspnDayBoardExtras() {
+    const chunks = await Promise.all(ESPN_BOARD_LEAGUES.map(s => fetchEspnLeagueScoreboard(s).catch(() => [])));
+    return chunks.flat();
+}
+
 async function fetchLiveScoreDayMatches(dateKey) {
     const key = String(dateKey || parseDateParam('today')).replace(/-/g, '');
     const url = `https://prod-public-api.livescore.com/v1/api/app/date/soccer/${key}/0`;
@@ -1039,7 +1127,7 @@ async function fetchLiveScoreDayMatches(dateKey) {
     const out = [];
 
     for (const stage of data.Stages) {
-        const country = stage.Cnm || stage.Sdn || 'International';
+        const country = (typeof normalizeCountryName === 'function' ? normalizeCountryName(stage.Cnm || stage.Sdn || 'International') : (stage.Cnm || stage.Sdn || 'International'));
         const leagueName = stage.Snm || 'Football Competition';
         let slug = resolveLeagueSlug(leagueName, country, stage.Scd || '');
         if (!slug || slug === 'usa.ncaa') continue;
@@ -2087,6 +2175,10 @@ router.get('/fixtures', optionalApiKeyAuth, async (req, res) => {
             try {
                 const targetDayKey = date ? parseDateParam(date) : parseDateParam('today');
                 const dayMatches = await fetchLiveScoreDayMatches(targetDayKey);
+                try {
+                    const espnExtras = await fetchEspnDayBoardExtras();
+                    if (espnExtras.length) dayMatches.push(...espnExtras);
+                } catch (_) {}
                 for (const m of dayMatches) {
                     if (status === 'live' && m.status?.state !== 'in') continue;
                     if (status === 'finished' && m.status?.state !== 'post') continue;

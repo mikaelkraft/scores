@@ -436,7 +436,23 @@
     }
 
     function localCountryName(country) {
-        return country || 'Other';
+        const s = String(country || '').trim();
+        if (!s) return 'Other';
+        const key = s.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+        const map = {
+            'turkey': 'Turkey', 'turkiye': 'Turkey', 'türkiye': 'Turkey',
+            'ivory coast': 'Ivory Coast', "cote d'ivoire": 'Ivory Coast', 'cote divoire': 'Ivory Coast',
+            'côte d\'ivoire': 'Ivory Coast', 'cote d ivoire': 'Ivory Coast',
+            'united states': 'United States', 'usa': 'United States',
+            'korea republic': 'South Korea', 'republic of korea': 'South Korea',
+            'czech republic': 'Czech Republic', 'czechia': 'Czech Republic',
+            'uae': 'UAE', 'united arab emirates': 'UAE',
+            'dr congo': 'DR Congo', 'holland': 'Netherlands',
+            'viet nam': 'Vietnam', 'hong kong, china': 'Hong Kong'
+        };
+        if (map[key]) return map[key];
+        if (map[s.toLowerCase()]) return map[s.toLowerCase()];
+        return s;
     }
 
     function setServiceStatus(type, text) {

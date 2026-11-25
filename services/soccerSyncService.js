@@ -16,6 +16,37 @@ const SoccerStanding = require('../models/soccerStanding');
 const SoccerSyncState = require('../models/soccerSyncState');
 const { synthesizeMatchTelemetry } = require('./soccerSerializer');
 
+
+/** Canonical country labels for UI flags/grouping (Turkey not Türkiye, Ivory Coast not Côte d'Ivoire, etc.) */
+function normalizeCountryName(raw) {
+    const s = String(raw || '').trim();
+    if (!s) return '';
+    const key = s.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+    const map = {
+        'turkey': 'Turkey', 'turkiye': 'Turkey', 'türkiye': 'Turkey', 'turkiye cumhuriyeti': 'Turkey',
+        'ivory coast': 'Ivory Coast', "cote d'ivoire": 'Ivory Coast', "cote divoire": 'Ivory Coast',
+        'cote d ivoire': 'Ivory Coast', 'côte d\'ivoire': 'Ivory Coast', 'côte d’ivoire': 'Ivory Coast',
+        'civ': 'Ivory Coast',
+        'united states': 'United States', 'usa': 'United States', 'us': 'United States',
+        'korea republic': 'South Korea', 'republic of korea': 'South Korea', 'korea': 'South Korea',
+        'czech republic': 'Czech Republic', 'czechia': 'Czech Republic',
+        'russia': 'Russia', 'russian federation': 'Russia',
+        'hong kong': 'Hong Kong', 'hong kong, china': 'Hong Kong',
+        'bosnia and herzegovina': 'Bosnia and Herzegovina', 'bosnia-herzegovina': 'Bosnia and Herzegovina', 'bosnia': 'Bosnia and Herzegovina',
+        'north macedonia': 'North Macedonia', 'macedonia': 'North Macedonia',
+        'uae': 'UAE', 'united arab emirates': 'UAE',
+        'dr congo': 'DR Congo', 'congo dr': 'DR Congo', 'democratic republic of the congo': 'DR Congo',
+        'congo': 'Congo', 'republic of the congo': 'Congo',
+        'england': 'England', 'scotland': 'Scotland', 'wales': 'Wales', 'northern ireland': 'Northern Ireland',
+        'holland': 'Netherlands', 'the netherlands': 'Netherlands',
+        'vietnam': 'Vietnam', 'viet nam': 'Vietnam',
+        'nigeria': 'Nigeria', 'niger': 'Niger'
+    };
+    if (map[key]) return map[key];
+    // Title-case fallback for unknown labels
+    return s.replace(/\w+/g, (w) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase());
+}
+
 const TARGET_LEAGUES = [
     { slug: 'eng.1', name: 'English Premier League', abbreviation: 'Premier League', country: 'England', kind: 'club', sort_order: 1, logo: 'https://a.espncdn.com/i/leaguelogos/soccer/500/23.png' },
     { slug: 'esp.1', name: 'Spanish La Liga', abbreviation: 'La Liga', country: 'Spain', kind: 'club', sort_order: 2, logo: 'https://a.espncdn.com/i/leaguelogos/soccer/500/15.png' },
@@ -4348,6 +4379,7 @@ async function pruneOldTelemetryStorage({ keepFullDays = 7, keepEventsDays = 14 
 }
 
 module.exports = {
+    normalizeCountryName,
     syncLeague,
     syncLeagueFromLiveScoreStages,
     getCachedOrFetchLiveScoreStages,
