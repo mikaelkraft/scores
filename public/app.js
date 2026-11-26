@@ -879,6 +879,13 @@
             .replace(/\btrinidad\s*(?:and|&)\s*tobago\b/g, 'trinidadtobago')
             .replace(/\b(?:st\.?|saint)\s+vincent(?:\s*(?:and|&)\s*the\s+grenadines)?\b/g, 'saintvincent')
             .replace(/\b(?:sporting\s+club\s+delhi|sc\s+delhi|hyderabad(?:\s+fc)?)\b/g, 'scdelhi')
+            .replace(/\bkaa\s+gent\b|\bgent\b/g, 'gent')
+            .replace(/\b(?:fk\s+)?crvena\s+zvezda\b|\bred\s+star\s+belgrade\b/g, 'redstarbelgrade')
+            .replace(/\bsint[- ]?truidense\b|\bst\.?\s*truiden\b|\bsint[- ]?truiden\b/g, 'sinttruiden')
+            .replace(/\binter\s+club\s+d['']?escaldes\b|\binter\s+d['']?escaldes\b|\binter\s+escaldes\b/g, 'interescaldes')
+            .replace(/\bf\.?\s*c\.?\s*k[oø]benhavn\b|\bfc\s+copenhagen\b|\bcopenhagen\b|\bkobenhavn\b/g, 'fccopenhagen')
+            .replace(/\bborac\s+banja\s+luka\b/g, 'boracbanjaluka')
+            .replace(/\bst[.](?=[a-z])/gi, 'saint ')
             .replace(/\b([a-z])\.([a-z])\.([a-z])\.?/gi, '$1$2$3 ')
             .replace(/\b([a-z])\.([a-z])\.?/gi, '$1$2 ')
             .replace(/\bst[.]?\s+/gi, 'saint ')
@@ -1505,9 +1512,10 @@
             country = 'France';
         }
 
-        // 0f. Bosnian leagues
+        // 0f. Bosnian leagues (never reclassify UEFA/continental ties that happen to feature Bosnian clubs)
         const isYouthOrIntl = /\b(u-?23|u-?21|u-?20|u-?19|u-?18|u-?17|youth|international|friendly|friendlies)\b/i.test(allEvText);
-        if (!isYouthOrIntl && (lowerSlug.startsWith('bih') || allEvText.includes('zeljeznicar') || allEvText.includes('sarajevo') || allEvText.includes('borac banja luka') || allEvText.includes('zrinjski') || allEvText.includes('velez mostar') || allEvText.includes('siroki brijeg') || (allEvText.includes('bosnia') && !allEvText.includes('montenegro') && !allEvText.includes('u21')))) {
+        const isContinentalSlug = /^(uefa|caf|afc|conmebol|concacaf)\./.test(lowerSlug) || /champions league|europa league|conference league|libertadores|sudamericana/i.test(lowerName);
+        if (!isYouthOrIntl && !isContinentalSlug && (lowerSlug.startsWith('bih') || allEvText.includes('zeljeznicar') || allEvText.includes('sarajevo') || allEvText.includes('borac banja luka') || allEvText.includes('zrinjski') || allEvText.includes('velez mostar') || allEvText.includes('siroki brijeg') || (allEvText.includes('bosnia') && !allEvText.includes('montenegro') && !allEvText.includes('u21')))) {
             country = 'Bosnia and Herzegovina';
             if (lowerName.includes('prva liga') || lowerSlug === 'bih.2' || allEvText.includes('prva liga')) {
                 slug = 'bih.2';
@@ -4435,16 +4443,26 @@
             cleanText = athleteName ? `${athleteName} · ${typeText}` : typeText;
         }
 
+        // Normalize provider clocks to match minutes (ESPN often sends seconds; some feeds use ms)
+        const toMatchMinutes = (raw) => {
+            const n = Number(raw);
+            if (!Number.isFinite(n) || n <= 0) return 0;
+            if (n <= 130) return Math.round(n * 100) / 100; // already minutes (allow 45.5 stoppage)
+            if (n < 9000) return Math.floor(n / 60); // seconds
+            if (n < 1e8) return Math.floor(n / 60000); // milliseconds
+            return 0;
+        };
+
         let clockDisplay = typeof event.clock === 'string'
             ? event.clock.trim()
             : String(event.clock?.displayValue || event.clock?.display_value || event.time?.displayValue || '').trim();
         if (!clockDisplay && event.clock && typeof event.clock === 'object' && event.clock.value != null && Number(event.clock.value) > 0) {
-            const cv = Number(event.clock.value);
-            clockDisplay = cv > 180 ? `${Math.floor(cv / 60)}'` : `${Math.round(cv)}'`;
+            const mins = toMatchMinutes(event.clock.value);
+            if (mins > 0) clockDisplay = `${Math.round(mins)}'`;
         }
         if (!clockDisplay && event.clockValue && Number(event.clockValue) > 0) {
-            const cv = Number(event.clockValue);
-            clockDisplay = cv > 180 ? `${Math.floor(cv / 60)}'` : `${Math.round(cv)}'`;
+            const mins = toMatchMinutes(event.clockValue);
+            if (mins > 0) clockDisplay = `${Math.round(mins)}'`;
         }
         if (!clockDisplay && event.minute) {
             clockDisplay = `${String(event.minute).replace(/['’]+$/g, '')}'`;
@@ -4459,9 +4477,19 @@
             clockDisplay = 'HT';
         }
 
-        let clockValue = typeof event.clockValue === 'number' && event.clockValue > 0
-            ? event.clockValue
-            : parseTimelineClockMinute(clockDisplay, cleanText);
+        let clockValue = 0;
+        if (typeof event.clockValue === 'number' && event.clockValue > 0) {
+            clockValue = toMatchMinutes(event.clockValue);
+        } else if (event.clock && typeof event.clock === 'object' && event.clock.value != null) {
+            clockValue = toMatchMinutes(event.clock.value);
+        }
+        if (!clockValue) clockValue = parseTimelineClockMinute(clockDisplay, cleanText) || 0;
+        // Prefer explicit minute text over mis-scaled provider values when both exist
+        const textMin = parseTimelineClockMinute(clockDisplay, cleanText);
+        if (textMin > 0 && clockValue > 0 && Math.abs(textMin - clockValue) > 5 && textMin <= 130) {
+            clockValue = textMin;
+            if (!String(clockDisplay).includes(String(Math.round(textMin)))) clockDisplay = `${Math.round(textMin)}'`;
+        }
         // Substitutions never occur at minute 0' before kickoff; a clockless substitution is almost always a halftime change
         if (kind === 'substitution' && !clockDisplay && clockValue === 0) {
             clockValue = 45.99;

@@ -1331,6 +1331,24 @@ function enforceCountryOnSlug(slug, countryName = '', leagueName = '') {
 
 /** Canonical aliases so Inter/Internazionale, Como/Como 1907, SC Heerenveen etc. collapse */
 const TEAM_NAME_ALIASES = {
+    // UEFA Conference / Europa naming variants
+    'kaa gent': 'gent',
+    'gent': 'gent',
+    'fk crvena zvezda': 'red star belgrade',
+    'crvena zvezda': 'red star belgrade',
+    'red star belgrade': 'red star belgrade',
+    'sint-truidense': 'sint truiden',
+    'sint truidense': 'sint truiden',
+    'st.truiden': 'sint truiden',
+    'st truiden': 'sint truiden',
+    'sint-truiden': 'sint truiden',
+    "inter club d'escaldes": 'inter escaldes',
+    "inter d'escaldes": 'inter escaldes',
+    'fc copenhagen': 'fc copenhagen',
+    'f.c. kobenhavn': 'fc copenhagen',
+    'fc kobenhavn': 'fc copenhagen',
+    'kobenhavn': 'fc copenhagen',
+    'borac banja luka': 'borac banja luka',
     internazionale: 'inter',
     'inter milan': 'inter',
     'fc internazionale': 'inter',
@@ -2835,6 +2853,17 @@ function normalizeTeamName(name = '') {
         .replace(/sv\s+elversberg|\belversberg\b/g, 'elversberg')
         .replace(/\bkocaelispor\b/g, 'kocaelispor')
 
+        // UEFA club name variants (LiveScore vs ESPN naming)
+        .replace(/\bkaa\s+gent\b|\bgent\b/g, 'gent')
+        .replace(/\b(?:fk\s+)?crvena\s+zvezda\b|\bred\s+star\s+belgrade\b|\bred\s+star\s+belgrad\b/g, 'redstarbelgrade')
+        .replace(/\bsint[- ]?truidense\b|\bst\.?\s*truiden\b|\bsint[- ]?truiden\b/g, 'sinttruiden')
+        .replace(/\binter\s+club\s+d['']?escaldes\b|\binter\s+d['']?escaldes\b|\binter\s+escaldes\b/g, 'interescaldes')
+        .replace(/\bf\.?\s*c\.?\s*k[oø]benhavn\b|\bfc\s+copenhagen\b|\bcopenhagen\b|\bkobenhavn\b/g, 'fccopenhagen')
+        .replace(/\bborac\s+banja\s+luka\b|\bfk\s+borac\b/g, 'boracbanjaluka')
+        .replace(/\blincoln\s+red\s+imps\b/g, 'lincolnredimps')
+        .replace(/\bheart\s+of\s+midlothian\b|\bhearts\b/g, 'hearts')
+        .replace(/\bas\s+monaco\b|\bmonaco\b/g, 'monaco')
+
         // Canonical national team aliases (e.g. United States <-> USA)
         .replace(/\bunited\s+states(?:\s+of\s+america)?\b|\bu\.?s\.?a\.?\b/g, 'usa')
         .replace(/\bsouth\s+korea\b|\bkorea\s+republic\b/g, 'southkorea')
@@ -2850,6 +2879,7 @@ function normalizeTeamName(name = '') {
         .replace(/\b([a-z])\.([a-z])\.([a-z])\.?/gi, '$1$2$3 ')
         .replace(/\b([a-z])\.([a-z])\.?/gi, '$1$2 ')
         // Normalize St. / Saint
+        .replace(/\bst[.](?=[a-z])/gi, 'saint ')
         .replace(/\bst[.]?\s+/gi, 'saint ')
         .replace(/\bst[-]/gi, 'saint-')
         // Scandinavian / Dutch double vowels after accent strip
