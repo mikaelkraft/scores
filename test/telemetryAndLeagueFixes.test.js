@@ -183,8 +183,8 @@ test('frontend app-v9 caps Starting XI at 11 and slices H2H to recent 5 with exp
     // Lineups: starters capped at 11
     assert.ok(appV9.includes('if (starters.length > 11) {'), 'Starters must be capped at 11');
 
-    // H2H: sliced to 5 by default with toggle for remaining lifetime encounters
-    assert.ok(appV9.includes('uniqueMeetings.slice(0, 5)'), 'H2H should display 5 recent encounters by default');
+    // H2H: sliced by default (h2hShow: 12 for African leagues, 8 standard) with toggle for remaining lifetime encounters
+    assert.ok(appV9.includes('uniqueMeetings.slice(0, h2hShow)') || appV9.includes('uniqueMeetings.slice(0, 5)'), 'H2H should slice recent encounters by default');
     assert.ok(appV9.includes('btn-toggle-h2h-all'), 'H2H toggle button should exist to view all lifetime encounters');
 
     // Live score protection: prevents stale pre-match cache from masking active live game

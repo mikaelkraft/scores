@@ -1165,6 +1165,24 @@
                 if (secAwayScore !== undefined && winner.away) winner.away.score = secAwayScore;
                 if (winner.home && secondary.home?.winner !== undefined) winner.home.winner = secondary.home.winner;
                 if (winner.away && secondary.away?.winner !== undefined) winner.away.winner = secondary.away.winner;
+            } else if ((secIsCompleted && winIsCompleted) || (secIsLive && winIsLive)) {
+                const winH = Number(winner.home?.score);
+                const winA = Number(winner.away?.score);
+                const secH = Number(secondary.home?.score ?? secondary.competitions?.[0]?.competitors?.[0]?.score);
+                const secA = Number(secondary.away?.score ?? secondary.competitions?.[0]?.competitors?.[1]?.score);
+                if (Number.isFinite(secH) && Number.isFinite(secA)) {
+                    const winTot = (Number.isFinite(winH) && Number.isFinite(winA)) ? (winH + winA) : -1;
+                    if ((secH + secA) > winTot) {
+                        if (winner.home) {
+                            winner.home.score = secH;
+                            if (winIsCompleted) winner.home.winner = secH > secA;
+                        }
+                        if (winner.away) {
+                            winner.away.score = secA;
+                            if (winIsCompleted) winner.away.winner = secA > secH;
+                        }
+                    }
+                }
             }
             if (secondary.source?.livescore_id && !winner.source?.livescore_id) {
                 if (!winner.source) winner.source = {};
@@ -7098,6 +7116,26 @@
         }
     }
 
+    let finishedBoardRefreshTimer = null;
+    function scheduleFinishedBoardRefresh(retryCount = 0) {
+        if (finishedBoardRefreshTimer) return;
+        const isViewingToday = !state.selectedDayOffset || state.selectedDayOffset === 0;
+        if (!isViewingToday) return;
+        finishedBoardRefreshTimer = window.setTimeout(() => {
+            finishedBoardRefreshTimer = null;
+            if (document.hidden) return;
+            if (isUserInteracting) {
+                if (retryCount < 5) scheduleFinishedBoardRefresh(retryCount + 1);
+                return;
+            }
+            if (state.selectedLeagueSlug === 'all') {
+                loadAllLeagueFixtures({ background: true });
+            } else if (state.league && state.selectedLeagueSlug !== 'live' && state.currentStatus !== 'live') {
+                loadFixtures({ background: true });
+            }
+        }, 3000);
+    }
+
     function applyRealtimeMatchUpdate(update) {
         if (!update || (!update.id && !update.eventId)) return;
         const matchId = String(update.id || update.eventId);
@@ -7107,6 +7145,13 @@
         const curAway = (update.awayScore !== undefined) ? update.awayScore : (update.away?.score ?? 0);
         const newHomeScore = String(curHome);
         const newAwayScore = String(curAway);
+        const isFinishedUpdate = Boolean(
+            update.matchFinished ||
+            update.state === 'post' ||
+            update.status?.state === 'post' ||
+            update.status?.completed ||
+            /^(FT|AET|AP|Final)$/i.test(String(update.clock || update.status?.detail || '').trim())
+        );
 
         const homeName = update.home?.displayName || update.home?.name || update.scoringTeam || 'Home';
         const awayName = update.away?.displayName || update.away?.name || 'Away';
@@ -7121,6 +7166,11 @@
                 if (cachedMatch.status) {
                     cachedMatch.status.clock = update.clock || cachedMatch.status.clock;
                     cachedMatch.status.detail = update.clock || cachedMatch.status.detail;
+                    if (isFinishedUpdate) {
+                        cachedMatch.status.state = 'post';
+                        cachedMatch.status.completed = true;
+                        cachedMatch.status.isLive = false;
+                    }
                 }
             }
         }
@@ -7129,20 +7179,40 @@
             const scoreDigits = matchRow.querySelectorAll('.fs-score-digit');
             const prevHomeScore = scoreDigits[0] ? scoreDigits[0].textContent.trim() : null;
             const prevAwayScore = scoreDigits[1] ? scoreDigits[1].textContent.trim() : null;
+            const prevHNum = Number(prevHomeScore);
+            const prevANum = Number(prevAwayScore);
+            const newHNum = Number(curHome);
+            const newANum = Number(curAway);
+            const rowAlreadyFt = Boolean(matchRow.querySelector('.fs-status-ft'));
+            const wouldRegressFt = rowAlreadyFt && Number.isFinite(prevHNum) && Number.isFinite(prevANum) &&
+                Number.isFinite(newHNum) && Number.isFinite(newANum) &&
+                (newHNum + newANum) < (prevHNum + prevANum);
 
-            if (scoreDigits[0]) scoreDigits[0].textContent = newHomeScore;
-            if (scoreDigits[1]) scoreDigits[1].textContent = newAwayScore;
+            if (!wouldRegressFt) {
+                if (scoreDigits[0]) scoreDigits[0].textContent = newHomeScore;
+                if (scoreDigits[1]) scoreDigits[1].textContent = newAwayScore;
+            }
 
-            const clockEl = matchRow.querySelector('.fs-status-live');
-            if (clockEl) {
-                const newClock = update.clock || formatMatchClock(update.status, update.status?.type);
-                // Never allow generic 'Live' text to override an existing concrete match clock!
-                if (isConcreteClock(newClock) || !isConcreteClock(clockEl.textContent)) {
-                    clockEl.textContent = newClock;
+            if (isFinishedUpdate) {
+                matchRow.classList.remove('is-live-row');
+                scoreDigits.forEach(el => el.classList.remove('score-live'));
+                const ftLabel = /^(FT|AET|AP|Final)$/i.test(String(update.clock || '').trim()) ? String(update.clock).trim() : 'FT';
+                const statusCol = matchRow.querySelector('.fs-col-status');
+                if (statusCol) {
+                    statusCol.innerHTML = `<span class="fs-status-ft">${escapeHtml(ftLabel)}</span>`;
+                }
+            } else {
+                const clockEl = matchRow.querySelector('.fs-status-live');
+                if (clockEl) {
+                    const newClock = update.clock || formatMatchClock(update.status, update.status?.type);
+                    // Never allow generic 'Live' text to override an existing concrete match clock!
+                    if (isConcreteClock(newClock) || !isConcreteClock(clockEl.textContent)) {
+                        clockEl.textContent = newClock;
+                    }
                 }
             }
 
-            const goalDetected = update.isGoal || (prevHomeScore !== null && (Number(newHomeScore) > Number(prevHomeScore) || Number(newAwayScore) > Number(prevAwayScore)));
+            const goalDetected = !wouldRegressFt && (update.isGoal || (prevHomeScore !== null && (Number(newHomeScore) > Number(prevHomeScore) || Number(newAwayScore) > Number(prevAwayScore))));
 
             if (goalDetected) {
                 playGoalSound();
@@ -7154,6 +7224,10 @@
             }
         }
 
+        if (isFinishedUpdate) {
+            scheduleFinishedBoardRefresh();
+        }
+
         if (state.currentEventId === matchId && elements['dialog-content']) {
             const scoreDigits = elements['dialog-content'].querySelector('.score-digits');
             if (scoreDigits) {
@@ -7161,8 +7235,10 @@
             }
             const minutePill = elements['dialog-content'].querySelector('.minute-pill');
             if (minutePill) {
-                const newClock = update.clock || formatMatchClock(update.status, update.status?.type);
-                if (isConcreteClock(newClock) || !isConcreteClock(minutePill.textContent)) {
+                const newClock = isFinishedUpdate
+                    ? (/^(FT|AET|AP|Final)$/i.test(String(update.clock || '').trim()) ? String(update.clock).trim() : 'FT')
+                    : (update.clock || formatMatchClock(update.status, update.status?.type));
+                if (isFinishedUpdate || isConcreteClock(newClock) || !isConcreteClock(minutePill.textContent)) {
                     minutePill.textContent = newClock;
                 }
             }

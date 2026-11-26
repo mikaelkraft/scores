@@ -118,6 +118,7 @@ function setReadyBoard(dateKey, matches) {
 
 function parseClockMinutes(m) {
     const raw = String(m?.status?.clock || m?.status?.detail || '').trim();
+    if (/^(HT|Half\s*Time)$/i.test(raw)) return 45.5;
     if (/90\+|9[0-9]|1[0-2][0-9]|AET|ET|Pen/i.test(raw)) return 90;
     const match = raw.match(/(\d+)/);
     return match ? parseInt(match[1], 10) : 0;
@@ -216,15 +217,22 @@ function patchLiveMatchesInBoard(dateKey, liveMatches, { isFullSnapshot = true }
 
         if (existingIdx >= 0) {
             const existing = entry.matches[existingIdx];
+            const exFinished = isMatchFinished(existing);
+            const lvFinished = isMatchFinished(live);
+            const exH = parseNumericScore(existing.home?.score);
+            const exA = parseNumericScore(existing.away?.score);
+            const lvH = parseNumericScore(live.home?.score);
+            const lvA = parseNumericScore(live.away?.score);
+            const existingGoals = (exH ?? 0) + (exA ?? 0);
+            const liveGoals = (lvH ?? 0) + (lvA ?? 0);
+
             // Protect legitimately finished matches from reverting to live,
             // EXCEPT when heuristically auto-finalized, when within an impossible-FT window (< 102m) with an active live clock,
             // or when within a plausible live window with new goals scored.
-            if (isMatchFinished(existing) && !isMatchFinished(live)) {
+            if (exFinished && !lvFinished) {
                 const kickoffTs = existing.date ? Date.parse(existing.date) : NaN;
                 const elapsedMs = Number.isFinite(kickoffTs) ? (nowMs - kickoffTs) : Infinity;
                 const isPostpOrCanc = /^(Postp|Canc|Abd)/i.test(String(existing.status?.detail || existing.status?.clock || ''));
-                const existingGoals = (Number(existing.home?.score) || 0) + (Number(existing.away?.score) || 0);
-                const liveGoals = (Number(live.home?.score) || 0) + (Number(live.away?.score) || 0);
                 const hasConcreteLiveClock = Boolean(
                     live.status?.isLive ||
                     /^(HT|\d{1,3}(?:\+\d{1,2})?'?)$/i.test(String(live.status?.clock || live.status?.detail || '').trim())
@@ -233,7 +241,18 @@ function patchLiveMatchesInBoard(dateKey, liveMatches, { isFullSnapshot = true }
                     || (!isPostpOrCanc && elapsedMs >= 0 && elapsedMs < 102 * 60 * 1000 && hasConcreteLiveClock)
                     || (!isPostpOrCanc && elapsedMs >= 0 && elapsedMs < 155 * 60 * 1000 && liveGoals > existingGoals);
                 if (!canRevive) continue;
+            } else if (exFinished && lvFinished) {
+                // Both finished: only update if healing an auto-finalized entry or incoming has a higher score
+                const canUpgradeFt = Boolean(existing._autoFinalized && lvH !== null && lvA !== null)
+                    || (lvH !== null && lvA !== null && liveGoals > existingGoals);
+                if (!canUpgradeFt) continue;
             }
+
+            // Guard against lagging live sources (e.g. stale DB snapshot at 45' 1-0) regressing a newer live state (78' 2-1)
+            const preventLiveRegression = !exFinished && !lvFinished &&
+                exH !== null && exA !== null && lvH !== null && lvA !== null &&
+                existingGoals > liveGoals &&
+                parseClockMinutes(existing) > parseClockMinutes(live);
 
             // Preserve canonical specific league metadata (e.g., esp.1) over generic live slugs (other/.lower)
             const existingSlug = existing.league?.slug || existing.league_slug || '';
@@ -245,18 +264,22 @@ function patchLiveMatchesInBoard(dateKey, liveMatches, { isFullSnapshot = true }
                 _missedLivePolls: 0,
                 _autoFinalized: false,
                 _lastSeenLiveAt: nowMs,
-                status: {
-                    ...(existing.status || {}),
-                    ...(live.status || {})
-                },
+                status: preventLiveRegression
+                    ? existing.status
+                    : {
+                        ...(existing.status || {}),
+                        ...(live.status || {})
+                    },
                 home: {
                     ...(existing.home || {}),
                     ...(live.home || {}),
+                    ...(preventLiveRegression ? { score: existing.home.score } : {}),
                     logo: existing.home?.logo || live.home?.logo || ''
                 },
                 away: {
                     ...(existing.away || {}),
                     ...(live.away || {}),
+                    ...(preventLiveRegression ? { score: existing.away.score } : {}),
                     logo: existing.away?.logo || live.away?.logo || ''
                 },
                 league: keepExistingLeague ? existing.league : (live.league || existing.league),
@@ -383,11 +406,12 @@ function findMatchInBoards(matchOrId) {
     return null;
 }
 
-function patchMatchInBoards(matchUpdate) {
+function patchMatchInBoards(matchUpdate, { authoritative = false } = {}) {
     if (!matchUpdate || boardsByDate.size === 0) return false;
     const keys = matchIdentityKeys(matchUpdate);
     if (!keys.length) return false;
 
+    const isAuthoritative = Boolean(authoritative || matchUpdate._authoritative);
     let patched = false;
     for (const entry of boardsByDate.values()) {
         let idx = -1;
@@ -409,14 +433,48 @@ function patchMatchInBoards(matchUpdate) {
         const upGoals = (upH ?? 0) + (upA ?? 0);
 
         const exFinished = isMatchFinished(existing);
+        const exLive = !exFinished && isMatchLive(existing);
         const upFinished = isMatchFinished(matchUpdate);
+        const upLive = !upFinished && isMatchLive(matchUpdate);
+        const nowMs = Date.now();
+        const kickoffTs = existing.date ? Date.parse(existing.date) : NaN;
+        const elapsedMs = Number.isFinite(kickoffTs) ? (nowMs - kickoffTs) : Infinity;
+        const exIsPostpOrCanc = /^(Postp|Canc|Abd)/i.test(String(existing.status?.detail || existing.status?.clock || ''));
+        const hasConcreteLiveClock = Boolean(
+            matchUpdate.status?.isLive ||
+            /^(HT|\d{1,3}(?:\+\d{1,2})?'?)$/i.test(String(matchUpdate.status?.clock || matchUpdate.status?.detail || '').trim())
+        );
+        const canReviveFromFt = Boolean(
+            exFinished && upLive && !exIsPostpOrCanc && (
+                Boolean(existing._autoFinalized) ||
+                (elapsedMs >= 0 && elapsedMs < 102 * 60 * 1000 && hasConcreteLiveClock) ||
+                (elapsedMs >= 0 && elapsedMs < 155 * 60 * 1000 && upH !== null && upA !== null && upGoals > exGoals)
+            )
+        );
+        const transitionedToLive = Boolean(!exFinished && !exLive && upLive);
+        const canHealAutoFinalized = Boolean(
+            existing._autoFinalized && upFinished && upH !== null && upA !== null &&
+            (isAuthoritative || upH !== exH || upA !== exA)
+        );
+        const scoreChangedOnFinish = Boolean(
+            !exFinished && upFinished && upH !== null && upA !== null && (upH !== exH || upA !== exA)
+        );
         const scoreImproved = upH !== null && upA !== null && (
             upGoals > exGoals ||
-            (exH === null || exA === null)
+            (exH === null || exA === null) ||
+            canHealAutoFinalized ||
+            scoreChangedOnFinish ||
+            (canReviveFromFt && upGoals >= exGoals)
         );
         const statusImproved = (!exFinished && upFinished);
+        const liveClockAdvanced = Boolean(
+            !exFinished && upLive &&
+            parseClockMinutes(matchUpdate) > parseClockMinutes(existing) &&
+            (upH === null || upA === null || upGoals >= exGoals)
+        );
+        const shouldApplyLiveStatus = canReviveFromFt || transitionedToLive || liveClockAdvanced;
 
-        if (scoreImproved || statusImproved) {
+        if (scoreImproved || statusImproved || shouldApplyLiveStatus) {
             const nextH = scoreImproved ? upH : existing.home?.score;
             const nextA = scoreImproved ? upA : existing.away?.score;
             const nextStatus = statusImproved
@@ -429,31 +487,50 @@ function patchMatchInBoards(matchUpdate) {
                     clock: matchUpdate.status?.clock || 'FT',
                     detail: matchUpdate.status?.detail || 'FT'
                 }
-                : existing.status;
+                : (shouldApplyLiveStatus
+                    ? {
+                        ...(existing.status || {}),
+                        ...(matchUpdate.status || {}),
+                        state: 'in',
+                        completed: false,
+                        isLive: true
+                    }
+                    : existing.status);
 
             entry.matches[idx] = {
                 ...existing,
+                ...((upFinished && (isAuthoritative || scoreImproved)) || canReviveFromFt ? { _autoFinalized: false } : {}),
+                ...(shouldApplyLiveStatus ? { _missedLivePolls: 0, _lastSeenLiveAt: nowMs } : {}),
                 status: nextStatus,
                 home: {
                     ...(existing.home || {}),
                     ...(nextH !== undefined ? { score: nextH } : {}),
                     ...(nextStatus?.completed && Number.isFinite(Number(nextH)) && Number.isFinite(Number(nextA))
                         ? { winner: Number(nextH) > Number(nextA) }
-                        : {})
+                        : (shouldApplyLiveStatus ? { winner: false } : {}))
                 },
                 away: {
                     ...(existing.away || {}),
                     ...(nextA !== undefined ? { score: nextA } : {}),
                     ...(nextStatus?.completed && Number.isFinite(Number(nextH)) && Number.isFinite(Number(nextA))
                         ? { winner: Number(nextA) > Number(nextH) }
-                        : {})
+                        : (shouldApplyLiveStatus ? { winner: false } : {}))
                 }
             };
-            entry.lastPatchedAt = Date.now();
+            entry.lastPatchedAt = nowMs;
             patched = true;
         }
     }
     return patched;
+}
+
+function patchMatchesInBoards(matchUpdates, opts = {}) {
+    if (!Array.isArray(matchUpdates) || matchUpdates.length === 0 || boardsByDate.size === 0) return 0;
+    let count = 0;
+    for (const m of matchUpdates) {
+        if (m && patchMatchInBoards(m, opts)) count++;
+    }
+    return count;
 }
 
 function extractScoreFromKeyEvents(keyEvents = []) {
@@ -709,6 +786,7 @@ module.exports = {
     patchLiveMatchesInBoard,
     findMatchInBoards,
     patchMatchInBoards,
+    patchMatchesInBoards,
     reconcileSummaryWithBoardAndEvents,
     extractScoreFromKeyEvents,
     hasActiveMatchWindow,

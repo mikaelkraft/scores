@@ -436,7 +436,23 @@
     }
 
     function localCountryName(country) {
-        return country || 'Other';
+        const s = String(country || '').trim();
+        if (!s) return 'Other';
+        const key = s.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+        const map = {
+            'turkey': 'Turkey', 'turkiye': 'Turkey', 'türkiye': 'Turkey',
+            'ivory coast': 'Ivory Coast', "cote d'ivoire": 'Ivory Coast', 'cote divoire': 'Ivory Coast',
+            'côte d\'ivoire': 'Ivory Coast', 'cote d ivoire': 'Ivory Coast',
+            'united states': 'United States', 'usa': 'United States',
+            'korea republic': 'South Korea', 'republic of korea': 'South Korea',
+            'czech republic': 'Czech Republic', 'czechia': 'Czech Republic',
+            'uae': 'UAE', 'united arab emirates': 'UAE',
+            'dr congo': 'DR Congo', 'holland': 'Netherlands',
+            'viet nam': 'Vietnam', 'hong kong, china': 'Hong Kong'
+        };
+        if (map[key]) return map[key];
+        if (map[s.toLowerCase()]) return map[s.toLowerCase()];
+        return s;
     }
 
     function setServiceStatus(type, text) {
@@ -450,17 +466,59 @@
     let crestMemory = {};
     try { crestMemory = JSON.parse(localStorage.getItem(crestCacheKey) || '{}'); } catch (_) { crestMemory = {}; }
 
-    function rememberCrest(teamId, url) {
-        if (!teamId || !url) return;
-        crestMemory[String(teamId)] = { url, ts: Date.now() };
+    function rememberCrest(teamId, url, teamName = '') {
+        if (!url || (!teamId && !teamName)) return;
+        if (String(url).includes('data:image')) return;
+        const ts = Date.now();
+        if (teamId) crestMemory['id:' + String(teamId)] = { url, ts };
+        if (teamName) {
+            const nk = 'nm:' + String(teamName).toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 32);
+            if (nk.length > 5) crestMemory[nk] = { url, ts };
+        }
+        // legacy key
+        if (teamId) crestMemory[String(teamId)] = { url, ts };
         try {
-            // Cap cache size
             const keys = Object.keys(crestMemory);
-            if (keys.length > 400) {
-                keys.slice(0, 80).forEach(k => delete crestMemory[k]);
+            if (keys.length > 900) {
+                keys.slice(0, 200).forEach(k => delete crestMemory[k]);
             }
             localStorage.setItem(crestCacheKey, JSON.stringify(crestMemory));
         } catch (_) { /* quota */ }
+    }
+
+    function warmCrestsFromMatches(matches) {
+        if (!Array.isArray(matches)) return;
+        for (const m of matches) {
+            const h = m.home || {};
+            const a = m.away || {};
+            if (h.logo) rememberCrest(h.id || h.source_id, h.logo, h.displayName || h.name);
+            if (a.logo) rememberCrest(a.id || a.source_id, a.logo, a.displayName || a.name);
+        }
+    }
+
+    function teamCrestSrc(team = {}) {
+        const direct = team.logo || team.logoUrl || team.crest || '';
+        if (direct) {
+            rememberCrest(team.id || team.source_id, direct, team.displayName || team.name);
+            return direct;
+        }
+        return recallCrest(team.id || team.source_id, team.displayName || team.name) || '';
+    }
+
+    function recallCrest(teamId, teamName = '') {
+        const tryKeys = [];
+        if (teamId) {
+            tryKeys.push('id:' + String(teamId), String(teamId));
+        }
+        if (teamName) {
+            tryKeys.push('nm:' + String(teamName).toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 32));
+        }
+        const maxAge = 1000 * 60 * 60 * 24 * 30; // 30 days
+        for (const k of tryKeys) {
+            const hit = crestMemory[k];
+            if (hit && hit.url && (!hit.ts || (Date.now() - hit.ts) < maxAge)) return hit.url;
+        }
+        return '';
     }
 
     function getTeamInitials(name = '', abbr = '') {
@@ -1107,6 +1165,24 @@
                 if (secAwayScore !== undefined && winner.away) winner.away.score = secAwayScore;
                 if (winner.home && secondary.home?.winner !== undefined) winner.home.winner = secondary.home.winner;
                 if (winner.away && secondary.away?.winner !== undefined) winner.away.winner = secondary.away.winner;
+            } else if ((secIsCompleted && winIsCompleted) || (secIsLive && winIsLive)) {
+                const winH = Number(winner.home?.score);
+                const winA = Number(winner.away?.score);
+                const secH = Number(secondary.home?.score ?? secondary.competitions?.[0]?.competitors?.[0]?.score);
+                const secA = Number(secondary.away?.score ?? secondary.competitions?.[0]?.competitors?.[1]?.score);
+                if (Number.isFinite(secH) && Number.isFinite(secA)) {
+                    const winTot = (Number.isFinite(winH) && Number.isFinite(winA)) ? (winH + winA) : -1;
+                    if ((secH + secA) > winTot) {
+                        if (winner.home) {
+                            winner.home.score = secH;
+                            if (winIsCompleted) winner.home.winner = secH > secA;
+                        }
+                        if (winner.away) {
+                            winner.away.score = secA;
+                            if (winIsCompleted) winner.away.winner = secA > secH;
+                        }
+                    }
+                }
             }
             if (secondary.source?.livescore_id && !winner.source?.livescore_id) {
                 if (!winner.source) winner.source = {};
@@ -2643,6 +2719,23 @@
                 const data = await fetchJson('/api/v1/football/live');
                 liveMatches = data.live || data.matches || [];
             }
+            // Fallback: /live can lag behind the day board (UCL in-play still on fixtures)
+            if (!liveMatches || liveMatches.length === 0) {
+                try {
+                    const fx = await fetchJson('/api/v1/football/fixtures?date=today&status=live&limit=200');
+                    const fromFx = fx.matches || fx.live || [];
+                    if (fromFx.length) liveMatches = fromFx;
+                } catch (_) {}
+            }
+            if (!liveMatches || liveMatches.length === 0) {
+                try {
+                    const fxAll = await fetchJson('/api/v1/football/fixtures?date=today&limit=300');
+                    liveMatches = (fxAll.matches || []).filter(m => {
+                        const st = m.status || {};
+                        return st.state === 'in' || st.isLive;
+                    });
+                } catch (_) {}
+            }
 
             // Deduplicate live matches globally across all feeds / providers and sync all badges atomically
             const dedupedLive = syncAllLiveCountBadges(liveMatches);
@@ -3433,6 +3526,7 @@
                 ? [...state.fixtures, ...(data.events || [])]
                 : (data.events || []);
             if (elements['fixture-count']) elements['fixture-count'].textContent = formatNumber(data.count);
+            warmCrestsFromMatches(state.fixtures || fixtures);
             renderFixtures(state.fixtures);
         } catch (error) {
             if (elements['fixtures-empty']) elements['fixtures-empty'].hidden = false;
@@ -3745,7 +3839,7 @@
                                                 <td style="font-weight:700; color:var(--text-main);">${escapeHtml(p.name)}</td>
                                                 <td>
                                                     <div class="club-cell" style="cursor:pointer;" onclick="openClubHub('${escapeHtml(p.team)}', '${escapeHtml(p.teamLogo || '')}', '${escapeHtml(leagueSlug)}')">
-                                                        ${p.teamLogo ? `<img src="${escapeHtml(p.teamLogo)}" class="club-crest-small" alt="${escapeHtml(p.team)}" onerror="this.src='/crests/fallback-shield.svg'">` : ''}
+                                                        ${p.teamLogo ? `<img loading="lazy" decoding="async" src="${escapeHtml(p.teamLogo)}" class="club-crest-small" alt="${escapeHtml(p.team)}" onerror="this.src='/crests/fallback-shield.svg'">` : ''}
                                                         <span>${escapeHtml(p.team)}</span>
                                                     </div>
                                                 </td>
@@ -3778,7 +3872,7 @@
                                                     <td style="font-weight:700; color:var(--text-main);">${escapeHtml(p.name)}</td>
                                                     <td>
                                                         <div class="club-cell" style="cursor:pointer;" onclick="openClubHub('${escapeHtml(p.team)}', '${escapeHtml(p.teamLogo || '')}', '${escapeHtml(leagueSlug)}')">
-                                                            ${p.teamLogo ? `<img src="${escapeHtml(p.teamLogo)}" class="club-crest-small" alt="${escapeHtml(p.team)}" onerror="this.src='/crests/fallback-shield.svg'">` : ''}
+                                                            ${p.teamLogo ? `<img loading="lazy" decoding="async" src="${escapeHtml(p.teamLogo)}" class="club-crest-small" alt="${escapeHtml(p.team)}" onerror="this.src='/crests/fallback-shield.svg'">` : ''}
                                                             <span>${escapeHtml(p.team)}</span>
                                                         </div>
                                                     </td>
@@ -4974,8 +5068,12 @@
                 }
             }
             if (!uniqueMeetings.length) return '';
-            const displayed = uniqueMeetings.slice(0, 5);
-            const remaining = uniqueMeetings.slice(5);
+            const leagueSlugH2h = String(summary?.header?.league?.slug || summary?.header?.competitions?.[0]?.league?.slug || state.league?.slug || '').toLowerCase();
+            const isAfricanH2h = /^(nga|gha|ken|tza|egy|rsa|mar|civ|sen|cmr|uga|rwa|eth|zam|zim|ang|bwa|tun|alg|caf)\b|caf\./.test(leagueSlugH2h)
+                || /nigeria|ghana|kenya|egypt|npfl|premier football league/i.test(String(summary?.header?.league?.name || summary?.header?.competitions?.[0]?.league?.name || ''));
+            const h2hShow = isAfricanH2h ? 12 : 8;
+            const displayed = uniqueMeetings.slice(0, h2hShow);
+            const remaining = uniqueMeetings.slice(h2hShow);
 
             const renderH2hItem = (m) => {
                 const dateLabel = formatDate(m.date, { year: true, weekday: false });
@@ -5460,7 +5558,7 @@
                             <div style="background:var(--bg-canvas); border:1px solid var(--border-subtle); border-radius:8px; padding:14px;">
                                 <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:10px;">
                                     <div style="display:flex; align-items:center; gap:8px;">
-                                        ${home.team?.logo ? `<img src="${home.team.logo}" alt="" style="width:20px; height:20px; object-fit:contain;">` : ''}
+                                        ${(home.team?.logo || teamCrestSrc(home.team || home || {})) ? `<img loading="lazy" decoding="async" src="${home.team?.logo || teamCrestSrc(home.team || home || {})}" alt="" style="width:20px; height:20px; object-fit:contain;">` : ''}
                                         <strong style="font-size:13.5px; color:var(--text-main);">${escapeHtml(home.team?.displayName || 'Home Team')}</strong>
                                     </div>
                                     <span style="font-size:11px; color:#10b981; font-weight:600;">${homeAnalytics.winRate ?? 0}% Win Rate</span>
@@ -5474,7 +5572,7 @@
                             <div style="background:var(--bg-canvas); border:1px solid var(--border-subtle); border-radius:8px; padding:14px;">
                                 <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:10px;">
                                     <div style="display:flex; align-items:center; gap:8px;">
-                                        ${away.team?.logo ? `<img src="${away.team.logo}" alt="" style="width:20px; height:20px; object-fit:contain;">` : ''}
+                                        ${(away.team?.logo || teamCrestSrc(away.team || away || {})) ? `<img loading="lazy" decoding="async" src="${away.team?.logo || teamCrestSrc(away.team || away || {})}" alt="" style="width:20px; height:20px; object-fit:contain;">` : ''}
                                         <strong style="font-size:13.5px; color:var(--text-main);">${escapeHtml(away.team?.displayName || 'Away Team')}</strong>
                                     </div>
                                     <span style="font-size:11px; color:#3b82f6; font-weight:600;">${awayAnalytics.winRate ?? 0}% Win Rate</span>
@@ -5553,6 +5651,10 @@
                                             <div style="font-size:10px; color:var(--text-muted); margin-top:4px; text-transform:uppercase; letter-spacing:0.04em;">Pts</div>
                                         </div>
                                         <div style="flex:1; text-align:center;">
+                                            <div style="font-size:18px; font-weight:700; color:var(--text-main); line-height:1;">${homeStanding.matchday ?? homeStanding.played ?? homeStanding.gamesPlayed ?? '—'}</div>
+                                            <div style="font-size:10px; color:var(--text-muted); margin-top:4px; text-transform:uppercase; letter-spacing:0.04em;">MD</div>
+                                        </div>
+                                        <div style="flex:1; text-align:center;">
                                             <div style="font-size:18px; font-weight:700; color:var(--text-main); line-height:1;">${homeStanding.goalDifferential ?? '—'}</div>
                                             <div style="font-size:10px; color:var(--text-muted); margin-top:4px; text-transform:uppercase; letter-spacing:0.04em;">GD</div>
                                         </div>
@@ -5570,6 +5672,10 @@
                                         <div style="flex:1; text-align:center;">
                                             <div style="font-size:18px; font-weight:700; color:var(--text-main); line-height:1;">${awayStanding.points ?? '—'}</div>
                                             <div style="font-size:10px; color:var(--text-muted); margin-top:4px; text-transform:uppercase; letter-spacing:0.04em;">Pts</div>
+                                        </div>
+                                        <div style="flex:1; text-align:center;">
+                                            <div style="font-size:18px; font-weight:700; color:var(--text-main); line-height:1;">${awayStanding.matchday ?? awayStanding.played ?? awayStanding.gamesPlayed ?? '—'}</div>
+                                            <div style="font-size:10px; color:var(--text-muted); margin-top:4px; text-transform:uppercase; letter-spacing:0.04em;">MD</div>
                                         </div>
                                         <div style="flex:1; text-align:center;">
                                             <div style="font-size:18px; font-weight:700; color:var(--text-main); line-height:1;">${awayStanding.goalDifferential ?? '—'}</div>
@@ -5852,7 +5958,8 @@
             currentTimezone = e.target.value;
             localStorage.setItem('norra_timezone', currentTimezone);
             if (state.fixtures && state.fixtures.length) {
-                renderFixtures(state.fixtures);
+                warmCrestsFromMatches(state.fixtures || fixtures);
+            renderFixtures(state.fixtures);
             }
             if (state.currentEventId) {
                 loadMatchDetails(state.currentEventId, true);
@@ -6528,6 +6635,7 @@
         } else if (state.selectedLeagueSlug === 'live') {
             loadLiveMatches();
         } else if (state.league) {
+            warmCrestsFromMatches(state.fixtures || fixtures);
             renderFixtures(state.fixtures);
         }
     }
@@ -7008,6 +7116,26 @@
         }
     }
 
+    let finishedBoardRefreshTimer = null;
+    function scheduleFinishedBoardRefresh(retryCount = 0) {
+        if (finishedBoardRefreshTimer) return;
+        const isViewingToday = !state.selectedDayOffset || state.selectedDayOffset === 0;
+        if (!isViewingToday) return;
+        finishedBoardRefreshTimer = window.setTimeout(() => {
+            finishedBoardRefreshTimer = null;
+            if (document.hidden) return;
+            if (isUserInteracting) {
+                if (retryCount < 5) scheduleFinishedBoardRefresh(retryCount + 1);
+                return;
+            }
+            if (state.selectedLeagueSlug === 'all') {
+                loadAllLeagueFixtures({ background: true });
+            } else if (state.league && state.selectedLeagueSlug !== 'live' && state.currentStatus !== 'live') {
+                loadFixtures({ background: true });
+            }
+        }, 3000);
+    }
+
     function applyRealtimeMatchUpdate(update) {
         if (!update || (!update.id && !update.eventId)) return;
         const matchId = String(update.id || update.eventId);
@@ -7017,6 +7145,13 @@
         const curAway = (update.awayScore !== undefined) ? update.awayScore : (update.away?.score ?? 0);
         const newHomeScore = String(curHome);
         const newAwayScore = String(curAway);
+        const isFinishedUpdate = Boolean(
+            update.matchFinished ||
+            update.state === 'post' ||
+            update.status?.state === 'post' ||
+            update.status?.completed ||
+            /^(FT|AET|AP|Final)$/i.test(String(update.clock || update.status?.detail || '').trim())
+        );
 
         const homeName = update.home?.displayName || update.home?.name || update.scoringTeam || 'Home';
         const awayName = update.away?.displayName || update.away?.name || 'Away';
@@ -7031,6 +7166,11 @@
                 if (cachedMatch.status) {
                     cachedMatch.status.clock = update.clock || cachedMatch.status.clock;
                     cachedMatch.status.detail = update.clock || cachedMatch.status.detail;
+                    if (isFinishedUpdate) {
+                        cachedMatch.status.state = 'post';
+                        cachedMatch.status.completed = true;
+                        cachedMatch.status.isLive = false;
+                    }
                 }
             }
         }
@@ -7039,20 +7179,40 @@
             const scoreDigits = matchRow.querySelectorAll('.fs-score-digit');
             const prevHomeScore = scoreDigits[0] ? scoreDigits[0].textContent.trim() : null;
             const prevAwayScore = scoreDigits[1] ? scoreDigits[1].textContent.trim() : null;
+            const prevHNum = Number(prevHomeScore);
+            const prevANum = Number(prevAwayScore);
+            const newHNum = Number(curHome);
+            const newANum = Number(curAway);
+            const rowAlreadyFt = Boolean(matchRow.querySelector('.fs-status-ft'));
+            const wouldRegressFt = rowAlreadyFt && Number.isFinite(prevHNum) && Number.isFinite(prevANum) &&
+                Number.isFinite(newHNum) && Number.isFinite(newANum) &&
+                (newHNum + newANum) < (prevHNum + prevANum);
 
-            if (scoreDigits[0]) scoreDigits[0].textContent = newHomeScore;
-            if (scoreDigits[1]) scoreDigits[1].textContent = newAwayScore;
+            if (!wouldRegressFt) {
+                if (scoreDigits[0]) scoreDigits[0].textContent = newHomeScore;
+                if (scoreDigits[1]) scoreDigits[1].textContent = newAwayScore;
+            }
 
-            const clockEl = matchRow.querySelector('.fs-status-live');
-            if (clockEl) {
-                const newClock = update.clock || formatMatchClock(update.status, update.status?.type);
-                // Never allow generic 'Live' text to override an existing concrete match clock!
-                if (isConcreteClock(newClock) || !isConcreteClock(clockEl.textContent)) {
-                    clockEl.textContent = newClock;
+            if (isFinishedUpdate) {
+                matchRow.classList.remove('is-live-row');
+                scoreDigits.forEach(el => el.classList.remove('score-live'));
+                const ftLabel = /^(FT|AET|AP|Final)$/i.test(String(update.clock || '').trim()) ? String(update.clock).trim() : 'FT';
+                const statusCol = matchRow.querySelector('.fs-col-status');
+                if (statusCol) {
+                    statusCol.innerHTML = `<span class="fs-status-ft">${escapeHtml(ftLabel)}</span>`;
+                }
+            } else {
+                const clockEl = matchRow.querySelector('.fs-status-live');
+                if (clockEl) {
+                    const newClock = update.clock || formatMatchClock(update.status, update.status?.type);
+                    // Never allow generic 'Live' text to override an existing concrete match clock!
+                    if (isConcreteClock(newClock) || !isConcreteClock(clockEl.textContent)) {
+                        clockEl.textContent = newClock;
+                    }
                 }
             }
 
-            const goalDetected = update.isGoal || (prevHomeScore !== null && (Number(newHomeScore) > Number(prevHomeScore) || Number(newAwayScore) > Number(prevAwayScore)));
+            const goalDetected = !wouldRegressFt && (update.isGoal || (prevHomeScore !== null && (Number(newHomeScore) > Number(prevHomeScore) || Number(newAwayScore) > Number(prevAwayScore))));
 
             if (goalDetected) {
                 playGoalSound();
@@ -7064,6 +7224,10 @@
             }
         }
 
+        if (isFinishedUpdate) {
+            scheduleFinishedBoardRefresh();
+        }
+
         if (state.currentEventId === matchId && elements['dialog-content']) {
             const scoreDigits = elements['dialog-content'].querySelector('.score-digits');
             if (scoreDigits) {
@@ -7071,8 +7235,10 @@
             }
             const minutePill = elements['dialog-content'].querySelector('.minute-pill');
             if (minutePill) {
-                const newClock = update.clock || formatMatchClock(update.status, update.status?.type);
-                if (isConcreteClock(newClock) || !isConcreteClock(minutePill.textContent)) {
+                const newClock = isFinishedUpdate
+                    ? (/^(FT|AET|AP|Final)$/i.test(String(update.clock || '').trim()) ? String(update.clock).trim() : 'FT')
+                    : (update.clock || formatMatchClock(update.status, update.status?.type));
+                if (isFinishedUpdate || isConcreteClock(newClock) || !isConcreteClock(minutePill.textContent)) {
                     minutePill.textContent = newClock;
                 }
             }

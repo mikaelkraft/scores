@@ -15,6 +15,7 @@ const SoccerMatchEvent = require('../models/soccerMatchEvent');
 const SoccerStanding = require('../models/soccerStanding');
 const SoccerSyncState = require('../models/soccerSyncState');
 const { synthesizeMatchTelemetry } = require('./soccerSerializer');
+const dailyBoardCache = require('./dailyBoardCache');
 
 
 /** Canonical country labels for UI flags/grouping (Turkey not Türkiye, Ivory Coast not Côte d'Ivoire, etc.) */
@@ -586,10 +587,11 @@ async function getCachedOrFetchLiveScoreStages() {
     ]);
 
     const stages = [];
+    // Real-time /live/ stages MUST come first so syncLiveScoreInPlay deduplication prefers live/fresher scores over stale CDN-cached dateData
+    if (liveData && Array.isArray(liveData.Stages)) stages.push(...liveData.Stages);
     if (dateData && Array.isArray(dateData.Stages)) stages.push(...dateData.Stages);
     if (tomorrowData && Array.isArray(tomorrowData.Stages)) stages.push(...tomorrowData.Stages);
     if (yesterdayData && Array.isArray(yesterdayData.Stages)) stages.push(...yesterdayData.Stages);
-    if (liveData && Array.isArray(liveData.Stages)) stages.push(...liveData.Stages);
 
     if (stages.length > 0) {
         cachedLiveScoreStages = stages;
@@ -3608,6 +3610,7 @@ async function syncLiveScoreInPlay() {
         }
 
         const matchBulkOps = [];
+        const boardPatchUpdates = [];
         const seenMatchesInBatch = new Set();
 
         for (const stage of stages) {
@@ -3806,14 +3809,14 @@ async function syncLiveScoreInPlay() {
                 }
                 const homeScore = parseInt(ev.Tr1 || 0, 10);
                 const awayScore = parseInt(ev.Tr2 || 0, 10);
-                const rawClock = String(ev.Eps || '').trim() || (ev.Epr === 0 ? 'NS' : String(ev.Epr || 'NS')).trim();
+                const rawClock = String(ev.Eps || '').trim() || (ev.Epr === 2 ? 'FT' : (ev.Epr === 0 ? 'NS' : String(ev.Epr || 'NS'))).trim();
 
                 const isZeroOrSched = rawClock === '0' || rawClock === "0'" || rawClock === '00' || rawClock === '00:00';
                 const isFutureMatch = matchDate && (matchDate.getTime() - now.getTime() > 5 * 60 * 1000);
                 const isPastUnstarted = matchDate && (now.getTime() - matchDate.getTime() > 3 * 3600 * 1000);
                 const isNotStarted = rawClock === 'NS' || rawClock === 'Upcoming' || rawClock === '' || rawClock === 'Sched' || rawClock.includes(':') || isZeroOrSched || isFutureMatch;
-                const isFinished = rawClock === 'FT' || rawClock === 'AET' || rawClock === 'AP';
                 let isPostponed = rawClock.includes('Postp') || rawClock.includes('Canc') || rawClock.includes('Aband') || (isNotStarted && isPastUnstarted);
+                const isFinished = rawClock === 'FT' || rawClock === 'AET' || rawClock === 'AP' || (ev.Epr === 2 && !isPostponed);
                 const isInPlay = !isNotStarted && !isFinished && !isPostponed;
                 const state = isInPlay ? 'in' : (isFinished || isPostponed) ? 'post' : 'pre';
                 const displayClock = isFinished ? 'FT' : isPostponed ? 'Postp.' : (isInPlay ? (rawClock === 'HT' ? 'HT' : (rawClock.includes("'") ? rawClock : `${rawClock}'`)) : 'NS');
@@ -3829,13 +3832,61 @@ async function syncLiveScoreInPlay() {
                 const sig = `${hNorm}_vs_${aNorm}_${tier}`;
                 const existingMatch = byEventId.get(eid) || bySig.get(`${hNorm}_vs_${aNorm}_${matchSlug}_${tier}`) || bySig.get(sig);
 
-                // Never overwrite a completed match with an in-play or scheduled match
+                // Never overwrite a legitimately completed match with an in-play or scheduled match,
+                // EXCEPT revive prematurely finalized matches inside the < 102m impossible-FT window or with higher live score (< 155m)
                 if (existingMatch?.status?.completed && (state === 'in' || state === 'pre')) {
-                    continue;
+                    const exKickoff = existingMatch.date ? new Date(existingMatch.date).getTime() : NaN;
+                    const exElapsed = Number.isFinite(exKickoff) ? (now.getTime() - exKickoff) : Infinity;
+                    const exIsPostp = /^(Postp|Canc|Abd)/i.test(String(existingMatch.status?.detail || existingMatch.status?.clock || ''));
+                    const exGoals = (Number(existingMatch.home?.score) || 0) + (Number(existingMatch.away?.score) || 0);
+                    const inGoals = (isNaN(homeScore) ? 0 : homeScore) + (isNaN(awayScore) ? 0 : awayScore);
+                    const canReviveDb = state === 'in' && !exIsPostp && (
+                        (exElapsed >= 0 && exElapsed < 102 * 60 * 1000) ||
+                        (exElapsed >= 0 && exElapsed < 155 * 60 * 1000 && inGoals > exGoals)
+                    );
+                    if (!canReviveDb) continue;
+                }
+
+                // Prevent regressing an already-completed match's score downward from a lagging stage feed
+                let resolvedHomeScore = isNaN(homeScore) ? (existingMatch?.home?.score ?? 0) : homeScore;
+                let resolvedAwayScore = isNaN(awayScore) ? (existingMatch?.away?.score ?? 0) : awayScore;
+                if (existingMatch?.status?.completed && isFinished) {
+                    const exH = Number(existingMatch.home?.score);
+                    const exA = Number(existingMatch.away?.score);
+                    if (Number.isFinite(exH) && Number.isFinite(exA) && (resolvedHomeScore + resolvedAwayScore) < (exH + exA)) {
+                        resolvedHomeScore = exH;
+                        resolvedAwayScore = exA;
+                    }
                 }
 
                 const finalHomeLogo = existingMatch?.home?.logo || homeCrest || '';
                 const finalAwayLogo = existingMatch?.away?.logo || awayCrest || '';
+
+                if (state === 'in' || isFinished) {
+                    boardPatchUpdates.push({
+                        id: existingMatch?.source?.event_id || eid,
+                        uid: existingMatch?.source?.uid || `ls:${eid}`,
+                        league_slug: existingMatch?.league_slug || matchSlug,
+                        source: {
+                            event_id: existingMatch?.source?.event_id || eid,
+                            livescore_id: eid,
+                            ...(existingMatch?.source?.espn_id ? { espn_id: existingMatch.source.espn_id } : {})
+                        },
+                        status: {
+                            state,
+                            name: state === 'in' ? 'STATUS_IN_PROGRESS' : 'STATUS_FINAL',
+                            description: state === 'in' ? 'In Progress' : 'Full Time',
+                            detail: displayClock,
+                            short_detail: displayClock,
+                            clock: displayClock,
+                            completed: isFinished,
+                            isLive: state === 'in'
+                        },
+                        home: { name: homeName, displayName: homeName, score: resolvedHomeScore },
+                        away: { name: awayName, displayName: awayName, score: resolvedAwayScore },
+                        _authoritative: isFinished
+                    });
+                }
 
                 if (existingMatch) {
                     matchBulkOps.push({
@@ -3854,10 +3905,10 @@ async function syncLiveScoreInPlay() {
                                     'status.period': ev.Epr || (displayClock === 'HT' ? 1 : 2),
                                     'status.completed': isFinished || isPostponed,
                                     'status.suspended': isPostponed,
-                                    'home.score': isNaN(homeScore) ? (existingMatch.home?.score ?? 0) : homeScore,
-                                    'away.score': isNaN(awayScore) ? (existingMatch.away?.score ?? 0) : awayScore,
-                                    'home.winner': isFinished && homeScore > awayScore,
-                                    'away.winner': isFinished && awayScore > homeScore,
+                                    'home.score': resolvedHomeScore,
+                                    'away.score': resolvedAwayScore,
+                                    'home.winner': isFinished && resolvedHomeScore > resolvedAwayScore,
+                                    'away.winner': isFinished && resolvedAwayScore > resolvedHomeScore,
                                     'home.logo': finalHomeLogo,
                                     'away.logo': finalAwayLogo,
                                     last_synced_at: now
@@ -3943,9 +3994,14 @@ async function syncLiveScoreInPlay() {
         if (matchBulkOps.length > 0) {
             await SoccerMatch.bulkWrite(matchBulkOps, { ordered: false }).catch(e => console.warn('[LiveSync] bulkWrite matches notice:', e.message));
         }
+        if (boardPatchUpdates.length > 0) {
+            try {
+                dailyBoardCache.patchMatchesInBoards(boardPatchUpdates, { authoritative: true });
+            } catch (_) {}
+        }
 
-        // Auto-finalize ANY stuck in-play matches that have concluded (started > 135 minutes ago)
-        const conclusionCutoff = new Date(Date.now() - 135 * 60 * 1000);
+        // Auto-finalize ANY stuck in-play matches that have concluded (started > 160 minutes ago to cover extra time/delays)
+        const conclusionCutoff = new Date(Date.now() - 160 * 60 * 1000);
         await SoccerMatch.updateMany(
             {
                 'status.state': 'in',
@@ -4094,6 +4150,7 @@ async function syncLiveScoreboards() {
         }
 
         const sbMatchOps = [];
+        const sbBoardPatchUpdates = [];
 
         for (const ev of events) {
             const comp = ev.competitions?.[0];
@@ -4126,9 +4183,19 @@ async function syncLiveScoreboards() {
             const sig = `${hNorm}_vs_${aNorm}_${tier}`;
             const existingMatch = byEvId.get(String(ev.id)) || byNormSig.get(sig);
 
-            // Never overwrite a completed match with an in-play or scheduled state
+            // Never overwrite a legitimately completed match with an in-play or scheduled state,
+            // EXCEPT revive prematurely finalized matches inside the < 102m impossible-FT window or with higher live score (< 155m)
             if (existingMatch?.status?.completed && (state === 'pre' || state === 'in')) {
-                continue;
+                const exKickoff = existingMatch.date ? new Date(existingMatch.date).getTime() : NaN;
+                const exElapsed = Number.isFinite(exKickoff) ? (now.getTime() - exKickoff) : Infinity;
+                const exIsPostp = /^(Postp|Canc|Abd)/i.test(String(existingMatch.status?.detail || existingMatch.status?.clock || ''));
+                const exGoals = (Number(existingMatch.home?.score) || 0) + (Number(existingMatch.away?.score) || 0);
+                const inGoals = (isNaN(homeScore) ? 0 : homeScore) + (isNaN(awayScore) ? 0 : awayScore);
+                const canReviveDb = state === 'in' && !exIsPostp && (
+                    (exElapsed >= 0 && exElapsed < 102 * 60 * 1000) ||
+                    (exElapsed >= 0 && exElapsed < 155 * 60 * 1000 && inGoals > exGoals)
+                );
+                if (!canReviveDb) continue;
             }
 
             if (!targetSlug && existingMatch?.league_slug) {
@@ -4148,6 +4215,17 @@ async function syncLiveScoreboards() {
             const finalState = isUnstartedPast ? 'post' : state;
             const isCompletedMatch = finalState === 'post' || statusType.completed === true;
             const finalDetail = isUnstartedPast ? 'Postp.' : (statusType.detail || ev.status?.displayClock || statusType.shortDetail || (state === 'in' ? "45'" : isCompletedMatch ? 'FT' : 'Scheduled'));
+            let resolvedHomeScore = isNaN(homeScore) ? (existingMatch?.home?.score ?? 0) : homeScore;
+            let resolvedAwayScore = isNaN(awayScore) ? (existingMatch?.away?.score ?? 0) : awayScore;
+            if (existingMatch?.status?.completed && isCompletedMatch && !isUnstartedPast) {
+                const exH = Number(existingMatch.home?.score);
+                const exA = Number(existingMatch.away?.score);
+                if (Number.isFinite(exH) && Number.isFinite(exA) && (resolvedHomeScore + resolvedAwayScore) < (exH + exA)) {
+                    resolvedHomeScore = exH;
+                    resolvedAwayScore = exA;
+                }
+            }
+
             const updateFields = {
                 league_slug: targetSlug,
                 'status.state': finalState,
@@ -4160,12 +4238,38 @@ async function syncLiveScoreboards() {
                 'status.period': ev.status?.period || (isCompletedMatch ? 2 : 1),
                 'status.completed': isCompletedMatch,
                 'status.suspended': isUnstartedPast || (statusType.state === 'post' && /postp|canc/i.test(finalDetail)),
-                'home.score': isNaN(homeScore) ? (existingMatch?.home?.score ?? 0) : homeScore,
-                'away.score': isNaN(awayScore) ? (existingMatch?.away?.score ?? 0) : awayScore,
-                'home.winner': isCompletedMatch ? (homeScore > awayScore) : (homeComp.winner === true),
-                'away.winner': isCompletedMatch ? (awayScore > homeScore) : (awayComp.winner === true),
+                'home.score': resolvedHomeScore,
+                'away.score': resolvedAwayScore,
+                'home.winner': isCompletedMatch ? (resolvedHomeScore > resolvedAwayScore) : (homeComp.winner === true),
+                'away.winner': isCompletedMatch ? (resolvedAwayScore > resolvedHomeScore) : (awayComp.winner === true),
                 'last_synced_at': now
             };
+
+            if ((finalState === 'in' || (isCompletedMatch && !isUnstartedPast)) && !updateFields['status.suspended']) {
+                sbBoardPatchUpdates.push({
+                    id: existingMatch?.source?.event_id || String(ev.id),
+                    uid: existingMatch?.source?.uid || ev.uid || String(ev.id),
+                    league_slug: existingMatch?.league_slug || targetSlug,
+                    source: {
+                        event_id: existingMatch?.source?.event_id || String(ev.id),
+                        espn_id: String(ev.id),
+                        ...(existingMatch?.source?.livescore_id ? { livescore_id: existingMatch.source.livescore_id } : {})
+                    },
+                    status: {
+                        state: finalState,
+                        name: updateFields['status.name'],
+                        description: updateFields['status.description'],
+                        detail: updateFields['status.detail'],
+                        short_detail: updateFields['status.short_detail'],
+                        clock: updateFields['status.clock'],
+                        completed: isCompletedMatch,
+                        isLive: finalState === 'in'
+                    },
+                    home: { name: homeCompName, displayName: homeCompName, score: resolvedHomeScore },
+                    away: { name: awayCompName, displayName: awayCompName, score: resolvedAwayScore },
+                    _authoritative: isCompletedMatch
+                });
+            }
 
             if (existingMatch) {
                 sbMatchOps.push({
@@ -4268,6 +4372,11 @@ async function syncLiveScoreboards() {
 
         if (sbMatchOps.length > 0) {
             await SoccerMatch.bulkWrite(sbMatchOps, { ordered: false }).catch(e => console.warn('[LiveSync] bulkWrite scoreboard notice:', e.message));
+        }
+        if (sbBoardPatchUpdates.length > 0) {
+            try {
+                dailyBoardCache.patchMatchesInBoards(sbBoardPatchUpdates, { authoritative: true });
+            } catch (_) {}
         }
 
         // Auto-finalize any in-play matches that have concluded (started > 180 minutes ago)
