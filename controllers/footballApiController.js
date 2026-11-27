@@ -71,15 +71,20 @@ async function fetchOnDemandDateMatches(dateKey) {
                     parseInt(dateKey.slice(6, 8), 10),
                     12, 0
                 ));
+                let hasParsedEsd = false;
                 if (ev.Esd && String(ev.Esd).length >= 12) {
                     const s = String(ev.Esd);
-                    matchDate = new Date(Date.UTC(
+                    const parsed = new Date(Date.UTC(
                         parseInt(s.slice(0, 4), 10),
                         parseInt(s.slice(4, 6), 10) - 1,
                         parseInt(s.slice(6, 8), 10),
                         parseInt(s.slice(8, 10), 10),
                         parseInt(s.slice(10, 12), 10)
                     ));
+                    if (!isNaN(parsed.getTime())) {
+                        matchDate = parsed;
+                        hasParsedEsd = true;
+                    }
                 }
                 const rawClock = String(ev.Eps || '').trim();
                 const isFinished = rawClock === 'FT' || rawClock === 'AET' || rawClock === 'AP';
@@ -87,6 +92,17 @@ async function fetchOnDemandDateMatches(dateKey) {
                 const isNotStarted = !rawClock || rawClock === 'NS' || rawClock === 'Upcoming' || rawClock.includes(':') || ev.Epr === 0;
                 const isLive = !isFinished && !isPostp && !isNotStarted;
                 const state = isFinished || isPostp ? 'post' : (isLive ? 'in' : 'pre');
+                const actualDateKey = hasParsedEsd ? formatDateKey(matchDate) : dateKey;
+                const candidateStatus = {
+                    state,
+                    detail: isPostp ? 'Postp.' : (isFinished ? rawClock : (isLive ? rawClock : 'Scheduled')),
+                    clock: isLive || isFinished ? rawClock : '',
+                    completed: isFinished || isPostp,
+                    isLive
+                };
+                if (!doesMatchBelongToDate({ date: matchDate, scoreboard_date: actualDateKey, status: candidateStatus }, dateKey, { isToday: dateKey === parseDateParam('today') })) {
+                    continue;
+                }
                 const hScore = (ev.Tr1 !== undefined && ev.Tr1 !== '') ? Number(ev.Tr1) : null;
                 const aScore = (ev.Tr2 !== undefined && ev.Tr2 !== '') ? Number(ev.Tr2) : null;
 
@@ -102,14 +118,8 @@ async function fetchOnDemandDateMatches(dateKey) {
                     name: `${h.Nm || 'Home'} vs ${a.Nm || 'Away'}`,
                     short_name: `${h.Abr || h.Nm || 'HOM'} vs ${a.Abr || a.Nm || 'AWY'}`,
                     date: matchDate,
-                    scoreboard_date: dateKey,
-                    status: {
-                        state,
-                        detail: isPostp ? 'Postp.' : (isFinished ? rawClock : (isLive ? rawClock : 'Scheduled')),
-                        clock: isLive || isFinished ? rawClock : '',
-                        completed: isFinished || isPostp,
-                        isLive
-                    },
+                    scoreboard_date: actualDateKey,
+                    status: candidateStatus,
                     home: {
                         source_id: String(h.ID || ''),
                         name: h.Nm || 'Home',
@@ -277,6 +287,48 @@ function parseDateParam(val) {
         return clean;
     }
     return formatDateKey(now);
+}
+
+function getMatchUtcDateKey(match) {
+    if (!match) return '';
+    if (match.date) {
+        const d = match.date instanceof Date ? match.date : new Date(match.date);
+        if (!isNaN(d.getTime())) {
+            return formatDateKey(d);
+        }
+    }
+    const rawSb = String(match.scoreboardDate || match.scoreboard_date || '').replace(/[^0-9]/g, '').slice(0, 8);
+    return rawSb.length === 8 ? rawSb : '';
+}
+
+function isActivelyLiveMatch(match, nowMs = Date.now()) {
+    if (!match) return false;
+    const st = match.status || {};
+    if (st.completed || st.state === 'post' || /^(FT|AET|AP|Final|Postp|Canc|Abd)/i.test(String(st.detail || st.clock || ''))) {
+        return false;
+    }
+    if (!(st.isLive || st.state === 'in')) return false;
+    if (match.date) {
+        const ts = match.date instanceof Date ? match.date.getTime() : Date.parse(match.date);
+        if (Number.isFinite(ts)) {
+            const elapsedMs = nowMs - ts;
+            if (elapsedMs > 160 * 60 * 1000 || elapsedMs < -10 * 60 * 1000) return false;
+        }
+    }
+    return true;
+}
+
+function doesMatchBelongToDate(match, targetDateKey, { nowMs = Date.now(), isToday = false } = {}) {
+    const cleanTarget = String(targetDateKey || '').replace(/[^0-9]/g, '').slice(0, 8);
+    if (cleanTarget.length !== 8) return true;
+    const matchKey = getMatchUtcDateKey(match);
+    if (!matchKey) return true;
+    if (matchKey === cleanTarget) return true;
+    // Allow legitimate cross-midnight live in-play matches on today's board, never completed/old or future matches
+    if (isToday && isActivelyLiveMatch(match, nowMs)) {
+        return true;
+    }
+    return false;
 }
 
 function parseNumber(val, fallback, max = 200) {
@@ -616,10 +668,11 @@ async function fetchFreshWorldwideLiveMatches() {
     };
 
     // Parallel fetch from upstream LiveScore worldwide feed, ESPN scoreboard, and MongoDB
+    const todayUtcKey = parseDateParam('today');
     const [liveScoreData, espnScoreboard, espnTopBoards, dbLiveMatches, storedLeagues] = await Promise.all([
         fetchUpstreamJsonFast('https://prod-public-api.livescore.com/v1/api/app/live/soccer/0', 3200),
         fetchUpstreamJsonFast('https://site.api.espn.com/apis/site/v2/sports/soccer/all/scoreboard', 3200),
-        fetchEspnDayBoardExtras().catch(() => []),
+        fetchEspnDayBoardExtras(todayUtcKey).catch(() => []),
         SoccerMatch.find(liveFilter).maxTimeMS(2500).sort({ date: 1 }).lean().catch(() => []),
         SoccerLeague.find({ active: true }).maxTimeMS(2500).lean().catch(() => [])
     ]);
@@ -1073,12 +1126,11 @@ async function fetchFreshWorldwideLiveMatches() {
 
     // CRITICAL: day board / fixtures often know about in-play UCL etc. before LiveScore's /live endpoint does
     try {
-        const boardKey = dailyBoardCache.getWatDateKey();
-        const board = dailyBoardCache.getReadyBoard(boardKey, { status: 'all' });
+        const board = dailyBoardCache.getReadyBoard(parseDateParam('today'), { status: 'all' })
+            || dailyBoardCache.getReadyBoard(dailyBoardCache.getWatDateKey(), { status: 'all' });
         const boardMatches = board?.matches || [];
         for (const m of boardMatches) {
-            const st = m?.status || {};
-            if (st.state === 'in' || st.isLive) {
+            if (isActivelyLiveMatch(m)) {
                 candidateMatches.push(m);
             }
         }
@@ -1200,7 +1252,12 @@ async function fetchFreshWorldwideLiveMatches() {
         if (finishedMatches.length > 0) {
             dailyBoardCache.patchMatchesInBoards(finishedMatches, { authoritative: true });
         }
-        dailyBoardCache.patchLiveMatchesInBoard(dailyBoardCache.getWatDateKey(), dedupedLive);
+        const utcTodayKey = parseDateParam('today');
+        const watTodayKey = dailyBoardCache.getWatDateKey();
+        dailyBoardCache.patchLiveMatchesInBoard(utcTodayKey, dedupedLive);
+        if (watTodayKey && watTodayKey !== utcTodayKey) {
+            dailyBoardCache.patchLiveMatchesInBoard(watTodayKey, dedupedLive);
+        }
         // Also patch any cross-midnight live matches that belong to yesterday's cached board
         if (dedupedLive.length > 0) {
             dailyBoardCache.patchMatchesInBoards(dedupedLive);
@@ -1269,13 +1326,16 @@ function filterLiveMatchesResponse(matches, league, isFreeRestricted) {
  * Used when Mongo has no rows for the day so the board is never falsely empty.
  */
 
-/** ESPN scoreboard for one league — includes pre + in + post for the day */
-async function fetchEspnLeagueScoreboard(leagueSlug) {
+/** ESPN scoreboard for one league — includes pre + in + post strictly for the requested date */
+async function fetchEspnLeagueScoreboard(leagueSlug, dateKey = null) {
     const slug = String(leagueSlug || '').trim();
     if (!slug) return [];
-    const url = `https://site.api.espn.com/apis/site/v2/sports/soccer/${encodeURIComponent(slug)}/scoreboard`;
+    const cleanDateKey = dateKey ? String(dateKey).replace(/[^0-9]/g, '').slice(0, 8) : '';
+    const hasDateKey = cleanDateKey.length === 8;
+    const url = `https://site.api.espn.com/apis/site/v2/sports/soccer/${encodeURIComponent(slug)}/scoreboard${hasDateKey ? `?dates=${cleanDateKey}` : ''}`;
     const data = await fetchUpstreamJsonFast(url, 4500).catch(() => null);
     if (!data || !Array.isArray(data.events)) return [];
+    const isTargetToday = hasDateKey && cleanDateKey === parseDateParam('today');
     const out = [];
     for (const ev of data.events) {
         try {
@@ -1291,9 +1351,15 @@ async function fetchEspnLeagueScoreboard(leagueSlug) {
             const hName = homeComp.team?.displayName || homeComp.team?.name || 'Home';
             const aName = awayComp.team?.displayName || awayComp.team?.name || 'Away';
             const clock = ev.status?.displayClock || statusType.detail || statusType.shortDetail || '';
-            out.push({
+            const parsedDate = ev.date ? new Date(ev.date) : null;
+            const validDate = parsedDate && !isNaN(parsedDate.getTime()) ? parsedDate : null;
+            const sbDate = validDate ? formatDateKey(validDate) : (hasDateKey ? cleanDateKey : formatDateKey(new Date()));
+            const item = {
                 id: String(ev.id),
                 uid: ev.uid || `espn:${ev.id}`,
+                league_slug: slug,
+                scoreboard_date: sbDate,
+                scoreboardDate: sbDate,
                 league: {
                     slug,
                     name: data.leagues?.[0]?.name || slug,
@@ -1303,7 +1369,7 @@ async function fetchEspnLeagueScoreboard(leagueSlug) {
                     ) || (slug.startsWith('uefa.') ? 'Europe' : 'International'),
                     logo: data.leagues?.[0]?.logos?.[0]?.href || ''
                 },
-                date: ev.date ? new Date(ev.date) : new Date(),
+                date: validDate || new Date(),
                 status: {
                     state,
                     name: statusType.name || '',
@@ -1329,7 +1395,11 @@ async function fetchEspnLeagueScoreboard(leagueSlug) {
                     score: awayComp.score != null ? parseInt(awayComp.score, 10) : null
                 },
                 source: { provider: 'espn', event_id: String(ev.id), espn_id: String(ev.id) }
-            });
+            };
+            if (hasDateKey && !doesMatchBelongToDate(item, cleanDateKey, { isToday: isTargetToday })) {
+                continue;
+            }
+            out.push(item);
         } catch (_) {}
     }
     return out;
@@ -1342,8 +1412,9 @@ const ESPN_BOARD_LEAGUES = [
     'bra.1', 'arg.1', 'mex.1', 'usa.1', 'ksa.1'
 ];
 
-async function fetchEspnDayBoardExtras() {
-    const chunks = await Promise.all(ESPN_BOARD_LEAGUES.map(s => fetchEspnLeagueScoreboard(s).catch(() => [])));
+async function fetchEspnDayBoardExtras(dateKey = null) {
+    const targetKey = dateKey ? String(dateKey).replace(/[^0-9]/g, '').slice(0, 8) : parseDateParam('today');
+    const chunks = await Promise.all(ESPN_BOARD_LEAGUES.map(s => fetchEspnLeagueScoreboard(s, targetKey).catch(() => [])));
     return chunks.flat();
 }
 
@@ -1398,6 +1469,7 @@ async function fetchLiveScoreDayMatches(dateKey) {
             const aScore = ev.Tr2 != null && ev.Tr2 !== '' ? parseInt(ev.Tr2, 10) : null;
             // Esd is often YYYYMMDDHHmmss
             let matchDate = new Date();
+            let hasParsedEsd = false;
             if (ev.Esd) {
                 const s = String(ev.Esd);
                 if (/^\d{14}$/.test(s)) {
@@ -1405,9 +1477,13 @@ async function fetchLiveScoreDayMatches(dateKey) {
                         +s.slice(0, 4), +s.slice(4, 6) - 1, +s.slice(6, 8),
                         +s.slice(8, 10), +s.slice(10, 12), +s.slice(12, 14)
                     ));
+                    hasParsedEsd = true;
                 } else {
                     const d = new Date(ev.Esd);
-                    if (!isNaN(d.getTime())) matchDate = d;
+                    if (!isNaN(d.getTime())) {
+                        matchDate = d;
+                        hasParsedEsd = true;
+                    }
                 }
             }
 
@@ -1423,6 +1499,21 @@ async function fetchLiveScoreDayMatches(dateKey) {
             const clock = isInPlay
                 ? (rawClock === 'HT' ? 'HT' : (rawClock.includes("'") ? rawClock : `${rawClock}'`))
                 : (isFinished ? 'FT' : (isPostponed ? 'Postp.' : (isZeroOrSched ? 'NS' : rawClock)));
+
+            const actualDateKey = hasParsedEsd ? formatDateKey(matchDate) : key;
+            const statusObj = {
+                state,
+                name: isInPlay ? 'STATUS_IN_PROGRESS' : (isPostponed ? 'STATUS_POSTPONED' : (isFinished ? 'STATUS_FINAL' : 'STATUS_SCHEDULED')),
+                description: isInPlay ? 'In Progress' : (isPostponed ? 'Postponed' : (isFinished ? 'Full Time' : 'Scheduled')),
+                clock,
+                detail: clock,
+                isLive: isInPlay,
+                completed: isFinished || isPostponed,
+                suspended: isPostponed
+            };
+            if (!doesMatchBelongToDate({ date: matchDate, scoreboard_date: actualDateKey, status: statusObj }, key, { isToday: key === parseDateParam('today') })) {
+                continue;
+            }
 
             const formatLsImg = (img) => {
                 if (!img) return '';
@@ -1447,18 +1538,9 @@ async function fetchLiveScoreDayMatches(dateKey) {
                     logo: matchLg.logo || ''
                 },
                 league_slug: matchSlug,
-                scoreboard_date: key,
+                scoreboard_date: actualDateKey,
                 date: matchDate,
-                status: {
-                    state,
-                    name: isInPlay ? 'STATUS_IN_PROGRESS' : (isPostponed ? 'STATUS_POSTPONED' : (isFinished ? 'STATUS_FINAL' : 'STATUS_SCHEDULED')),
-                    description: isInPlay ? 'In Progress' : (isPostponed ? 'Postponed' : (isFinished ? 'Full Time' : 'Scheduled')),
-                    clock,
-                    detail: clock,
-                    isLive: isInPlay,
-                    completed: isFinished || isPostponed,
-                    suspended: isPostponed
-                },
+                status: statusObj,
                 home: {
                     source_id: String(h.ID || h.Id || ''),
                     name: hName,
@@ -1594,7 +1676,8 @@ router.get(['/live', '/livescores'], optionalApiKeyAuth, async (req, res) => {
         // Hard fallback: day board in-play rows (fixes empty /live while fixtures still show live clocks)
         if (matches.length === 0) {
             try {
-                const boardLive = dailyBoardCache.getReadyBoard(dailyBoardCache.getWatDateKey(), { status: 'live' });
+                const boardLive = dailyBoardCache.getReadyBoard(parseDateParam('today'), { status: 'live' })
+                    || dailyBoardCache.getReadyBoard(dailyBoardCache.getWatDateKey(), { status: 'live' });
                 if (boardLive?.matches?.length) {
                     matches = boardLive.matches.slice();
                 }
@@ -1659,7 +1742,8 @@ router.get(['/live', '/livescores'], optionalApiKeyAuth, async (req, res) => {
         // Zero-latency live cache headers
         res.set('Cache-Control', 'no-cache, no-store, must-revalidate');
         res.set('Pragma', 'no-cache');
-        const todayBoard = dailyBoardCache.getReadyBoard(dailyBoardCache.getWatDateKey(), { status: 'all' });
+        const todayBoard = dailyBoardCache.getReadyBoard(parseDateParam('today'), { status: 'all' })
+            || dailyBoardCache.getReadyBoard(dailyBoardCache.getWatDateKey(), { status: 'all' });
         const dailyFixtureCount = Array.isArray(todayBoard?.matches) ? todayBoard.matches.length : 0;
         return res.json({
             status: 'success',
@@ -2003,12 +2087,13 @@ const FIXTURES_CACHE_MAX_SIZE = 100;
  */
 router.get('/fixtures', optionalApiKeyAuth, async (req, res) => {
     if (!enforceLeaguePlan(req, res, req.query.league)) return;
-    const cacheKey = req.originalUrl || `/fixtures?${new URLSearchParams(req.query).toString()}`;
+    const todayUtcKey = parseDateParam('today');
+    const cacheKey = `${todayUtcKey}:${req.originalUrl || `/fixtures?${new URLSearchParams(req.query).toString()}`}`;
     const now = Date.now();
     const cached = fixturesResponseCache.get(cacheKey);
 
     // Stale-While-Revalidate TTL: 10s for today/live queries; 120s for past or future dates
-    const isQueryingToday = Boolean((req.query.date && parseDateParam(req.query.date) === parseDateParam('today')) || (!req.query.date && !req.query.from && !req.query.to));
+    const isQueryingToday = Boolean((req.query.date && parseDateParam(req.query.date) === todayUtcKey) || (!req.query.date && !req.query.from && !req.query.to));
     const isLiveFilter = req.query.status === 'live';
     const cacheTtlMs = (isQueryingToday || isLiveFilter) ? 10000 : 120000;
 
@@ -2016,36 +2101,41 @@ router.get('/fixtures', optionalApiKeyAuth, async (req, res) => {
     const canUseDailyBoard = !req.query.from && !req.query.to && !req.query.team &&
         (!req.query.league || req.query.league === 'all') &&
         !isFreePlanRestricted(req.apiKey);
-    const dailyBoardDateKey = req.query.date ? parseDateParam(req.query.date) : dailyBoardCache.getWatDateKey();
+    const dailyBoardDateKey = req.query.date ? parseDateParam(req.query.date) : todayUtcKey;
     if (canUseDailyBoard && dailyBoardDateKey) {
         const ready = dailyBoardCache.getReadyBoard(dailyBoardDateKey, { status: req.query.status || 'all' });
         if (ready && ready.matches && ready.matches.length > 0) {
-            if (ready.hasLive || isLiveFilter || isQueryingToday) {
-                res.set('Cache-Control', 'no-cache, no-store, must-revalidate');
-                res.set('Pragma', 'no-cache');
-            } else {
-                res.set('Cache-Control', 'public, max-age=30');
+            const safeReadyMatches = isLiveFilter
+                ? ready.matches.filter(m => isActivelyLiveMatch(m, now))
+                : ready.matches.filter(m => doesMatchBelongToDate(m, dailyBoardDateKey, { nowMs: now, isToday: isQueryingToday }));
+            if (safeReadyMatches.length > 0) {
+                if (ready.hasLive || isLiveFilter || isQueryingToday) {
+                    res.set('Cache-Control', 'no-cache, no-store, must-revalidate');
+                    res.set('Pragma', 'no-cache');
+                } else {
+                    res.set('Cache-Control', 'public, max-age=30');
+                }
+                const pageNum = Math.max(1, parseInt(req.query.page, 10) || 1);
+                const limitNum = Math.min(2000, Math.max(1, parseInt(req.query.limit, 10) || 500));
+                const startIdx = (pageNum - 1) * limitNum;
+                const pagedMatches = safeReadyMatches.slice(startIdx, startIdx + limitNum);
+                return res.json({
+                    status: 'success',
+                    meta: {
+                        totalMatches: safeReadyMatches.length,
+                        count: pagedMatches.length,
+                        page: pageNum,
+                        pageSize: limitNum,
+                        totalPages: Math.ceil(safeReadyMatches.length / limitNum) || 1,
+                        filters: { date: req.query.date, from: req.query.from, to: req.query.to, league: req.query.league || 'all', status: req.query.status || 'all', team: req.query.team },
+                        isAdFree: Boolean(req.isAdFree),
+                        cachedBoard: true,
+                        boardGeneratedAt: new Date(ready.generatedAt).toISOString()
+                    },
+                    matches: pagedMatches,
+                    fixtures: pagedMatches
+                });
             }
-            const pageNum = Math.max(1, parseInt(req.query.page, 10) || 1);
-            const limitNum = Math.min(2000, Math.max(1, parseInt(req.query.limit, 10) || 500));
-            const startIdx = (pageNum - 1) * limitNum;
-            const pagedMatches = ready.matches.slice(startIdx, startIdx + limitNum);
-            return res.json({
-                status: 'success',
-                meta: {
-                    totalMatches: ready.matches.length,
-                    count: pagedMatches.length,
-                    page: pageNum,
-                    pageSize: limitNum,
-                    totalPages: Math.ceil(ready.matches.length / limitNum) || 1,
-                    filters: { date: req.query.date, from: req.query.from, to: req.query.to, league: req.query.league || 'all', status: req.query.status || 'all', team: req.query.team },
-                    isAdFree: Boolean(req.isAdFree),
-                    cachedBoard: true,
-                    boardGeneratedAt: new Date(ready.generatedAt).toISOString()
-                },
-                matches: pagedMatches,
-                fixtures: pagedMatches
-            });
         }
     }
 
@@ -2113,25 +2203,19 @@ router.get('/fixtures', optionalApiKeyAuth, async (req, res) => {
 
         const filter = {};
 
-        // Date filtering
-        const sixHoursAgo = new Date(Date.now() - 6 * 3600 * 1000);
+        // Date filtering (strict UTC calendar day; never pull yesterday's completed games via server-local timezone)
+        const liveCutoff = new Date(Date.now() - 160 * 60 * 1000);
         const todayKey = parseDateParam('today');
         const dayStart = new Date();
         dayStart.setUTCHours(0, 0, 0, 0);
         const dayEnd = new Date();
         dayEnd.setUTCHours(23, 59, 59, 999);
-        // Also cover local-calendar edge near UTC midnight (WAT = UTC+1 etc.)
-        const localDayStart = new Date();
-        localDayStart.setHours(0, 0, 0, 0);
-        const localDayEnd = new Date();
-        localDayEnd.setHours(23, 59, 59, 999);
         if (isQueryingToday) {
             filter.$or = [
                 { scoreboard_date: todayKey },
                 { scoreboard_date: `${todayKey.slice(0,4)}-${todayKey.slice(4,6)}-${todayKey.slice(6,8)}` },
                 { date: { $gte: dayStart, $lte: dayEnd } },
-                { date: { $gte: localDayStart, $lte: localDayEnd } },
-                { 'status.state': 'in', date: { $gte: sixHoursAgo } }
+                { 'status.state': 'in', date: { $gte: liveCutoff } }
             ];
             // Games strictly belong to their calendar date; yesterday games do not bleed into today
         } else if (date) {
@@ -2190,7 +2274,7 @@ router.get('/fixtures', optionalApiKeyAuth, async (req, res) => {
         // Status filtering
         if (status === 'live') {
             filter['status.state'] = 'in';
-            filter.date = { $gte: sixHoursAgo };
+            filter.date = { $gte: liveCutoff };
             delete filter.scoreboard_date;
             delete filter.$or;
         } else if (status === 'scheduled') {
@@ -2199,10 +2283,10 @@ router.get('/fixtures', optionalApiKeyAuth, async (req, res) => {
             filter['status.state'] = { $in: ['post', 'final', 'completed'] };
         }
 
-        // Team search
+        // Team search (preserve existing date $or via $and so team queries stay date-scoped)
         if (team) {
             const teamRegex = new RegExp(String(team).trim(), 'i');
-            filter.$or = [
+            const teamOr = [
                 { 'home.name': teamRegex },
                 { 'home.display_name': teamRegex },
                 { 'away.name': teamRegex },
@@ -2210,6 +2294,12 @@ router.get('/fixtures', optionalApiKeyAuth, async (req, res) => {
                 { 'home.source_id': String(team) },
                 { 'away.source_id': String(team) }
             ];
+            if (filter.$or) {
+                filter.$and = [...(filter.$and || []), { $or: filter.$or }, { $or: teamOr }];
+                delete filter.$or;
+            } else {
+                filter.$or = teamOr;
+            }
         }
 
         const PRIORITY_GUARANTEED_LEAGUES = [
@@ -2280,7 +2370,7 @@ router.get('/fixtures', optionalApiKeyAuth, async (req, res) => {
         // If querying today, always merge real-time live in-play matches into the fixture results
         if (isQueryingToday && (status === 'all' || status === 'live')) {
             if (liveFeedMemoryCache.matches && liveFeedMemoryCache.matches.length > 0) {
-                let liveCandidates = liveFeedMemoryCache.matches;
+                let liveCandidates = liveFeedMemoryCache.matches.filter(m => isActivelyLiveMatch(m));
                 if (league && league !== 'all') {
                     const requestedSlug = String(league).toLowerCase();
                     liveCandidates = liveCandidates.filter(m => (m.league?.slug || m.league_slug) === requestedSlug);
@@ -2557,18 +2647,18 @@ router.get('/fixtures', optionalApiKeyAuth, async (req, res) => {
             }
         }
 
-        // ALWAYS merge LiveScore date scoreboard (additive). Mongo is often partial —
+        // ALWAYS merge LiveScore date scoreboard (additive) for single-day queries. Mongo is often partial —
         // previously this only ran when the board was empty, which dropped LASK, most NPFL, etc.
-        if (status === 'all' || status === 'live' || status === 'finished' || status === 'scheduled') {
+        if (!from && !to && (status === 'all' || status === 'live' || status === 'finished' || status === 'scheduled')) {
             try {
                 const targetDayKey = date ? parseDateParam(date) : parseDateParam('today');
                 const dayMatches = await fetchLiveScoreDayMatches(targetDayKey);
                 try {
-                    const espnExtras = await fetchEspnDayBoardExtras();
+                    const espnExtras = await fetchEspnDayBoardExtras(targetDayKey);
                     if (espnExtras.length) dayMatches.push(...espnExtras);
                 } catch (_) {}
                 for (const m of dayMatches) {
-                    if (status === 'live' && m.status?.state !== 'in') continue;
+                    if (status === 'live' && !isActivelyLiveMatch(m)) continue;
                     if (status === 'finished' && m.status?.state !== 'post') continue;
                     if (status === 'scheduled' && m.status?.state !== 'pre') continue;
                     const id = String(m.id || m.source?.event_id || '');
@@ -2650,11 +2740,12 @@ router.get('/fixtures', optionalApiKeyAuth, async (req, res) => {
             } catch (e) {
                 console.warn('LiveScore date merge failed:', e.message);
             }
-            if (isQueryingToday) {
+            if (isQueryingToday && (status === 'all' || status === 'live')) {
                 try {
                     const freshLive = await getFormattedLiveMatches(null, false);
                     const liveList = Array.isArray(freshLive) ? freshLive : (freshLive?.matches || []);
                     for (const m of liveList) {
+                        if (!isActivelyLiveMatch(m)) continue;
                         const id = String(m.id || m.source?.event_id || '');
                         const hRaw = m.home?.name || m.home?.displayName || '';
                         const aRaw = m.away?.name || m.away?.displayName || '';
@@ -2794,6 +2885,48 @@ router.get('/fixtures', optionalApiKeyAuth, async (req, res) => {
                 const effectiveSlug = String(dedupedMatches[i].league?.slug || dedupedMatches[i].league_slug || '').toLowerCase();
                 if (effectiveSlug !== requestedSlug) {
                     dedupedMatches.splice(i, 1);
+                }
+            }
+        }
+        // Re-enforce ?team= filter after additive LiveScore/ESPN/live merges so non-matching clubs never leak in
+        if (team) {
+            const teamStr = String(team).trim();
+            const teamRe = new RegExp(teamStr.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
+            for (let i = dedupedMatches.length - 1; i >= 0; i--) {
+                const m = dedupedMatches[i];
+                const matchesTeam =
+                    teamRe.test(String(m.home?.name || '')) ||
+                    teamRe.test(String(m.home?.displayName || m.home?.display_name || '')) ||
+                    teamRe.test(String(m.away?.name || '')) ||
+                    teamRe.test(String(m.away?.displayName || m.away?.display_name || '')) ||
+                    String(m.home?.id || m.home?.source_id || '') === teamStr ||
+                    String(m.away?.id || m.away?.source_id || '') === teamStr;
+                if (!matchesTeam) {
+                    dedupedMatches.splice(i, 1);
+                }
+            }
+        }
+        // Final strict calendar-date guard: never let previous-day (yesterday/older) or other-day matches leak into a single-day board
+        // (allows legitimate cross-midnight in-play live matches on today's board, never completed/old or scheduled matches)
+        const enforceSingleDate = (isQueryingToday || Boolean(date)) && !from && !to && status !== 'live';
+        if (status === 'live') {
+            const liveGuardNowMs = Date.now();
+            for (let i = dedupedMatches.length - 1; i >= 0; i--) {
+                if (!isActivelyLiveMatch(dedupedMatches[i], liveGuardNowMs)) {
+                    dedupedMatches.splice(i, 1);
+                }
+            }
+        } else if (enforceSingleDate) {
+            const strictDateKey = date ? parseDateParam(date) : todayKey;
+            const guardNowMs = Date.now();
+            for (let i = dedupedMatches.length - 1; i >= 0; i--) {
+                if (!doesMatchBelongToDate(dedupedMatches[i], strictDateKey, { nowMs: guardNowMs, isToday: isQueryingToday })) {
+                    dedupedMatches.splice(i, 1);
+                } else if (isQueryingToday) {
+                    const mKey = getMatchUtcDateKey(dedupedMatches[i]);
+                    if (mKey && mKey !== strictDateKey) {
+                        dedupedMatches[i]._crossDayLive = true;
+                    }
                 }
             }
         }
@@ -6391,3 +6524,8 @@ module.exports.recordRecentFinishedMatch = recordRecentFinishedMatch;
 module.exports.recentFinishedMatches = recentFinishedMatches;
 module.exports.fetchFreshWorldwideLiveMatches = fetchFreshWorldwideLiveMatches;
 module.exports.fetchLiveScoreDayMatches = fetchLiveScoreDayMatches;
+module.exports.fetchEspnLeagueScoreboard = fetchEspnLeagueScoreboard;
+module.exports.fetchEspnDayBoardExtras = fetchEspnDayBoardExtras;
+module.exports.getMatchUtcDateKey = getMatchUtcDateKey;
+module.exports.isActivelyLiveMatch = isActivelyLiveMatch;
+module.exports.doesMatchBelongToDate = doesMatchBelongToDate;

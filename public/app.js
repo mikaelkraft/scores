@@ -3020,6 +3020,49 @@
         await loadAllLeagueFixtures();
     }
 
+    function resolveExpectedUtcDateKey(dateParam, nowMs = Date.now()) {
+        const clean = String(dateParam || 'today').trim().toLowerCase();
+        const fmt = (d) => `${d.getUTCFullYear()}${String(d.getUTCMonth() + 1).padStart(2, '0')}${String(d.getUTCDate()).padStart(2, '0')}`;
+        if (clean === 'today') return fmt(new Date(nowMs));
+        if (clean === 'yesterday') return fmt(new Date(nowMs - 86400000));
+        if (clean === 'tomorrow') return fmt(new Date(nowMs + 86400000));
+        const digits = clean.replace(/[^0-9]/g, '').slice(0, 8);
+        return digits.length === 8 ? digits : fmt(new Date(nowMs));
+    }
+
+    function doesEventBelongToDateParam(ev, dateParam, nowMs = Date.now()) {
+        if (!ev) return false;
+        const expectedKey = resolveExpectedUtcDateKey(dateParam, nowMs);
+        if (!expectedKey || expectedKey.length !== 8) return true;
+        let matchKey = '';
+        if (ev.date) {
+            const d = new Date(ev.date);
+            if (!isNaN(d.getTime())) {
+                matchKey = `${d.getUTCFullYear()}${String(d.getUTCMonth() + 1).padStart(2, '0')}${String(d.getUTCDate()).padStart(2, '0')}`;
+            }
+        }
+        if (!matchKey) {
+            const rawSb = String(ev.scoreboardDate || ev.scoreboard_date || '').replace(/[^0-9]/g, '').slice(0, 8);
+            if (rawSb.length === 8) matchKey = rawSb;
+        }
+        if (!matchKey) return true;
+        if (matchKey === expectedKey) return true;
+        // Allow legitimate cross-midnight live in-play matches on today's board, never completed/old games
+        const isTodayReq = String(dateParam || 'today').trim().toLowerCase() === 'today';
+        if (isTodayReq) {
+            const st = ev.status || {};
+            const isCompleted = Boolean(st.completed || st.state === 'post' || /^(FT|AET|AP|Final|Postp|Canc|Abd)/i.test(String(st.detail || st.clock || '')));
+            const isLive = !isCompleted && Boolean(st.isLive || st.state === 'in');
+            if (isLive) {
+                const ts = ev.date ? Date.parse(ev.date) : NaN;
+                if (!Number.isFinite(ts) || ((nowMs - ts) <= 160 * 60 * 1000 && (nowMs - ts) >= -10 * 60 * 1000)) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
     let inFlightAllFixturesPromise = null;
     let fixturesFetchSeq = 0;
     async function loadAllLeagueFixtures({ background = false, favoritesOnly = false, initialLive = null } = {}) {
@@ -3107,6 +3150,12 @@
                 }
 
                 if (thisReqId !== fixturesFetchSeq) return;
+
+                // Strict client-side calendar-date guard: never render old/previous-day completed matches on today's board
+                if (!isFavorites && statusParam !== 'live') {
+                    const nowMs = Date.now();
+                    matches = matches.filter(m => doesEventBelongToDateParam(m, dateParam, nowMs));
+                }
 
                 if (!matches.length) {
                     renderAllLeaguesGrouped([]);

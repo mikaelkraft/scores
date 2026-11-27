@@ -175,20 +175,21 @@ function getReadyBoard(dateKey, { status = 'all', maxAgeMs = 12 * 60 * 60 * 1000
         }
     }
 
-    let filtered = entry.matches;
+    const activeMatches = entry.matches.filter((m) => !(m._crossDayLive && !isMatchLive(m)));
+    let filtered = activeMatches;
     if (status === 'live') {
-        filtered = entry.matches.filter(isMatchLive);
+        filtered = activeMatches.filter(isMatchLive);
     } else if (status === 'finished') {
-        filtered = entry.matches.filter(isMatchFinished);
+        filtered = activeMatches.filter(isMatchFinished);
     } else if (status === 'scheduled') {
-        filtered = entry.matches.filter((m) => !isMatchLive(m) && !isMatchFinished(m));
+        filtered = activeMatches.filter((m) => !isMatchLive(m) && !isMatchFinished(m));
     }
 
     return {
         dateKey: entry.dateKey,
         generatedAt: entry.generatedAt,
         lastPatchedAt: entry.lastPatchedAt,
-        hasLive: entry.matches.some(isMatchLive),
+        hasLive: activeMatches.some(isMatchLive),
         matches: filtered
     };
 }
@@ -288,9 +289,28 @@ function patchLiveMatchesInBoard(dateKey, liveMatches, { isFullSnapshot = true }
             entry.matches[existingIdx] = merged;
             patchedCount++;
         } else {
-            // Newly detected live match not yet in board: append and index
+            // Only append genuinely live in-play matches not yet in board (never completed/old, stale, future, or scheduled matches)
+            if (!isMatchLive(live) || isMatchFinished(live)) continue;
+            let crossDayLive = false;
+            if (live.date) {
+                const liveDateObj = live.date instanceof Date ? live.date : new Date(live.date);
+                if (!isNaN(liveDateObj.getTime())) {
+                    const elapsedMs = nowMs - liveDateObj.getTime();
+                    if (elapsedMs > 160 * 60 * 1000 || elapsedMs < -10 * 60 * 1000) continue;
+                    const liveUtcKey = `${liveDateObj.getUTCFullYear()}${String(liveDateObj.getUTCMonth() + 1).padStart(2, '0')}${String(liveDateObj.getUTCDate()).padStart(2, '0')}`;
+                    if (liveUtcKey !== key) {
+                        crossDayLive = true;
+                    }
+                }
+            }
             const idx = entry.matches.length;
-            const copy = { ...live, _missedLivePolls: 0, _autoFinalized: false, _lastSeenLiveAt: nowMs };
+            const copy = {
+                ...live,
+                _missedLivePolls: 0,
+                _autoFinalized: false,
+                _lastSeenLiveAt: nowMs,
+                ...(crossDayLive ? { _crossDayLive: true } : {})
+            };
             entry.matches.push(copy);
             for (const k of keys) {
                 if (!entry.indexByKey.has(k)) entry.indexByKey.set(k, idx);

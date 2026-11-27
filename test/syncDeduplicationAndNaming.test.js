@@ -225,8 +225,8 @@ test('Senior Champions League matches NEVER collide or overwrite Youth League ma
     const youthSportingSig = [normalizeTeamName('Shakhtar Donetsk U19'), normalizeTeamName('Sporting CP U19')].sort().join('_vs_') + '_' + dKey + '_' + youthSportingTier;
 
     assert.notEqual(seniorSportingSig, youthSportingSig);
-    assert.equal(seniorSportingSig, 'shakhtardonetsk_vs_sportingcp_20261103_m_s');
-    assert.equal(youthSportingSig, 'shakhtardonetsk_vs_sportingcp_20261103_m_y');
+    assert.equal(seniorSportingSig, 'shakhtardonetsk_vs_sporting_20261103_m_s');
+    assert.equal(youthSportingSig, 'shakhtardonetsk_vs_sporting_20261103_m_y');
 
     // 3. areTeamNamesMatching with competition context rejects cross-tier matches
     assert.equal(areTeamNamesMatching('Galatasaray', 'Galatasaray U19'), false);
