@@ -421,12 +421,15 @@ const server = app.listen(PORT, '0.0.0.0', () => {
     }, 2000);
 
     // Auto-sync live scores and world leagues in background (kickoff-aware + WAT UTC+1 daily schedule)
-    const { syncAllLeagues, syncLiveScoreboards, syncLiveScoreInPlay, syncInGameStats, cleanupStuckMatchesAndPurgeNcaa, pruneOldTelemetryStorage } = require('./services/soccerSyncService');
+    const { syncAllLeagues, syncLiveScoreboards, syncLiveScoreInPlay, syncInGameStats, cleanupStuckMatchesAndPurgeNcaa, pruneOldTelemetryStorage, refreshDynamicLeagueRostersFromDb } = require('./services/soccerSyncService');
     const dailyBoardCache = require('./services/dailyBoardCache');
 
     // Initial live scoreboard and in-play ingestion on boot (5 seconds after server is accepting traffic)
     setTimeout(async () => {
         try {
+            if (typeof refreshDynamicLeagueRostersFromDb === 'function') {
+                await refreshDynamicLeagueRostersFromDb().catch(() => {});
+            }
             await Promise.allSettled([
                 syncLiveScoreboards(),
                 syncLiveScoreInPlay()

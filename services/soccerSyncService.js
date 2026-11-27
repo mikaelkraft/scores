@@ -646,7 +646,7 @@ async function syncLeagueFromLiveScoreStages(leagueDef, stages, now = new Date()
             // Final gate: still on .1 with no known club → demote rather than drop
             const updatedSeniorSlug = String(eventSlug || '').toLowerCase();
             const stillSeniorTop = /\.[1]$/.test(updatedSeniorSlug) && !updatedSeniorSlug.includes('.w.') && !updatedSeniorSlug.includes('youth') && !updatedSeniorSlug.includes('u19') && !updatedSeniorSlug.includes('u21');
-            if (stillSeniorTop && TOP_FLIGHT_CLUBS[updatedSeniorSlug] && !hasTopFlightClub(updatedSeniorSlug, homeName, awayName)) {
+            if (stillSeniorTop && hasTopFlightRoster(updatedSeniorSlug) && !hasTopFlightClub(updatedSeniorSlug, homeName, awayName)) {
                 eventSlug = demoteToJuniorOrLowerTier(eventSlug, homeName, awayName, leagueName);
             }
             const homeScore = parseInt(ev.Tr1 || 0, 10);
@@ -869,6 +869,7 @@ async function syncLiveScoreStandingsForLeague(slug, now = new Date()) {
             { upsert: true }
         );
 
+        updateDynamicLeagueRoster(slug, normalizedEntries);
         return normalizedEntries.length;
     } catch (err) {
         console.warn(`[LiveSync] Failed LiveScore standings sync for ${slug}:`, err.message);
@@ -947,6 +948,7 @@ async function syncEspnStandingsForLeague(slug, now = new Date()) {
             },
             { upsert: true }
         );
+        updateDynamicLeagueRoster(slug, normalizedEntries);
         return normalizedEntries.length;
     } catch (err) {
         console.warn(`ESPN standings sync failed for ${slug}:`, err.message);
@@ -972,6 +974,7 @@ async function ensureFreshStandings(slug, maxAgeMs = 4 * 60 * 60 * 1000) {
 
         const age = existing?.last_synced_at ? (now - new Date(existing.last_synced_at)) : Infinity;
         if (existing && age < maxAgeMs && (existing.entries || []).length >= 8) {
+            updateDynamicLeagueRoster(slug, existing.entries);
             return existing.entries.length;
         }
 
@@ -1139,6 +1142,7 @@ async function syncLeague(leagueDef) {
                 const standData = await fetchJson(standingsUrl);
                 const children = standData.children || [];
                 const seasonYear = Number(season.year) || 2026;
+                const espnStandingEntries = [];
 
                 for (let idx = 0; idx < children.length; idx++) {
                     const grp = children[idx];
@@ -1188,7 +1192,11 @@ async function syncLeague(leagueDef) {
                         },
                         { upsert: true }
                     );
+                    espnStandingEntries.push(...normalizedEntries);
                     standingCount++;
+                }
+                if (espnStandingEntries.length > 0) {
+                    updateDynamicLeagueRoster(slug, espnStandingEntries);
                 }
             } catch (stErr) {
                 console.warn(`[LiveSync] Standings notice for ${slug}:`, stErr.message);
@@ -1372,8 +1380,32 @@ const TEAM_NAME_ALIASES = {
     'atletico madrid': 'atletico madrid',
     'atlético de madrid': 'atletico madrid',
     'man united': 'manchester united',
+    'man utd': 'manchester united',
     'manchester utd': 'manchester united',
     'man city': 'manchester city',
+    'nottm forest': 'nottingham forest',
+    'nottmforest': 'nottingham forest',
+    "nott'm forest": 'nottingham forest',
+    'wolverhampton wanderers': 'wolverhampton',
+    'wolves': 'wolverhampton',
+    'sheff utd': 'sheffield united',
+    'sheffutd': 'sheffield united',
+    'sheff wed': 'sheffield wednesday',
+    'sheffwed': 'sheffield wednesday',
+    'az alkmaar': 'az',
+    'azalkmaar': 'az',
+    'azalkmar': 'az',
+    'psv eindhoven': 'psv',
+    'psveindhoven': 'psv',
+    'nec nijmegen': 'nec',
+    'necnijmegen': 'nec',
+    'rkc waalwijk': 'rkc',
+    'rkcwaalwijk': 'rkc',
+    'rkcwalwijk': 'rkc',
+    'nac breda': 'nac',
+    'nacbreda': 'nac',
+    'stade rennais': 'rennes',
+    'staderennais': 'rennes',
     'spurs': 'tottenham',
     'tottenham hotspur': 'tottenham',
     'paris sg': 'psg',
@@ -1432,12 +1464,245 @@ const TOP_FLIGHT_CLUBS = {
     'fra.1': new Set(['psg','marseille','monaco','lyon','lille','nice','rennes','lens','strasbourg','nantes','montpellier','reims','toulouse','brest','angers','auxerre','le havre','saint etienne','st etienne','metz','clermont','lorient','troyes']),
     'por.1': new Set(['benfica','porto','sporting','braga','guimaraes','vitoria guimaraes','boavista','famalicao','moreirense','casa pia','estoril','arouca','rio ave','gil vicente','santa clara','nacional','tondela','chaves','vizela','portimonense','farense']),
     'ned.1': new Set(['ajax','psv','feyenoord','az','az alkmaar','twente','utrecht','heerenveen','groningen','sparta rotterdam','sparta','willem ii','nec','nijmegen','go ahead eagles','fortuna sittard','heracles','pec zwolle','zwolle','excelsior','volendam','rkc','waalwijk','almere']),
-    'tur.1': new Set(['galatasaray','fenerbahce','besiktas','trabzonspor','istanbul basaksehir','basaksehir','kasimpasa','sivasspor','alanyaspor','rizespor','caykur rizespor','antalyaspor','gaziantep','gaziantep fk','konyaspor','samsunspor','kayserispor','hatayspor','adana demirspor','goztepe','göztepe','bodrum fk','bodrum','eyupspor','eyüpspor','pendikspor','karagumruk','fatih karagumruk','istanbulspor','ankaragucu','ümraniyespor','umraniyespor','giresunspor']),
+    'tur.1': new Set(['galatasaray','fenerbahce','fenerbahçe','besiktas','beşiktaş','trabzonspor','istanbul basaksehir','basaksehir','başakşehir','kasimpasa','kasımpaşa','alanyaspor','rizespor','caykur rizespor','çaykur rizespor','antalyaspor','gaziantep','gaziantep fk','konyaspor','samsunspor','kayserispor','goztepe','göztepe','eyupspor','eyüpspor','karagumruk','fatih karagumruk','fatih karagümrük','kocaelispor','genclerbirligi','gençlerbirliği']),
     'bih.1': new Set(['zrinjski','zrinjski mostar','borac','borac banja luka','sarajevo','fk sarajevo','velez','velez mostar','zeljeznicar','siroki brijeg','posusje','sloga doboj','sloga','igman konjic','igman','radnik bijeljina','radnik','gosk gabela','gosk','sloboda tuzla','sloboda','tuzla city']),
     'aut.1': new Set(['salzburg','red bull salzburg','sturm graz','lask','lask linz','rapid wien','rapid vienna','austria wien','austria vienna','wolfsberger ac','wac','tsv hartberg','hartberg','austria klagenfurt','blau-weiss linz','blau weiss linz','bw linz','altach','scr altach','rheindorf altach','wsg tirol','tirol','grazer ak','gak','austria lustenau','sv ried','ried','admira wacker']),
     'kvx.1': new Set(['ballkani','fc ballkani','drita','fc drita','prishtina','fc prishtina','llapi','kf llapi','gjilani','sc gjilani','ferizaj','dukagjini','malisheva','suhareka','fushe kosova','fushë kosova','trepca 89','trepça 89']),
     'mex.1': new Set(['america','club america','chivas','guadalajara','cruz azul','pumas','pumas unam','unam','tigres','tigres uanl','monterrey','rayados','toluca','pachuca','santos laguna','santos','leon','club leon','atlas','necaxa','queretaro','tijuana','xolos','juarez','fc juarez','mazatlan','puebla','atletico san luis','san luis'])
 };
+
+/**
+ * Dynamic, standings-backed roster registry: Map<league_slug, Set<normalizedClubName>>.
+ * Automatically populated whenever standings are synced or hydrated from MongoDB so
+ * promoted and relegated clubs across leagues are classified accurately across seasons
+ * without waiting for manual edits to TOP_FLIGHT_CLUBS.
+ */
+const DYNAMIC_LEAGUE_CLUBS = new Map();
+
+function isReserveOrFeederClubName(rawName = '') {
+    const s = String(rawName || '').trim();
+    if (!s) return false;
+    return isReserveOrBTeamName(s) || /^jong\s+/i.test(s) || /\b(next\s+gen|futuro|b\s+team)\b/i.test(s);
+}
+
+function normalizeRosterClubName(rawName = '') {
+    if (!rawName) return '';
+    const base = applyTeamAlias(normalizeTeamName(rawName));
+    return String(base || '').toLowerCase().replace(/[^a-z0-9]/g, '').trim();
+}
+
+function clubMatchesDynamicSet(rawName = '', clubSet = null) {
+    if (!clubSet || clubSet.size === 0) return false;
+    if (isReserveOrFeederClubName(rawName)) return false;
+    const norm = normalizeRosterClubName(rawName);
+    if (!norm) return false;
+    if (clubSet.has(norm)) return true;
+    for (const club of clubSet) {
+        if (!club) continue;
+        if (norm === club) return true;
+        if (club.length >= 4 && norm.length >= 4 && (norm.includes(club) || club.includes(norm))) {
+            return true;
+        }
+    }
+    return false;
+}
+
+/**
+ * Update the in-memory dynamic roster for a league slug from an array of club names
+ * or standing entry objects.
+ */
+function updateDynamicLeagueRoster(leagueSlug, clubNames = []) {
+    const slug = String(leagueSlug || '').trim().toLowerCase();
+    if (!slug) return 0;
+    const list = Array.isArray(clubNames) ? clubNames : Array.from(clubNames || []);
+    const excludeReserveTeams = /\.(?:1|2|3|4|5|lower)$/.test(slug);
+    const nextSet = new Set();
+    for (const item of list) {
+        const raw = typeof item === 'string'
+            ? item
+            : (item?.club?.display_name || item?.display_name || item?.name || '');
+        if (excludeReserveTeams && isReserveOrFeederClubName(raw)) continue;
+        const norm = normalizeRosterClubName(raw);
+        if (norm) nextSet.add(norm);
+    }
+    if (nextSet.size === 0) return 0;
+    DYNAMIC_LEAGUE_CLUBS.set(slug, nextSet);
+    return nextSet.size;
+}
+
+/**
+ * Hydrate DYNAMIC_LEAGUE_CLUBS from the latest season_year SoccerStanding documents in MongoDB.
+ */
+async function refreshDynamicLeagueRostersFromDb() {
+    try {
+        const docs = await SoccerStanding.find({ 'entries.0': { $exists: true } })
+            .select('league_slug season_year group_id entries.club.display_name last_synced_at')
+            .sort({ season_year: -1, last_synced_at: -1 })
+            .lean();
+        if (!Array.isArray(docs) || docs.length === 0) return 0;
+
+        const bySlug = new Map();
+        for (const doc of docs) {
+            const slug = String(doc?.league_slug || '').trim().toLowerCase();
+            if (!slug || !Array.isArray(doc.entries) || doc.entries.length === 0) continue;
+            const year = Number(doc.season_year) || 0;
+            const existing = bySlug.get(slug);
+            if (!existing) {
+                bySlug.set(slug, {
+                    seasonYear: year,
+                    hasOverall: doc.group_id === 'overall',
+                    names: doc.entries.map(e => e?.club?.display_name).filter(Boolean)
+                });
+            } else if (year === existing.seasonYear) {
+                if (doc.group_id === 'overall' && !existing.hasOverall) {
+                    existing.hasOverall = true;
+                    existing.names = doc.entries.map(e => e?.club?.display_name).filter(Boolean);
+                } else if (!existing.hasOverall && doc.group_id !== 'overall') {
+                    for (const e of doc.entries) {
+                        if (e?.club?.display_name) existing.names.push(e.club.display_name);
+                    }
+                }
+            }
+        }
+
+        let updatedLeagues = 0;
+        for (const [slug, info] of bySlug.entries()) {
+            if (info.names.length >= 6 && updateDynamicLeagueRoster(slug, info.names) > 0) {
+                updatedLeagues++;
+            }
+        }
+        return updatedLeagues;
+    } catch (err) {
+        console.warn('[DynamicRoster] Failed to refresh league rosters from DB:', err.message);
+        return 0;
+    }
+}
+
+function hasTopFlightRoster(slug = '') {
+    const sLower = String(slug || '').trim().toLowerCase();
+    if (!sLower) return false;
+    if (TOP_FLIGHT_CLUBS[sLower]) return true;
+    const liveTop = DYNAMIC_LEAGUE_CLUBS.get(sLower);
+    if (liveTop && liveTop.size >= 10) return true;
+    if (/\.1$/.test(sLower) && !sLower.includes('.w.')) {
+        const prefix = sLower.replace(/\.1$/, '');
+        const d2 = DYNAMIC_LEAGUE_CLUBS.get(`${prefix}.2`);
+        const d3 = DYNAMIC_LEAGUE_CLUBS.get(`${prefix}.3`);
+        if ((d2 && d2.size > 0) || (d3 && d3.size > 0)) return true;
+    }
+    return false;
+}
+
+/**
+ * If a non-cup .1 match contains a club known to be in that country's .2 or .3 division
+ * (from dynamic standings or static lower-tier lists) and both clubs are NOT confirmed
+ * in the live .1 standings table, return that lower-tier slug (e.g. 'eng.2', 'tur.2').
+ */
+function findLowerTierSlugForTopFlight(topSlug = '', homeName = '', awayName = '') {
+    const sLower = String(topSlug || '').trim().toLowerCase();
+    if (!sLower || !/\.1$/.test(sLower) || sLower.includes('.w.')) return null;
+
+    const liveTop = DYNAMIC_LEAGUE_CLUBS.get(sLower);
+    const hasLiveTop = Boolean(liveTop && liveTop.size >= 10);
+    const homeInLiveTop = hasLiveTop ? clubMatchesDynamicSet(homeName, liveTop) : false;
+    const awayInLiveTop = hasLiveTop ? clubMatchesDynamicSet(awayName, liveTop) : false;
+
+    // If BOTH clubs are confirmed in the live current-season top-flight table, never demote
+    // (protects newly promoted clubs while a stale .2 table still contains them).
+    if (homeInLiveTop && awayInLiveTop) return null;
+
+    const prefix = sLower.replace(/\.1$/, '');
+    for (const tierSlug of [`${prefix}.2`, `${prefix}.3`]) {
+        const tierSet = DYNAMIC_LEAGUE_CLUBS.get(tierSlug);
+        if (tierSet && tierSet.size > 0) {
+            const homeInTier = !homeInLiveTop && clubMatchesDynamicSet(homeName, tierSet);
+            const awayInTier = !awayInLiveTop && clubMatchesDynamicSet(awayName, tierSet);
+            if (homeInTier || awayInTier) {
+                return tierSlug;
+            }
+        }
+    }
+
+    // Static Turkish TFF 1. Lig fallback (only for clubs not confirmed in live tur.1;
+    // TFF 2. Lig clubs demote to tur.lower here and upgrade to tur.3 via inferCountryFromTeamNames)
+    if (sLower === 'tur.1') {
+        const homeInStatic2 = !homeInLiveTop && matchesTurkishClubList(homeName, _FOLDED_TURKISH_SECOND_TIER);
+        const awayInStatic2 = !awayInLiveTop && matchesTurkishClubList(awayName, _FOLDED_TURKISH_SECOND_TIER);
+        if (homeInStatic2 || awayInStatic2) return 'tur.2';
+    }
+
+    return null;
+}
+
+/** Explicit Turkish TFF 1. Lig (tur.2) and TFF 2. Lig (tur.3) club lists */
+const TURKISH_SECOND_TIER_CLUBS = new Set([
+    'sariyer', 'sarıyer', 'istanbulspor', 'pendikspor', 'ankaragucu', 'mke ankaragucu',
+    'umraniyespor', 'ümraniyespor', 'sakaryaspor', 'bandirmaspor', 'bandırmaspor',
+    'boluspor', 'erzurumspor', 'keciorengucu', 'keçiörengücü', 'manisa', 'manisa fk',
+    'corum', 'çorum', 'corum fk', 'çorum fk', 'igdir', 'ığdır', 'igdir fk', 'ığdır fk',
+    'amed', 'amedspor', 'amed sk', 'esenler erokspor', 'erokspor', 'sanliurfaspor',
+    'şanlıurfaspor', 'adanaspor', 'yeni malatyaspor', 'adana demirspor', 'hatayspor',
+    'sivasspor', 'bodrum', 'bodrum fk', 'bodrumspor', 'serik belediyespor', 'vanspor'
+]);
+
+const TURKISH_THIRD_TIER_CLUBS = new Set([
+    'iskenderunspor', 'erbaaspor', 'mus spor', 'muşspor', 'fethiyespor',
+    'giresunspor', 'altay', 'bursaspor', 'altinordu', 'altınordu', 'menemen',
+    'kastamonuspor', 'batman petrolspor', 'elazigspor', 'elazığspor', 'karacabey',
+    '68 aksaray', 'beyoglu yeni carsi', '1461 trabzon', 'ankara demirspor',
+    'somaspor', 'karaman fk', 'bucaspor 1928', 'inegolspor', 'arnavutkoy',
+    'kırklarelispor', 'kirklarelispor', 'ispata 32', 'isparta 32', 'adana 01'
+]);
+
+function foldTurkishText(str = '') {
+    return String(str || '')
+        .replace(/İ/g, 'i')
+        .replace(/I/g, 'i')
+        .replace(/ı/g, 'i')
+        .replace(/[şŞ]/g, 's')
+        .replace(/[ğĞ]/g, 'g')
+        .replace(/[çÇ]/g, 'c')
+        .replace(/[üÜ]/g, 'u')
+        .replace(/[öÖ]/g, 'o')
+        .toLowerCase()
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .replace(/[^a-z0-9]+/g, ' ')
+        .trim();
+}
+
+const _FOLDED_TURKISH_SECOND_TIER = Array.from(new Set(Array.from(TURKISH_SECOND_TIER_CLUBS).map(foldTurkishText).filter(Boolean)));
+const _FOLDED_TURKISH_THIRD_TIER = Array.from(new Set(Array.from(TURKISH_THIRD_TIER_CLUBS).map(foldTurkishText).filter(Boolean)));
+
+function matchesTurkishClubList(rawName = '', foldedList = []) {
+    const folded = foldTurkishText(rawName);
+    if (!folded) return false;
+    const compact = folded.replace(/\s+/g, '');
+    for (const club of foldedList) {
+        const clubCompact = club.replace(/\s+/g, '');
+        if (folded === club || compact === clubCompact) return true;
+        if (club.length >= 5 && (folded.includes(club) || compact.includes(clubCompact))) return true;
+    }
+    return false;
+}
+
+function resolveTurkishTierFromTeams(homeName = '', awayName = '', currentSlug = '') {
+    const s = String(currentSlug || '').trim().toLowerCase();
+    // Never override cup, women, youth, continental, or other established country leagues
+    if (s && s !== 'tur.1' && s !== 'tur.lower' && s !== 'tur' && s !== 'other') return currentSlug;
+    // If live tur.1 standings confirm BOTH clubs are currently in Süper Lig, never demote via stale static lists
+    const liveTur1 = DYNAMIC_LEAGUE_CLUBS.get('tur.1');
+    if (s === 'tur.1' && liveTur1 && liveTur1.size >= 10 && clubMatchesDynamicSet(homeName, liveTur1) && clubMatchesDynamicSet(awayName, liveTur1)) {
+        return currentSlug;
+    }
+    if (matchesTurkishClubList(homeName, _FOLDED_TURKISH_THIRD_TIER) || matchesTurkishClubList(awayName, _FOLDED_TURKISH_THIRD_TIER)) {
+        return 'tur.3';
+    }
+    if (matchesTurkishClubList(homeName, _FOLDED_TURKISH_SECOND_TIER) || matchesTurkishClubList(awayName, _FOLDED_TURKISH_SECOND_TIER)) {
+        return 'tur.2';
+    }
+    return currentSlug;
+}
 
 function cleanCompetitionName(name) {
     if (!name) return '';
@@ -1458,26 +1723,56 @@ function applyTeamAlias(normalized = '') {
     return n;
 }
 
-/** Returns true if at least one side looks like a known top-flight club for this slug */
+/** Returns true if the match belongs in the top-flight division for this slug */
 function hasTopFlightClub(slug, homeName, awayName) {
-    const list = TOP_FLIGHT_CLUBS[String(slug || '').toLowerCase()];
-    if (!list) return true; // unknown leagues: don't filter
+    const sLower = String(slug || '').trim().toLowerCase();
+    const list = TOP_FLIGHT_CLUBS[sLower];
+    const liveTop = DYNAMIC_LEAGUE_CLUBS.get(sLower);
+    const hasLiveTop = Boolean(liveTop && liveTop.size >= 10);
+
+    // If a non-cup .1 match contains a club known to be in .2/.3 (dynamic or static)
+    // and both clubs are not confirmed in live .1, reject from top flight.
+    if (findLowerTierSlugForTopFlight(sLower, homeName, awayName)) {
+        return false;
+    }
+
+    // Authoritative live current-season standings table (size >= 10):
+    // newly promoted clubs are accepted and relegated clubs dropped from the table are excluded.
+    // When a complete domestic .1 table (size >= 12) is loaded, require BOTH teams to belong
+    // to the live .1 table so a mis-tagged lower-tier or cup match never leaks into .1.
+    if (hasLiveTop) {
+        const homeInLive = clubMatchesDynamicSet(homeName, liveTop);
+        const awayInLive = clubMatchesDynamicSet(awayName, liveTop);
+        if (liveTop.size >= 12 && /\.1$/.test(sLower) && !sLower.includes('.w.')) {
+            return homeInLive && awayInLive;
+        }
+        return homeInLive || awayInLive;
+    }
+
+    if (!list) return true; // unknown leagues without dynamic roster: don't filter
     const h = applyTeamAlias(normalizeTeamName(homeName));
     const a = applyTeamAlias(normalizeTeamName(awayName));
-    const sLower = String(slug || '').toLowerCase();
-    const hit = (name) => {
+    const hit = (name, rawName) => {
         if (!name) return false;
         // Specific lower-division clubs that share substrings/cities with top flight clubs must not match
         if (sLower === 'bih.1' && (name.includes('slavija') || name.includes('zvijezda 09') || name.includes('potkozarje'))) return false;
-        if (sLower === 'tur.1' && (name.includes('iskenderun') || name.includes('erbaaspor') || name.includes('mus spor') || name.includes('fethiye'))) return false;
+        if (sLower === 'tur.1' && (
+            name.includes('iskenderun') || name.includes('erbaaspor') || name.includes('mus spor') || name.includes('fethiye') ||
+            matchesTurkishClubList(rawName, _FOLDED_TURKISH_SECOND_TIER) ||
+            matchesTurkishClubList(rawName, _FOLDED_TURKISH_THIRD_TIER)
+        )) return false;
         if (sLower === 'aut.1' && (name.includes('liefering') || name.includes('stripfing') || name.includes('first vienna') || name.includes('fac wien'))) return false;
         if (list.has(name)) return true;
         for (const club of list) {
-            if (name.includes(club) || club.includes(name)) return true;
+            const clubCompact = club.replace(/\s+/g, '');
+            if (name === clubCompact || name.includes(club) || club.includes(name) ||
+                (clubCompact.length >= 4 && name.length >= 4 && (name.includes(clubCompact) || clubCompact.includes(name)))) {
+                return true;
+            }
         }
         return false;
     };
-    return hit(h) || hit(a);
+    return hit(h, homeName) || hit(a, awayName);
 }
 
 /** Demote .1 slug to .lower when neither side is a known first-division club */
@@ -1528,6 +1823,12 @@ const TEAM_COUNTRY_HINTS = [
 function inferCountryFromTeamNames(homeName = '', awayName = '', currentSlug = '') {
     const blob = `${homeName} ${awayName}`;
 
+    // Turkish TFF 1. Lig (tur.2) and TFF 2. Lig (tur.3) clubs must never stay in tur.1 or generic tur.lower
+    const turTier = resolveTurkishTierFromTeams(homeName, awayName, currentSlug);
+    if (turTier && turTier !== currentSlug) {
+        return turTier;
+    }
+
     // Japan Women's WE League clubs
     if (/inac kobe|cerezo osaka sakai|urawa reds ladies|tokyo verdy beleza|omiya ardija ventus|albirex niigata ladies|nagano parceiro w|elfen saitama|nojima stella|mynavi sendai|nadeshiko/i.test(blob)) {
         return 'jpn.w.1';
@@ -1564,7 +1865,7 @@ function inferCountryFromTeamNames(homeName = '', awayName = '', currentSlug = '
     if (current === best) return currentSlug;
     // Don't override UEFA/FIFA continental or established European leagues with foreign club hints
     if (/^(uefa|fifa|caf|afc|conmebol|concacaf)/i.test(String(currentSlug || ''))) return currentSlug;
-    if (TOP_FLIGHT_CLUBS[currentSlug] && hasTopFlightClub(currentSlug, homeName, awayName)) return currentSlug;
+    if (hasTopFlightRoster(currentSlug) && hasTopFlightClub(currentSlug, homeName, awayName)) return currentSlug;
     if ((best === 'mex' || best === 'slv') && /^(esp|eng|ita|ger|fra|por|ned|sco|bel|tur|aut|den|swe|nor|srb|bih|cro|gre|rus|ukr|pol|cui|sui)\.(?:2|3|4|lower)/i.test(String(currentSlug || ''))) return currentSlug;
     // Preserve tier if present
     const tier = (String(currentSlug || '').match(/\.(\w+)$/) || [])[1] || '1';
@@ -1581,14 +1882,23 @@ function inferCountryFromTeamNames(homeName = '', awayName = '', currentSlug = '
 
 function demoteIfNotTopFlight(slug, homeName, awayName, leagueName = '') {
     if (!slug || !/\.1$/.test(slug)) return slug;
-    if (!TOP_FLIGHT_CLUBS[slug]) return slug;
+    const sLower = String(slug).trim().toLowerCase();
+    if (sLower.includes('.w.')) return slug;
+    if (!hasTopFlightRoster(sLower)) return slug;
+
+    // Lower-tier roster match (.2 / .3 from live standings or static fallback) routes directly to that tier
+    const lowerTierSlug = findLowerTierSlugForTopFlight(sLower, homeName, awayName);
+    if (lowerTierSlug) {
+        return lowerTierSlug;
+    }
+
     // Explicit top-flight league title always keeps .1 if present
     if (/serie a\b|la\s*liga|laliga ea|premier league|\bpl\b|bundesliga|ligue 1|eredivisie|primeira liga/i.test(leagueName || '')) {
         // still require at least one known club — otherwise LiveScore mislabeled the stage
-        if (hasTopFlightClub(slug, homeName, awayName)) return slug;
+        if (hasTopFlightClub(sLower, homeName, awayName)) return slug;
         return slug.replace(/\.1$/, '.lower');
     }
-    if (hasTopFlightClub(slug, homeName, awayName)) return slug;
+    if (hasTopFlightClub(sLower, homeName, awayName)) return slug;
     return slug.replace(/\.1$/, '.lower');
 }
 
@@ -1988,13 +2298,13 @@ function resolveLeagueSlug(altGameNote = '', compDesc = '', uid = '') {
     if (country.includes('jordan') || text.includes('jor.1')) return 'jor.1';
     if (country.includes('iran') || text.includes('irn.1') || text.includes('persepolis') || text.includes('esteghlal')) return 'irn.1';
     if (country.includes('israel') || text.includes('isr.1')) return 'isr.1';
-    const isTurkey = country.includes('turkey') || country.includes('turkish') || country.includes('türkiye') || scd.includes('tur.');
-    if (isTurkey || (isNeutralCountry && (/\b(?:s[uü]per\s+lig|t[uü]rkiye\s+kupas[iı])\b/i.test(text) || text.includes('galatasaray') || text.includes('fenerbahce') || text.includes('besiktas')))) {
+    const isTurkey = country.includes('turkey') || country.includes('turkish') || country.includes('türkiye') || country.includes('turkiye') || scd.includes('tur.');
+    if (isTurkey || (isNeutralCountry && (/\b(?:s[uü]per\s+lig|t[uü]rkiye\s+kupas[iı]|trendyol\s*1|tff\s*[123])\b/i.test(text) || text.includes('galatasaray') || text.includes('fenerbahce') || text.includes('besiktas')))) {
         if (text.includes('turkiye kupasi') || text.includes('türkiye kupası') || text.includes('tur.cup') || text.includes('ziraat')) return 'tur.cup';
-        if (/(?:3rd|3\.)\s*lig/i.test(text) || text.includes('3.lig') || text.includes('tff 3') || text.includes('tur.4') || /\bgrup\s*[1-4]\b/i.test(text)) return 'tur.4';
-        if (/(?:2nd|2\.)\s*lig/i.test(text) || text.includes('2.lig') || text.includes('tff 2') || text.includes('tur.3') || text.includes('beyaz') || text.includes('kirmizi') || text.includes('kırmızı') || text.includes('white group') || text.includes('red group')) return 'tur.3';
-        if (/(?:1st|1\.)\s*lig/i.test(text) || text.includes('1.lig') || text.includes('tff 1') || text.includes('tur.2')) return 'tur.2';
-        if (text.includes('amateur') || text.includes('amator') || text.includes('amatör') || text.includes('bal\b') || text.includes('u19') || text.includes('u21')) return 'tur.lower';
+        if (/(?:3rd|3\.)\s*lig/i.test(text) || text.includes('3.lig') || text.includes('3. lig') || text.includes('tff 3') || text.includes('tur.4') || /\bgrup\s*[1-4]\b/i.test(text)) return 'tur.4';
+        if (/(?:2nd|2\.)\s*lig/i.test(text) || text.includes('2.lig') || text.includes('2. lig') || text.includes('tff 2') || text.includes('tur.3') || text.includes('beyaz') || text.includes('kirmizi') || text.includes('kırmızı') || text.includes('white group') || text.includes('red group')) return 'tur.3';
+        if (/(?:1st|1\.)\s*lig/i.test(text) || text.includes('1.lig') || text.includes('1. lig') || text.includes('trendyol 1') || text.includes('tff 1') || text.includes('first league') || text.includes('second division') || text.includes('tur.2')) return 'tur.2';
+        if (text.includes('amateur') || text.includes('amator') || text.includes('amatör') || /\bbal\b/i.test(text) || text.includes('u19') || text.includes('u21')) return 'tur.lower';
         return 'tur.1';
     }
 
@@ -3174,6 +3484,10 @@ async function cleanupStuckMatchesAndPurgeNcaa() {
     if (isCleanupSyncing) return;
     isCleanupSyncing = true;
     try {
+        // 0. Hydrate dynamic league rosters from latest standings so promotion/relegation
+        // classification is up to date before any match reclassification runs
+        await refreshDynamicLeagueRostersFromDb();
+
         // 1. Purge NCAA basketball and non-soccer records completely
         await SoccerMatch.deleteMany({
             $or: [
@@ -3404,6 +3718,58 @@ async function cleanupStuckMatchesAndPurgeNcaa() {
                     kind: 'club',
                     active: true,
                     sort_order: 149
+                }
+            },
+            { upsert: true }
+        ).catch(() => {});
+
+        // 4e-bis. Re-classify Turkish 1. Lig (tur.2) and 2. Lig (tur.3) matches mistakenly stored under Turkish Süper Lig ('tur.1') or 'tur.lower'
+        const misclassifiedTurkishMatches = await SoccerMatch.find({
+            league_slug: { $in: ['tur.1', 'tur.lower'] }
+        }).select('_id league_slug home.name away.name note').lean().catch(() => []);
+
+        const turkishReclassOps = [];
+        for (const m of misclassifiedTurkishMatches) {
+            const hName = m.home?.name || '';
+            const aName = m.away?.name || '';
+            let fixedSlug = demoteIfNotTopFlight(m.league_slug, hName, aName, m.note || '');
+            fixedSlug = inferCountryFromTeamNames(hName, aName, fixedSlug) || fixedSlug;
+            if (fixedSlug && fixedSlug !== m.league_slug) {
+                turkishReclassOps.push({
+                    updateOne: {
+                        filter: { _id: m._id },
+                        update: { $set: { league_slug: fixedSlug } }
+                    }
+                });
+            }
+        }
+        if (turkishReclassOps.length > 0) {
+            await SoccerMatch.bulkWrite(turkishReclassOps, { ordered: false }).catch(() => {});
+        }
+        await SoccerLeague.updateOne(
+            { slug: 'tur.2' },
+            {
+                $set: {
+                    name: 'Turkish 1. Lig',
+                    abbreviation: '1. Lig',
+                    country: 'Turkey',
+                    kind: 'club',
+                    active: true,
+                    sort_order: 151
+                }
+            },
+            { upsert: true }
+        ).catch(() => {});
+        await SoccerLeague.updateOne(
+            { slug: 'tur.3' },
+            {
+                $set: {
+                    name: 'Turkish 2. Lig',
+                    abbreviation: '2. Lig',
+                    country: 'Turkey',
+                    kind: 'club',
+                    active: true,
+                    sort_order: 152
                 }
             },
             { upsert: true }
@@ -3878,12 +4244,13 @@ async function syncLiveScoreInPlay() {
                 }
 
                 let matchSlug = targetSlug;
+                matchSlug = demoteIfNotTopFlight(matchSlug, homeName, awayName, leagueName) || matchSlug;
                 matchSlug = inferCountryFromTeamNames(homeName, awayName, matchSlug) || matchSlug;
 
                 // Keep senior top-flight & continental boards clean — no B/II/U19/U21 sides mixed in
                 const seniorSlug = String(matchSlug || '').toLowerCase();
                 if (isSeniorTopLeagueSlug(seniorSlug) && (isReserveOrBTeamName(homeName) || isReserveOrBTeamName(awayName))) {
-                    matchSlug = demoteToJuniorOrLowerTier(matchSlug, homeName, awayName);
+                    matchSlug = demoteToJuniorOrLowerTier(matchSlug, homeName, awayName, leagueName);
                 }
                 const homeScore = parseInt(ev.Tr1 || 0, 10);
                 const awayScore = parseInt(ev.Tr2 || 0, 10);
@@ -4251,6 +4618,8 @@ async function syncLiveScoreboards() {
 
             const homeCompName = homeComp.team?.displayName || homeComp.team?.name || '';
             const awayCompName = awayComp.team?.displayName || awayComp.team?.name || '';
+            targetSlug = demoteIfNotTopFlight(targetSlug, homeCompName, awayCompName, comp.altGameNote || '') || targetSlug;
+            targetSlug = inferCountryFromTeamNames(homeCompName, awayCompName, targetSlug) || targetSlug;
             const eventDate = ev.date ? new Date(ev.date) : now;
             const scoreboardDate = formatDateToScoreboard(eventDate);
 
@@ -4601,5 +4970,11 @@ module.exports = {
     getSyncHealthStatus,
     recordSyncRun,
     TOP_FLIGHT_CLUBS,
+    DYNAMIC_LEAGUE_CLUBS,
+    updateDynamicLeagueRoster,
+    refreshDynamicLeagueRostersFromDb,
+    TURKISH_SECOND_TIER_CLUBS,
+    TURKISH_THIRD_TIER_CLUBS,
+    resolveTurkishTierFromTeams,
     TARGET_LEAGUES
 };

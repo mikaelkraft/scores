@@ -37,7 +37,7 @@ async function fetchOnDemandDateMatches(dateKey) {
         return cached.matches;
     }
     try {
-        const { normalizeCountryName,  resolveLeagueSlug } = require('../services/soccerSyncService');
+        const { normalizeCountryName, resolveLeagueSlug, demoteIfNotTopFlight, inferCountryFromTeamNames, TARGET_LEAGUES } = require('../services/soccerSyncService');
         const ctrl = new AbortController();
         const timer = setTimeout(() => ctrl.abort(), 6500);
         const res = await fetch(`https://prod-public-api.livescore.com/v1/api/app/date/soccer/${dateKey}/0`, {
@@ -62,6 +62,9 @@ async function fetchOnDemandDateMatches(dateKey) {
                 if (!eid) continue;
                 const h = ev.T1?.[0] || {};
                 const a = ev.T2?.[0] || {};
+                let matchLeagueSlug = demoteIfNotTopFlight(leagueSlug, h.Nm || '', a.Nm || '', stageName) || leagueSlug;
+                matchLeagueSlug = inferCountryFromTeamNames(h.Nm || '', a.Nm || '', matchLeagueSlug) || matchLeagueSlug;
+                const matchLgDef = (TARGET_LEAGUES || []).find(l => l.slug === matchLeagueSlug);
                 let matchDate = new Date(Date.UTC(
                     parseInt(dateKey.slice(0, 4), 10),
                     parseInt(dateKey.slice(4, 6), 10) - 1,
@@ -89,9 +92,13 @@ async function fetchOnDemandDateMatches(dateKey) {
 
                 out.push({
                     source: { provider: 'livescore', event_id: `ls_${eid}`, livescore_id: eid },
-                    league_slug: leagueSlug,
-                    league: { slug: leagueSlug, name: stageName, country: rawCountry },
-                    note: stageName,
+                    league_slug: matchLeagueSlug,
+                    league: {
+                        slug: matchLeagueSlug,
+                        name: matchLgDef?.name || stageName,
+                        country: matchLgDef?.country || rawCountry
+                    },
+                    note: matchLgDef?.name || stageName,
                     name: `${h.Nm || 'Home'} vs ${a.Nm || 'Away'}`,
                     short_name: `${h.Abr || h.Nm || 'HOM'} vs ${a.Abr || a.Nm || 'AWY'}`,
                     date: matchDate,
@@ -237,7 +244,7 @@ const {
     isConcreteClock,
     formatMatchClock
 } = require('../services/soccerSerializer');
-const { normalizeTeamName, areTeamNamesMatching, getTeamCategory, getMatchTier, resolveMatchEspnId, resolveLeagueSlug, enforceCountryOnSlug, isReserveOrBTeamName, formatLiveScoreLogo, TARGET_LEAGUES, inferCountryFromTeamNames, demoteToJuniorOrLowerTier, isSeniorTopLeagueSlug, syncLiveScoreStandingsForLeague, syncEspnStandingsForLeague, ensureFreshStandings, LIVESCORE_STAGE_TABLE_MAP } = require('../services/soccerSyncService');
+const { normalizeTeamName, areTeamNamesMatching, getTeamCategory, getMatchTier, resolveMatchEspnId, resolveLeagueSlug, enforceCountryOnSlug, isReserveOrBTeamName, formatLiveScoreLogo, TARGET_LEAGUES, inferCountryFromTeamNames, demoteIfNotTopFlight, demoteToJuniorOrLowerTier, isSeniorTopLeagueSlug, syncLiveScoreStandingsForLeague, syncEspnStandingsForLeague, ensureFreshStandings, LIVESCORE_STAGE_TABLE_MAP } = require('../services/soccerSyncService');
 
 function formatDateKey(d = new Date()) {
     const y = d.getUTCFullYear();
@@ -650,10 +657,18 @@ async function fetchFreshWorldwideLiveMatches() {
                 const a = ev.T2?.[0] || {};
                 let matchSlug = slug;
 
+                // Demote mis-tagged lower-division clubs off top-flight boards (e.g. Turkish 1. Lig / 2. Lig out of tur.1)
+                if (typeof demoteIfNotTopFlight === 'function') {
+                    matchSlug = demoteIfNotTopFlight(matchSlug, h.Nm, a.Nm, leagueName) || matchSlug;
+                }
+                if (typeof inferCountryFromTeamNames === 'function') {
+                    matchSlug = inferCountryFromTeamNames(h.Nm, a.Nm, matchSlug) || matchSlug;
+                }
+
                 // Demote B/reserve/youth sides off senior top-flight & continental boards to dedicated junior or lower tier
                 const seniorSlug = String(matchSlug || '').toLowerCase();
                 if (isSeniorTopLeagueSlug(seniorSlug) && (isReserveOrBTeamName(h.Nm) || isReserveOrBTeamName(a.Nm))) {
-                    matchSlug = demoteToJuniorOrLowerTier(matchSlug, h.Nm, a.Nm);
+                    matchSlug = demoteToJuniorOrLowerTier(matchSlug, h.Nm, a.Nm, leagueName);
                 }
                 const hScore = parseInt(ev.Tr1 || 0, 10);
                 const aScore = parseInt(ev.Tr2 || 0, 10);
@@ -842,6 +857,9 @@ async function fetchFreshWorldwideLiveMatches() {
             if (!targetSlug || targetSlug === 'usa.ncaa') continue;
             targetSlug = enforceCountryOnSlug(targetSlug, comp.notes?.[0]?.headline || '', comp.altGameNote || '');
             if (!targetSlug || targetSlug === 'usa.ncaa') continue;
+            if (typeof demoteIfNotTopFlight === 'function') {
+                targetSlug = demoteIfNotTopFlight(targetSlug, homeComp.team?.name || homeComp.team?.displayName, awayComp.team?.name || awayComp.team?.displayName, comp.altGameNote || '') || targetSlug;
+            }
             if (typeof inferCountryFromTeamNames === 'function') {
                 targetSlug = inferCountryFromTeamNames(homeComp.team?.name || homeComp.team?.displayName, awayComp.team?.name || awayComp.team?.displayName, targetSlug) || targetSlug;
             }
@@ -913,6 +931,9 @@ async function fetchFreshWorldwideLiveMatches() {
                 continue;
             }
             let mSlug = m.league_slug;
+            if (typeof demoteIfNotTopFlight === 'function') {
+                mSlug = demoteIfNotTopFlight(mSlug, m.home?.name || m.home?.display_name, m.away?.name || m.away?.display_name, m.note || '') || mSlug;
+            }
             if (typeof inferCountryFromTeamNames === 'function') {
                 mSlug = inferCountryFromTeamNames(m.home?.name || m.home?.display_name, m.away?.name || m.away?.display_name, mSlug) || mSlug;
             }
@@ -1240,6 +1261,7 @@ function filterLiveMatchesResponse(matches, league, isFreeRestricted) {
         result = result.filter(m => m.league?.slug === requestedSlug);
     }
     return { matches: result };
+}
 
 
 /**
@@ -1359,13 +1381,16 @@ async function fetchLiveScoreDayMatches(dateKey) {
             let aName = a.Nm || a.Name || 'Away';
             let matchSlug = slug;
 
+            if (typeof demoteIfNotTopFlight === 'function') {
+                matchSlug = demoteIfNotTopFlight(matchSlug, hName, aName, leagueName) || matchSlug;
+            }
             if (typeof inferCountryFromTeamNames === 'function') {
                 matchSlug = inferCountryFromTeamNames(hName, aName, matchSlug) || matchSlug;
             }
 
             const seniorSlug = String(matchSlug || '').toLowerCase();
             if (isSeniorTopLeagueSlug(seniorSlug) && (isReserveOrBTeamName(hName) || isReserveOrBTeamName(aName))) {
-                matchSlug = demoteToJuniorOrLowerTier(matchSlug, hName, aName);
+                matchSlug = demoteToJuniorOrLowerTier(matchSlug, hName, aName, leagueName);
             }
 
             const matchLg = TARGET_LEAGUES.find(l => l.slug === matchSlug) || leagueMap.get(matchSlug) || lg || {};
@@ -1473,8 +1498,6 @@ async function fetchLiveScoreDayMatches(dateKey) {
         }
     }
     return out;
-}
-
 }
 
 async function getFormattedLiveMatches(league, isFreeRestricted) {
@@ -2156,7 +2179,12 @@ router.get('/fixtures', optionalApiKeyAuth, async (req, res) => {
                 filter.league_slug = { $in: FREE_TIER_ALLOWED_LEAGUES };
             }
         } else if (league && league !== 'all') {
-            filter.league_slug = String(league).toLowerCase();
+            const requestedSlug = String(league).toLowerCase();
+            if (requestedSlug === 'tur.2' || requestedSlug === 'tur.3') {
+                filter.league_slug = { $in: [requestedSlug, 'tur.1', 'tur.lower'] };
+            } else {
+                filter.league_slug = requestedSlug;
+            }
         }
 
         // Status filtering
@@ -2709,18 +2737,33 @@ router.get('/fixtures', optionalApiKeyAuth, async (req, res) => {
                     if (m.league) m.league.slug = slug;
                     m.league_slug = slug;
                 }
-                // Country correction (e.g. Londrina/Náutico under ita.2 → bra.2)
+                // Demote mis-tagged lower-division clubs off top-flight boards (e.g. Turkish 1. Lig / 2. Lig out of tur.1)
+                const originalSlug = slug;
+                if (typeof demoteIfNotTopFlight === 'function') {
+                    const demoted = demoteIfNotTopFlight(slug, hName, aName, m.league?.name || m.note || '');
+                    if (demoted && demoted !== slug) {
+                        slug = demoted;
+                    }
+                }
+                // Country / tier correction (e.g. Londrina/Náutico under ita.2 → bra.2, Turkish 1. Lig / 2. Lig → tur.2 / tur.3)
                 if (typeof inferCountryFromTeamNames === 'function') {
                     const corrected = inferCountryFromTeamNames(hName, aName, slug);
                     if (corrected && corrected !== slug) {
                         slug = corrected;
-                        if (m.league) m.league.slug = slug;
-                        m.league_slug = slug;
-                        // Update league display name lightly when country flips
-                        if (m.league && /^bra\./.test(slug)) {
-                            m.league.country = 'Brazil';
-                            if (/ita\.|italian/i.test(m.league.name || '')) m.league.name = slug.endsWith('.2') ? 'Brasileirão Série B' : 'Brasileirão';
-                        }
+                    }
+                }
+                if (slug && slug !== originalSlug) {
+                    if (m.league) m.league.slug = slug;
+                    m.league_slug = slug;
+                    const updatedTargetLg = TARGET_LEAGUES.find(l => l.slug === slug);
+                    if (m.league && updatedTargetLg) {
+                        m.league.name = updatedTargetLg.name;
+                        m.league.abbreviation = updatedTargetLg.abbreviation || m.league.abbreviation;
+                        m.league.country = updatedTargetLg.country || m.league.country;
+                        if (updatedTargetLg.logo) m.league.logo = updatedTargetLg.logo;
+                    } else if (m.league && /^bra\./.test(slug)) {
+                        m.league.country = 'Brazil';
+                        if (/ita\.|italian/i.test(m.league.name || '')) m.league.name = slug.endsWith('.2') ? 'Brasileirão Série B' : 'Brasileirão';
                     }
                 }
                 // Guard senior top-flight & continental boards against stale DB U19/U21/reserve rows on read
@@ -2744,6 +2787,16 @@ router.get('/fixtures', optionalApiKeyAuth, async (req, res) => {
             } catch (_) {}
             return m;
         });
+        // Re-enforce requested league filter after read-time reclassification so e.g. ?league=tur.1 never leaks tur.2 matches
+        if (league && league !== 'all') {
+            const requestedSlug = String(league).toLowerCase();
+            for (let i = dedupedMatches.length - 1; i >= 0; i--) {
+                const effectiveSlug = String(dedupedMatches[i].league?.slug || dedupedMatches[i].league_slug || '').toLowerCase();
+                if (effectiveSlug !== requestedSlug) {
+                    dedupedMatches.splice(i, 1);
+                }
+            }
+        }
         dedupedMatches.sort((a, b) => {
             const stateRank = (m) => (m.status?.isLive || m.status?.state === 'in') ? 3 : (m.status?.completed || m.status?.state === 'post') ? 2 : 1;
             const rDiff = stateRank(b) - stateRank(a);
@@ -6336,3 +6389,5 @@ module.exports.MAX_SSE_CLIENTS = MAX_SSE_CLIENTS;
 module.exports.parseLiveScoreEsd = parseLiveScoreEsd;
 module.exports.recordRecentFinishedMatch = recordRecentFinishedMatch;
 module.exports.recentFinishedMatches = recentFinishedMatches;
+module.exports.fetchFreshWorldwideLiveMatches = fetchFreshWorldwideLiveMatches;
+module.exports.fetchLiveScoreDayMatches = fetchLiveScoreDayMatches;

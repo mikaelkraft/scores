@@ -785,7 +785,7 @@
         'fra.1': ['psg','marseille','monaco','lyon','lille','nice','rennes','lens','strasbourg','nantes','montpellier','reims','toulouse','brest','angers','auxerre','le havre','saint etienne','metz'],
         'por.1': ['benfica','porto','sporting','braga','guimaraes','boavista','famalicao','moreirense','casa pia','estoril','arouca','rio ave','gil vicente','santa clara'],
         'ned.1': ['ajax','psv','feyenoord','az','twente','utrecht','heerenveen','groningen','sparta','willem ii','nec','go ahead eagles','fortuna sittard','heracles','zwolle'],
-        'tur.1': ['galatasaray','fenerbahce','besiktas','trabzonspor','istanbul basaksehir','basaksehir','kasimpasa','sivasspor','alanyaspor','rizespor','caykur rizespor','antalyaspor','gaziantep','gaziantep fk','konyaspor','samsunspor','kayserispor','hatayspor','adana demirspor','goztepe','bodrum','eyupspor','pendikspor','karagumruk','istanbulspor','ankaragucu'],
+        'tur.1': ['galatasaray','fenerbahce','besiktas','trabzonspor','istanbul basaksehir','basaksehir','kasimpasa','alanyaspor','rizespor','caykur rizespor','antalyaspor','gaziantep','gaziantep fk','konyaspor','samsunspor','kayserispor','goztepe','eyupspor','karagumruk','fatih karagumruk','kocaelispor','genclerbirligi'],
         'bih.1': ['zrinjski','borac','sarajevo','velez','zeljeznicar','siroki brijeg','posusje','sloga doboj','igman konjic','radnik bijeljina','gosk gabela','sloboda tuzla'],
         'aut.1': ['salzburg','red bull salzburg','sturm graz','lask','rapid wien','austria wien','wolfsberger ac','wac','tsv hartberg','austria klagenfurt','blau-weiss linz','altach','wsg tirol','grazer ak','gak','austria lustenau','sv ried'],
         'kvx.1': ['ballkani','drita','prishtina','llapi','gjilani','ferizaj','dukagjini','malisheva','suhareka','fushe kosova','trepca 89']
@@ -816,16 +816,54 @@
         return false;
     }
 
+    const CLIENT_TURKISH_SECOND_TIER = [
+        'sariyer','istanbulspor','pendikspor','ankaragucu','mke ankaragucu','umraniyespor',
+        'sakaryaspor','bandirmaspor','boluspor','erzurumspor','keciorengucu','manisa','manisa fk',
+        'corum','corum fk','igdir','igdir fk','amed','amedspor','amed sk','esenler erokspor','erokspor','sanliurfaspor',
+        'adanaspor','yeni malatyaspor','adana demirspor','hatayspor','sivasspor','bodrum','bodrum fk',
+        'bodrumspor','serik belediyespor','vanspor'
+    ];
+    const CLIENT_TURKISH_THIRD_TIER = [
+        'iskenderunspor','erbaaspor','mus spor','musspor','fethiyespor','giresunspor','altay',
+        'bursaspor','altinordu','menemen','kastamonuspor','batman petrolspor','elazigspor',
+        'karacabey','68 aksaray','beyoglu yeni carsi','1461 trabzon','ankara demirspor',
+        'somaspor','karaman fk','bucaspor 1928','inegolspor','arnavutkoy','kirklarelispor',
+        'ispata 32','isparta 32','adana 01'
+    ];
+
+    function clientFoldTurkish(str = '') {
+        return String(str || '')
+            .replace(/İ/g, 'i').replace(/I/g, 'i').replace(/ı/g, 'i')
+            .replace(/[şŞ]/g, 's').replace(/[ğĞ]/g, 'g').replace(/[çÇ]/g, 'c')
+            .replace(/[üÜ]/g, 'u').replace(/[öÖ]/g, 'o')
+            .toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+            .replace(/[^a-z0-9]+/g, ' ').trim();
+    }
+
+    function clientMatchesTurkishTier(name, tierList) {
+        const folded = clientFoldTurkish(name);
+        if (!folded) return false;
+        const compact = folded.replace(/\s+/g, '');
+        return tierList.some(c => {
+            const cc = c.replace(/\s+/g, '');
+            return folded === c || compact === cc || (c.length >= 5 && (folded.includes(c) || compact.includes(cc)));
+        });
+    }
+
     function clientHasTopFlightClub(slug, homeName, awayName) {
         const sLower = String(slug || '').toLowerCase();
         const list = CLIENT_TOP_FLIGHT[sLower];
         if (!list) return true;
-        const norm = (n) => cleanTeamNameForDedup(n || '');
+        const norm = (n) => sLower === 'tur.1' ? clientFoldTurkish(n || '').replace(/\s+/g, '') : cleanTeamNameForDedup(n || '');
         const hit = (n) => {
             const x = norm(n);
             if (!x) return false;
             if (sLower === 'bih.1' && (x.includes('slavija') || x.includes('zvijezda09') || x.includes('potkozarje'))) return false;
-            if (sLower === 'tur.1' && (x.includes('iskenderun') || x.includes('erbaaspor') || x.includes('musspor') || x.includes('fethiye'))) return false;
+            if (sLower === 'tur.1' && (
+                x.includes('iskenderun') || x.includes('erbaaspor') || x.includes('musspor') || x.includes('fethiye') ||
+                clientMatchesTurkishTier(n, CLIENT_TURKISH_SECOND_TIER) ||
+                clientMatchesTurkishTier(n, CLIENT_TURKISH_THIRD_TIER)
+            )) return false;
             if (sLower === 'aut.1' && (x.includes('liefering') || x.includes('stripfing') || x.includes('firstvienna') || x.includes('facwien'))) return false;
             return list.some(c => {
                 const cn = c.replace(/\s+/g, '');
@@ -860,6 +898,8 @@
             .replace(/[^a-z0-9]/g, '');
 
         let s = (name || '')
+            .replace(/İ/g, 'i')
+            .replace(/ı/g, 'i')
             .toLowerCase()
             .replace(/ø/g, 'o')
             .replace(/æ/g, 'ae')
@@ -1687,24 +1727,30 @@
             }
         }
 
-        // 1e. Correct foreign/Moldovan matches mistakenly labeled as Turkish Süper Lig ('tur.1')
-        if (slug === 'tur.1') {
-            const evText = `${ev?.name || ''} ${ev?.home?.name || ''} ${ev?.away?.name || ''} ${name || ''} ${country || ''}`.toLowerCase();
+        // 1e. Correct foreign/Moldovan or Turkish 1. Lig / 2. Lig matches mistakenly labeled as Turkish Süper Lig ('tur.1') or 'tur.lower'
+        if (slug === 'tur.1' || slug === 'tur.lower') {
+            const hNameTur = ev?.home?.name || ev?.home?.displayName || '';
+            const aNameTur = ev?.away?.name || ev?.away?.displayName || '';
+            const evText = `${ev?.name || ''} ${hNameTur} ${aNameTur} ${name || ''} ${country || ''}`.toLowerCase();
             if (evText.includes('moldov') || evText.includes('zimbru') || evText.includes('sireti') || evText.includes('sheriff') || evText.includes('petrocub') || evText.includes('milsami') || evText.includes('dacia buiucani') || evText.includes('floresti') || evText.includes('cupa moldovei')) {
                 slug = 'mda.1';
                 name = 'Moldovan Super Liga';
                 country = 'Moldova';
-            } else if (evText.includes('2nd lig') || evText.includes('2. lig') || evText.includes('white group') || evText.includes('red group') || evText.includes('aksaray')) {
+            } else if (evText.includes('2nd lig') || evText.includes('2. lig') || evText.includes('2.lig') || evText.includes('tff 2') || evText.includes('white group') || evText.includes('red group') || evText.includes('aksaray') || clientMatchesTurkishTier(hNameTur, CLIENT_TURKISH_THIRD_TIER) || clientMatchesTurkishTier(aNameTur, CLIENT_TURKISH_THIRD_TIER)) {
                 slug = 'tur.3';
                 name = 'Turkish 2. Lig';
                 country = 'Turkey';
-            } else if (evText.includes('1st lig') || evText.includes('1. lig')) {
+            } else if (evText.includes('1st lig') || evText.includes('1. lig') || evText.includes('1.lig') || evText.includes('trendyol 1') || evText.includes('tff 1') || evText.includes('first league') || evText.includes('second division') || clientMatchesTurkishTier(hNameTur, CLIENT_TURKISH_SECOND_TIER) || clientMatchesTurkishTier(aNameTur, CLIENT_TURKISH_SECOND_TIER)) {
                 slug = 'tur.2';
                 name = 'Turkish 1. Lig';
                 country = 'Turkey';
-            } else if (evText.includes('3rd lig') || evText.includes('3. lig')) {
+            } else if (evText.includes('3rd lig') || evText.includes('3. lig') || evText.includes('3.lig')) {
                 slug = 'tur.4';
                 name = 'Turkish 3. Lig';
+                country = 'Turkey';
+            } else if (slug === 'tur.1' && (hNameTur || aNameTur) && !clientHasTopFlightClub('tur.1', hNameTur, aNameTur)) {
+                slug = 'tur.2';
+                name = 'Turkish 1. Lig';
                 country = 'Turkey';
             }
         }
