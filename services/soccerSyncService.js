@@ -1333,6 +1333,13 @@ function enforceCountryOnSlug(slug, countryName = '', leagueName = '') {
 const TEAM_NAME_ALIASES = {
     // UEFA Conference / Europa naming variants
     'kaa gent': 'gent',
+    'stade rennais': 'rennes',
+    'rennes': 'rennes',
+    'nec nijmegen': 'nec nijmegen',
+    'stade brestois': 'brest',
+    'olympique lyonnais': 'lyon',
+    'olympique de marseille': 'marseille',
+    'losc lille': 'lille',
     'gent': 'gent',
     'fk crvena zvezda': 'red star belgrade',
     'crvena zvezda': 'red star belgrade',
@@ -2860,6 +2867,28 @@ function normalizeTeamName(name = '') {
         .replace(/\binter\s+club\s+d['']?escaldes\b|\binter\s+d['']?escaldes\b|\binter\s+escaldes\b/g, 'interescaldes')
         .replace(/\bf\.?\s*c\.?\s*k[oø]benhavn\b|\bfc\s+copenhagen\b|\bcopenhagen\b|\bkobenhavn\b/g, 'fccopenhagen')
         .replace(/\bborac\s+banja\s+luka\b|\bfk\s+borac\b/g, 'boracbanjaluka')
+        .replace(/\bstade\s+rennais\b|\brennes\b/g, 'rennes')
+        .replace(/\bnec\s+nijmegen\b|\bnijmegen\b/g, 'necnijmegen')
+        .replace(/\bstade\s+brestois\b|\bbrest\b/g, 'brest')
+        .replace(/\bstade\s+de\s+reims\b|\breims\b/g, 'reims')
+        .replace(/\bolympique\s+lyonnais\b|\blyon\b/g, 'lyon')
+        .replace(/\bolympique\s+de\s+marseille\b|\bmarseille\b/g, 'marseille')
+        .replace(/\bolympique\s+lille\b|\blosc\s+lille\b|\blille\s+osc\b|\blille\b/g, 'lille')
+        .replace(/\bmonaco\b|\bas\s+monaco\b/g, 'monaco')
+        .replace(/\bpz\s+eindhoven\b|\bpsv\s+eindhoven\b|\bpsv\b/g, 'psv')
+        .replace(/\bajax\s+amsterdam\b|\bajax\b/g, 'ajax')
+        .replace(/\bfeyenoord\s+rotterdam\b|\bfeyenoord\b/g, 'feyenoord')
+        .replace(/\baz\s+alkmaar\b|\balkmaar\b/g, 'azalkmaar')
+        .replace(/\btwente\s+enschede\b|\bfc\s+twente\b|\btwente\b/g, 'twente')
+        .replace(/\bgo\s+ahead\s+eagles\b/g, 'goaheadeagles')
+        .replace(/\bsporting\s+clube\s+de\s+portugal\b|\bsporting\s+cp\b|\bsporting\s+lisbon\b/g, 'sporting')
+        .replace(/\bsl\s+benfica\b|\bbenfica\b/g, 'benfica')
+        .replace(/\bfc\s+porto\b|\bporto\b/g, 'porto')
+        .replace(/\breal\s+sociedad\s+de\s+futbol\b|\breal\s+sociedad\b/g, 'realsociedad')
+        .replace(/\batletic(?:o)?\s+club\s+bilbao\b|\bathletic\s+club\b|\bathletic\s+bilbao\b/g, 'athleticbilbao')
+        .replace(/\binter\s+miami\s+cf\b|\binter\s+miami\b/g, 'intermiami')
+        .replace(/\bny\s+red\s+bulls\b|\bnew\s+york\s+red\s+bulls\b/g, 'nyredbulls')
+
         .replace(/\blincoln\s+red\s+imps\b/g, 'lincolnredimps')
         .replace(/\bheart\s+of\s+midlothian\b|\bhearts\b/g, 'hearts')
         .replace(/\bas\s+monaco\b|\bmonaco\b/g, 'monaco')
