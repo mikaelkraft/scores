@@ -2744,14 +2744,24 @@
                 const data = await fetchJson('/api/v1/football/live');
                 liveMatches = data.live || data.matches || [];
             }
-            // Fallback: /live can lag behind the day board (UCL in-play still on fixtures)
-            if (!liveMatches || liveMatches.length === 0) {
-                try {
-                    const fx = await fetchJson('/api/v1/football/fixtures?date=today&status=live&limit=200');
-                    const fromFx = fx.matches || fx.live || [];
-                    if (fromFx.length) liveMatches = fromFx;
-                } catch (_) {}
-            }
+            // Always merge day-board in-play into live list (/live often lags LiveScore)
+            try {
+                const fx = await fetchJson('/api/v1/football/fixtures?date=today&status=live&limit=200');
+                const fromFx = fx.matches || fx.live || [];
+                if (fromFx.length) {
+                    const byId = new Map();
+                    for (const m of (liveMatches || [])) {
+                        const id = String(m.id || m.uid || '');
+                        if (id) byId.set(id, m);
+                    }
+                    for (const m of fromFx) {
+                        const id = String(m.id || m.uid || '');
+                        if (id && !byId.has(id)) byId.set(id, m);
+                        else if (!id) byId.set(`x_${byId.size}`, m);
+                    }
+                    liveMatches = Array.from(byId.values());
+                }
+            } catch (_) {}
             if (!liveMatches || liveMatches.length === 0) {
                 try {
                     const fxAll = await fetchJson('/api/v1/football/fixtures?date=today&limit=300');
