@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Build Standalone NorraScore Android Release APK
-# Targets Release v1.0.0 (Initial Release)
+# Targets Release v1.0.1 (Initial Release)
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -16,7 +16,7 @@ if [[ ! -f "${SDK_JAR}" ]]; then
     exit 1
 fi
 
-echo "Building NorraScore v1.0.0 Release APK..."
+echo "Building NorraScore v1.0.1 Release APK..."
 
 mkdir -p "${ANDROID_DIR}/gen" "${ANDROID_DIR}/obj" "${ANDROID_DIR}/bin" "${ANDROID_DIR}/assets" "${PROJECT_DIR}/public/download"
 
@@ -25,7 +25,9 @@ cp "${PROJECT_DIR}/public/styles.css" "${ANDROID_DIR}/assets/"
 cp "${PROJECT_DIR}/public/app.js" "${ANDROID_DIR}/assets/"
 cp "${PROJECT_DIR}/public/favicon.svg" "${ANDROID_DIR}/assets/"
 cp "${PROJECT_DIR}/public/apple-touch-icon.png" "${ANDROID_DIR}/assets/"
-cp "${PROJECT_DIR}/public/apple-touch-icon.png" "${ANDROID_DIR}/res/drawable/ic_launcher.png"
+cp "${PROJECT_DIR}/public/assets/icons/icon-192.png" "${ANDROID_DIR}/res/drawable/ic_launcher.png"
+cp "${PROJECT_DIR}/public/assets/icons/icon-192.png" "${ANDROID_DIR}/assets/icon-192.png"
+cp "${PROJECT_DIR}/public/apple-touch-icon.png" "${ANDROID_DIR}/assets/"
 
 # 2. Generate R.java
 aapt package -f -m -J "${ANDROID_DIR}/gen" -M "${ANDROID_DIR}/AndroidManifest.xml" -S "${ANDROID_DIR}/res" -I "${SDK_JAR}"
@@ -79,4 +81,4 @@ OUTPUT_APK="${PROJECT_DIR}/public/download/norrascore.apk"
 apksigner sign --ks "${KEYSTORE}" --ks-pass env:ANDROID_KEYSTORE_PASS --key-pass env:ANDROID_KEY_PASS --out "${OUTPUT_APK}" "${ANDROID_DIR}/bin/norrascore-aligned.apk"
 apksigner verify --verbose "${OUTPUT_APK}"
 
-echo "NorraScore v1.0.0 APK successfully generated at ${OUTPUT_APK} ($(wc -c < "${OUTPUT_APK}") bytes)"
+echo "NorraScore v1.0.1 APK successfully generated at ${OUTPUT_APK} ($(wc -c < "${OUTPUT_APK}") bytes)"
