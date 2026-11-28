@@ -2672,12 +2672,23 @@ async function fetchLiveScoreMatchDetails(eventId) {
                     let redCard = false;
                     let substitution = false;
 
+                    // LiveScore IT: 35/36 goal, 38 penalty, 37 is unreliable (often regular goals) — only trust explicit OG text
                     const isGoal = inc.IT === 35 || inc.IT === 36 || inc.IT === 37 || inc.IT === 38 || inc.IT === 39 || (inc.Sc && (!inc.IT || inc.IT === 36));
-                    if (isGoal) {
+                    // VAR / cancelled markers from nested incidents
+                    const rawIncBlob = `${playerName} ${inc.Pn || ''} ${inc.Fn || ''} ${inc.Ln || ''} ${JSON.stringify(inc.Incs || [])}`.toLowerCase();
+                    const isVarCancelled = /\b(disallowed|cancelled|canceled|overturned|no goal|var\s*cancels|goal\s*disallowed)\b/i.test(rawIncBlob)
+                        || inc.IT === 161 || inc.IT === 162 || inc.IT === 163;
+                    if (isVarCancelled) {
+                        type = 'VAR';
+                        scoringPlay = false;
+                        text = playerName ? `VAR: goal disallowed (${playerName})` : 'VAR: goal disallowed';
+                    } else if (isGoal) {
                         type = 'Goal';
                         scoringPlay = true;
-                        const isOg = inc.IT === 37;
                         const isPen = inc.IT === 38;
+                        const isOg = /\b(own\s*goal|\(og\)|\bog\b)/i.test(rawIncBlob)
+                            || (inc.IT === 37 && /\b(og|own)\b/i.test(rawIncBlob));
+                        // Do NOT treat bare IT 37 as own goal — LS reuses it for normal goals
                         const label = isOg ? 'Own Goal' : (isPen ? 'Penalty' : 'Goal');
                         text = playerName ? `${label}! ${playerName}` : `${label}!`;
                         if (inc.assistName) text += ` (assist: ${inc.assistName})`;
@@ -2712,6 +2723,50 @@ async function fetchLiveScoreMatchDetails(eventId) {
                     });
                 }
             }
+
+            // Drop scoring events that exceed final scoreline (VAR overturns left in feed)
+            if (keyEvents.length) {
+                let lastH = null, lastA = null;
+                for (const ke of keyEvents) {
+                    if (ke.scoringPlay && Array.isArray(ke.Sc) && ke.Sc.length >= 2) {
+                        lastH = Number(ke.Sc[0]); lastA = Number(ke.Sc[1]);
+                    }
+                }
+                if (lastH != null && lastA != null) {
+                    let runH = 0, runA = 0;
+                    const cleaned = [];
+                    for (const ke of keyEvents) {
+                        if (ke.scoringPlay && Array.isArray(ke.Sc) && ke.Sc.length >= 2) {
+                            const nh = Number(ke.Sc[0]), na = Number(ke.Sc[1]);
+                            // Skip goal events that regress or jump past final without matching progression
+                            if (nh + na < runH + runA) {
+                                ke.scoringPlay = false;
+                                ke.type = { text: 'VAR', type: 'VAR' };
+                                ke.text = (ke.text || 'Goal').replace(/^Goal!?/i, 'VAR disallowed');
+                            } else {
+                                runH = nh; runA = na;
+                            }
+                        }
+                        cleaned.push(ke);
+                    }
+                    // If still more scoring markers than final total, demote extras from the end
+                    const finalTot = lastH + lastA;
+                    let scored = cleaned.filter(k => k.scoringPlay).length;
+                    if (scored > finalTot && finalTot >= 0) {
+                        for (let i = cleaned.length - 1; i >= 0 && scored > finalTot; i--) {
+                            if (cleaned[i].scoringPlay) {
+                                cleaned[i].scoringPlay = false;
+                                cleaned[i].type = { text: 'VAR', type: 'VAR' };
+                                cleaned[i].text = String(cleaned[i].text || 'Goal').replace(/^Goal!?/i, 'VAR disallowed');
+                                scored--;
+                            }
+                        }
+                    }
+                    keyEvents.length = 0;
+                    keyEvents.push(...cleaned);
+                }
+            }
+
             if (keyEvents.length) result.keyEvents = keyEvents;
         }
 
@@ -3178,6 +3233,13 @@ function normalizeTeamName(name = '') {
         .replace(/\bf\.?\s*c\.?\s*k[oø]benhavn\b|\bfc\s+copenhagen\b|\bcopenhagen\b|\bkobenhavn\b/g, 'fccopenhagen')
         .replace(/\bborac\s+banja\s+luka\b|\bfk\s+borac\b/g, 'boracbanjaluka')
         .replace(/\bstade\s+rennais\b|\brennes\b/g, 'rennes')
+        .replace(/\boud[- ]?heverlee\s+leuven\b|\boh\s*leuven\b|\bleuven\b/g, 'ohleuven')
+        .replace(/\bkv\s+kortrijk\b|\bkortrijk\b|\bcourtrai\b/g, 'kortrijk')
+        .replace(/\bclub\s+brugge\b|\bclub\s+bruges\b/g, 'clubbrugge')
+        .replace(/\bstandard\s+(de\s+)?li[eè]ge\b|\bstandard\s+liege\b/g, 'standardliege')
+        .replace(/\banderlecht\b|\brsc\s+anderlecht\b/g, 'anderlecht')
+        .replace(/\bgenk\b|\bkrc\s+genk\b/g, 'genk')
+        .replace(/\bantwerp\b|\broyal\s+antwerp\b/g, 'antwerp')
         .replace(/\bbrighton\s*(?:and\s*)?(?:hove\s*)?albion\b|\bbrighton\b/g, 'brighton')
         .replace(/\bwolverhampton\s+wanderers\b|\bwolves\b/g, 'wolves')
         .replace(/\bnottingham\s+forest\b|\bnottm?\.?\s*forest\b|\bforest\b/g, 'nottinghamforest')

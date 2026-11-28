@@ -926,6 +926,9 @@
             .replace(/\bf\.?\s*c\.?\s*k[oø]benhavn\b|\bfc\s+copenhagen\b|\bcopenhagen\b|\bkobenhavn\b/g, 'fccopenhagen')
             .replace(/\bborac\s+banja\s+luka\b/g, 'boracbanjaluka')
             .replace(/\bstade\s+rennais\b|\brennes\b/g, 'rennes')
+            .replace(/\boud[- ]?heverlee\s+leuven\b|\boh\s*leuven\b|\bleuven\b/g, 'ohleuven')
+            .replace(/\bkv\s+kortrijk\b|\bkortrijk\b|\bcourtrai\b/g, 'kortrijk')
+            .replace(/\bclub\s+brugge\b|\bclub\s+bruges\b/g, 'clubbrugge')
             .replace(/\bnec\s+nijmegen\b|\bnijmegen\b/g, 'necnijmegen')
             .replace(/\bstade\s+brestois\b|\bbrest\b/g, 'brest')
             .replace(/\bstade\s+de\s+reims\b|\breims\b/g, 'reims')
@@ -4612,9 +4615,15 @@
             clockValue = textMin;
             if (!String(clockDisplay).includes(String(Math.round(textMin)))) clockDisplay = `${Math.round(textMin)}'`;
         }
-        // Substitutions never occur at minute 0' before kickoff; a clockless substitution is almost always a halftime change
-        if (kind === 'substitution' && !clockDisplay && clockValue === 0) {
+        // Clockless subs: assume HT change — never show as 0' before kick-off
+        if (kind === 'substitution' && (!clockDisplay || clockDisplay === "0'" || clockDisplay === '0') && (!clockValue || clockValue === 0)) {
             clockValue = 45.99;
+            clockDisplay = 'HT';
+        }
+        // Subs stamped at 0'/1' with no other early events are almost always feed noise — treat as HT
+        if (kind === 'substitution' && clockValue > 0 && clockValue <= 1 && !event.scoringPlay) {
+            clockValue = 45.99;
+            clockDisplay = 'HT';
         }
 
         return {
@@ -4628,9 +4637,9 @@
             team,
             clock: clockDisplay,
             clockValue,
-            scoringPlay: Boolean(event.scoringPlay || kind === 'goal'),
+            scoringPlay: Boolean(event.scoringPlay || kind === 'goal') && !/\b(disallowed|cancelled|canceled|overturned|no goal)\b/i.test(cleanText),
             penaltyKick: Boolean(event.penaltyKick),
-            ownGoal: Boolean(event.ownGoal)
+            ownGoal: Boolean(event.ownGoal) || /\b(own\s*goal|\(og\))\b/i.test(cleanText)
         };
     }
 
@@ -4823,7 +4832,7 @@
             const detail = [
                 goal.team?.displayName || goal.team?.name,
                 goal.penaltyKick ? 'Penalty' : '',
-                goal.ownGoal ? 'Own goal' : ''
+                (goal.ownGoal || /own\s*goal|\(og\)/i.test(goal.text||'')) ? 'Own goal' : ''
             ].filter(Boolean).join(' · ');
             return `
                 <div class="timeline-item">
@@ -7533,11 +7542,15 @@
 
         const openDownloadModal = (e) => {
             if (e) e.preventDefault();
-            if (state.siteSettings?.siteName && appName) {
-                appName.textContent = state.siteSettings.siteName;
+            const branding = state.siteSettings?.branding || state.siteSettings || {};
+            if ((branding.siteTitle || state.siteSettings?.siteName) && appName) {
+                appName.textContent = branding.siteTitle || state.siteSettings.siteName;
             }
-            if (state.siteSettings?.logoUrl && appLogo) {
-                appLogo.src = state.siteSettings.logoUrl;
+            const logoSrc = branding.headerLogoUrl || branding.footerLogoUrl || state.siteSettings?.logoUrl
+                || '/assets/icons/icon-192.png';
+            if (appLogo && logoSrc) {
+                appLogo.src = logoSrc;
+                appLogo.onerror = () => { appLogo.src = '/assets/icons/icon-192.png'; };
             }
             if (typeof dialog.showModal === 'function') {
                 dialog.showModal();
