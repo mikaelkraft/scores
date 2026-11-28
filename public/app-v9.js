@@ -3071,14 +3071,19 @@
         await loadAllLeagueFixtures();
     }
 
+    // Server daily board keys use WAT (UTC+1). Client must match or "today" can filter to empty.
+    const CLIENT_WAT_OFFSET_MS = 60 * 60 * 1000;
+    function getClientWatDateKey(nowMs = Date.now()) {
+        const wat = new Date(nowMs + CLIENT_WAT_OFFSET_MS);
+        return `${wat.getUTCFullYear()}${String(wat.getUTCMonth() + 1).padStart(2, '0')}${String(wat.getUTCDate()).padStart(2, '0')}`;
+    }
     function resolveExpectedUtcDateKey(dateParam, nowMs = Date.now()) {
         const clean = String(dateParam || 'today').trim().toLowerCase();
-        const fmt = (d) => `${d.getUTCFullYear()}${String(d.getUTCMonth() + 1).padStart(2, '0')}${String(d.getUTCDate()).padStart(2, '0')}`;
-        if (clean === 'today') return fmt(new Date(nowMs));
-        if (clean === 'yesterday') return fmt(new Date(nowMs - 86400000));
-        if (clean === 'tomorrow') return fmt(new Date(nowMs + 86400000));
+        if (clean === 'today') return getClientWatDateKey(nowMs);
+        if (clean === 'yesterday') return getClientWatDateKey(nowMs - 86400000);
+        if (clean === 'tomorrow') return getClientWatDateKey(nowMs + 86400000);
         const digits = clean.replace(/[^0-9]/g, '').slice(0, 8);
-        return digits.length === 8 ? digits : fmt(new Date(nowMs));
+        return digits.length === 8 ? digits : getClientWatDateKey(nowMs);
     }
 
     function doesEventBelongToDateParam(ev, dateParam, nowMs = Date.now()) {
@@ -3086,29 +3091,28 @@
         const expectedKey = resolveExpectedUtcDateKey(dateParam, nowMs);
         if (!expectedKey || expectedKey.length !== 8) return true;
         let matchKey = '';
-        if (ev.date) {
-            const d = new Date(ev.date);
-            if (!isNaN(d.getTime())) {
-                matchKey = `${d.getUTCFullYear()}${String(d.getUTCMonth() + 1).padStart(2, '0')}${String(d.getUTCDate()).padStart(2, '0')}`;
-            }
-        }
-        if (!matchKey) {
-            const rawSb = String(ev.scoreboardDate || ev.scoreboard_date || '').replace(/[^0-9]/g, '').slice(0, 8);
-            if (rawSb.length === 8) matchKey = rawSb;
+        const rawSb = String(ev.scoreboardDate || ev.scoreboard_date || '').replace(/[^0-9]/g, '').slice(0, 8);
+        if (rawSb.length === 8) matchKey = rawSb;
+        if (!matchKey && ev.date) {
+            const ts = Date.parse(ev.date);
+            if (Number.isFinite(ts)) matchKey = getClientWatDateKey(ts);
         }
         if (!matchKey) return true;
         if (matchKey === expectedKey) return true;
-        // Allow legitimate cross-midnight live in-play matches on today's board, never completed/old games
-        const isTodayReq = String(dateParam || 'today').trim().toLowerCase() === 'today';
-        if (isTodayReq) {
+        const isRolling = /^(today|yesterday|tomorrow)$/i.test(String(dateParam || 'today'));
+        if (isRolling) {
             const st = ev.status || {};
             const isCompleted = Boolean(st.completed || st.state === 'post' || /^(FT|AET|AP|Final|Postp|Canc|Abd)/i.test(String(st.detail || st.clock || '')));
             const isLive = !isCompleted && Boolean(st.isLive || st.state === 'in');
             if (isLive) {
                 const ts = ev.date ? Date.parse(ev.date) : NaN;
-                if (!Number.isFinite(ts) || ((nowMs - ts) <= 160 * 60 * 1000 && (nowMs - ts) >= -10 * 60 * 1000)) {
+                if (!Number.isFinite(ts) || ((nowMs - ts) <= 160 * 60 * 1000 && (nowMs - ts) >= -15 * 60 * 1000)) {
                     return true;
                 }
+            }
+            if (!isCompleted && Math.abs(Number(matchKey) - Number(expectedKey)) === 1) {
+                const ts = ev.date ? Date.parse(ev.date) : NaN;
+                if (Number.isFinite(ts) && Math.abs(ts - nowMs) < 36 * 60 * 60 * 1000) return true;
             }
         }
         return false;
@@ -3184,31 +3188,59 @@
                         return;
                     }
                 } else if (dateParam === 'today' && (statusParam === 'all' || !statusParam || statusParam === 'live')) {
-                    // /fixtures?date=today already merges real-time live matches on the server.
-                    // Reuse initialLive if supplied to eliminate double network fetches
-                    if (initialLive && Array.isArray(initialLive) && initialLive.length > 0) {
+                    // Board can be empty for a few seconds while Azure/instance warms — retry before showing empty
+                    const loadToday = async () => {
                         const fixturesRes = await fetchJson(url).catch(() => ({}));
-                        const fixturesMatches = fixturesRes.matches || fixturesRes.fixtures || [];
+                        return fixturesRes.matches || fixturesRes.fixtures || [];
+                    };
+                    if (initialLive && Array.isArray(initialLive) && initialLive.length > 0) {
+                        const fixturesMatches = await loadToday();
                         matches = deduplicateMatchesList([...initialLive, ...fixturesMatches]);
                         state.liveMatchCount = initialLive.length;
                     } else {
-                        const fixturesRes = await fetchJson(url).catch(() => ({}));
-                        matches = fixturesRes.matches || fixturesRes.fixtures || [];
+                        matches = await loadToday();
+                        // Soft retries: empty board during cold start / rebuild
+                        if (!matches.length && !background) {
+                            for (const delay of [1200, 2500, 4000]) {
+                                if (thisReqId !== fixturesFetchSeq) return;
+                                await new Promise(r => setTimeout(r, delay));
+                                matches = await loadToday();
+                                if (matches.length) break;
+                            }
+                        }
                     }
                 } else {
-                    const data = await fetchJson(url);
+                    const data = await fetchJson(url).catch(() => ({}));
                     matches = data.matches || data.fixtures || [];
+                    if (!matches.length && dateParam === 'today' && !background) {
+                        for (const delay of [1200, 2500]) {
+                            if (thisReqId !== fixturesFetchSeq) return;
+                            await new Promise(r => setTimeout(r, delay));
+                            const retry = await fetchJson(url).catch(() => ({}));
+                            matches = retry.matches || retry.fixtures || [];
+                            if (matches.length) break;
+                        }
+                    }
                 }
 
                 if (thisReqId !== fixturesFetchSeq) return;
 
-                // Strict client-side calendar-date guard: never render old/previous-day completed matches on today's board
+                // Calendar-date guard (WAT-aligned). If it would wipe a non-empty payload, keep server list.
                 if (!isFavorites && statusParam !== 'live') {
                     const nowMs = Date.now();
-                    matches = matches.filter(m => doesEventBelongToDateParam(m, dateParam, nowMs));
+                    const filtered = matches.filter(m => doesEventBelongToDateParam(m, dateParam, nowMs));
+                    if (filtered.length > 0) {
+                        matches = filtered;
+                    } else if (matches.length > 0 && dateParam === 'today') {
+                        // Date guard disagreed with server board — trust server rather than show empty
+                        console.warn('[fixtures] date guard filtered all; keeping server matches', matches.length);
+                    } else {
+                        matches = filtered;
+                    }
                 }
 
                 if (!matches.length) {
+                    // Keep skeleton / soft empty only after retries exhausted
                     renderAllLeaguesGrouped([]);
                     return;
                 }
