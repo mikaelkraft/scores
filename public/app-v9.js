@@ -2027,6 +2027,36 @@
             }
         }
 
+
+        // Canonical display names: collapse dual provider labels into one section title
+        {
+            const nm = String(name || '').toLowerCase().replace(/\s+/g, ' ').trim();
+            const ctry = String(country || '').toLowerCase();
+            if (slug === 'rou.lower' || ((slug.startsWith('rou') || ctry.includes('romania')) && /liga\s*ii|liga\s*2/.test(nm))) {
+                slug = 'rou.lower';
+                name = 'Romania Liga II';
+                country = 'Romania';
+            } else if (slug === 'mys.lower' || ((slug.startsWith('mys') || ctry.includes('malaysia')) && (/malaysia\s+super\s+league/.test(nm) || nm === 'super league'))) {
+                name = 'Malaysia Super League';
+                country = 'Malaysia';
+                if (slug !== 'mys.1') slug = 'mys.lower';
+            } else if (slug === 'kor.lower' || /k[-\s]?league\s*1.*relegation|relegation\s*group/.test(nm)) {
+                if (!slug.startsWith('kor.')) slug = 'kor.lower';
+                name = 'K-League 1: Relegation Group';
+                country = 'South Korea';
+            } else if (/republic\s+of\s+korea\s+k[-\s]?league/.test(nm)) {
+                name = String(name).replace(/^Republic of Korea\s+/i, '').trim();
+                country = 'South Korea';
+            } else if (nm === 'liga ii' && (slug.startsWith('rou') || ctry.includes('romania'))) {
+                slug = 'rou.lower';
+                name = 'Romania Liga II';
+                country = 'Romania';
+            } else if (nm === 'super league' && (slug.startsWith('mys') || ctry.includes('malaysia'))) {
+                name = 'Malaysia Super League';
+                country = 'Malaysia';
+            }
+        }
+
         let logo = league?.logo || null;
         if (league?.slug && slug !== league.slug) {
             const known = (state.leagues || []).find(l => l.slug === slug);
@@ -2854,7 +2884,7 @@
             const groupsMap = new Map();
             for (const m of dedupedLive) {
                 const league = enrichLeagueMeta(m.league, m);
-                const groupKey = (league.slug && league.slug !== 'w.other' && league.slug !== 'other' && !league.slug.endsWith('.lower'))
+                const groupKey = (league.slug && league.slug !== 'w.other' && league.slug !== 'other')
                     ? league.slug
                     : `league_${league.slug || 'other'}_${(league.name || 'other').toLowerCase().replace(/[^a-z0-9]/g, '_')}`;
 
@@ -2863,6 +2893,24 @@
                         league,
                         events: []
                     });
+                } else {
+                    const g = groupsMap.get(groupKey);
+                    // Prefer canonical / more complete league title within same slug group
+                    if (league?.name && g?.league) {
+                        const prefer = (a, b) => {
+                            if (!a) return b;
+                            if (!b) return a;
+                            // Prefer names that include country or competition keywords
+                            const score = (n) => (/romania|malaysia|korea|liga|super|relegation|championship/i.test(n) ? 2 : 0) + Math.min(String(n).length, 40) / 40;
+                            return score(b) > score(a) ? b : a;
+                        };
+                        g.league = {
+                            ...g.league,
+                            name: prefer(g.league.name, league.name),
+                            country: g.league.country || league.country,
+                            logo: g.league.logo || league.logo
+                        };
+                    }
                 }
 
                 const hName = m.home?.displayName || m.home?.name || 'Home';
@@ -3171,7 +3219,7 @@
                 const groupsMap = new Map();
                 for (const m of dedupedMatches) {
                     const league = enrichLeagueMeta(m.league, m);
-                    let groupKey = (league.slug && league.slug !== 'w.other' && league.slug !== 'other' && !league.slug.endsWith('.lower'))
+                    let groupKey = (league.slug && league.slug !== 'w.other' && league.slug !== 'other')
                         ? league.slug
                         : `league_${league.slug || 'other'}_${(league.name || 'other').toLowerCase().replace(/[^a-z0-9]/g, '_')}`;
 
@@ -3186,6 +3234,11 @@
                             league,
                             events: []
                         });
+                    } else if (league?.name) {
+                        const g = groupsMap.get(groupKey);
+                        if (g?.league && league.name.length >= String(g.league.name||'').length) {
+                            g.league = { ...g.league, name: league.name, country: g.league.country || league.country };
+                        }
                     }
                     groupsMap.get(groupKey).events.push(m);
                 }
