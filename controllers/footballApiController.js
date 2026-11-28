@@ -3065,6 +3065,51 @@ router.get('/fixtures', optionalApiKeyAuth, async (req, res) => {
  * Compute authentic attacking pressure index (0-100) strictly from real in-game telemetry.
  * Returns null if no real attacking metrics exist (never fabricates from scorelines).
  */
+
+/** Drop impossible shot/xG metrics when they contradict the scoreline (e.g. 8-1 with 1 SOT). */
+function sanitizeStatsAgainstScoreline(homeStats, awayStats, homeScore, awayScore) {
+    const h = { ...(homeStats || {}) };
+    const a = { ...(awayStats || {}) };
+    const num = (v) => {
+        if (v === null || v === undefined || v === '') return null;
+        const n = Number(String(v).replace('%', '').trim());
+        return Number.isFinite(n) ? n : null;
+    };
+    const hs = num(homeScore);
+    const as = num(awayScore);
+    if (hs == null && as == null) return { home: h, away: a, unreliable: false };
+    let unreliable = false;
+    const check = (side, goals, stats) => {
+        if (goals == null || goals < 0) return stats;
+        const sot = num(stats.shotsOnTarget ?? stats.shots_on_target);
+        const shots = num(stats.totalShots ?? stats.shots ?? stats.total_shots);
+        // Goals cannot exceed shots on target by more than 1 (OG/deflections edge case)
+        if (sot != null && goals > sot + 1) {
+            unreliable = true;
+            delete stats.shotsOnTarget;
+            delete stats.shots_on_target;
+            delete stats.totalShots;
+            delete stats.shots;
+            delete stats.total_shots;
+            delete stats.expectedGoals;
+            delete stats.xg;
+            delete stats.bigChances;
+        } else if (shots != null && goals > shots + 2) {
+            unreliable = true;
+            delete stats.totalShots;
+            delete stats.shots;
+            delete stats.shotsOnTarget;
+            delete stats.expectedGoals;
+        }
+        return stats;
+    };
+    return {
+        home: check('home', hs, h),
+        away: check('away', as, a),
+        unreliable
+    };
+}
+
 function computeAttackingPressureIndex(stats) {
     if (!stats || typeof stats !== 'object') return null;
     const num = (v) => {
@@ -3361,6 +3406,31 @@ function computeEnrichedPredictionModel({
  * from a formatted recent-matches array (e.g. ESPN lastFiveGames) so downstream prediction models and UI
  * never receive stale 0 PPG / 0.0 goals averages when ESPN enriches team form.
  */
+
+function isLikelyNationalTeamName(name = '') {
+    const raw = String(name || '').trim();
+    if (!raw) return false;
+    if (/\b(national\s+team|\bnt\b)\b/i.test(raw)) return true;
+    // Multi-word club markers → not a national side
+    if (/\b(fc|cf|sc|ac|fk|sk|afc|united|city|town|rovers|athletic|sporting|club|calcio|sv|vfb|tsv|bsc|real|inter|ajax|milan)\b/i.test(raw)) return false;
+    if (/\d{2}$/.test(raw)) return false; // "Paderborn 07", "Schalke 04"
+    const n = raw.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z\s]/g, ' ').replace(/\s+/g, ' ').trim();
+    const NATIONALS = new Set([
+        'mali','senegal','nigeria','ghana','egypt','morocco','tunisia','algeria','cameroon','ivory coast','cote divoire',
+        'south africa','kenya','uganda','zambia','zimbabwe','angola','congo','dr congo','sudan','ethiopia','rwanda',
+        'germany','france','spain','italy','england','portugal','netherlands','belgium','croatia','serbia','poland',
+        'brazil','argentina','uruguay','chile','colombia','mexico','usa','united states','canada','japan','korea',
+        'south korea','australia','china','qatar','saudi arabia','iran','iraq','turkey','turkiye','russia','ukraine',
+        'scotland','wales','ireland','northern ireland','sweden','norway','denmark','finland','switzerland','austria',
+        'greece','romania','bulgaria','hungary','czech republic','czechia','slovakia','slovenia','albania','bosnia',
+        'ecuador','peru','paraguay','bolivia','venezuela','panama','costa rica','honduras','jamaica','haiti'
+    ]);
+    if (NATIONALS.has(n)) return true;
+    // Single-token country-like short names (3-12 letters) with no club prefix are suspicious as club opponents
+    if (!/\s/.test(n) && n.length >= 3 && n.length <= 12 && NATIONALS.has(n)) return true;
+    return false;
+}
+
 function recomputeAnalyticsFromFormattedRecent(formattedList, baseAnalytics = {}) {
     if (!Array.isArray(formattedList) || formattedList.length === 0) return baseAnalytics;
 
@@ -4078,6 +4148,12 @@ router.get('/predictions-context/:eventId', optionalApiKeyAuth, async (req, res)
                 const oppIsWomen = String(m.league_slug || '').includes('.w.') || /\b(w|women|woman|ladies|femenil|frauen|\(w\))\b/i.test(opp);
                 if (isTargetWomen !== oppIsWomen) continue;
 
+                // Exclude national teams from club form (e.g. Paderborn vs "Mali")
+                const targetLooksClub = /\b(fc|cf|sc|ac|fk|sk|afc|united|city|town|rovers|athletic|sporting|club|calcio|sv|vfb|tsv|bsc|07|04|190[0-9]|18\d{2}|19\d{2})\b/i.test(String(targetTeamName || ''))
+                    || /\d{2}$/.test(String(targetTeamName || '').trim());
+                const oppIsNational = isLikelyNationalTeamName(opp) || String(m.league_slug || '').startsWith('fifa.') || /world\s*cup|afcon|nations\s*league|international\s*friendly/i.test(String(m.league_name || m.league_slug || m.note || ''));
+                if (targetLooksClub && oppIsNational) continue;
+
                 const day = m.date ? new Date(m.date).toISOString().slice(0, 10) : '';
                 const key = `${day}_${oppNorm}`;
                 if (key && seen.has(key)) continue;
@@ -4473,6 +4549,14 @@ router.get('/predictions-context/:eventId', optionalApiKeyAuth, async (req, res)
             } catch (_) {}
         }
 
+        const _sanStats = sanitizeStatsAgainstScoreline(
+            hydratedHomeStats,
+            hydratedAwayStats,
+            match.home?.score,
+            match.away?.score
+        );
+        hydratedHomeStats = _sanStats.home;
+        hydratedAwayStats = _sanStats.away;
         const homePressure = computeAttackingPressureIndex(hydratedHomeStats);
         const awayPressure = computeAttackingPressureIndex(hydratedAwayStats);
         const h2hSummaryObj = {
