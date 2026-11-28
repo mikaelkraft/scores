@@ -927,6 +927,8 @@
             .replace(/\bborac\s+banja\s+luka\b/g, 'boracbanjaluka')
             .replace(/\bstade\s+rennais\b|\brennes\b/g, 'rennes')
             .replace(/\boud[- ]?heverlee\s+leuven\b|\boh\s*leuven\b|\bleuven\b/g, 'ohleuven')
+            .replace(/\brsb\s+berkane\b|\brs\s+berkane\b|\bberkane\b/g, 'rsbberkane')
+            .replace(/\bcolombe\s+sporti[fv]\s+du\s+dja(?:\s+et\s+lobo)?\b|\bcolombe\b/g, 'colombedja')
             .replace(/\bkv\s+kortrijk\b|\bkortrijk\b|\bcourtrai\b/g, 'kortrijk')
             .replace(/\bclub\s+brugge\b|\bclub\s+bruges\b/g, 'clubbrugge')
             .replace(/\bnec\s+nijmegen\b|\bnijmegen\b/g, 'necnijmegen')
@@ -5211,9 +5213,12 @@
             const seen = new Set();
             const seenDays = new Set();
             const deduped = [];
+            const NATIONAL_OPP = /^(mali|senegal|nigeria|ghana|egypt|morocco|tunisia|algeria|cameroon|kenya|uganda|germany|france|spain|italy|england|portugal|brazil|argentina|mexico|usa|japan|qatar|turkey|turkiye|scotland|wales|sweden|norway|denmark|poland|croatia|serbia|ukraine|russia|china|australia)$/i;
             for (const m of recentMatches) {
                 const day = m.date ? String(m.date).slice(0, 10) : '';
-                const opp = cleanTeamNameForDedup(m.opponent || '');
+                const oppRaw = String(m.opponent || '').trim();
+                if (NATIONAL_OPP.test(oppRaw) || NATIONAL_OPP.test(cleanTeamNameForDedup(oppRaw))) continue;
+                const opp = cleanTeamNameForDedup(oppRaw);
                 const key = `${day}_${opp}`;
                 if (key && seen.has(key)) continue;
                 if (day && seenDays.has(day)) continue;

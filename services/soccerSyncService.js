@@ -3234,6 +3234,8 @@ function normalizeTeamName(name = '') {
         .replace(/\bborac\s+banja\s+luka\b|\bfk\s+borac\b/g, 'boracbanjaluka')
         .replace(/\bstade\s+rennais\b|\brennes\b/g, 'rennes')
         .replace(/\boud[- ]?heverlee\s+leuven\b|\boh\s*leuven\b|\bleuven\b/g, 'ohleuven')
+        .replace(/\brsb\s+berkane\b|\brs\s+berkane\b|\brevival\s+sportive\s+de\s+berkane\b|\bberkane\b/g, 'rsbberkane')
+        .replace(/\bcolombe\s+sporti[fv]\s+du\s+dja(?:\s+et\s+lobo)?\b|\bcolombe\s+sportif\b|\bcolombe\b/g, 'colombedja')
         .replace(/\bkv\s+kortrijk\b|\bkortrijk\b|\bcourtrai\b/g, 'kortrijk')
         .replace(/\bclub\s+brugge\b|\bclub\s+bruges\b/g, 'clubbrugge')
         .replace(/\bstandard\s+(de\s+)?li[eè]ge\b|\bstandard\s+liege\b/g, 'standardliege')
